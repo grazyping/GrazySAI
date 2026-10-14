@@ -383,6 +383,21 @@ pub fn transform_pixels(src: &ColorMap, sel: &Selection, m: [f64; 6], mode: crat
     (out, mask)
 }
 
+/// Выделение по непрозрачности пикселей: доля выделения = альфа.
+pub fn from_opacity(src: &ColorMap) -> MaskMap {
+    let mut out = MaskMap::new();
+    for (k, t) in &src.tiles {
+        if t.0.iter().all(|p| p[3] == 0) {
+            continue;
+        }
+        let dst = out.tile_mut(*k);
+        for (d, p) in dst.0.iter_mut().zip(t.0.iter()) {
+            *d = p[3];
+        }
+    }
+    out
+}
+
 /// Границы непустых пикселей слоя.
 pub fn content_bounds(src: &ColorMap) -> Option<(i32, i32, i32, i32)> {
     let mut b: Option<(i32, i32, i32, i32)> = None;
@@ -426,6 +441,15 @@ mod tests {
         s.combine(&rect(10.0, 0.0, 30.0, 10.0), Combine::Intersect);
         assert_eq!((s.amount(8, 5), s.amount(12, 5)), (0, ONE));
         assert_eq!(s.bounds(), Some((10, 0, 20, 10)));
+    }
+
+    #[test]
+    fn selection_from_layer_opacity() {
+        let mut px = ColorMap::new();
+        px.set(3, 4, crate::pixel::from_rgba8([10, 20, 30, 128]));
+        let m = from_opacity(&px);
+        assert_eq!(m.get(3, 4), px.get(3, 4)[3]);
+        assert_eq!(m.get(4, 4), 0);
     }
 
     #[test]

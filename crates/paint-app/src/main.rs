@@ -330,14 +330,15 @@ fn brush_tools() -> Vec<BrushTool> {
         BrushTool {
             name: "Выд.К.",
             icon: "selpen",
-            params: b(10.0, 1.0, 1.0),
-            enabled: false,
+            // кисти выделения в SAI по умолчанию не реагируют на нажим
+            params: BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) },
+            enabled: true,
         },
         BrushTool {
             name: "Выд.Л.",
             icon: "selers",
-            params: b(10.0, 1.0, 1.0),
-            enabled: false,
+            params: BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) },
+            enabled: true,
         },
     ]
 }
@@ -355,6 +356,9 @@ enum LayerAction {
 
 /// Номер ластика в сетке — им рисует обратный конец пера.
 const ERASER: usize = 5;
+/// Перо и ластик выделения в сетке.
+const SEL_PEN: usize = 6;
+const SEL_ERASER: usize = 7;
 
 /// Масштабы в списке быстрой панели, %.
 const ZOOMS: [f32; 14] = [
@@ -424,6 +428,8 @@ struct PaintApp {
     sel_drag: Option<SelDrag>,
     move_drag: Option<MoveDrag>,
     transform: Option<Transform>,
+    /// Мазок пера или ластика выделения и его путь на холсте (для показа во время мазка).
+    sel_stroke: Option<(Stroke, Vec<Vec2>)>,
     /// Диалог «Изменить разрешение» / «Изменить размер»: новые размеры, сохранять пропорции,
     /// способ пересэмплирования, привязка.
     canvas_dialog: Option<CanvasDialog>,
@@ -455,7 +461,7 @@ impl PaintApp {
             tool: Tool::Brush,
             brushes: brush_tools(),
             // PAINT_BRUSH — номер кисти в сетке при запуске (для проверок виртуальным пером)
-            brush: std::env::var("PAINT_BRUSH").ok().and_then(|v| v.parse().ok()).filter(|&i: &usize| i < ERASER).unwrap_or(0),
+            brush: std::env::var("PAINT_BRUSH").ok().and_then(|v| v.parse().ok()).filter(|&i: &usize| i != ERASER && i <= SEL_ERASER).unwrap_or(0),
             hsv: [0.0, 0.0, 0.08],
             back: Color32::WHITE,
             stabilizer: paint_core::stabilizer::Level::Plain(3),
@@ -488,6 +494,7 @@ impl PaintApp {
             sel_drag: None,
             move_drag: None,
             transform: None,
+            sel_stroke: None,
             canvas_dialog: None,
             view_angle: 0.0,
             view_flip: false,
@@ -717,6 +724,15 @@ impl PaintApp {
     }
 
     fn begin_stroke(&mut self, p: InputPoint, eraser_end: bool) {
+        if !eraser_end && (self.brush == SEL_PEN || self.brush == SEL_ERASER) {
+            // перо и ластик выделения рисуют не в слой, а в выделение
+            self.smoother = Stabilizer::with_level(self.stabilizer);
+            let mut s = Stroke::new(self.brushes[self.brush].params);
+            let q = self.smoother.push(p);
+            s.add_point(q);
+            self.sel_stroke = Some((s, vec![Vec2::new(q.x, q.y)]));
+            return;
+        }
         if !self.can_paint() {
             self.status = String::from(
                 "Рисовать можно на видимом обычном слое — выберите его в списке справа",
@@ -743,6 +759,12 @@ impl PaintApp {
     }
 
     fn continue_stroke(&mut self, p: InputPoint) {
+        if let Some((s, path)) = self.sel_stroke.as_mut() {
+            let q = self.smoother.push(p);
+            s.add_point(q);
+            path.push(Vec2::new(q.x, q.y));
+            return;
+        }
         let Some(mut live) = self.live.take() else {
             return;
         };
@@ -753,6 +775,14 @@ impl PaintApp {
     }
 
     fn end_stroke(&mut self) {
+        if let Some((mut s, _)) = self.sel_stroke.take() {
+            for q in self.smoother.finish() {
+                s.add_point(q);
+            }
+            let mode = if self.brush == SEL_ERASER { Combine::Subtract } else { Combine::Add };
+            self.apply_selection(&s.mask, mode);
+            return;
+        }
         self.thumbs.clear();
         self.dirty = true;
         let Some(mut live) = self.live.take() else {
@@ -937,6 +967,16 @@ impl PaintApp {
             self.thumbs.clear();
             self.dirty = true;
         }
+    }
+
+    /// Выделение по непрозрачности слоя (Ctrl + щелчок по миниатюре).
+    fn select_by_opacity(&mut self, path: &[usize], mode: Combine) {
+        let Some(layer) = self.doc.layer(path) else { return };
+        if layer.children.is_some() {
+            return;
+        }
+        let area = paint_core::selection::from_opacity(&layer.pixels);
+        self.apply_selection(&area, mode);
     }
 
     /// Волшебная палочка по текущему слою.
@@ -1928,6 +1968,9 @@ impl PaintApp {
                         l.visible = !l.visible;
                         *changed = true;
                     }
+                } else if !is_folder && thumb.contains(at) && ui.input(|i| i.modifiers.command) {
+                    let m = ui.input(|i| i.modifiers);
+                    self.select_by_opacity(&path.to_vec(), Combine::from_modifiers(m.shift, m.alt));
                 } else if is_folder && thumb.contains(at) {
                     open = !open;
                     ui.data_mut(|d| d.insert_persisted(fid, open));
@@ -2420,7 +2463,7 @@ impl PaintApp {
                 if let Some(pos) = pointer {
                     self.begin_stroke(point(pos, self.zoom, self.offset), eraser_end);
                 }
-            } else if self.live.is_some() {
+            } else if self.live.is_some() || self.sel_stroke.is_some() {
                 for pos in moves {
                     self.continue_stroke(point(pos, self.zoom, self.offset));
                 }
@@ -2519,6 +2562,17 @@ impl PaintApp {
             };
             painter.add(egui::Shape::line(pts.clone(), egui::Stroke::new(1.0_f32, Color32::WHITE)));
             painter.extend(egui::Shape::dashed_line(&pts, egui::Stroke::new(1.0_f32, Color32::BLACK), 4.0, 4.0));
+        }
+        // Мазок пера или ластика выделения — полупрозрачная полоса по пути.
+        if let Some((s, path)) = &self.sel_stroke {
+            let width = (s.params.size * self.zoom).max(1.0);
+            let color = if self.brush == SEL_ERASER { Color32::from_rgba_unmultiplied(220, 60, 60, 110) } else { Color32::from_rgba_unmultiplied(60, 110, 230, 110) };
+            let pts: Vec<Pos2> = path.iter().map(|p| to_screen(p.x, p.y)).collect();
+            if pts.len() == 1 {
+                painter.circle_filled(pts[0], width / 2.0, color);
+            } else {
+                painter.add(egui::Shape::line(pts, egui::Stroke::new(width, color)));
+            }
         }
         // Рамка трансформации с ручками.
         if let Some(t) = &self.transform {
