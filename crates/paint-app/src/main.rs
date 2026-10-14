@@ -89,31 +89,35 @@ fn brush_tools() -> Vec<BrushTool> {
             params: b(3.0, 1.0, 1.0),
             enabled: true,
         },
+        // Значения по умолчанию — как у нового инструмента в SAI: 50 px, мин. размер 50 %,
+        // нажим на размер и на плотность (Аэрограф — самая мягкая ступень, остальные — самая жёсткая).
         BrushTool {
             name: "Аэрогр.",
             icon: "airbrush",
-            params: BrushParams {
-                size_by_pressure: false,
-                density_by_pressure: true,
-                ..b(50.0, 0.0, 0.3)
-            },
+            params: BrushParams { min_size: 0.5, density_by_pressure: true, ..b(50.0, 0.0, 1.0) },
             enabled: true,
         },
         BrushTool {
             name: "Кисть",
             icon: "brush",
-            params: BrushParams { mix: Some(MixParams::new(0.0, 0.0, 0.5)), density_by_pressure: true, ..b(15.0, 0.75, 1.0) },
+            params: BrushParams {
+                min_size: 0.5,
+                density_by_pressure: true,
+                mix: Some(MixParams::new(0.0, 0.0, 0.5)),
+                ..b(50.0, 1.0, 1.0)
+            },
             enabled: true,
         },
         BrushTool {
             name: "Акварель",
             icon: "water",
             params: BrushParams {
-                mix: Some(MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }),
+                min_size: 0.5,
                 density_by_pressure: true,
                 ver1_density: true,
                 amplify: 0.5,
-                ..b(30.0, 0.5, 0.8)
+                mix: Some(MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }),
+                ..b(50.0, 1.0, 1.0)
             },
             enabled: true,
         },
@@ -122,11 +126,12 @@ fn brush_tools() -> Vec<BrushTool> {
             icon: "marker",
             // у Маркера в SAI нет порога размытия
             params: BrushParams {
-                mix: Some(MixParams { blur_pressure: 0.0, ..MixParams::new(0.0, 0.0, 0.5) }),
+                min_size: 0.5,
                 density_by_pressure: true,
                 ver1_density: true,
                 amplify: 0.5,
-                ..b(6.0, 0.9, 1.0)
+                mix: Some(MixParams { blur_pressure: 0.0, ..MixParams::new(0.0, 0.0, 0.5) }),
+                ..b(50.0, 1.0, 1.0)
             },
             enabled: true,
         },
