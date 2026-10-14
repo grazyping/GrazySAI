@@ -3,6 +3,7 @@
 
 pub mod blend;
 pub mod brush;
+pub mod canvas_ops;
 pub mod dab;
 pub mod document;
 pub mod io;

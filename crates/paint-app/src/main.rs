@@ -75,6 +75,56 @@ enum Tool {
     Move,
 }
 
+/// Перевод координат между экраном и холстом с учётом масштаба, поворота и зеркала вида.
+/// `offset` — точка холста в левом верхнем углу области просмотра без поворота; поворот и
+/// зеркало — вокруг середины области.
+#[derive(Clone, Copy)]
+struct ViewXf {
+    mid: Pos2,
+    center: Vec2,
+    zoom: f32,
+    cos: f32,
+    sin: f32,
+    flip: bool,
+}
+
+impl ViewXf {
+    fn new(rect: Rect, zoom: f32, offset: Vec2, angle: f32, flip: bool) -> Self {
+        let half = rect.size() / 2.0;
+        let (sin, cos) = angle.sin_cos();
+        Self { mid: rect.min + half, center: offset + half / zoom, zoom, cos, sin, flip }
+    }
+
+    fn to_screen(self, c: Vec2) -> Pos2 {
+        let mut d = (c - self.center) * self.zoom;
+        if self.flip {
+            d.x = -d.x;
+        }
+        self.mid + Vec2::new(self.cos * d.x - self.sin * d.y, self.sin * d.x + self.cos * d.y)
+    }
+
+    fn vec_to_canvas(self, d: Vec2) -> Vec2 {
+        let mut v = Vec2::new(self.cos * d.x + self.sin * d.y, -self.sin * d.x + self.cos * d.y);
+        if self.flip {
+            v.x = -v.x;
+        }
+        v / self.zoom
+    }
+
+    fn to_canvas(self, p: Pos2) -> Vec2 {
+        self.center + self.vec_to_canvas(p - self.mid)
+    }
+}
+
+/// Диалог изменения холста.
+struct CanvasDialog {
+    resample: bool,
+    size: [u32; 2],
+    keep_ratio: bool,
+    mode: paint_core::resample::Mode,
+    anchor: (u8, u8),
+}
+
 /// За какую часть рамки трансформации тянут.
 #[derive(Clone, Copy, PartialEq)]
 enum Handle {
@@ -374,6 +424,12 @@ struct PaintApp {
     sel_drag: Option<SelDrag>,
     move_drag: Option<MoveDrag>,
     transform: Option<Transform>,
+    /// Диалог «Изменить разрешение» / «Изменить размер»: новые размеры, сохранять пропорции,
+    /// способ пересэмплирования, привязка.
+    canvas_dialog: Option<CanvasDialog>,
+    /// Поворот вида (радианы) и зеркало вида по горизонтали — только показ, рисунок не меняется.
+    view_angle: f32,
+    view_flip: bool,
     /// Граница выделения для показа; пересчитывается после правок выделения.
     sel_outline: Vec<[(i32, i32); 2]>,
     sel_dirty: bool,
@@ -432,6 +488,9 @@ impl PaintApp {
             sel_drag: None,
             move_drag: None,
             transform: None,
+            canvas_dialog: None,
+            view_angle: 0.0,
+            view_flip: false,
             sel_outline: Vec::new(),
             sel_dirty: false,
             show_selection: true,
@@ -450,6 +509,12 @@ impl PaintApp {
             Ok("wand") => Tool::Wand,
             _ => app.tool,
         };
+        // PAINT_VIEW=угол[,flip] — поворот и зеркало вида при запуске (для проверок)
+        if let Ok(v) = std::env::var("PAINT_VIEW") {
+            let mut it = v.split(',');
+            app.view_angle = it.next().and_then(|a| a.trim().parse::<f32>().ok()).unwrap_or(0.0).to_radians();
+            app.view_flip = it.next().is_some_and(|f| f.trim() == "flip");
+        }
         if std::env::var_os("PAINT_TRANSFORM").is_some() {
             if let Ok(v) = std::env::var("PAINT_SELECT") {
                 let n: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
@@ -705,8 +770,13 @@ impl PaintApp {
             self.finish_transform(false);
             return;
         }
+        let size = (self.doc.width, self.doc.height);
         if let Some(keys) = self.doc.undo() {
             self.after_structure(keys);
+        }
+        if size != (self.doc.width, self.doc.height) {
+            self.fit_pending = true;
+            self.invalidate_all();
         }
         self.sel_dirty = true;
     }
@@ -715,8 +785,13 @@ impl PaintApp {
         if self.transform.is_some() {
             return;
         }
+        let size = (self.doc.width, self.doc.height);
         if let Some(keys) = self.doc.redo() {
             self.after_structure(keys);
+        }
+        if size != (self.doc.width, self.doc.height) {
+            self.fit_pending = true;
+            self.invalidate_all();
         }
         self.sel_dirty = true;
     }
@@ -841,6 +916,18 @@ impl PaintApp {
         self.thumbs.clear();
     }
 
+    /// Действие над всем холстом: применить, показать заново (размер мог измениться).
+    fn canvas_op(&mut self, f: impl FnOnce(&mut Document) -> Vec<Key>) {
+        if self.transform.is_some() {
+            self.finish_transform(true);
+        }
+        f(&mut self.doc);
+        self.dirty = true;
+        self.fit_pending = true;
+        self.invalidate_all();
+        self.status = format!("Холст {}×{}", self.doc.width, self.doc.height);
+    }
+
     /// Сдвиг клавишами (Alt+стрелки).
     fn nudge(&mut self, dx: i32, dy: i32) {
         let keys = self.doc.move_layer_pixels(&self.selected.clone(), dx, dy);
@@ -934,6 +1021,22 @@ impl PaintApp {
     }
 
     /// Масштаб вокруг центра области просмотра.
+    /// Повернуть вид на `step` градусов (0 — сбросить угол). Рисунок не меняется.
+    fn rotate_view(&mut self, step: f32) {
+        if step == 0.0 {
+            self.view_angle = 0.0;
+        } else {
+            let mut d = self.view_angle.to_degrees() + step;
+            while d > 180.0 {
+                d -= 360.0;
+            }
+            while d <= -180.0 {
+                d += 360.0;
+            }
+            self.view_angle = d.to_radians();
+        }
+    }
+
     fn set_zoom(&mut self, zoom: f32) {
         let zoom = zoom.clamp(0.02, 32.0);
         if self.view.is_positive() {
@@ -995,15 +1098,34 @@ impl PaintApp {
                 }
             });
             ui.menu_button("Холст(C)", |ui| {
-                for item in [
-                    "Изменить разрешение…",
-                    "Изменить размер…",
-                    "Отразить по горизонтали",
-                    "Отразить по вертикали",
-                    "Повернуть на 90° против часовой",
-                    "Повернуть на 90° по часовой",
+                for (item, resample) in [("Изменить разрешение…", true), ("Изменить размер…", false)] {
+                    if ui.button(item).clicked() {
+                        self.canvas_dialog = Some(CanvasDialog {
+                            resample,
+                            size: [self.doc.width, self.doc.height],
+                            keep_ratio: true,
+                            mode: paint_core::resample::Mode::Bicubic,
+                            anchor: (1, 1),
+                        });
+                        ui.close_menu();
+                    }
+                }
+                ui.separator();
+                for (item, op) in [
+                    ("Отразить по горизонтали", 0),
+                    ("Отразить по вертикали", 1),
+                    ("Повернуть на 90° против часовой", 2),
+                    ("Повернуть на 90° по часовой", 3),
                 ] {
-                    ui.add_enabled(false, egui::Button::new(item));
+                    if ui.button(item).clicked() {
+                        self.canvas_op(|d| match op {
+                            0 => d.flip_canvas(true),
+                            1 => d.flip_canvas(false),
+                            2 => d.rotate_canvas(false),
+                            _ => d.rotate_canvas(true),
+                        });
+                        ui.close_menu();
+                    }
                 }
             });
             ui.menu_button("Слой(L)", |ui| {
@@ -1028,6 +1150,20 @@ impl PaintApp {
                 ] {
                     if ui.button(item).clicked() {
                         self.layer_action(action);
+                        ui.close_menu();
+                    }
+                }
+                ui.separator();
+                for (item, horizontal) in [("Отразить слой по горизонтали", true), ("Отразить слой по вертикали", false)] {
+                    if ui.button(item).clicked() {
+                        if self.transform.is_some() {
+                            self.finish_transform(true);
+                        }
+                        let keys = self.doc.flip_layer(&self.selected.clone(), horizontal);
+                        self.invalidate(keys);
+                        self.sel_dirty = true;
+                        self.thumbs.clear();
+                        self.dirty = true;
                         ui.close_menu();
                     }
                 }
@@ -1183,24 +1319,37 @@ impl PaintApp {
                 self.set_zoom(1.0);
             }
             ui.separator();
-            ui.add_enabled_ui(false, |ui| {
-                egui::ComboBox::from_id_salt("angle")
-                    .selected_text("+0.0°")
-                    .width(56.0)
-                    .show_ui(ui, |_| {});
-            });
-            for (g, tip) in [
-                ("ccw", "Повернуть вид против часовой"),
-                ("cw", "Повернуть вид по часовой"),
-                ("reset", "Сбросить поворот"),
-            ] {
-                sai_ui::icon_button(ui, b, false, false, tip, |p, r, c| {
-                    sai_ui::glyph(p, r, c, g)
+            let deg = self.view_angle.to_degrees();
+            let mut pick_angle = None;
+            egui::ComboBox::from_id_salt("angle")
+                .selected_text(format!("{:+.1}°", deg))
+                .width(56.0)
+                .show_ui(ui, |ui| {
+                    for a in [-180.0f32, -135.0, -90.0, -45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 90.0, 135.0, 180.0] {
+                        if ui.selectable_label((deg - a).abs() < 0.05, format!("{a:+}°")).clicked() {
+                            pick_angle = Some(a);
+                        }
+                    }
                 });
+            if let Some(a) = pick_angle {
+                self.view_angle = a.to_radians();
             }
-            sai_ui::icon_button(ui, b, false, false, "Отразить вид", |p, r, c| {
+            for (g, tip, step) in [
+                ("ccw", "Повернуть вид против часовой (Shift+PageUp)", -15.0f32),
+                ("cw", "Повернуть вид по часовой (Shift+PageDown)", 15.0),
+                ("reset", "Сбросить поворот (Shift+Home)", 0.0),
+            ] {
+                if sai_ui::icon_button(ui, b, false, true, tip, |p, r, c| sai_ui::glyph(p, r, c, g)).clicked() {
+                    self.rotate_view(step);
+                }
+            }
+            if sai_ui::icon_button(ui, b, self.view_flip, true, "Отразить вид (H)", |p, r, c| {
                 sai_ui::glyph(p, r, c, "flip")
-            });
+            })
+            .clicked()
+            {
+                self.view_flip = !self.view_flip;
+            }
             ui.separator();
             ui.label("Сглаживание");
             egui::ComboBox::from_id_salt("stab")
@@ -2073,8 +2222,8 @@ impl PaintApp {
             );
             self.fit_pending = false;
         }
-        let to_canvas =
-            |p: Pos2, zoom: f32, offset: Vec2| -> Vec2 { (p - rect.min) / zoom + offset };
+        let (vang, vflip) = (self.view_angle, self.view_flip);
+        let to_canvas = |p: Pos2, zoom: f32, offset: Vec2| -> Vec2 { ViewXf::new(rect, zoom, offset, vang, vflip).to_canvas(p) };
 
         // Масштаб колесом — вокруг указателя; перетаскивание средней кнопкой или «Рукой» — сдвиг.
         let (scroll, zoom_delta, middle, space, pointer, moves, pressed, released, touches) = ui
@@ -2139,14 +2288,15 @@ impl PaintApp {
             if factor != 1.0 {
                 let anchor = to_canvas(pos, self.zoom, self.offset);
                 self.zoom = (self.zoom * factor).clamp(0.02, 32.0);
-                self.offset = anchor - (pos - rect.min) / self.zoom;
+                self.offset += anchor - to_canvas(pos, self.zoom, self.offset);
             }
         }
         let panning = middle || space || self.tool == Tool::Hand;
         let ctrl = ui.input(|i| i.modifiers.command);
         if self.transform.is_some() && !panning {
             let zoom = self.zoom;
-            let screen = |c: Vec2| rect.min + (c - self.offset) * zoom;
+            let vx = ViewXf::new(rect, zoom, self.offset, vang, vflip);
+            let screen = |c: Vec2| vx.to_screen(c);
             if pressed && response.hovered() {
                 if let (Some(pos), Some(t)) = (pointer, self.transform.as_mut()) {
                     let c = to_canvas(pos, zoom, self.offset);
@@ -2191,7 +2341,8 @@ impl PaintApp {
                 self.end_move();
             }
         } else if panning && (response.dragged() || middle) {
-            self.offset -= ui.input(|i| i.pointer.delta()) / self.zoom;
+            let delta = ui.input(|i| i.pointer.delta());
+            self.offset -= ViewXf::new(rect, self.zoom, self.offset, vang, vflip).vec_to_canvas(delta);
         } else if self.tool == Tool::Zoom {
             if response.clicked() {
                 if let Some(pos) = response.interact_pointer_pos() {
@@ -2203,7 +2354,7 @@ impl PaintApp {
                         self.zoom * 1.5
                     })
                     .clamp(0.02, 32.0);
-                    self.offset = anchor - (pos - rect.min) / self.zoom;
+                    self.offset += anchor - to_canvas(pos, self.zoom, self.offset);
                 }
             }
         } else if matches!(self.tool, Tool::Marquee | Tool::Lasso | Tool::Wand) {
@@ -2280,21 +2431,23 @@ impl PaintApp {
         }
 
         // Показ: только плитки, попавшие в окно.
-        let origin = rect.min - self.offset * self.zoom;
+        let xf = ViewXf::new(rect, self.zoom, self.offset, vang, vflip);
         let options = if self.zoom >= 2.0 {
             egui::TextureOptions::NEAREST
         } else {
             egui::TextureOptions::LINEAR
         };
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-        painter.rect_filled(
-            Rect::from_min_size(origin, Vec2::new(w, h) * self.zoom).intersect(rect),
-            0.0,
+        painter.add(egui::Shape::convex_polygon(
+            [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)].map(|(x, y)| xf.to_screen(Vec2::new(x, y))).to_vec(),
             Color32::WHITE,
-        );
+            egui::Stroke::NONE,
+        ));
         for (&(dx, dy), tile) in self.display.iter_mut() {
-            let min = origin + Vec2::new((dx * DT) as f32, (dy * DT) as f32) * self.zoom;
-            let screen = Rect::from_min_size(min, Vec2::splat(DT as f32 * self.zoom));
+            let (x0, y0) = ((dx * DT) as f32, (dy * DT) as f32);
+            let quad = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+                .map(|(a, b): (f32, f32)| xf.to_screen(Vec2::new(x0 + a * DT as f32, y0 + b * DT as f32)));
+            let screen = Rect::from_points(&quad);
             if !screen.intersects(rect) {
                 continue;
             }
@@ -2321,10 +2474,18 @@ impl PaintApp {
                     (w - (dx * DT) as f32).min(DT as f32),
                     (h - (dy * DT) as f32).min(DT as f32),
                 );
-                let shown = Rect::from_min_size(min, part * self.zoom);
-                let shown_uv =
-                    Rect::from_min_max(uv.min, Pos2::new(part.x / DT as f32, part.y / DT as f32));
-                painter.image(t.id(), shown, shown_uv, Color32::WHITE);
+                let (u, v) = (part.x / DT as f32, part.y / DT as f32);
+                let mut mesh = egui::Mesh::with_texture(t.id());
+                for (a, b) in [(0.0, 0.0), (u, 0.0), (u, v), (0.0, v)] {
+                    mesh.vertices.push(egui::epaint::Vertex {
+                        pos: xf.to_screen(Vec2::new(x0 + a * DT as f32, y0 + b * DT as f32)),
+                        uv: Pos2::new(uv.min.x + a, uv.min.y + b),
+                        color: Color32::WHITE,
+                    });
+                }
+                mesh.add_triangle(0, 1, 2);
+                mesh.add_triangle(0, 2, 3);
+                painter.add(egui::Shape::mesh(mesh));
             }
         }
         // Граница выделения («бегущие муравьи») и выделение, которое сейчас тянут.
@@ -2332,7 +2493,7 @@ impl PaintApp {
             self.sel_outline = self.doc.selection.outline();
             self.sel_dirty = false;
         }
-        let to_screen = |x: f32, y: f32| origin + Vec2::new(x, y) * self.zoom;
+        let to_screen = |x: f32, y: f32| xf.to_screen(Vec2::new(x, y));
         if self.show_selection && !self.sel_outline.is_empty() {
             let phase = (self.started.elapsed().as_millis() / 300).is_multiple_of(2);
             let (a, b) = if phase { (Color32::BLACK, Color32::WHITE) } else { (Color32::WHITE, Color32::BLACK) };
@@ -2392,6 +2553,96 @@ impl PaintApp {
 
 impl PaintApp {
     fn dialogs(&mut self, ctx: &egui::Context) {
+        let mut apply = None;
+        let mut close = false;
+        if let Some(d) = self.canvas_dialog.as_mut() {
+            let (w, h) = (self.doc.width, self.doc.height);
+            let mut open = true;
+            egui::Window::new(if d.resample { "Разрешение холста" } else { "Размер холста" })
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(format!("Сейчас: {w}×{h} px"));
+                    let before = d.size;
+                    egui::Grid::new("canvasdlg").num_columns(2).show(ui, |ui| {
+                        ui.label("Ширина :");
+                        ui.add(egui::DragValue::new(&mut d.size[0]).range(1..=16000).suffix(" px"));
+                        ui.end_row();
+                        ui.label("Высота :");
+                        ui.add(egui::DragValue::new(&mut d.size[1]).range(1..=16000).suffix(" px"));
+                        ui.end_row();
+                        ui.label("");
+                        ui.checkbox(&mut d.keep_ratio, "Сохранять пропорции");
+                        ui.end_row();
+                    });
+                    if d.keep_ratio {
+                        if d.size[0] != before[0] {
+                            d.size[1] = ((d.size[0] as f64 * h as f64 / w as f64).round() as u32).max(1);
+                        } else if d.size[1] != before[1] {
+                            d.size[0] = ((d.size[1] as f64 * w as f64 / h as f64).round() as u32).max(1);
+                        }
+                    }
+                    ui.horizontal(|ui| {
+                        for p in [50u32, 75, 150, 200] {
+                            if ui.small_button(format!("{p}%")).clicked() {
+                                d.size = [(w * p / 100).max(1), (h * p / 100).max(1)];
+                            }
+                        }
+                    });
+                    if d.resample {
+                        use paint_core::resample::Mode;
+                        let name = |m: Mode| match m {
+                            Mode::Nearest => "Ближайший",
+                            Mode::Bilinear => "Билинейный",
+                            Mode::Bicubic => "Бикубический",
+                            Mode::Lanczos2 => "Ланцош 2",
+                            Mode::Lanczos3 => "Ланцош 3",
+                        };
+                        egui::ComboBox::from_label("Способ").selected_text(name(d.mode)).show_ui(ui, |ui| {
+                            for m in [Mode::Nearest, Mode::Bilinear, Mode::Bicubic, Mode::Lanczos2, Mode::Lanczos3] {
+                                ui.selectable_value(&mut d.mode, m, name(m));
+                            }
+                        });
+                    } else {
+                        ui.label("Привязка рисунка:");
+                        egui::Grid::new("anchor").spacing([2.0, 2.0]).show(ui, |ui| {
+                            for ay in 0..3u8 {
+                                for ax in 0..3u8 {
+                                    let on = d.anchor == (ax, ay);
+                                    if ui.selectable_label(on, if on { "●" } else { "○" }).clicked() {
+                                        d.anchor = (ax, ay);
+                                    }
+                                }
+                                ui.end_row();
+                            }
+                        });
+                    }
+                    ui.horizontal(|ui| {
+                        if ui.button("OK").clicked() {
+                            apply = Some((d.resample, d.size, d.mode, d.anchor));
+                        }
+                        if ui.button("Отмена").clicked() {
+                            close = true;
+                        }
+                    });
+                });
+            if !open {
+                close = true;
+            }
+        }
+        if let Some((resample, [nw, nh], mode, anchor)) = apply {
+            self.canvas_dialog = None;
+            if (nw, nh) != (self.doc.width, self.doc.height) {
+                if resample {
+                    self.canvas_op(|d| d.resample_canvas(nw, nh, mode));
+                } else {
+                    self.canvas_op(|d| d.resize_canvas(nw, nh, anchor));
+                }
+            }
+        } else if close {
+            self.canvas_dialog = None;
+        }
         if self.show_open {
             let mut open = true;
             egui::Window::new("Открыть")
@@ -2595,7 +2846,7 @@ impl eframe::App for PaintApp {
         let samples = vp.due();
         let finished = vp.finished();
         for smp in samples {
-            let pos = self.view.min + (Vec2::new(smp.x, smp.y) - self.offset) * self.zoom;
+            let pos = ViewXf::new(self.view, self.zoom, self.offset, self.view_angle, self.view_flip).to_screen(Vec2::new(smp.x, smp.y));
             if let Ok(mut st) = self.pen.lock() {
                 // обратный конец пера сообщает источник пера, как драйвер на Linux
                 if smp.eraser {
@@ -2715,6 +2966,30 @@ impl eframe::App for PaintApp {
             }
             d
         });
+        let view_keys = ctx.input(|i| {
+            let sh = i.modifiers.shift && !i.modifiers.command && !i.modifiers.alt;
+            (
+                !i.modifiers.any() && i.key_pressed(egui::Key::H),
+                sh && i.key_pressed(egui::Key::PageUp),
+                sh && i.key_pressed(egui::Key::PageDown),
+                sh && i.key_pressed(egui::Key::Home),
+            )
+        });
+        if !ctx.wants_keyboard_input() {
+            let (flip, ccw, cw, reset) = view_keys;
+            if flip {
+                self.view_flip = !self.view_flip;
+            }
+            if ccw {
+                self.rotate_view(-15.0);
+            }
+            if cw {
+                self.rotate_view(15.0);
+            }
+            if reset {
+                self.rotate_view(0.0);
+            }
+        }
         let (key_t, key_enter, key_esc) = ctx.input(|i| {
             (
                 i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::T),

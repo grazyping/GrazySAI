@@ -541,3 +541,30 @@ fn transform_scales_and_rotates_a_layer() {
     assert_eq!(pixel(&doc, 65, 15), [0, 0, 0, 255]);
     assert_eq!(pixel(&doc, 15, 15), [255, 255, 255, 255]);
 }
+
+#[test]
+fn canvas_flip_rotate_resize_and_resolution() {
+    use paint_core::resample::Mode;
+    let black = paint_core::pixel::from_rgba8([0, 0, 0, 255]);
+    let mut doc = Document::new(40, 20);
+    doc.layers[0].pixels.set(1, 2, black);
+    doc.flip_canvas(true);
+    assert_eq!(pixel(&doc, 38, 2), [0, 0, 0, 255]);
+    doc.undo();
+    doc.rotate_canvas(true);
+    assert_eq!((doc.width, doc.height), (20, 40));
+    assert_eq!(pixel(&doc, 17, 1), [0, 0, 0, 255]);
+    doc.undo();
+    assert_eq!((doc.width, doc.height), (40, 20));
+    assert_eq!(pixel(&doc, 1, 2), [0, 0, 0, 255]);
+    // больше холст, привязка по центру: точка сдвигается на половину прибавки
+    doc.resize_canvas(60, 40, (1, 1));
+    assert_eq!(pixel(&doc, 11, 12), [0, 0, 0, 255]);
+    doc.undo();
+    doc.resample_canvas(80, 40, Mode::Nearest);
+    assert_eq!(pixel(&doc, 3, 5), [0, 0, 0, 255]);
+    doc.undo();
+    // отражение слоя
+    doc.flip_layer(&[0], false);
+    assert_eq!(pixel(&doc, 1, 17), [0, 0, 0, 255]);
+}

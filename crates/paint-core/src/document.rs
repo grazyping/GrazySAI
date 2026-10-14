@@ -18,6 +18,8 @@ enum Op {
     Remove { path: Vec<usize> },
     /// Заменить выделение (обратный шаг — прежнее выделение).
     Selection { mask: MaskMap },
+    /// Заменить весь холст: размер, слои, выделение (для действий над холстом).
+    Canvas { width: u32, height: u32, layers: Vec<Layer>, selection: MaskMap },
 }
 
 /// Одно действие пользователя: шаги выполняются по порядку, отмена — обратными шагами в обратном
@@ -167,6 +169,27 @@ impl Document {
                 let (stack, at) = self.stack_mut(&path)?;
                 stack.insert(at.min(stack.len()), *layer);
                 Some((Op::Remove { path }, keys))
+            }
+            Op::Canvas { width, height, layers, selection } => {
+                let back = Op::Canvas {
+                    width: self.width,
+                    height: self.height,
+                    layers: std::mem::replace(&mut self.layers, layers),
+                    selection: std::mem::replace(&mut self.selection.mask, selection),
+                };
+                let mut keys: Vec<Key> = Vec::new();
+                for (w, h) in [(self.width, self.height), (width, height)] {
+                    for ty in 0..(h as i32 + TILE - 1) / TILE {
+                        for tx in 0..(w as i32 + TILE - 1) / TILE {
+                            keys.push((tx, ty));
+                        }
+                    }
+                }
+                self.width = width;
+                self.height = height;
+                keys.sort_unstable();
+                keys.dedup();
+                Some((back, keys))
             }
             Op::Selection { mask } => {
                 let old = std::mem::replace(&mut self.selection.mask, mask);
@@ -345,6 +368,96 @@ impl Document {
         let orig_sel = self.selection.clone();
         let keys = self.move_preview(path, &original, &orig_sel, dx, dy);
         self.move_commit(path, original, orig_sel);
+        keys
+    }
+
+    /// Новый холст той же истории: размер, слои (выделение снимается).
+    fn replace_canvas(&mut self, width: u32, height: u32, layers: Vec<Layer>) -> Vec<Key> {
+        self.perform(vec![Op::Canvas { width, height, layers, selection: MaskMap::new() }])
+    }
+
+    /// Отразить холст по горизонтали (`horizontal`) или вертикали.
+    pub fn flip_canvas(&mut self, horizontal: bool) -> Vec<Key> {
+        let (w, h) = (self.width as i32, self.height as i32);
+        let mut layers = self.layers.clone();
+        if horizontal {
+            crate::canvas_ops::remap_layers(&mut layers, &|x, y| (w - 1 - x, y));
+        } else {
+            crate::canvas_ops::remap_layers(&mut layers, &|x, y| (x, h - 1 - y));
+        }
+        self.replace_canvas(self.width, self.height, layers)
+    }
+
+    /// Повернуть холст на 90° по часовой (`clockwise`) или против.
+    pub fn rotate_canvas(&mut self, clockwise: bool) -> Vec<Key> {
+        let (w, h) = (self.width as i32, self.height as i32);
+        let mut layers = self.layers.clone();
+        if clockwise {
+            crate::canvas_ops::remap_layers(&mut layers, &|x, y| (h - 1 - y, x));
+        } else {
+            crate::canvas_ops::remap_layers(&mut layers, &|x, y| (y, w - 1 - x));
+        }
+        self.replace_canvas(self.height, self.width, layers)
+    }
+
+    /// Новый размер холста; рисунок не масштабируется, а сдвигается по привязке.
+    pub fn resize_canvas(&mut self, width: u32, height: u32, anchor: (u8, u8)) -> Vec<Key> {
+        let (dx, dy) = crate::canvas_ops::anchor_offset(self.width, self.height, width, height, anchor);
+        let mut layers = self.layers.clone();
+        crate::canvas_ops::remap_layers(&mut layers, &|x, y| (x + dx, y + dy));
+        // всё, что вышло за новый холст, отбрасывается
+        let (w, h) = (width as i32, height as i32);
+        fn crop(layers: &mut [Layer], w: i32, h: i32) {
+            for l in layers {
+                match l.children.as_mut() {
+                    Some(ch) => crop(ch, w, h),
+                    None => {
+                        let keys: Vec<Key> = l.pixels.tiles.keys().copied().collect();
+                        for k in keys {
+                            let t = l.pixels.tile_mut(k);
+                            for (i, p) in t.0.iter_mut().enumerate() {
+                                let (x, y) = (k.0 * TILE + i as i32 % TILE, k.1 * TILE + i as i32 / TILE);
+                                if x < 0 || y < 0 || x >= w || y >= h {
+                                    *p = [0; 4];
+                                }
+                            }
+                        }
+                        l.pixels.tiles.retain(|_, t| t.0.iter().any(|p| p[3] != 0));
+                    }
+                }
+            }
+        }
+        crop(&mut layers, w, h);
+        self.replace_canvas(width, height, layers)
+    }
+
+    /// Новое разрешение холста: все слои пересэмплируются способом `mode`.
+    pub fn resample_canvas(&mut self, width: u32, height: u32, mode: crate::resample::Mode) -> Vec<Key> {
+        let mut layers = self.layers.clone();
+        crate::canvas_ops::resample_layers(&mut layers, self.width, self.height, width, height, mode);
+        self.replace_canvas(width, height, layers)
+    }
+
+    /// Отразить слой `path` (с выделением — только выделенное, вокруг его середины).
+    pub fn flip_layer(&mut self, path: &[usize], horizontal: bool) -> Vec<Key> {
+        let Some(layer) = self.layer(path) else { return Vec::new() };
+        if layer.children.is_some() {
+            return Vec::new();
+        }
+        let sel = self.selection.clone();
+        let (x0, y0, x1, y1) = if sel.mask.tiles.is_empty() {
+            (0, 0, self.width as i32, self.height as i32)
+        } else {
+            sel.bounds().unwrap_or((0, 0, self.width as i32, self.height as i32))
+        };
+        let m = if horizontal {
+            [-1.0, 0.0, (x0 + x1) as f64, 0.0, 1.0, 0.0]
+        } else {
+            [1.0, 0.0, 0.0, 0.0, -1.0, (y0 + y1) as f64]
+        };
+        let original = layer.pixels.clone();
+        let keys = self.transform_preview(path, &original, &sel, m, crate::resample::Mode::Nearest);
+        self.move_commit(path, original, sel);
         keys
     }
 
