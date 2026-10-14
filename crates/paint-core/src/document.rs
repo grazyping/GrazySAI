@@ -89,6 +89,18 @@ impl Document {
 
     /// Показывает на слое новые отпечатки незавершённого штриха. Возвращает изменившиеся плитки.
     pub fn live_update(&mut self, live: &mut LiveStroke) -> Vec<Key> {
+        self.live_paint(live, false)
+    }
+
+    fn live_paint(&mut self, live: &mut LiveStroke, finish: bool) -> Vec<Key> {
+        if live.stroke.is_mixing() {
+            // Смешивающая кисть рисует прямо в слой: краска зависит от того, что уже на холсте.
+            let Some(layer) = self.layer_mut(&live.path) else { return Vec::new() };
+            let preserve = layer.preserve_opacity;
+            let keys = live.stroke.paint_mixed(&mut layer.pixels, live.rgb, preserve, &mut live.originals, finish);
+            live.stroke.take_touched();
+            return keys;
+        }
         let touched: Vec<Key> = live.stroke.take_touched().into_iter().collect();
         let Some(layer) = self.layer_mut(&live.path) else { return Vec::new() };
         for key in &touched {
@@ -111,7 +123,7 @@ impl Document {
 
     /// Перо поднято: записывает штрих в историю.
     pub fn live_finish(&mut self, mut live: LiveStroke) -> Vec<Key> {
-        let keys = self.live_update(&mut live);
+        let keys = self.live_paint(&mut live, true);
         if !live.originals.is_empty() {
             self.push(vec![Op::Tiles { path: live.path, tiles: live.originals.into_iter().collect() }]);
         }

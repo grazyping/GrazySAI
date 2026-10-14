@@ -10,6 +10,7 @@ use crate::brush::{dab_opacity, step_fraction, BrushParams, DabShape};
 use crate::dab::{step_factor, Dab, DabInput};
 
 /// Отпечаток: по модели образца или подобранный (крупная самая жёсткая кисть).
+#[derive(Clone)]
 enum Shape {
     Sai(Dab, f32),
     Fitted(DabShape, f32),
@@ -34,9 +35,18 @@ impl Shape {
         }
     }
 }
-use crate::pixel::ONE;
-use crate::tile::{key_of, Key, MaskMap, TILE};
-use std::collections::HashSet;
+use crate::mix::{Mixer, Sample};
+use crate::pixel::{Px, ONE};
+use crate::tile::{key_of, ColorMap, Key, MaskMap, Tile, TILE};
+use std::collections::{HashMap, HashSet};
+
+/// Отпечаток смешивающей кисти, ждущий своей пачки.
+struct Pending {
+    x: f32,
+    y: f32,
+    pressure: f32,
+    shape: Shape,
+}
 
 /// Наибольший шаг между отпечатками большой жёсткой кисти, px (см. `placement_step_at`).
 const FLAT_LARGE_STEP_PX: f32 = 0.85;
@@ -58,11 +68,28 @@ pub struct Stroke {
     pub dab_count: usize,
     /// Плитки, изменённые с прошлого вызова [`Stroke::take_touched`].
     touched: HashSet<Key>,
+    /// Смешивающая кисть: отпечатки, ещё не нарисованные, и краска на кисти.
+    pending: Vec<Pending>,
+    mixer: Option<Mixer>,
 }
 
 impl Stroke {
     pub fn new(params: BrushParams) -> Self {
-        Self { params, mask: MaskMap::new(), last: None, carry: 0.0, dab_count: 0, touched: HashSet::new() }
+        Self {
+            params,
+            mask: MaskMap::new(),
+            last: None,
+            carry: 0.0,
+            dab_count: 0,
+            touched: HashSet::new(),
+            pending: Vec::new(),
+            mixer: None,
+        }
+    }
+
+    /// Краска смешивается с холстом: штрих рисуется прямо в слой ([`Stroke::paint_mixed`]).
+    pub fn is_mixing(&self) -> bool {
+        self.params.mix.is_some() && !self.params.erase
     }
 
     /// Последняя принятая точка траектории.
@@ -174,9 +201,13 @@ impl Stroke {
             let o = d.opacity(self.step_at(p.pressure));
             Shape::Sai(d, o)
         };
+        self.dab_count += 1;
+        if self.is_mixing() {
+            self.pending.push(Pending { x: p.x, y: p.y, pressure: p.pressure, shape });
+            return;
+        }
         let opacity = shape.opacity();
         let cap = (density * ONE as f32 + 0.5) as u32;
-        self.dab_count += 1;
         let reach = shape.outer() + 1.0;
         let (x0, x1) = ((p.x - reach).floor() as i32, (p.x + reach).ceil() as i32);
         let (y0, y1) = ((p.y - reach).floor() as i32, (p.y + reach).ceil() as i32);
@@ -200,4 +231,95 @@ impl Stroke {
             }
         }
     }
+
+    /// Рисует накопленные отпечатки смешивающей кисти прямо в пиксели слоя `pixels`, пачками
+    /// (`mix.rs`). Пока перо не поднято (`finish == false`), неполная пачка ждёт. Перед первой
+    /// правкой плитки её прежний вид кладётся в `originals` (для отмены). Возвращает плитки,
+    /// которые изменились.
+    pub fn paint_mixed(
+        &mut self,
+        pixels: &mut ColorMap,
+        rgb: [u8; 3],
+        preserve_opacity: bool,
+        originals: &mut HashMap<Key, Option<Tile<Px>>>,
+        finish: bool,
+    ) -> Vec<Key> {
+        let Some(mix) = self.params.mix else { return Vec::new() };
+        let softness = 1.0 - self.params.hardness.clamp(0.0, 1.0);
+        let mixer = self.mixer.get_or_insert_with(|| Mixer::new(mix, rgb));
+        let mut changed = HashSet::new();
+        loop {
+            let want = crate::mix::batch_dabs(softness).min(mixer.batch + 2);
+            if self.pending.is_empty() || (!finish && self.pending.len() < want) {
+                break;
+            }
+            let n = mixer.next_batch(softness).min(self.pending.len());
+            let batch: Vec<Pending> = self.pending.drain(..n).collect();
+            // Средний цвет холста под пачкой — по всем пикселям, которых она касается.
+            let mut seen = HashSet::new();
+            let mut sample = Sample::default();
+            for d in &batch {
+                for_pixels(d, |x, y, _| {
+                    if seen.insert((x, y)) {
+                        let px = pixels.get(x, y);
+                        let k = 1.0 / ONE as f64;
+                        sample.add(px.map(|v| v as f64 * k));
+                    }
+                });
+            }
+            let paint = mixer.paint(sample, n, batch[0].pressure);
+            for d in &batch {
+                let opacity = d.shape.opacity();
+                for_pixels(d, |x, y, cov| {
+                    let key = key_of(x, y);
+                    originals.entry(key).or_insert_with(|| pixels.tiles.get(&key).cloned());
+                    changed.insert(key);
+                    let tile = pixels.tile_mut(key);
+                    let i = (y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize;
+                    tile.0[i] = lay(tile.0[i], paint, (cov * opacity) as f64, preserve_opacity);
+                });
+            }
+        }
+        let keys: Vec<Key> = changed.into_iter().collect();
+        self.touched.extend(keys.iter().copied());
+        keys
+    }
+}
+
+/// Пиксели под отпечатком и покрытие в каждом.
+fn for_pixels(d: &Pending, mut f: impl FnMut(i32, i32, f32)) {
+    let reach = d.shape.outer() + 1.0;
+    let (x0, x1) = ((d.x - reach).floor() as i32, (d.x + reach).ceil() as i32);
+    let (y0, y1) = ((d.y - reach).floor() as i32, (d.y + reach).ceil() as i32);
+    for y in y0..=y1 {
+        for x in x0..=x1 {
+            let (cx, cy) = (x as f32 + 0.5 - d.x, y as f32 + 0.5 - d.y);
+            let cov = d.shape.coverage((cx * cx + cy * cy).sqrt());
+            if cov > 0.0 {
+                f(x, y, cov);
+            }
+        }
+    }
+}
+
+/// Пиксель сдвигается к краске `paint` (предумноженной, 0..=1) на долю `a`.
+fn lay(px: Px, paint: [f64; 4], a: f64, preserve_opacity: bool) -> Px {
+    let k = ONE as f64;
+    let mut out = [0.0f64; 4];
+    for i in 0..4 {
+        let v = px[i] as f64 / k;
+        out[i] = v + (paint[i] - v) * a;
+    }
+    if preserve_opacity {
+        // непрозрачность остаётся прежней, меняется только цвет
+        let old = px[3] as f64 / k;
+        let s = if out[3] > 1e-9 { old / out[3] } else { 0.0 };
+        for v in out.iter_mut().take(3) {
+            *v *= s;
+        }
+        out[3] = old;
+    }
+    let q = |v: f64| (v.clamp(0.0, 1.0) * k + 0.5) as u16;
+    let a = q(out[3]);
+    [q(out[0]).min(a), q(out[1]).min(a), q(out[2]).min(a), a]
 }

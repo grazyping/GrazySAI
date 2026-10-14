@@ -8,6 +8,7 @@ mod virtual_pen;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use paint_core::tile::{Key, TILE};
+use paint_core::mix::MixParams;
 use paint_core::{
     BlendMode, BrushParams, Document, InputPoint, Layer, LiveStroke, Stabilizer, Stroke,
 };
@@ -101,19 +102,23 @@ fn brush_tools() -> Vec<BrushTool> {
         BrushTool {
             name: "Кисть",
             icon: "brush",
-            params: b(15.0, 0.75, 1.0),
+            params: BrushParams { mix: Some(MixParams::new(0.0, 0.0, 0.5)), ..b(15.0, 0.75, 1.0) },
             enabled: true,
         },
         BrushTool {
             name: "Акварель",
             icon: "water",
-            params: b(30.0, 0.5, 0.8),
+            params: BrushParams { mix: Some(MixParams::new(0.3, 0.3, 0.5)), ..b(30.0, 0.5, 0.8) },
             enabled: true,
         },
         BrushTool {
             name: "Маркер",
             icon: "marker",
-            params: b(6.0, 0.9, 1.0),
+            // у Маркера в SAI нет порога размытия
+            params: BrushParams {
+                mix: Some(MixParams { blur_pressure: 0.0, ..MixParams::new(0.0, 0.0, 0.5) }),
+                ..b(6.0, 0.9, 1.0)
+            },
             enabled: true,
         },
         BrushTool {
@@ -238,7 +243,8 @@ impl PaintApp {
             fit_pending: true,
             tool: Tool::Brush,
             brushes: brush_tools(),
-            brush: 0,
+            // PAINT_BRUSH — номер кисти в сетке при запуске (для проверок виртуальным пером)
+            brush: std::env::var("PAINT_BRUSH").ok().and_then(|v| v.parse().ok()).filter(|&i: &usize| i < ERASER).unwrap_or(0),
             hsv: [0.0, 0.0, 0.08],
             back: Color32::WHITE,
             stabilizer: paint_core::stabilizer::Level::Plain(3),
@@ -1119,6 +1125,24 @@ impl PaintApp {
                 }
             },
         );
+        if let Some(mix) = brush.mix.as_mut() {
+            // Смешивание с холстом (как у Кисти, Акварели и Маркера в SAI).
+            let pct = |ui: &mut egui::Ui, label: &str, v: &mut f32| {
+                sai_ui::row(ui, label, lw, true, |ui| {
+                    let mut t = *v * 100.0;
+                    let text = format!("{:.0}", t);
+                    if sai_ui::bar(ui, &mut t, 0.0, 100.0, text, w, true).changed() {
+                        *v = (t.round() / 100.0).clamp(0.0, 1.0);
+                    }
+                });
+            };
+            pct(ui, "Смешивание", &mut mix.blending);
+            pct(ui, "Разбавление", &mut mix.dilution);
+            pct(ui, "Стойкость", &mut mix.persistence);
+            if mix.blend_by_pressure {
+                pct(ui, "Порог размыт.", &mut mix.blur_pressure);
+            }
+        }
         if sai_ui::section(ui, "sec_form", "Форма") {
             ui.weak("   Формы кисти — позже");
         }
@@ -1137,6 +1161,9 @@ impl PaintApp {
         ui.horizontal(|ui| {
             ui.checkbox(&mut brush.size_by_pressure, "Размер");
             ui.checkbox(&mut brush.density_by_pressure, "Плотн.");
+            if let Some(mix) = brush.mix.as_mut() {
+                ui.checkbox(&mut mix.blend_by_pressure, "Смеш.");
+            }
         });
         // Сетка размеров: кружок и число, 5 в ряд.
         let mut pick = None;

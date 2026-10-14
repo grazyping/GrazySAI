@@ -68,7 +68,7 @@ fn tables() -> &'static Tables {
 }
 
 /// Приближённая степень образца (`FUN_1400e7e98`): x^p через разложение логарифма.
-fn approx_pow(x: f64, p: f64) -> f64 {
+pub(crate) fn approx_pow(x: f64, p: f64) -> f64 {
     let d = x - 1.0;
     let d2 = d * d;
     let d4 = d2 * d2;

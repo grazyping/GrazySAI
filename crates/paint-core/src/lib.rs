@@ -7,6 +7,7 @@ pub mod dab;
 pub mod document;
 pub mod io;
 pub mod layer;
+pub mod mix;
 pub mod pixel;
 pub mod resample;
 pub mod stabilizer;

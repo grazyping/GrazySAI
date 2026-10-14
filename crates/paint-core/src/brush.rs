@@ -25,6 +25,8 @@ pub struct BrushParams {
     /// Sharpness из раздела Miscellaneous, 0..=1 (у карандаша по умолчанию 0): от неё зависит
     /// ширина края тонкой кисти.
     pub sharpness: f32,
+    /// Смешивание с холстом (Кисть, Акварель, Маркер); `None` — краска не смешивается.
+    pub mix: Option<crate::mix::MixParams>,
 }
 
 impl Default for BrushParams {
@@ -41,6 +43,7 @@ impl Default for BrushParams {
             erase: false,
             linework: false,
             sharpness: 0.0,
+            mix: None,
         }
     }
 }
