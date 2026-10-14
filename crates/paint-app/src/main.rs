@@ -4,6 +4,7 @@
 
 mod pen;
 mod sai_ui;
+mod settings;
 mod virtual_pen;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
@@ -515,6 +516,12 @@ struct PaintApp {
     /// способ пересэмплирования, привязка.
     canvas_dialog: Option<CanvasDialog>,
     filter: Option<FilterDialog>,
+    /// Восстановление после сбоя: когда последний раз писали копию; копия пишется сейчас;
+    /// найдена копия прошлого запуска (путь копии и исходного файла).
+    recovery_at: Instant,
+    recovery_busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    recovery_dirty: bool,
+    recovery_found: Option<(PathBuf, String)>,
     /// Поворот вида (радианы) и зеркало вида по горизонтали — только показ, рисунок не меняется.
     view_angle: f32,
     view_flip: bool,
@@ -579,6 +586,10 @@ impl PaintApp {
             sel_stroke: None,
             canvas_dialog: None,
             filter: None,
+            recovery_at: Instant::now(),
+            recovery_busy: Default::default(),
+            recovery_dirty: false,
+            recovery_found: None,
             view_angle: 0.0,
             view_flip: false,
             sel_outline: Vec::new(),
@@ -586,6 +597,11 @@ impl PaintApp {
             show_selection: true,
             wand_tolerance: 10,
         };
+        app.load_settings();
+        app.recovery_found = recovery_files().filter(|(f, _)| f.exists()).map(|(f, info)| {
+            let original = std::fs::read_to_string(&info).unwrap_or_default();
+            (f, original.trim().to_string())
+        });
         match path {
             Some(p) => app.open(p),
             None => app.invalidate_all(),
@@ -634,6 +650,127 @@ impl PaintApp {
             }
         }
         app
+    }
+
+    /// Настройки прошлого запуска: кисти, цвета, сглаживание, допуск палочки.
+    fn load_settings(&mut self) {
+        let s = settings::Settings::load();
+        for (i, b) in self.brushes.iter_mut().enumerate() {
+            let p = &mut b.params;
+            let k = |name: &str| format!("brush.{i}.{name}");
+            s.read_f32(&k("size"), &mut p.size);
+            s.read_f32(&k("min_size"), &mut p.min_size);
+            s.read_f32(&k("density"), &mut p.density);
+            s.read_f32(&k("min_density"), &mut p.min_density);
+            s.read_f32(&k("hardness"), &mut p.hardness);
+            s.read_f32(&k("sharpness"), &mut p.sharpness);
+            s.read_f32(&k("amplify"), &mut p.amplify);
+            s.read_bool(&k("size_by_pressure"), &mut p.size_by_pressure);
+            s.read_bool(&k("density_by_pressure"), &mut p.density_by_pressure);
+            s.read_bool(&k("ver1_density"), &mut p.ver1_density);
+            if let Some(m) = p.mix.as_mut() {
+                s.read_f32(&k("blending"), &mut m.blending);
+                s.read_f32(&k("dilution"), &mut m.dilution);
+                s.read_f32(&k("persistence"), &mut m.persistence);
+                s.read_f32(&k("blur_pressure"), &mut m.blur_pressure);
+                s.read_bool(&k("blend_by_pressure"), &mut m.blend_by_pressure);
+            }
+            p.size = p.size.clamp(0.1, 5000.0);
+        }
+        if let Some(i) = s.f32("brush").map(|v| v as usize).filter(|&i| i < self.brushes.len()) {
+            if std::env::var_os("PAINT_BRUSH").is_none() {
+                self.brush = i;
+            }
+        }
+        for c in 0..3 {
+            s.read_f32(&format!("color.{c}"), &mut self.hsv[c]);
+        }
+        if let (Some(r), Some(g), Some(b)) = (s.f32("back.r"), s.f32("back.g"), s.f32("back.b")) {
+            self.back = Color32::from_rgb(r as u8, g as u8, b as u8);
+        }
+        if let Some(l) = s.str("stabilizer") {
+            if let Some(v) = paint_core::stabilizer::Level::all().into_iter().find(|v| v.label() == l) {
+                self.stabilizer = v;
+            }
+        }
+        if let Some(t) = s.f32("wand_tolerance") {
+            self.wand_tolerance = t.clamp(0.0, 255.0) as u8;
+        }
+        if let Some(p) = s.str("open_path") {
+            if self.open_path.is_empty() {
+                self.open_path = p.to_string();
+            }
+        }
+    }
+
+    /// Раз в 3 минуты, если были правки, записать копию холста в фоне (`recovery.sai2`).
+    fn autosave(&mut self) {
+        use std::sync::atomic::Ordering;
+        if self.dirty {
+            self.recovery_dirty = true;
+        }
+        // PAINT_AUTOSAVE_SECS — другой промежуток (для проверок)
+        let every = std::env::var("PAINT_AUTOSAVE_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180);
+        if !self.recovery_dirty || self.recovery_at.elapsed() < Duration::from_secs(every) {
+            return;
+        }
+        if self.live.is_some() || self.transform.is_some() || self.filter.is_some() || self.move_drag.is_some() {
+            return;
+        }
+        let Some((file, info)) = recovery_files() else { return };
+        if self.recovery_busy.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        self.recovery_at = Instant::now();
+        self.recovery_dirty = false;
+        let doc = self.doc.snapshot();
+        let original = self.file.as_ref().map(|f| f.display().to_string()).unwrap_or_default();
+        let busy = self.recovery_busy.clone();
+        std::thread::spawn(move || {
+            if let Some(d) = file.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            if paint_formats::sai2_write::save(&doc, &file).is_ok() {
+                let _ = std::fs::write(&info, original);
+            }
+            busy.store(false, Ordering::SeqCst);
+        });
+    }
+
+    fn save_settings(&self) {
+        let mut s = settings::Settings::load();
+        for (i, b) in self.brushes.iter().enumerate() {
+            let p = &b.params;
+            let k = |name: &str| format!("brush.{i}.{name}");
+            s.set(&k("size"), p.size);
+            s.set(&k("min_size"), p.min_size);
+            s.set(&k("density"), p.density);
+            s.set(&k("min_density"), p.min_density);
+            s.set(&k("hardness"), p.hardness);
+            s.set(&k("sharpness"), p.sharpness);
+            s.set(&k("amplify"), p.amplify);
+            s.set(&k("size_by_pressure"), p.size_by_pressure as u8);
+            s.set(&k("density_by_pressure"), p.density_by_pressure as u8);
+            s.set(&k("ver1_density"), p.ver1_density as u8);
+            if let Some(m) = &p.mix {
+                s.set(&k("blending"), m.blending);
+                s.set(&k("dilution"), m.dilution);
+                s.set(&k("persistence"), m.persistence);
+                s.set(&k("blur_pressure"), m.blur_pressure);
+                s.set(&k("blend_by_pressure"), m.blend_by_pressure as u8);
+            }
+        }
+        s.set("brush", self.brush);
+        for c in 0..3 {
+            s.set(&format!("color.{c}"), self.hsv[c]);
+        }
+        s.set("back.r", self.back.r());
+        s.set("back.g", self.back.g());
+        s.set("back.b", self.back.b());
+        s.set("stabilizer", self.stabilizer.label());
+        s.set("wand_tolerance", self.wand_tolerance);
+        s.set("open_path", &self.open_path);
+        s.save();
     }
 
     fn color(&self) -> Color32 {
@@ -2931,6 +3068,46 @@ impl PaintApp {
 
 impl PaintApp {
     fn dialogs(&mut self, ctx: &egui::Context) {
+        let mut answer = None;
+        if let Some((_, original)) = &self.recovery_found {
+            egui::Window::new("Восстановление работы").collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.label("Прошлый сеанс закончился без сохранения.");
+                if !original.is_empty() {
+                    ui.label(format!("Файл: {original}"));
+                }
+                ui.label("Есть копия холста, записанная перед сбоем.");
+                ui.horizontal(|ui| {
+                    if ui.button("Восстановить").clicked() {
+                        answer = Some(true);
+                    }
+                    if ui.button("Удалить копию").clicked() {
+                        answer = Some(false);
+                    }
+                });
+            });
+        }
+        if let Some(restore) = answer {
+            if let Some((file, original)) = self.recovery_found.take() {
+                if restore {
+                    match paint_formats::sai2_doc::load(&file) {
+                        Ok(loaded) => {
+                            self.doc = loaded.document;
+                            self.file = (!original.is_empty()).then(|| PathBuf::from(&original));
+                            self.dirty = true;
+                            self.selected = first_raster(&self.doc.layers).unwrap_or_default();
+                            self.fit_pending = true;
+                            self.invalidate_all();
+                            self.status = String::from("Работа восстановлена — сохраните её (Ctrl+S)");
+                        }
+                        Err(e) => self.status = format!("Не удалось восстановить: {e}"),
+                    }
+                }
+                if let Some((f, info)) = recovery_files() {
+                    let _ = std::fs::remove_file(f);
+                    let _ = std::fs::remove_file(info);
+                }
+            }
+        }
         let mut finish = None;
         if let Some(f) = self.filter.as_mut() {
             let title = match f.kind {
@@ -3266,9 +3443,25 @@ fn first_raster(layers: &[Layer]) -> Option<Vec<usize>> {
     None
 }
 
+/// Файлы восстановления: копия холста и путь исходного файла.
+fn recovery_files() -> Option<(PathBuf, PathBuf)> {
+    settings::dir().map(|d| (d.join("recovery.sai2"), d.join("recovery.txt")))
+}
+
 impl eframe::App for PaintApp {
     /// Для проверок: `PAINT_EXPORT_ON_EXIT=файл.png` — сохранить холст и вывести сводку по перу.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.save_settings();
+        // нормальный выход: копия для восстановления не нужна (если её не предлагали восстановить)
+        if self.recovery_found.is_none() {
+            if let Some((file, info)) = recovery_files() {
+                while self.recovery_busy.load(std::sync::atomic::Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                let _ = std::fs::remove_file(file);
+                let _ = std::fs::remove_file(info);
+            }
+        }
         if let Ok(out) = std::env::var("PAINT_EXPORT_ON_EXIT") {
             let r = paint_core::io::save_png(std::path::Path::new(&out), self.doc.width, self.doc.height, &self.doc.flatten());
             eprintln!("export: {} -> {out}", if r.is_ok() { "saved" } else { "failed" });
@@ -3327,6 +3520,7 @@ impl eframe::App for PaintApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.autosave();
         let dropped = ctx.input(|i| i.raw.dropped_files.iter().find_map(|f| f.path.clone()));
         if let Some(path) = dropped {
             self.open_path = path.display().to_string();

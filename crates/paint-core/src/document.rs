@@ -66,6 +66,19 @@ impl Document {
         }
     }
 
+    /// Копия холста без истории (для записи в фоне).
+    pub fn snapshot(&self) -> Document {
+        Document {
+            width: self.width,
+            height: self.height,
+            layers: self.layers.clone(),
+            background: self.background,
+            selection: self.selection.clone(),
+            undo: Vec::new(),
+            redo: Vec::new(),
+        }
+    }
+
     /// Документ из картинки RGBA по 8 бит (один слой; фон — белый, как у нового холста).
     pub fn from_rgba(width: u32, height: u32, rgba: &[u8]) -> Self {
         let mut doc = Document::new(width, height);
