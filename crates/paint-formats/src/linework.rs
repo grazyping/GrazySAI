@@ -234,6 +234,88 @@ pub fn render_shapes(shapes: &[Shape]) -> paint_core::tile::ColorMap {
     l.pixels
 }
 
+/// Вид фигуры инструмента фигур.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShapeKind {
+    Rectangle,
+    Ellipse,
+    Triangle,
+}
+
+/// Кривые пустого слоя фигур.
+pub fn empty_shapes() -> VectorData {
+    VectorData { kind: *b"shap", raw: sai2_vector::write(&[], false) }
+}
+
+/// Добавить фигуру в рамке (x0, y0)–(x1, y1) цветом `rgb` поверх остальных — как шаблоны SAI:
+/// прямоугольник и треугольник — острые узлы от центра, эллипс — четыре узла «Cubic Bezier»
+/// с ручками 0,5523 полуоси.
+pub fn append_shape(raw: &[u8], kind: ShapeKind, x0: f64, y0: f64, x1: f64, y1: f64, rgb: [u8; 3]) -> io::Result<Vec<u8>> {
+    let mut shapes = sai2_vector::parse(raw, false)?;
+    let next_shape = shapes.iter().map(|s| s.id).max().unwrap_or(0) + 1;
+    let next_path = shapes.iter().flat_map(|s| &s.paths).map(|p| p.id).max().unwrap_or(0) + 1;
+    let mut next_cp = shapes.iter().flat_map(|s| &s.paths).flat_map(|p| &p.points).map(|c| c.id).max().unwrap_or(0) + 1;
+    for s in shapes.iter_mut() {
+        if s.next == 0 {
+            s.next = next_shape;
+        }
+        for p in s.paths.iter_mut() {
+            if p.next_in_layer == 0 {
+                p.next_in_layer = next_path;
+            }
+        }
+    }
+    let (cx, cy) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+    let (rx, ry) = ((x1 - x0).abs() / 2.0, (y1 - y0).abs() / 2.0);
+    let mut cp = |point: [f64; 2], hin: [f64; 2], hout: [f64; 2], pointed: bool| {
+        let id = next_cp;
+        next_cp += 1;
+        ControlPoint { id, point, handle_in: hin, handle_out: hout, weight: 0.0, second: 0.0, pointed, rest: [0; 3], pressure: Vec::new() }
+    };
+    let sharp = |p: [f64; 2]| (p, p, p);
+    let (curve, points) = match kind {
+        ShapeKind::Rectangle => (
+            CurveType::Normal,
+            [[-rx, -ry], [rx, -ry], [rx, ry], [-rx, ry]].map(sharp).into_iter().map(|(p, a, b)| cp(p, a, b, true)).collect(),
+        ),
+        ShapeKind::Triangle => (
+            CurveType::Normal,
+            [[0.0, -ry], [rx, ry], [-rx, ry]].map(sharp).into_iter().map(|(p, a, b)| cp(p, a, b, true)).collect(),
+        ),
+        ShapeKind::Ellipse => {
+            const K: f64 = 0.552_284_749_830_793_6;
+            let (kx, ky) = (rx * K, ry * K);
+            (
+                CurveType::Bezier,
+                vec![
+                    cp([0.0, -ry], [-kx, -ry], [kx, -ry], false),
+                    cp([rx, 0.0], [rx, -ky], [rx, ky], false),
+                    cp([0.0, ry], [kx, ry], [-kx, ry], false),
+                    cp([-rx, 0.0], [-rx, ky], [-rx, -ky], false),
+                ],
+            )
+        }
+    };
+    shapes.push(Shape {
+        id: next_shape,
+        next: 0,
+        style: Style::Fill { color: scol(rgb) },
+        paths: vec![Path { id: next_path, next_in_layer: 0, offset: [cx, cy], curve, closed: true, rest: [0; 2], points }],
+    });
+    Ok(sai2_vector::write(&shapes, false))
+}
+
+/// Пиксели слоя по любым кривым (контур или фигуры).
+pub fn render_layer_shapes(shapes: &[Shape], linework: bool) -> paint_core::tile::ColorMap {
+    let mut l = Layer::new("");
+    if linework {
+        crate::sai2_doc::render_linework(&mut l, shapes);
+    } else {
+        crate::sai2_doc::render_shapes(&mut l.pixels, shapes);
+    }
+    l.pixels
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,6 +338,26 @@ mod tests {
         let px = render(&layer).unwrap();
         let p = paint_core::pixel::to_rgba8(px.get(60, (20.0 + 5.0f64.sin() * 5.0).round() as i32));
         assert!(p[3] > 200 && p[0] > 150 && p[1] < 80, "линия нарисована цветом стиля: {p:?}");
+    }
+
+    #[test]
+    fn shapes_follow_the_sai_templates() {
+        let mut raw = empty_shapes().raw;
+        raw = append_shape(&raw, ShapeKind::Rectangle, 10.0, 10.0, 50.0, 30.0, [255, 0, 0]).unwrap();
+        raw = append_shape(&raw, ShapeKind::Ellipse, 60.0, 10.0, 157.0, 104.0, [0, 0, 255]).unwrap();
+        raw = append_shape(&raw, ShapeKind::Triangle, 10.0, 40.0, 49.0, 75.5, [0, 255, 0]).unwrap();
+        let shapes = sai2_vector::parse(&raw, false).unwrap();
+        assert_eq!(shapes.len(), 3);
+        let e = &shapes[1].paths[0];
+        assert_eq!(e.curve, CurveType::Bezier);
+        assert!((e.points[0].handle_out[0] - 26.786).abs() < 0.01, "ручка эллипса как у SAI");
+        assert_eq!(shapes[2].paths[0].points[0].point, [0.0, -17.75]);
+        let px = render_layer_shapes(&shapes, false);
+        let at = |x, y| paint_core::pixel::to_rgba8(px.get(x, y));
+        assert_eq!(at(30, 20), [255, 0, 0, 255]);
+        assert_eq!(at(108, 57), [0, 0, 255, 255]);
+        assert_eq!(at(29, 65), [0, 255, 0, 255]);
+        assert_eq!(at(55, 20)[3], 0);
     }
 
     #[test]

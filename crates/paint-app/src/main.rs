@@ -539,6 +539,9 @@ struct PaintApp {
     line_stroke: Option<Vec<paint_core::vectorize::StrokePoint>>,
     line_tool: LineTool,
     line_edit: Option<LineEdit>,
+    /// Вид фигуры и фигура, которую сейчас тянут (углы рамки на холсте).
+    shape_kind: paint_formats::linework::ShapeKind,
+    shape_drag: Option<(Vec2, Vec2)>,
     /// Диалог «Изменить разрешение» / «Изменить размер»: новые размеры, сохранять пропорции,
     /// способ пересэмплирования, привязка.
     canvas_dialog: Option<CanvasDialog>,
@@ -614,6 +617,8 @@ impl PaintApp {
             line_stroke: None,
             line_tool: LineTool::Pen,
             line_edit: None,
+            shape_kind: paint_formats::linework::ShapeKind::Rectangle,
+            shape_drag: None,
             canvas_dialog: None,
             filter: None,
             recovery_at: Instant::now(),
@@ -666,9 +671,19 @@ impl PaintApp {
             Ok("pressure") => LineTool::Pressure,
             _ => LineTool::Pen,
         };
-        // PAINT_LINEWORK — начать на новом слое контура (для проверок пера с кривыми)
-        if std::env::var_os("PAINT_LINEWORK").is_some() {
-            app.add_linework_layer();
+        // PAINT_LINEWORK=1 — начать на новом слое контура; =shapes — на новом слое фигур (=rect|ellipse|triangle)
+        match std::env::var("PAINT_LINEWORK").as_deref() {
+            Ok("shapes") | Ok("rect") => app.add_shape_layer(),
+            Ok("ellipse") => {
+                app.add_shape_layer();
+                app.shape_kind = paint_formats::linework::ShapeKind::Ellipse;
+            }
+            Ok("triangle") => {
+                app.add_shape_layer();
+                app.shape_kind = paint_formats::linework::ShapeKind::Triangle;
+            }
+            Ok(_) => app.add_linework_layer(),
+            Err(_) => {}
         }
         // PAINT_FILTER=hs|bc|gauss — открыть фильтр при запуске (для проверок)
         match std::env::var("PAINT_FILTER").as_deref() {
@@ -1067,6 +1082,14 @@ impl PaintApp {
 
     fn begin_stroke(&mut self, p: InputPoint, eraser_end: bool) {
         self.stroke_by_touch = self.touch_down;
+        let shap = self.doc.layer(&self.selected).is_some_and(|l| {
+            l.visible && !l.lock_paint && !l.lock_all && l.vector.as_ref().is_some_and(|v| &v.kind == b"shap")
+        });
+        if shap && self.filter.is_none() {
+            // слой фигур: протяжка задаёт рамку фигуры
+            self.shape_drag = Some((Vec2::new(p.x, p.y), Vec2::new(p.x, p.y)));
+            return;
+        }
         let liwk = self.doc.layer(&self.selected).is_some_and(|l| {
             l.visible && !l.lock_paint && !l.lock_all && l.vector.as_ref().is_some_and(|v| &v.kind == b"liwk")
         });
@@ -1146,6 +1169,10 @@ impl PaintApp {
     }
 
     fn continue_stroke(&mut self, p: InputPoint) {
+        if let Some((_, b)) = self.shape_drag.as_mut() {
+            *b = Vec2::new(p.x, p.y);
+            return;
+        }
         if self.line_edit.is_some() {
             let tool = if self.pen.lock().is_ok_and(|s| s.eraser) { LineTool::Eraser } else { self.line_tool };
             self.line_apply(tool, p);
@@ -1172,6 +1199,10 @@ impl PaintApp {
     }
 
     fn end_stroke(&mut self) {
+        if let Some((a, b)) = self.shape_drag.take() {
+            self.commit_shape(a, b);
+            return;
+        }
         if let Some(e) = self.line_edit.take() {
             // показ шёл без истории — вернуть исходные пиксели и записать правку одной записью
             let keys = self.doc.set_layer_pixels(&e.path, e.orig_pixels);
@@ -1265,6 +1296,49 @@ impl PaintApp {
             let keys = self.doc.set_layer_pixels(&path, pixels);
             self.invalidate(keys);
         }
+    }
+
+    /// Фигура в рамке a–b на слое фигур (одна запись истории).
+    fn commit_shape(&mut self, a: Vec2, b: Vec2) {
+        if (a.x - b.x).abs() < 1.0 || (a.y - b.y).abs() < 1.0 {
+            return;
+        }
+        let path = self.selected.clone();
+        let Some(layer) = self.doc.layer(&path) else { return };
+        let Some(v) = &layer.vector else { return };
+        let c = self.color();
+        let (x0, x1) = (a.x.min(b.x) as f64, a.x.max(b.x) as f64);
+        let (y0, y1) = (a.y.min(b.y) as f64, a.y.max(b.y) as f64);
+        let raw = match paint_formats::linework::append_shape(&v.raw, self.shape_kind, x0, y0, x1, y1, [c.r(), c.g(), c.b()]) {
+            Ok(r) => r,
+            Err(e) => {
+                self.status = format!("Не удалось добавить фигуру: {e}");
+                return;
+            }
+        };
+        match paint_formats::sai2_vector::parse(&raw, false) {
+            Ok(shapes) => {
+                let pixels = paint_formats::linework::render_layer_shapes(&shapes, false);
+                let keys = self.doc.set_vector_layer(&path, paint_core::layer::VectorData { kind: *b"shap", raw }, pixels);
+                self.invalidate(keys);
+                self.thumbs.clear();
+                self.dirty = true;
+            }
+            Err(e) => self.status = format!("Не удалось добавить фигуру: {e}"),
+        }
+    }
+
+    /// Новый слой фигур над текущим.
+    fn add_shape_layer(&mut self) {
+        let mut path = self.selected.clone();
+        let index = path.pop().map_or(0, |i| i + 1);
+        let n = count_layers(&self.doc.layers) + 1;
+        let mut layer = Layer::new(&format!("Фигуры{n}"));
+        layer.vector = Some(paint_formats::linework::empty_shapes());
+        path.push(index);
+        let keys = self.doc.insert_layer(&path, layer);
+        self.selected = path;
+        self.after_structure(keys);
     }
 
     /// Штрих пера на слое контура → кривая, добавленная к кривым слоя (одна запись истории).
@@ -1820,6 +1894,10 @@ impl PaintApp {
                     self.add_linework_layer();
                     ui.close_menu();
                 }
+                if ui.button("Новый слой фигур").clicked() {
+                    self.add_shape_layer();
+                    ui.close_menu();
+                }
                 if ui.button("Новая папка").clicked() {
                     self.add_layer(true);
                     ui.close_menu();
@@ -2308,6 +2386,19 @@ impl PaintApp {
             self.finish_transform(apply);
         } else if self.transform.as_ref().is_some_and(|t| t.dirty && t.drag.is_none()) {
             self.update_transform(false);
+        }
+        if self.doc.layer(&self.selected).is_some_and(|l| l.vector.as_ref().is_some_and(|v| &v.kind == b"shap")) {
+            use paint_formats::linework::ShapeKind;
+            ui.label("Фигура (протяните на холсте):");
+            ui.horizontal(|ui| {
+                for (k, name) in [(ShapeKind::Rectangle, "Прямоугольник"), (ShapeKind::Ellipse, "Эллипс"), (ShapeKind::Triangle, "Треугольник")] {
+                    if ui.selectable_label(self.shape_kind == k, name).clicked() {
+                        self.shape_kind = k;
+                        self.tool = Tool::Brush;
+                    }
+                }
+            });
+            ui.add_space(4.0);
         }
         if self.doc.layer(&self.selected).is_some_and(|l| l.vector.as_ref().is_some_and(|v| &v.kind == b"liwk")) {
             ui.label("Инструменты контура:");
@@ -3181,7 +3272,7 @@ impl PaintApp {
                 if let Some(pos) = pointer {
                     self.begin_stroke(point(pos, self.zoom, self.offset), eraser_end);
                 }
-            } else if self.live.is_some() || self.sel_stroke.is_some() || self.line_stroke.is_some() || self.line_edit.is_some() {
+            } else if self.live.is_some() || self.sel_stroke.is_some() || self.line_stroke.is_some() || self.line_edit.is_some() || self.shape_drag.is_some() {
                 for pos in moves {
                     self.continue_stroke(point(pos, self.zoom, self.offset));
                 }
@@ -3300,6 +3391,26 @@ impl PaintApp {
             if line.len() > 1 {
                 painter.add(egui::Shape::line(line, egui::Stroke::new(width, Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 160))));
             }
+        }
+        // Фигура, которую тянут на слое фигур.
+        if let Some((a, b)) = self.shape_drag {
+            use paint_formats::linework::ShapeKind;
+            let (x0, x1, y0, y1) = (a.x.min(b.x), a.x.max(b.x), a.y.min(b.y), a.y.max(b.y));
+            let pts: Vec<Pos2> = match self.shape_kind {
+                ShapeKind::Rectangle => vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)],
+                ShapeKind::Triangle => vec![((x0 + x1) / 2.0, y0), (x1, y1), (x0, y1), ((x0 + x1) / 2.0, y0)],
+                ShapeKind::Ellipse => (0..=48)
+                    .map(|i| {
+                        let t = i as f32 / 48.0 * std::f32::consts::TAU;
+                        ((x0 + x1) / 2.0 + (x1 - x0) / 2.0 * t.cos(), (y0 + y1) / 2.0 + (y1 - y0) / 2.0 * t.sin())
+                    })
+                    .collect(),
+            }
+            .into_iter()
+            .map(|(x, y)| to_screen(x, y))
+            .collect();
+            painter.add(egui::Shape::line(pts.clone(), egui::Stroke::new(1.0_f32, Color32::WHITE)));
+            painter.extend(egui::Shape::dashed_line(&pts, egui::Stroke::new(1.0_f32, Color32::BLACK), 4.0, 4.0));
         }
         // Рамка трансформации с ручками.
         if let Some(t) = &self.transform {
