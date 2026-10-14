@@ -1,0 +1,7 @@
+[package]
+name = "virtual-tablet"
+edition.workspace = true
+version.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"

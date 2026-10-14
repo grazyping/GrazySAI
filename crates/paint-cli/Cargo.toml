@@ -1,0 +1,8 @@
+[package]
+name = "paint-cli"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+paint-core = { path = "../paint-core" }
+paint-formats = { path = "../paint-formats" }

@@ -1,0 +1,7 @@
+[package]
+name = "paint-core"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+png = "0.17"

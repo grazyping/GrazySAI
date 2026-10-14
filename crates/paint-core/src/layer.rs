@@ -1,0 +1,102 @@
+//! Слой: цветные плитки плюс свойства.
+
+use crate::blend::BlendMode;
+use crate::pixel::{Px, ONE};
+use crate::stroke::Stroke;
+use crate::tile::{ColorMap, Key, Tile};
+
+/// Прежнее содержимое плиток, затронутых операцией, — этого достаточно для отмены.
+pub type TileBackup = Vec<(Key, Option<Tile<Px>>)>;
+
+#[derive(Clone, Debug)]
+pub struct Layer {
+    pub name: String,
+    pub pixels: ColorMap,
+    pub opacity: f32,
+    pub mode: BlendMode,
+    pub visible: bool,
+    /// «Сохранять непрозрачность»: красить можно только там, где уже есть краска.
+    pub preserve_opacity: bool,
+    /// Обтравка: слой виден только в пределах слоя, лежащего под ним.
+    pub clipping: bool,
+    /// Папка: вложенные слои снизу вверх. У обычного слоя — `None`.
+    pub children: Option<Vec<Layer>>,
+    /// Папка «насквозь»: вложенные слои накладываются прямо на то, что под папкой.
+    pub pass_through: bool,
+}
+
+impl Layer {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            pixels: ColorMap::new(),
+            opacity: 1.0,
+            mode: BlendMode::Normal,
+            visible: true,
+            preserve_opacity: false,
+            clipping: false,
+            children: None,
+            pass_through: false,
+        }
+    }
+
+    pub fn folder(name: &str, children: Vec<Layer>) -> Self {
+        Self { children: Some(children), ..Self::new(name) }
+    }
+
+    /// Накладывает покрытие штриха на одну плитку слоя.
+    pub fn apply_mask_tile(&mut self, key: Key, mask: &Tile<u16>, erase: bool, rgb: [u8; 3]) {
+        let color = rgb.map(|c| (c as u32 * ONE + 127) / 255);
+        let preserve = self.preserve_opacity;
+        let tile = self.pixels.tile_mut(key);
+        for (px, &m) in tile.0.iter_mut().zip(mask.0.iter()) {
+            if m == 0 {
+                continue;
+            }
+            let m = m as u32;
+            let inv = ONE - m;
+            if erase {
+                for c in px.iter_mut() {
+                    *c = ((*c as u32 * inv + ONE / 2) / ONE) as u16;
+                }
+            } else if preserve {
+                let a = px[3] as u32;
+                for i in 0..3 {
+                    let src = color[i] * a / ONE; // краска с альфой самого пикселя
+                    px[i] = ((src * m + px[i] as u32 * inv + ONE / 2) / ONE) as u16;
+                }
+            } else {
+                for i in 0..3 {
+                    px[i] = ((color[i] * m + px[i] as u32 * inv + ONE / 2) / ONE) as u16;
+                }
+                px[3] = (m + (px[3] as u32 * inv + ONE / 2) / ONE).min(ONE) as u16;
+            }
+        }
+    }
+
+    /// Переносит готовый штрих на слой цветом `rgb`. Возвращает данные для отмены.
+    pub fn apply_stroke(&mut self, stroke: &Stroke, rgb: [u8; 3]) -> TileBackup {
+        let mut backup = Vec::new();
+        for (key, mask) in &stroke.mask.tiles {
+            if mask.0.iter().all(|&m| m == 0) {
+                continue;
+            }
+            backup.push((*key, self.pixels.tiles.get(key).cloned()));
+            self.apply_mask_tile(*key, mask, stroke.params.erase, rgb);
+        }
+        backup
+    }
+
+    /// Возвращает плитки из `backup`; отдаёт данные для повтора.
+    pub fn restore(&mut self, backup: TileBackup) -> TileBackup {
+        let mut redo = Vec::with_capacity(backup.len());
+        for (key, old) in backup {
+            let current = match old {
+                Some(t) => self.pixels.tiles.insert(key, t),
+                None => self.pixels.tiles.remove(&key),
+            };
+            redo.push((key, current));
+        }
+        redo
+    }
+}
