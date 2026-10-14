@@ -86,13 +86,19 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
             match li.kind.as_str() {
                 "norm" => {}
                 "shap" => match read_vector(file, info, li) {
-                    Ok(shapes) => render_shapes(&mut layer.pixels, &shapes),
+                    Ok(shapes) => {
+                        render_shapes(&mut layer.pixels, &shapes);
+                        layer.vector = read_raw(file, info, li);
+                    }
                     Err(e) => {
                         notes.insert(format!("фигуры слоя «{}» не прочитаны: {e}", li.name));
                     }
                 },
                 "liwk" => match read_vector(file, info, li) {
-                    Ok(shapes) => render_linework(&mut layer, &shapes),
+                    Ok(shapes) => {
+                        render_linework(&mut layer, &shapes);
+                        layer.vector = read_raw(file, info, li);
+                    }
                     Err(e) => {
                         notes.insert(format!("контур слоя «{}» не прочитан: {e}", li.name));
                     }
@@ -106,6 +112,18 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
     }
     top_down.reverse();
     Ok(top_down)
+}
+
+/// Сырые байты векторного блока слоя (для записи обратно без изменений).
+fn read_raw(file: &mut File, info: &Sai2Info, li: &LayerInfo) -> Option<paint_core::layer::VectorData> {
+    let e = info.entries.iter().find(|e| e.tag == li.kind.as_bytes() && e.id == li.id)?;
+    if e.len > 1 << 30 {
+        return None;
+    }
+    let mut raw = vec![0u8; e.len as usize];
+    file.seek(SeekFrom::Start(e.offset)).ok()?;
+    file.read_exact(&mut raw).ok()?;
+    Some(paint_core::layer::VectorData { kind: e.tag, raw })
 }
 
 /// Векторный блок слоя контура или фигур (метка блока = вид слоя, номер = слой).

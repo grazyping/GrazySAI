@@ -671,3 +671,16 @@ fn jpeg_and_png_round_trip_through_document() {
     assert_eq!(doc.flatten(), rgba);
     std::fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn vector_layers_are_protected_until_rasterized() {
+    let mut doc = Document::new(20, 20);
+    doc.layers[0].vector = Some(paint_core::layer::VectorData { kind: *b"liwk", raw: vec![1, 2, 3] });
+    assert!(!doc.layers[0].paintable() && !doc.layers[0].movable());
+    let all = paint_core::selection::Selection::all(20, 20);
+    assert!(doc.fill(&[0], &all, [0, 0, 0]).is_empty(), "слой контура не заливается");
+    doc.rasterize_layer(&[0]);
+    assert!(doc.layers[0].vector.is_none() && doc.layers[0].paintable());
+    doc.undo();
+    assert!(doc.layers[0].vector.is_some(), "отмена возвращает кривые");
+}

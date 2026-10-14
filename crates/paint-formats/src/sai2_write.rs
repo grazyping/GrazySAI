@@ -270,7 +270,11 @@ fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4]) -> Vec<u8> {
     d.extend(id.to_le_bytes());
     d.extend(0u32.to_le_bytes());
     d.extend(order.to_le_bytes());
-    d.extend(if l.children.is_some() { b"fold" } else { b"norm" });
+    d.extend(match (&l.children, &l.vector) {
+        (Some(_), _) => b"fold",
+        (None, Some(v)) => &v.kind,
+        _ => b"norm",
+    });
     d.extend([0u8; 8]);
     for v in rect {
         d.extend(v.to_le_bytes());
@@ -318,7 +322,13 @@ pub fn save(doc: &Document, path: &Path) -> io::Result<()> {
         blocks.push((*b"layr", ids[i], layer_record(f, ids[i], count - i as u32, rect)));
     }
     // пиксели слоёв кодируются параллельно, по слою на поток
-    let raster: Vec<(usize, &Layer)> = flat.iter().enumerate().filter(|(_, f)| f.layer.children.is_none()).map(|(i, f)| (i, f.layer)).collect();
+    // слои контура и фигур — своим векторным блоком, без пикселей (как у образца)
+    for (i, f) in flat.iter().enumerate() {
+        if let Some(v) = &f.layer.vector {
+            blocks.push((v.kind, ids[i], v.raw.clone()));
+        }
+    }
+    let raster: Vec<(usize, &Layer)> = flat.iter().enumerate().filter(|(_, f)| f.layer.children.is_none() && f.layer.vector.is_none()).map(|(i, f)| (i, f.layer)).collect();
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
     let next = std::sync::atomic::AtomicUsize::new(0);
     let encoded = std::sync::Mutex::new(vec![Vec::new(); raster.len()]);

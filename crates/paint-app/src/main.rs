@@ -820,7 +820,8 @@ impl PaintApp {
         let started = Instant::now();
         match paint_formats::sai2_doc::load(&path) {
             Ok(loaded) => {
-                self.had_vectors = !loaded.vector_layers.is_empty();
+                // кривые слоёв контура и фигур теперь сохраняются как были
+                self.had_vectors = false;
                 self.doc = loaded.document;
                 self.notes = loaded.warnings;
                 self.status = format!(
@@ -1031,9 +1032,11 @@ impl PaintApp {
             return;
         }
         if !self.can_paint() {
-            self.status = String::from(
-                "Рисовать можно на видимом обычном слое — выберите его в списке справа",
-            );
+            self.status = if self.doc.layer(&self.selected).is_some_and(|l| l.vector.is_some()) {
+                String::from("Это слой контура или фигур: кистью он не правится (как в SAI). «Слой → Растеризовать слой» — сделать обычным")
+            } else {
+                String::from("Рисовать можно на видимом обычном слое без запрета рисования — выберите его в списке справа")
+            };
             return;
         }
         let params = if eraser_end {
@@ -1627,6 +1630,15 @@ impl PaintApp {
                         self.dirty = true;
                         ui.close_menu();
                     }
+                }
+                let is_vec = self.doc.layer(&self.selected).is_some_and(|l| l.vector.is_some());
+                if ui.add_enabled(is_vec, egui::Button::new("Растеризовать слой")).clicked() {
+                    let path = self.selected.clone();
+                    let keys = self.doc.rasterize_layer(&path);
+                    self.invalidate(keys);
+                    self.thumbs.clear();
+                    self.dirty = true;
+                    ui.close_menu();
                 }
                 if ui.button("Яркость в прозрачность").clicked() {
                     let keys = self.doc.luminance_to_alpha(&self.selected.clone());

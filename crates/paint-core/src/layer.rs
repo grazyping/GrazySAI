@@ -8,6 +8,13 @@ use crate::tile::{ColorMap, Key, Tile};
 /// Прежнее содержимое плиток, затронутых операцией, — этого достаточно для отмены.
 pub type TileBackup = Vec<(Key, Option<Tile<Px>>)>;
 
+/// Кривые слоя контура (`liwk`) или фигур (`shap`) — как в файле `.sai2`; пиксели слоя — их вывод.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VectorData {
+    pub kind: [u8; 4],
+    pub raw: Vec<u8>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Layer {
     pub name: String,
@@ -23,6 +30,9 @@ pub struct Layer {
     pub lock_all: bool,
     /// «Источник выбора»: палочка и заливка берут цвет со сведённых слоёв-источников.
     pub selection_source: bool,
+    /// Слой контура или фигур: кривые сохраняются в `.sai2` как были; кистью такой слой не
+    /// правится (как в SAI), для правки — «Растеризовать».
+    pub vector: Option<VectorData>,
     /// Обтравка: слой виден только в пределах слоя, лежащего под ним.
     pub clipping: bool,
     /// Папка: вложенные слои снизу вверх. У обычного слоя — `None`.
@@ -44,6 +54,7 @@ impl Layer {
             lock_move: false,
             lock_all: false,
             selection_source: false,
+            vector: None,
             clipping: false,
             children: None,
             pass_through: false,
@@ -52,12 +63,12 @@ impl Layer {
 
     /// Рисовать на слое можно (нет запрета рисования или «всего»).
     pub fn paintable(&self) -> bool {
-        !self.lock_paint && !self.lock_all
+        !self.lock_paint && !self.lock_all && self.vector.is_none()
     }
 
     /// Двигать и трансформировать слой можно.
     pub fn movable(&self) -> bool {
-        !self.lock_move && !self.lock_all
+        !self.lock_move && !self.lock_all && self.vector.is_none()
     }
 
     pub fn folder(name: &str, children: Vec<Layer>) -> Self {

@@ -61,3 +61,41 @@ fn written_sai2_reads_back_the_same() {
     assert_eq!(flat, doc.flatten());
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// Слои контура и фигур из файлов пользователя переживают «открыть → сохранить → открыть»:
+/// вид слоя и кривые байт в байт, картинка та же.
+#[test]
+fn vector_layers_survive_save() {
+    let dir = std::env::var("SAI2_SAMPLES").map(std::path::PathBuf::from).unwrap_or_else(|_| {
+        std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("SAI2")
+    });
+    for name in ["пинг4.sai2", "пинг5.sai2"] {
+        let path = dir.join(name);
+        if !path.exists() {
+            continue;
+        }
+        let a = paint_formats::sai2_doc::load(&path).unwrap();
+        let out = std::env::temp_dir().join(format!("sosai-vec-{}-{name}", std::process::id()));
+        paint_formats::sai2_write::save(&a.document, &out).unwrap();
+        let b = paint_formats::sai2_doc::load(&out).unwrap();
+        let vec_of = |d: &paint_core::Document| -> Vec<(String, Option<Vec<u8>>)> {
+            fn walk(ls: &[paint_core::Layer], out: &mut Vec<(String, Option<Vec<u8>>)>) {
+                for l in ls {
+                    out.push((l.name.clone(), l.vector.as_ref().map(|v| v.raw.clone())));
+                    if let Some(ch) = &l.children {
+                        walk(ch, out);
+                    }
+                }
+            }
+            let mut out = Vec::new();
+            walk(&d.layers, &mut out);
+            out
+        };
+        let (va, vb) = (vec_of(&a.document), vec_of(&b.document));
+        assert!(va.iter().any(|(_, v)| v.is_some()), "{name}: в файле нет кривых");
+        assert_eq!(va, vb, "{name}: кривые изменились");
+        assert_eq!(a.vector_layers.len(), b.vector_layers.len(), "{name}");
+        assert_eq!(a.document.flatten(), b.document.flatten(), "{name}: картинка изменилась");
+        std::fs::remove_file(out).ok();
+    }
+}

@@ -623,6 +623,29 @@ impl Document {
         keys
     }
 
+    /// Растеризовать слой контура или фигур: кривые отбрасываются, пиксели остаются; отмена —
+    /// одним шагом.
+    pub fn rasterize_layer(&mut self, path: &[usize]) -> Vec<Key> {
+        if self.layer(path).is_none_or(|l| l.vector.is_none()) {
+            return Vec::new();
+        }
+        let mut layers = self.layers.clone();
+        fn at<'a>(ls: &'a mut [Layer], path: &[usize]) -> Option<&'a mut Layer> {
+            let (first, rest) = path.split_first()?;
+            let l = ls.get_mut(*first)?;
+            if rest.is_empty() {
+                Some(l)
+            } else {
+                at(l.children.as_deref_mut()?, rest)
+            }
+        }
+        if let Some(l) = at(&mut layers, path) {
+            l.vector = None;
+        }
+        let selection = self.selection.mask.clone();
+        self.perform(vec![Op::Canvas { width: self.width, height: self.height, layers, selection }])
+    }
+
     /// «Свести всё»: все слои в один обычный слой (фон холста не входит).
     pub fn flatten_layers(&mut self) -> Vec<Key> {
         let mut layer = Layer::new("Слой 1");
