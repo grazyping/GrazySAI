@@ -173,7 +173,7 @@ fn render_linework(layer: &mut Layer, shapes: &[sai2_vector::Shape]) {
             for (q, pr) in sample_path(&nodes, p.closed, &weights, &pps, 0.25) {
                 stroke.add_point(InputPoint { x: q[0] as f32, y: q[1] as f32, pressure: pr as f32 });
             }
-            layer.apply_stroke(&stroke, [rgba[0], rgba[1], rgba[2]]);
+            layer.apply_stroke(&stroke, [rgba[0], rgba[1], rgba[2]], &Default::default());
         }
     }
 }

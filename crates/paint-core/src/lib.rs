@@ -10,6 +10,7 @@ pub mod layer;
 pub mod mix;
 pub mod pixel;
 pub mod resample;
+pub mod selection;
 pub mod stabilizer;
 pub mod stroke;
 pub mod tile;

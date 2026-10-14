@@ -9,7 +9,7 @@ fn dab(doc: &mut Document, path: &[usize], x: f32, y: f32, size: f32, rgb: [u8; 
         s.add_point(InputPoint { x: x + i as f32 * 3.0, y, pressure: 1.0 });
     }
     let layer = doc.layer_mut(path).unwrap();
-    layer.apply_stroke(&s, rgb);
+    layer.apply_stroke(&s, rgb, &Default::default());
 }
 
 #[test]

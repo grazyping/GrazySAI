@@ -243,6 +243,7 @@ impl Stroke {
         pixels: &mut ColorMap,
         rgb: [u8; 3],
         preserve_opacity: bool,
+        sel: &crate::selection::Selection,
         originals: &mut HashMap<Key, Option<Tile<Px>>>,
         finish: bool,
     ) -> Vec<Key> {
@@ -272,11 +273,16 @@ impl Stroke {
             let paint = mixer.paint(sample, n, batch[0].pressure);
             if mix.blur {
                 let size = self.params.diameter_at(batch[0].pressure);
-                water_blur(pixels, &batch, size, originals, &mut changed);
+                water_blur(pixels, &batch, size, sel, originals, &mut changed);
             }
             for d in &batch {
                 let opacity = d.shape.opacity();
                 for_pixels(d, |x, y, cov| {
+                    let s = sel.amount(x, y);
+                    if s == 0 {
+                        return;
+                    }
+                    let cov = cov * s as f32 / ONE as f32;
                     let key = key_of(x, y);
                     originals.entry(key).or_insert_with(|| pixels.tiles.get(&key).cloned());
                     changed.insert(key);
@@ -297,6 +303,7 @@ fn water_blur(
     pixels: &mut ColorMap,
     batch: &[Pending],
     size: f32,
+    sel: &crate::selection::Selection,
     originals: &mut HashMap<Key, Option<Tile<Px>>>,
     changed: &mut HashSet<Key>,
 ) {
@@ -328,6 +335,10 @@ fn water_blur(
         crate::mix::box_blur(&mut buf, w, h, r, true);
     }
     for (&(x, y), &a) in &weight {
+        let a = a * sel.amount(x, y) as f64 / ONE as f64;
+        if a <= 0.0 {
+            continue;
+        }
         let key = key_of(x, y);
         originals.entry(key).or_insert_with(|| pixels.tiles.get(&key).cloned());
         changed.insert(key);

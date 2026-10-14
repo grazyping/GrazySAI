@@ -45,15 +45,19 @@ impl Layer {
     }
 
     /// Накладывает покрытие штриха на одну плитку слоя.
-    pub fn apply_mask_tile(&mut self, key: Key, mask: &Tile<u16>, erase: bool, rgb: [u8; 3]) {
+    /// `sel` — плитка выделения: покрытие штриха умножается на неё (`None` — выделения нет).
+    pub fn apply_mask_tile(&mut self, key: Key, mask: &Tile<u16>, erase: bool, rgb: [u8; 3], sel: Option<&Tile<u16>>) {
         let color = rgb.map(|c| (c as u32 * ONE + 127) / 255);
         let preserve = self.preserve_opacity;
         let tile = self.pixels.tile_mut(key);
-        for (px, &m) in tile.0.iter_mut().zip(mask.0.iter()) {
+        for (i, (px, &m)) in tile.0.iter_mut().zip(mask.0.iter()).enumerate() {
+            let m = match sel {
+                Some(s) => crate::selection::limit(m as u32, s.0[i]),
+                None => m as u32,
+            };
             if m == 0 {
                 continue;
             }
-            let m = m as u32;
             let inv = ONE - m;
             if erase {
                 for c in px.iter_mut() {
@@ -75,14 +79,14 @@ impl Layer {
     }
 
     /// Переносит готовый штрих на слой цветом `rgb`. Возвращает данные для отмены.
-    pub fn apply_stroke(&mut self, stroke: &Stroke, rgb: [u8; 3]) -> TileBackup {
+    pub fn apply_stroke(&mut self, stroke: &Stroke, rgb: [u8; 3], sel: &crate::selection::Selection) -> TileBackup {
         let mut backup = Vec::new();
         for (key, mask) in &stroke.mask.tiles {
             if mask.0.iter().all(|&m| m == 0) {
                 continue;
             }
             backup.push((*key, self.pixels.tiles.get(key).cloned()));
-            self.apply_mask_tile(*key, mask, stroke.params.erase, rgb);
+            self.apply_mask_tile(*key, mask, stroke.params.erase, rgb, sel.tile(*key).as_ref());
         }
         backup
     }

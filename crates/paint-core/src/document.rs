@@ -2,9 +2,10 @@
 
 use crate::blend::composite;
 use crate::layer::{Layer, TileBackup};
-use crate::pixel::{from_f32, to_f32, to_rgba8, Px};
+use crate::pixel::{from_f32, to_f32, to_rgba8, Px, ONE};
+use crate::selection::{Combine, Selection};
 use crate::stroke::Stroke;
-use crate::tile::{Key, Tile, TILE, TILE_LEN};
+use crate::tile::{ColorMap, Key, MaskMap, Tile, TILE, TILE_LEN};
 use std::collections::HashMap;
 
 /// Шаг истории. Обратный шаг получается при выполнении (`Document::apply_op`).
@@ -15,6 +16,8 @@ enum Op {
     Insert { path: Vec<usize>, layer: Box<Layer> },
     /// Убрать слой с места `path`.
     Remove { path: Vec<usize> },
+    /// Заменить выделение (обратный шаг — прежнее выделение).
+    Selection { mask: MaskMap },
 }
 
 /// Одно действие пользователя: шаги выполняются по порядку, отмена — обратными шагами в обратном
@@ -42,6 +45,8 @@ pub struct Document {
     pub layers: Vec<Layer>,
     /// Цвет фона холста; `None` — прозрачный.
     pub background: Option<[u8; 3]>,
+    /// Выделение; пустое — рисовать можно везде.
+    pub selection: Selection,
     undo: Vec<HistoryEntry>,
     redo: Vec<HistoryEntry>,
 }
@@ -53,6 +58,7 @@ impl Document {
             height,
             layers: vec![Layer::new("Слой 1")],
             background: Some([255, 255, 255]),
+            selection: Selection::default(),
             undo: Vec::new(),
             redo: Vec::new(),
         }
@@ -83,7 +89,7 @@ impl Document {
 
     /// Завершает штрих: переносит его на слой и запоминает для отмены.
     pub fn commit_stroke(&mut self, layer: usize, stroke: &Stroke, rgb: [u8; 3]) {
-        let tiles = self.layers[layer].apply_stroke(stroke, rgb);
+        let tiles = self.layers[layer].apply_stroke(stroke, rgb, &self.selection);
         self.push(vec![Op::Tiles { path: vec![layer], tiles }]);
     }
 
@@ -95,13 +101,19 @@ impl Document {
     fn live_paint(&mut self, live: &mut LiveStroke, finish: bool) -> Vec<Key> {
         if live.stroke.is_mixing() {
             // Смешивающая кисть рисует прямо в слой: краска зависит от того, что уже на холсте.
-            let Some(layer) = self.layer_mut(&live.path) else { return Vec::new() };
+            let sel = std::mem::take(&mut self.selection);
+            let Some(layer) = self.layer_mut(&live.path) else {
+                self.selection = sel;
+                return Vec::new();
+            };
             let preserve = layer.preserve_opacity;
-            let keys = live.stroke.paint_mixed(&mut layer.pixels, live.rgb, preserve, &mut live.originals, finish);
+            let keys = live.stroke.paint_mixed(&mut layer.pixels, live.rgb, preserve, &sel, &mut live.originals, finish);
+            self.selection = sel;
             live.stroke.take_touched();
             return keys;
         }
         let touched: Vec<Key> = live.stroke.take_touched().into_iter().collect();
+        let sel: HashMap<Key, Option<Tile<u16>>> = touched.iter().map(|k| (*k, self.selection.tile(*k))).collect();
         let Some(layer) = self.layer_mut(&live.path) else { return Vec::new() };
         for key in &touched {
             // Плитку возвращаем к исходному виду и накладываем покрытие штриха заново целиком.
@@ -115,7 +127,7 @@ impl Document {
                 }
             }
             if let Some(mask) = live.stroke.mask.tiles.get(key) {
-                layer.apply_mask_tile(*key, mask, live.stroke.params.erase, live.rgb);
+                layer.apply_mask_tile(*key, mask, live.stroke.params.erase, live.rgb, sel[key].as_ref());
             }
         }
         touched
@@ -155,6 +167,10 @@ impl Document {
                 let (stack, at) = self.stack_mut(&path)?;
                 stack.insert(at.min(stack.len()), *layer);
                 Some((Op::Remove { path }, keys))
+            }
+            Op::Selection { mask } => {
+                let old = std::mem::replace(&mut self.selection.mask, mask);
+                Some((Op::Selection { mask: old }, Vec::new()))
             }
             Op::Remove { path } => {
                 let (stack, at) = self.stack_mut(&path)?;
@@ -227,13 +243,110 @@ impl Document {
     }
 
     /// Очищает обычный слой (с отменой).
+    /// Очищает слой; при выделении — только выделенное (как Delete в SAI).
     pub fn clear_layer(&mut self, path: &[usize]) -> Vec<Key> {
         let Some(layer) = self.layer(path) else { return Vec::new() };
         if layer.children.is_some() {
             return Vec::new();
         }
-        let tiles: TileBackup = layer.pixels.tiles.keys().map(|k| (*k, None)).collect();
+        let tiles: TileBackup = if self.selection.is_empty() {
+            layer.pixels.tiles.keys().map(|k| (*k, None)).collect()
+        } else {
+            let mut out = Vec::new();
+            for (key, tile) in &layer.pixels.tiles {
+                let Some(sel) = self.selection.tile(*key) else { continue };
+                if sel.0.iter().all(|&v| v == 0) {
+                    continue;
+                }
+                let mut t = tile.clone();
+                for (px, &s) in t.0.iter_mut().zip(sel.0.iter()) {
+                    let keep = ONE - s as u32;
+                    for c in px.iter_mut() {
+                        *c = ((*c as u32 * keep + ONE / 2) / ONE) as u16;
+                    }
+                }
+                out.push((*key, Some(t)));
+            }
+            out
+        };
         self.perform(vec![Op::Tiles { path: path.to_vec(), tiles }])
+    }
+
+    /// Соединяет область с выделением (`selection::Combine`) — одна запись истории.
+    pub fn select(&mut self, area: &MaskMap, mode: Combine) {
+        let mut next = self.selection.clone();
+        next.combine(area, mode);
+        if next != self.selection {
+            self.perform(vec![Op::Selection { mask: next.mask }]);
+        }
+    }
+
+    pub fn select_all(&mut self) {
+        let all = Selection::all(self.width, self.height);
+        self.select(&all, Combine::Replace);
+    }
+
+    pub fn deselect(&mut self) {
+        if !self.selection.is_empty() {
+            self.perform(vec![Op::Selection { mask: MaskMap::new() }]);
+        }
+    }
+
+    /// Показ сдвига без записи в историю: пиксели слоя `path` и выделение берутся из исходных
+    /// (`original`, `orig_sel`) и сдвигаются на (`dx`, `dy`). Возвращает плитки для перерисовки.
+    pub fn move_preview(&mut self, path: &[usize], original: &ColorMap, orig_sel: &Selection, dx: i32, dy: i32) -> Vec<Key> {
+        let moved = crate::selection::shift_pixels(original, orig_sel, dx, dy);
+        let new_sel = if orig_sel.mask.tiles.is_empty() { MaskMap::new() } else { crate::selection::shift_mask(&orig_sel.mask, dx, dy) };
+        let Some(layer) = self.layer_mut(path) else { return Vec::new() };
+        let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
+        keys.extend(moved.tiles.keys().copied());
+        layer.pixels = moved;
+        self.selection.mask = new_sel;
+        keys.sort_unstable();
+        keys.dedup();
+        keys
+    }
+
+    /// Закончить сдвиг: одна запись истории, отмена возвращает исходные пиксели и выделение.
+    pub fn move_commit(&mut self, path: &[usize], original: ColorMap, orig_sel: Selection) {
+        let Some(layer) = self.layer(path) else { return };
+        if layer.pixels == original && self.selection == orig_sel {
+            return;
+        }
+        let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
+        keys.extend(original.tiles.keys().copied());
+        keys.sort_unstable();
+        keys.dedup();
+        let tiles: TileBackup = keys.into_iter().map(|k| (k, original.tiles.get(&k).cloned())).collect();
+        self.push(vec![Op::Tiles { path: path.to_vec(), tiles }, Op::Selection { mask: orig_sel.mask }]);
+    }
+
+    /// Сдвиг слоя (или выделенного на нём) на целые пиксели одной записью истории.
+    pub fn move_layer_pixels(&mut self, path: &[usize], dx: i32, dy: i32) -> Vec<Key> {
+        let Some(layer) = self.layer(path) else { return Vec::new() };
+        if layer.children.is_some() {
+            return Vec::new();
+        }
+        let original = layer.pixels.clone();
+        let orig_sel = self.selection.clone();
+        let keys = self.move_preview(path, &original, &orig_sel, dx, dy);
+        self.move_commit(path, original, orig_sel);
+        keys
+    }
+
+    /// Расширить или сузить выделение на 1 px.
+    pub fn grow_selection(&mut self, grow: bool) {
+        let mut next = self.selection.clone();
+        next.grow(grow);
+        if next != self.selection {
+            self.perform(vec![Op::Selection { mask: next.mask }]);
+        }
+    }
+
+    pub fn invert_selection(&mut self) {
+        let mut next = self.selection.clone();
+        next.invert(self.width, self.height);
+        self.perform(vec![Op::Selection { mask: next.mask }]);
     }
 
     /// Переставляет слой на `delta` мест в той же стопке (+1 — выше). Возвращает новый путь.

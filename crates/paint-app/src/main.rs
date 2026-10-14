@@ -9,6 +9,7 @@ mod virtual_pen;
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use paint_core::tile::{Key, TILE};
 use paint_core::mix::MixParams;
+use paint_core::selection::Combine;
 use paint_core::{
     BlendMode, BrushParams, Document, InputPoint, Layer, LiveStroke, Stabilizer, Stroke,
 };
@@ -64,6 +65,30 @@ enum Tool {
     Hand,
     Picker,
     Zoom,
+    /// Выделение прямоугольником (M).
+    Marquee,
+    /// Лассо (L).
+    Lasso,
+    /// Волшебная палочка (W).
+    Wand,
+    /// Перемещение слоя или выделенного (то же — Ctrl + перетаскивание).
+    Move,
+}
+
+/// Идёт перемещение: исходные пиксели слоя и выделение, точка начала, текущий сдвиг.
+struct MoveDrag {
+    path: Vec<usize>,
+    start: Vec2,
+    original: paint_core::tile::ColorMap,
+    orig_sel: paint_core::selection::Selection,
+    offset: (i32, i32),
+}
+
+/// Выделение, которое сейчас тянут мышью или пером.
+struct SelDrag {
+    /// Точки в координатах холста: у прямоугольника — начало и текущая, у лассо — весь путь.
+    points: Vec<Vec2>,
+    mode: Combine,
 }
 
 /// Инструмент рисования в сетке «кистей слоя», как у образца: имя, значок, свои параметры.
@@ -239,6 +264,14 @@ struct PaintApp {
     /// Сводка по нажиму от пера за сеанс: (источник, мин., макс., число замеров) — для проверок.
     pen_stats: HashMap<&'static str, (f32, f32, u32)>,
     started: Instant,
+    sel_drag: Option<SelDrag>,
+    move_drag: Option<MoveDrag>,
+    /// Граница выделения для показа; пересчитывается после правок выделения.
+    sel_outline: Vec<[(i32, i32); 2]>,
+    sel_dirty: bool,
+    show_selection: bool,
+    /// Допуск волшебной палочки, 0..=255.
+    wand_tolerance: u8,
 }
 
 impl PaintApp {
@@ -288,10 +321,31 @@ impl PaintApp {
             virtual_done: 0,
             pen_stats: HashMap::new(),
             started: Instant::now(),
+            sel_drag: None,
+            move_drag: None,
+            sel_outline: Vec::new(),
+            sel_dirty: false,
+            show_selection: true,
+            wand_tolerance: 10,
         };
         match path {
             Some(p) => app.open(p),
             None => app.invalidate_all(),
+        }
+        // Для проверок: PAINT_TOOL=move|marquee|lasso|wand — инструмент при запуске;
+        // PAINT_SELECT=x0,y0,x1,y1 — готовое выделение прямоугольником.
+        app.tool = match std::env::var("PAINT_TOOL").as_deref() {
+            Ok("move") => Tool::Move,
+            Ok("marquee") => Tool::Marquee,
+            Ok("lasso") => Tool::Lasso,
+            Ok("wand") => Tool::Wand,
+            _ => app.tool,
+        };
+        if let Ok(v) = std::env::var("PAINT_SELECT") {
+            let n: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            if n.len() == 4 {
+                app.apply_selection(&paint_core::selection::rect(n[0], n[1], n[2], n[3]), Combine::Replace);
+            }
         }
         app
     }
@@ -393,6 +447,7 @@ impl PaintApp {
     }
 
     fn invalidate_all(&mut self) {
+        self.sel_dirty = true;
         self.thumbs.clear();
         self.display.clear();
         self.queue.clear();
@@ -524,12 +579,94 @@ impl PaintApp {
         if let Some(keys) = self.doc.undo() {
             self.after_structure(keys);
         }
+        self.sel_dirty = true;
     }
 
     fn redo(&mut self) {
         if let Some(keys) = self.doc.redo() {
             self.after_structure(keys);
         }
+        self.sel_dirty = true;
+    }
+
+    /// Соединить новую область с выделением и обновить показ.
+    fn apply_selection(&mut self, area: &paint_core::tile::MaskMap, mode: Combine) {
+        self.doc.select(area, mode);
+        self.sel_dirty = true;
+        self.status = if self.doc.selection.is_empty() {
+            "Выделение снято".to_string()
+        } else {
+            let (x0, y0, x1, y1) = self.doc.selection.bounds().unwrap_or_default();
+            format!("Выделение {}×{} в ({x0}, {y0})", x1 - x0, y1 - y0)
+        };
+    }
+
+    fn deselect(&mut self) {
+        self.doc.deselect();
+        self.sel_dirty = true;
+    }
+
+    fn select_all(&mut self) {
+        self.doc.select_all();
+        self.sel_dirty = true;
+    }
+
+    fn invert_selection(&mut self) {
+        self.doc.invert_selection();
+        self.sel_dirty = true;
+    }
+
+    fn begin_move(&mut self, at: Vec2) {
+        let Some(layer) = self.doc.layer(&self.selected) else { return };
+        if layer.children.is_some() || !layer.visible {
+            self.status = String::from("Двигать можно видимый обычный слой");
+            return;
+        }
+        self.move_drag = Some(MoveDrag {
+            path: self.selected.clone(),
+            start: at,
+            original: layer.pixels.clone(),
+            orig_sel: self.doc.selection.clone(),
+            offset: (0, 0),
+        });
+    }
+
+    fn update_move(&mut self, at: Vec2) {
+        let Some(d) = self.move_drag.as_mut() else { return };
+        let off = ((at.x - d.start.x).round() as i32, (at.y - d.start.y).round() as i32);
+        if off == d.offset {
+            return;
+        }
+        d.offset = off;
+        let keys = self.doc.move_preview(&d.path, &d.original, &d.orig_sel, off.0, off.1);
+        self.status = format!("Сдвиг: {}, {}", off.0, off.1);
+        self.sel_dirty = true;
+        self.invalidate(keys);
+    }
+
+    fn end_move(&mut self) {
+        let Some(d) = self.move_drag.take() else { return };
+        self.doc.move_commit(&d.path, d.original, d.orig_sel);
+        self.thumbs.clear();
+        self.dirty = true;
+    }
+
+    /// Сдвиг клавишами (Alt+стрелки).
+    fn nudge(&mut self, dx: i32, dy: i32) {
+        let keys = self.doc.move_layer_pixels(&self.selected.clone(), dx, dy);
+        if !keys.is_empty() {
+            self.invalidate(keys);
+            self.sel_dirty = true;
+            self.thumbs.clear();
+            self.dirty = true;
+        }
+    }
+
+    /// Волшебная палочка по текущему слою.
+    fn wand_at(&mut self, x: f32, y: f32, mode: Combine) {
+        let Some(layer) = self.doc.layer(&self.selected) else { return };
+        let area = paint_core::selection::magic_wand(&layer.pixels, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, self.wand_tolerance);
+        self.apply_selection(&area, mode);
     }
 
     fn pick_color(&mut self, x: f32, y: f32) {
@@ -704,9 +841,33 @@ impl PaintApp {
                 ui.add_enabled(false, egui::Button::new("Свести всё"));
             });
             ui.menu_button("Выделение(S)", |ui| {
-                for item in ["Выделить всё", "Снять выделение", "Инвертировать"]
-                {
-                    ui.add_enabled(false, egui::Button::new(item));
+                let has = !self.doc.selection.is_empty();
+                if ui.button("Выделить всё        Ctrl+A").clicked() {
+                    self.select_all();
+                    ui.close_menu();
+                }
+                if ui.add_enabled(has, egui::Button::new("Снять выделение   Ctrl+D")).clicked() {
+                    self.deselect();
+                    ui.close_menu();
+                }
+                if ui.button("Инвертировать").clicked() {
+                    self.invert_selection();
+                    ui.close_menu();
+                }
+                if ui.button(if self.show_selection { "Скрыть выделение   Ctrl+H" } else { "Показать выделение Ctrl+H" }).clicked() {
+                    self.show_selection = !self.show_selection;
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui.add_enabled(has, egui::Button::new("Расширить на 1 px")).clicked() {
+                    self.doc.grow_selection(true);
+                    self.sel_dirty = true;
+                    ui.close_menu();
+                }
+                if ui.add_enabled(has, egui::Button::new("Сузить на 1 px")).clicked() {
+                    self.doc.grow_selection(false);
+                    self.sel_dirty = true;
+                    ui.close_menu();
                 }
             });
             ui.menu_button("Линейка(R)", |ui| {
@@ -780,31 +941,17 @@ impl PaintApp {
                 self.redo();
             }
             ui.separator();
-            sai_ui::icon_button(
-                ui,
-                b,
-                false,
-                false,
-                "Снять выделение",
-                |p, r, c| sai_ui::glyph(p, r, c, "deselect"),
-            );
-            sai_ui::icon_button(
-                ui,
-                b,
-                false,
-                false,
-                "Инвертировать выделение",
-                |p, r, c| sai_ui::glyph(p, r, c, "invert"),
-            );
-            sai_ui::icon_button(
-                ui,
-                b,
-                false,
-                false,
-                "Показать выделение",
-                |p, r, c| sai_ui::glyph(p, r, c, "eye"),
-            );
-            ui.add_enabled(false, egui::Label::new("Выделение"));
+            let has_sel = !self.doc.selection.is_empty();
+            if sai_ui::icon_button(ui, b, false, has_sel, "Снять выделение (Ctrl+D)", |p, r, c| sai_ui::glyph(p, r, c, "deselect")).clicked() {
+                self.deselect();
+            }
+            if sai_ui::icon_button(ui, b, false, true, "Инвертировать выделение", |p, r, c| sai_ui::glyph(p, r, c, "invert")).clicked() {
+                self.invert_selection();
+            }
+            if sai_ui::icon_button(ui, b, self.show_selection, true, "Показать выделение (Ctrl+H)", |p, r, c| sai_ui::glyph(p, r, c, "eye")).clicked() {
+                self.show_selection = !self.show_selection;
+            }
+            ui.label("Выделение");
             ui.separator();
             let current = format!("{:.0}%", self.zoom * 100.0);
             let mut pick = None;
@@ -917,27 +1064,34 @@ impl PaintApp {
             ui.vertical(|ui| {
                 let b = Vec2::splat(24.0);
                 ui.horizontal(|ui| {
-                    for (g, tip) in [
-                        ("select", "Выделение"),
-                        ("lasso", "Лассо"),
-                        ("wand", "Волшебная палочка"),
-                        ("bucket", "Заливка"),
-                        ("text", "Текст"),
+                    for (g, tip, tool) in [
+                        ("select", "Выделение (M): Shift — добавить, Alt — вычесть", Tool::Marquee),
+                        ("lasso", "Лассо (L): Shift — добавить, Alt — вычесть", Tool::Lasso),
+                        ("wand", "Волшебная палочка (W): Shift — добавить, Alt — вычесть", Tool::Wand),
                     ] {
+                        if sai_ui::icon_button(ui, b, self.tool == tool, true, tip, |p, r, c| sai_ui::glyph(p, r, c, g)).clicked() {
+                            self.tool = tool;
+                        }
+                    }
+                    for (g, tip) in [("bucket", "Заливка"), ("text", "Текст")] {
                         sai_ui::icon_button(ui, b, false, false, tip, |p, r, c| {
                             sai_ui::glyph(p, r, c, g)
                         });
                     }
                 });
                 ui.horizontal(|ui| {
-                    sai_ui::icon_button(
+                    if sai_ui::icon_button(
                         ui,
                         b,
-                        false,
-                        false,
-                        "Перемещение",
+                        self.tool == Tool::Move,
+                        true,
+                        "Перемещение слоя или выделенного (Ctrl + перетаскивание, Alt+стрелки)",
                         |p, r, c| sai_ui::glyph(p, r, c, "move"),
-                    );
+                    )
+                    .clicked()
+                    {
+                        self.tool = Tool::Move;
+                    }
                     if sai_ui::icon_button(
                         ui,
                         b,
@@ -1069,6 +1223,17 @@ impl PaintApp {
         ui.add_space(4.0);
         let lw = 92.0;
         let w = ui.available_width() - lw - 8.0;
+        if self.tool == Tool::Wand {
+            let tol = &mut self.wand_tolerance;
+            sai_ui::row(ui, "Допуск", lw, true, |ui| {
+                let mut v = *tol as f32;
+                let text = format!("{}", *tol);
+                if sai_ui::bar(ui, &mut v, 0.0, 255.0, text, w, true).changed() {
+                    *tol = v.round().clamp(0.0, 255.0) as u8;
+                }
+            });
+            ui.add_space(4.0);
+        }
         let brush = &mut self.brushes[self.brush].params;
         sai_ui::row(ui, "Режим", lw, false, |ui| {
             egui::ComboBox::from_id_salt("paintmode")
@@ -1746,7 +1911,22 @@ impl PaintApp {
             }
         }
         let panning = middle || space || self.tool == Tool::Hand;
-        if panning && (response.dragged() || middle) {
+        let ctrl = ui.input(|i| i.modifiers.command);
+        if self.move_drag.is_some() || (!panning && self.live.is_none() && pressed && response.hovered() && (self.tool == Tool::Move || ctrl)) {
+            // Перемещение: инструмент «Перемещение» или Ctrl + перетаскивание (как в SAI).
+            if self.move_drag.is_none() {
+                if let Some(pos) = pointer {
+                    self.begin_move(to_canvas(pos, self.zoom, self.offset));
+                }
+            } else {
+                for pos in &moves {
+                    self.update_move(to_canvas(*pos, self.zoom, self.offset));
+                }
+            }
+            if released {
+                self.end_move();
+            }
+        } else if panning && (response.dragged() || middle) {
             self.offset -= ui.input(|i| i.pointer.delta()) / self.zoom;
         } else if self.tool == Tool::Zoom {
             if response.clicked() {
@@ -1760,6 +1940,48 @@ impl PaintApp {
                     })
                     .clamp(0.02, 32.0);
                     self.offset = anchor - (pos - rect.min) / self.zoom;
+                }
+            }
+        } else if matches!(self.tool, Tool::Marquee | Tool::Lasso | Tool::Wand) {
+            // Выделение: Shift — добавить, Alt — вычесть, Shift+Alt — пересечь.
+            let mods = ui.input(|i| i.modifiers);
+            let mode = Combine::from_modifiers(mods.shift, mods.alt);
+            if pressed && response.hovered() {
+                if let Some(pos) = pointer {
+                    let c = to_canvas(pos, self.zoom, self.offset);
+                    if self.tool == Tool::Wand {
+                        self.wand_at(c.x, c.y, mode);
+                    } else {
+                        self.sel_drag = Some(SelDrag { points: vec![c, c], mode });
+                    }
+                }
+            } else if let Some(d) = self.sel_drag.as_mut() {
+                for pos in &moves {
+                    let c = to_canvas(*pos, self.zoom, self.offset);
+                    if self.tool == Tool::Lasso {
+                        d.points.push(c);
+                    } else {
+                        d.points[1] = c;
+                    }
+                }
+            }
+            if released {
+                if let Some(d) = self.sel_drag.take() {
+                    let area = if self.tool == Tool::Lasso {
+                        let pts: Vec<[f64; 2]> = d.points.iter().map(|p| [p.x as f64, p.y as f64]).collect();
+                        paint_core::selection::polygon(&pts)
+                    } else {
+                        // прямоугольник — по целым пикселям; щелчок без протяжки снимает выделение
+                        let (a, b) = (d.points[0], d.points[1]);
+                        let (x0, x1) = (a.x.min(b.x).round() as f64, a.x.max(b.x).round() as f64);
+                        let (y0, y1) = (a.y.min(b.y).round() as f64, a.y.max(b.y).round() as f64);
+                        if x1 - x0 < 1.0 || y1 - y0 < 1.0 {
+                            paint_core::tile::MaskMap::new()
+                        } else {
+                            paint_core::selection::rect(x0, y0, x1, y1)
+                        }
+                    };
+                    self.apply_selection(&area, d.mode);
                 }
             }
         } else if self.tool == Tool::Picker
@@ -1840,6 +2062,38 @@ impl PaintApp {
                     Rect::from_min_max(uv.min, Pos2::new(part.x / DT as f32, part.y / DT as f32));
                 painter.image(t.id(), shown, shown_uv, Color32::WHITE);
             }
+        }
+        // Граница выделения («бегущие муравьи») и выделение, которое сейчас тянут.
+        if self.sel_dirty {
+            self.sel_outline = self.doc.selection.outline();
+            self.sel_dirty = false;
+        }
+        let to_screen = |x: f32, y: f32| origin + Vec2::new(x, y) * self.zoom;
+        if self.show_selection && !self.sel_outline.is_empty() {
+            let phase = (self.started.elapsed().as_millis() / 300).is_multiple_of(2);
+            let (a, b) = if phase { (Color32::BLACK, Color32::WHITE) } else { (Color32::WHITE, Color32::BLACK) };
+            let mut shapes = Vec::new();
+            for seg in &self.sel_outline {
+                let p0 = to_screen(seg[0].0 as f32, seg[0].1 as f32);
+                let p1 = to_screen(seg[1].0 as f32, seg[1].1 as f32);
+                if !rect.intersects(Rect::from_two_pos(p0, p1).expand(1.0)) {
+                    continue;
+                }
+                painter.line_segment([p0, p1], egui::Stroke::new(1.0_f32, a));
+                shapes.extend(egui::Shape::dashed_line(&[p0, p1], egui::Stroke::new(1.0_f32, b), 4.0, 4.0));
+            }
+            painter.extend(shapes);
+            ui.ctx().request_repaint_after(Duration::from_millis(300));
+        }
+        if let Some(d) = &self.sel_drag {
+            let pts: Vec<Pos2> = if self.tool == Tool::Lasso {
+                d.points.iter().map(|p| to_screen(p.x, p.y)).collect()
+            } else {
+                let (a, b) = (d.points[0], d.points[1]);
+                vec![to_screen(a.x, a.y), to_screen(b.x, a.y), to_screen(b.x, b.y), to_screen(a.x, b.y), to_screen(a.x, a.y)]
+            };
+            painter.add(egui::Shape::line(pts.clone(), egui::Stroke::new(1.0_f32, Color32::WHITE)));
+            painter.extend(egui::Shape::dashed_line(&pts, egui::Stroke::new(1.0_f32, Color32::BLACK), 4.0, 4.0));
         }
         // Кружок размера кисти.
         if let Some(pos) = pointer.filter(|p| rect.contains(*p)) {
@@ -2143,6 +2397,70 @@ impl eframe::App for PaintApp {
                 !i.modifiers.any() && i.key_pressed(egui::Key::F),
             )
         });
+        let keys = ctx.input(|i| {
+            let plain = !i.modifiers.any();
+            let cmd = i.modifiers.command && !i.modifiers.shift && !i.modifiers.alt;
+            [
+                cmd && i.key_pressed(egui::Key::A),
+                cmd && i.key_pressed(egui::Key::D),
+                cmd && i.key_pressed(egui::Key::H),
+                plain && i.key_pressed(egui::Key::M),
+                plain && i.key_pressed(egui::Key::L),
+                plain && i.key_pressed(egui::Key::W),
+                plain && i.key_pressed(egui::Key::N),
+                plain && i.key_pressed(egui::Key::B),
+                plain && i.key_pressed(egui::Key::V),
+                plain && i.key_pressed(egui::Key::C),
+                plain && i.key_pressed(egui::Key::E),
+            ]
+        });
+        let nudge = ctx.input(|i| {
+            if !i.modifiers.alt || i.modifiers.command {
+                return (0, 0);
+            }
+            let step = if i.modifiers.shift { 10 } else { 1 };
+            let mut d = (0, 0);
+            if i.key_pressed(egui::Key::ArrowLeft) {
+                d.0 -= step;
+            }
+            if i.key_pressed(egui::Key::ArrowRight) {
+                d.0 += step;
+            }
+            if i.key_pressed(egui::Key::ArrowUp) {
+                d.1 -= step;
+            }
+            if i.key_pressed(egui::Key::ArrowDown) {
+                d.1 += step;
+            }
+            d
+        });
+        if nudge != (0, 0) && !ctx.wants_keyboard_input() && self.live.is_none() && self.move_drag.is_none() {
+            self.nudge(nudge.0, nudge.1);
+        }
+        if !ctx.wants_keyboard_input() && self.live.is_none() && self.sel_drag.is_none() {
+            let [all, none, hide, m, l, w, n, bkey, v, c, e] = keys;
+            if all {
+                self.select_all();
+            }
+            if none {
+                self.deselect();
+            }
+            if hide {
+                self.show_selection = !self.show_selection;
+            }
+            for (k, t) in [(m, Tool::Marquee), (l, Tool::Lasso), (w, Tool::Wand)] {
+                if k {
+                    self.tool = t;
+                }
+            }
+            // клавиши кистей SAI: N — карандаш, B — аэрограф, V — кисть, C — акварель, E — ластик
+            for (k, i) in [(n, 0), (bkey, 1), (v, 2), (c, 3), (e, ERASER)] {
+                if k {
+                    self.brush = i;
+                    self.tool = Tool::Brush;
+                }
+            }
+        }
         if !ctx.wants_keyboard_input() && self.live.is_none() {
             if key_clear {
                 self.layer_action(LayerAction::Clear);

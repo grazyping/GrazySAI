@@ -248,7 +248,7 @@ fn folders_and_clipping() {
     doc.commit_stroke(0, &dot(32.0), [255, 0, 0]); // красный круг слева
     let mut clip = Layer::new("обтравка");
     clip.clipping = true;
-    clip.apply_stroke(&dot(48.0), [0, 0, 255]); // синий круг правее, заходит на красный
+    clip.apply_stroke(&dot(48.0), [0, 0, 255], &Default::default()); // синий круг правее, заходит на красный
     doc.layers.push(clip);
     assert_eq!(pixel(&doc, 40, 32), [0, 0, 255, 255]); // пересечение — синее
     assert_eq!(pixel(&doc, 22, 32), [255, 0, 0, 255]); // только красный
@@ -256,7 +256,7 @@ fn folders_and_clipping() {
 
     // Папка с половинной непрозрачностью ослабляет всё своё содержимое.
     let mut inner = Layer::new("внутри");
-    inner.apply_stroke(&dot(80.0), [0, 0, 0]);
+    inner.apply_stroke(&dot(80.0), [0, 0, 0], &Default::default());
     let mut folder = Layer::folder("папка", vec![inner]);
     folder.opacity = 0.5;
     doc.layers.push(folder);
@@ -459,4 +459,60 @@ fn stabilizer_follows_the_reference_rules() {
     assert_eq!(tail.len(), 15 * 8);
     assert!((tail.last().unwrap().x - 59.0).abs() < 1e-3);
     assert_eq!(Level::all().len(), 23);
+}
+
+#[test]
+fn selection_limits_painting_clearing_and_is_undoable() {
+    use paint_core::selection::{rect, Combine};
+    let mut doc = Document::new(100, 40);
+    doc.select(&rect(0.0, 0.0, 50.0, 40.0), Combine::Replace);
+    // мазок через весь холст ложится только на левую половину
+    let mut s = Stroke::new(BrushParams { size: 10.0, size_by_pressure: false, ..Default::default() });
+    for x in 0..=100 {
+        s.add_point(InputPoint { x: x as f32, y: 20.0, pressure: 1.0 });
+    }
+    doc.commit_stroke(0, &s, [0, 0, 0]);
+    assert_eq!(pixel(&doc, 30, 20), [0, 0, 0, 255]);
+    assert_eq!(pixel(&doc, 70, 20), [255, 255, 255, 255]);
+    // очистка — только выделенное
+    doc.select(&rect(20.0, 0.0, 40.0, 40.0), Combine::Replace);
+    doc.clear_layer(&[0]);
+    assert_eq!(pixel(&doc, 30, 20), [255, 255, 255, 255]);
+    assert_eq!(pixel(&doc, 10, 20), [0, 0, 0, 255]);
+    // отмена: очистка, затем выделение
+    doc.undo();
+    assert_eq!(pixel(&doc, 30, 20), [0, 0, 0, 255]);
+    doc.undo();
+    assert_eq!(doc.selection.amount(10, 20), paint_core::pixel::ONE);
+    doc.deselect();
+    assert!(doc.selection.is_empty());
+}
+
+#[test]
+fn moving_a_layer_and_a_selected_part() {
+    use paint_core::selection::{rect, Combine};
+    let black = paint_core::pixel::from_rgba8([0, 0, 0, 255]);
+    let mut doc = Document::new(60, 20);
+    for x in 0..10 {
+        for y in 0..10 {
+            doc.layers[0].pixels.set(x, y, black);
+            doc.layers[0].pixels.set(x + 30, y, black);
+        }
+    }
+    // весь слой на 5 вправо
+    doc.move_layer_pixels(&[0], 5, 0);
+    assert_eq!(pixel(&doc, 2, 5), [255, 255, 255, 255]);
+    assert_eq!(pixel(&doc, 12, 5), [0, 0, 0, 255]);
+    doc.undo();
+    assert_eq!(pixel(&doc, 2, 5), [0, 0, 0, 255]);
+    // только выделенный левый квадрат — вниз на 10, вместе с выделением
+    doc.select(&rect(0.0, 0.0, 20.0, 10.0), Combine::Replace);
+    doc.move_layer_pixels(&[0], 0, 10);
+    assert_eq!(pixel(&doc, 2, 5), [255, 255, 255, 255]);
+    assert_eq!(pixel(&doc, 2, 15), [0, 0, 0, 255]);
+    assert_eq!(pixel(&doc, 32, 5), [0, 0, 0, 255], "невыделенное осталось на месте");
+    assert_eq!(doc.selection.bounds(), Some((0, 10, 20, 20)));
+    doc.undo();
+    assert_eq!(pixel(&doc, 2, 5), [0, 0, 0, 255]);
+    assert_eq!(doc.selection.bounds(), Some((0, 0, 20, 10)));
 }
