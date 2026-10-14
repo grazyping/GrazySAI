@@ -12,21 +12,21 @@ fn data(name: &str) -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/mixing").join(name)
 }
 
-pub fn render() -> Vec<u8> {
+pub fn render(csv: &str, mix: MixParams) -> Vec<u8> {
     let pencil = BrushParams { size: 30.0, hardness: 1.0, ..Default::default() };
     let brush = BrushParams {
         size: 50.0,
         min_size: 0.5,
         hardness: 1.0,
         density_by_pressure: true,
-        mix: Some(MixParams::new(0.0, 0.0, 0.5)),
+        mix: Some(mix),
         ..Default::default()
     };
     let mut doc = Document::new(512, 512);
     let mut live: Option<LiveStroke> = None;
     let mut st = Stabilizer::new(3);
     let mut strokes = 0;
-    for line in std::fs::read_to_string(data("brush-strokes.csv")).unwrap().lines().skip(1) {
+    for line in std::fs::read_to_string(data(csv)).unwrap().lines().skip(1) {
         let f: Vec<&str> = line.split(',').collect();
         let x = f[1].parse::<f32>().unwrap() * 1920.0 - 662.0;
         let y = f[2].parse::<f32>().unwrap() * 1080.0 - 204.0;
@@ -64,7 +64,7 @@ fn gray(img: &[u8], x: usize, y: usize) -> f32 {
 #[test]
 fn brush_drags_paint_like_the_reference_program() {
     let (_, _, sai) = paint_core::io::load_png(&data("sai-brush-default.png")).unwrap();
-    let ours = render();
+    let ours = render("brush-strokes.csv", MixParams::new(0.0, 0.0, 0.5));
     if let Ok(out) = std::env::var("MIX_LIVE_OUT") {
         paint_core::io::save_png(Path::new(&out), 512, 512, &ours).unwrap();
     }
@@ -76,5 +76,49 @@ fn brush_drags_paint_like_the_reference_program() {
         let mean = diff.iter().sum::<f32>() / diff.len() as f32;
         eprintln!("мазок {k}: средняя разница {mean:.1}, наибольшая {:.0}", diff.iter().cloned().fold(0.0, f32::max));
         assert!(mean <= limits[k], "мазок {k}: средняя разница {mean} больше {}", limits[k]);
+    }
+}
+
+/// Акварель по умолчанию (смешивание 30, разбавление 30, стойкость 50) тем же сценарием.
+#[test]
+fn water_color_like_the_reference_program() {
+    let (_, _, sai) = paint_core::io::load_png(&data("sai-water-default.png")).unwrap();
+    let ours = render("water-strokes.csv", MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) });
+    if let Ok(out) = std::env::var("WATER_LIVE_OUT") {
+        paint_core::io::save_png(Path::new(&out), 512, 512, &ours).unwrap();
+    }
+    // Средняя разница по области каждого мазка (x 150..450, ±25 px от оси). Больше всего
+    // расходится мазок с нажимом 0,75: над полосой у SAI светлее (docs/16-mixing.md).
+    let limits = [6.0f32, 17.0, 7.0, 6.0, 12.0];
+    for (k, y) in [80usize, 160, 240, 320, 400].iter().enumerate() {
+        let mut sum = 0.0;
+        let mut n = 0.0;
+        for yy in y - 25..=y + 25 {
+            for x in 150..450 {
+                sum += (gray(&sai, x, yy) - gray(&ours, x, yy)).abs();
+                n += 1.0;
+            }
+        }
+        let mean = sum / n;
+        eprintln!("акварель, мазок {k}: средняя разница {mean:.1}");
+        assert!(mean <= limits[k], "мазок {k}: средняя разница {mean} больше {}", limits[k]);
+    }
+}
+
+/// Маркер по умолчанию (смешивание 0, стойкость 50, без порога размытия) тем же сценарием.
+/// Пока не совпадает: у SAI белый ложится на полосу намного плотнее и почти не тянется
+/// (`docs/16-mixing.md`). Печатает сечения: `cargo test --test mixing_live -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn marker_like_the_reference_program() {
+    let (_, _, sai) = paint_core::io::load_png(&data("sai-marker-default.png")).unwrap();
+    let ours = render("marker-strokes.csv", MixParams { blur_pressure: 0.0, ..MixParams::new(0.0, 0.0, 0.5) });
+    if let Ok(out) = std::env::var("MARKER_LIVE_OUT") {
+        paint_core::io::save_png(Path::new(&out), 512, 512, &ours).unwrap();
+    }
+    for (k, y) in [80usize, 160, 240, 320, 400].iter().enumerate() {
+        let a: Vec<i32> = (0..24).map(|i| gray(&sai, 140 + i * 14, *y) as i32).collect();
+        let b: Vec<i32> = (0..24).map(|i| gray(&ours, 140 + i * 14, *y) as i32).collect();
+        eprintln!("маркер {k}\n  SAI {a:?}\n  наш {b:?}");
     }
 }

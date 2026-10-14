@@ -268,6 +268,10 @@ impl Stroke {
                 });
             }
             let paint = mixer.paint(sample, n, batch[0].pressure);
+            if mix.blur {
+                let size = self.params.diameter_at(batch[0].pressure);
+                water_blur(pixels, &batch, size, originals, &mut changed);
+            }
             for d in &batch {
                 let opacity = d.shape.opacity();
                 for_pixels(d, |x, y, cov| {
@@ -283,6 +287,52 @@ impl Stroke {
         let keys: Vec<Key> = changed.into_iter().collect();
         self.touched.extend(keys.iter().copied());
         keys
+    }
+}
+
+/// Акварель: пиксели под пачкой сдвигаются к размытому слою на долю, набранную отпечатками.
+fn water_blur(
+    pixels: &mut ColorMap,
+    batch: &[Pending],
+    size: f32,
+    originals: &mut HashMap<Key, Option<Tile<Px>>>,
+    changed: &mut HashSet<Key>,
+) {
+    let (r1, r2) = crate::mix::water_blur_radii(size);
+    // Доля размытия в каждом пикселе: отпечатки пачки накладываются «поверх».
+    let mut weight: HashMap<(i32, i32), f64> = HashMap::new();
+    for d in batch {
+        let o = d.shape.opacity();
+        for_pixels(d, |x, y, cov| {
+            let w = weight.entry((x, y)).or_insert(0.0);
+            *w += (1.0 - *w) * (cov * o) as f64;
+        });
+    }
+    let Some(x0) = weight.keys().map(|k| k.0).min() else { return };
+    let x1 = weight.keys().map(|k| k.0).max().unwrap();
+    let y0 = weight.keys().map(|k| k.1).min().unwrap();
+    let y1 = weight.keys().map(|k| k.1).max().unwrap();
+    let m = (r1 + r2) as i32;
+    let (bx, by) = (x0 - m, y0 - m);
+    let (w, h) = ((x1 + m - bx + 1) as usize, (y1 + m - by + 1) as usize);
+    let k = 1.0 / ONE as f64;
+    let mut buf = vec![[0.0f64; 4]; w * h];
+    for (i, v) in buf.iter_mut().enumerate() {
+        let px = pixels.get(bx + (i % w) as i32, by + (i / w) as i32);
+        *v = px.map(|c| c as f64 * k);
+    }
+    for r in [r1, r2] {
+        crate::mix::box_blur(&mut buf, w, h, r, false);
+        crate::mix::box_blur(&mut buf, w, h, r, true);
+    }
+    for (&(x, y), &a) in &weight {
+        let key = key_of(x, y);
+        originals.entry(key).or_insert_with(|| pixels.tiles.get(&key).cloned());
+        changed.insert(key);
+        let blurred = buf[(y - by) as usize * w + (x - bx) as usize];
+        let tile = pixels.tile_mut(key);
+        let i = (y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize;
+        tile.0[i] = lay(tile.0[i], blurred, a, false);
     }
 }
 

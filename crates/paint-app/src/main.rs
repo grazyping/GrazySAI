@@ -108,7 +108,7 @@ fn brush_tools() -> Vec<BrushTool> {
         BrushTool {
             name: "Акварель",
             icon: "water",
-            params: BrushParams { mix: Some(MixParams::new(0.3, 0.3, 0.5)), ..b(30.0, 0.5, 0.8) },
+            params: BrushParams { mix: Some(MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }), ..b(30.0, 0.5, 0.8) },
             enabled: true,
         },
         BrushTool {

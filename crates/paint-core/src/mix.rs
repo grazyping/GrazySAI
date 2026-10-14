@@ -27,13 +27,15 @@ pub struct MixParams {
     pub blend_by_pressure: bool,
     /// Порог размытия: ниже этого нажима цвет кисти не добавляется (при `blend_by_pressure`).
     pub blur_pressure: f32,
+    /// Акварель: слой под мазком размывается (`water_blur`).
+    pub blur: bool,
 }
 
 impl MixParams {
     /// Значения нового инструмента в образце: Кисть и Маркер — 0/0/50, Акварель — 30/30/50;
     /// порог размытия 50, нажим на смешивание включён.
     pub fn new(blending: f32, dilution: f32, persistence: f32) -> Self {
-        Self { blending, dilution, persistence, blend_by_pressure: true, blur_pressure: 0.5 }
+        Self { blending, dilution, persistence, blend_by_pressure: true, blur_pressure: 0.5, blur: false }
     }
 }
 
@@ -51,6 +53,51 @@ const NODES_PER_BATCH_DIV: usize = 8;
 /// Предел пачки в наших отпечатках.
 pub fn batch_dabs(softness: f32) -> usize {
     (batch_limit(softness) / NODES_PER_BATCH_DIV).max(1)
+}
+
+/// Радиусы двух проходов размытия Акварели в пикселях слоя для кисти диаметра `size`.
+///
+/// В образце размытие идёт по уменьшенной копии слоя уровня
+/// `⌊log₂ D⌋ − 4` (0–3); число шагов `n = (уровень + D) >> (уровень + 1)`, не меньше 1; два прохода
+/// скользящего среднего по столбцам и строкам с радиусами `n/2` и `n − n/2` (
+///). У нас — на самом слое, радиусы умножены на масштаб уровня.
+pub fn water_blur_radii(size: f32) -> (usize, usize) {
+    let d = size.max(1.0) as i64;
+    let level = ((63 - (d.max(1) as u64).leading_zeros() as i64) - 4).clamp(0, 3);
+    let n = ((level + d) >> (level + 1)).max(1) as usize;
+    let k = 1usize << level;
+    ((n / 2) * k, (n - n / 2) * k)
+}
+
+/// Скользящее среднее радиуса `r` по строкам (`horizontal`) или столбцам; края повторяются.
+pub fn box_blur(buf: &mut [[f64; 4]], w: usize, h: usize, r: usize, horizontal: bool) {
+    if r == 0 {
+        return;
+    }
+    let (len, lines) = if horizontal { (w, h) } else { (h, w) };
+    let at = |line: usize, i: usize| if horizontal { line * w + i } else { i * w + line };
+    let mut src = vec![[0.0f64; 4]; len];
+    let n = (2 * r + 1) as f64;
+    for line in 0..lines {
+        for (i, v) in src.iter_mut().enumerate() {
+            *v = buf[at(line, i)];
+        }
+        let get = |i: isize| src[i.clamp(0, len as isize - 1) as usize];
+        let mut sum = [0.0f64; 4];
+        for i in -(r as isize)..=(r as isize) {
+            let v = get(i);
+            for c in 0..4 {
+                sum[c] += v[c];
+            }
+        }
+        for i in 0..len {
+            buf[at(line, i)] = sum.map(|s| s / n);
+            let (add, sub) = (get(i as isize + r as isize + 1), get(i as isize - r as isize));
+            for c in 0..4 {
+                sum[c] += add[c] - sub[c];
+            }
+        }
+    }
 }
 
 /// Средний цвет холста под пачкой: сумма предумноженных каналов 0..=1 и число пикселей.
