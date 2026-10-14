@@ -77,8 +77,13 @@ impl Stroke {
 
     /// Самая жёсткая ступень от 20 px у обычных инструментов: образец рисует её отдельной веткой,
     /// у нас — подобранной моделью `DabShape` (docs/08-brush-verification.md).
-    fn large_flat(&self, d: f32) -> bool {
-        self.params.spacing <= 0.0 && !self.params.linework && self.params.hardness >= 1.0 && d >= 20.0
+    ///
+    /// Только при полной плотности: если нажим снижает плотность, образец рисует обычной веткой —
+    /// сечение линии «куполом», а не плато (сверено с живой SAI через виртуальный планшет,
+    /// `docs/14-virtual-pen.md`).
+    fn large_flat(&self, d: f32, pressure: f32) -> bool {
+        let full = self.params.density_at(pressure) >= self.params.density * 0.999;
+        self.params.spacing <= 0.0 && !self.params.linework && self.params.hardness >= 1.0 && d >= 20.0 && full
     }
 
     /// Отпечаток по модели образца (docs/13-thin-brushes.md).
@@ -101,7 +106,7 @@ impl Stroke {
         if self.params.spacing > 0.0 {
             return (self.params.spacing * d.max(1.0)).max(0.05);
         }
-        if self.large_flat(d) {
+        if self.large_flat(d, pressure) {
             return (step_fraction(d, self.params.hardness) * d.max(1.0)).max(0.05);
         }
         let dab = self.sai_dab(pressure);
@@ -116,7 +121,7 @@ impl Stroke {
     fn placement_step_at(&self, pressure: f32) -> f32 {
         let step = self.step_at(pressure);
         let d = self.params.diameter_at(pressure);
-        if self.large_flat(d) {
+        if self.large_flat(d, pressure) {
             step.min(FLAT_LARGE_STEP_PX)
         } else {
             step
@@ -131,10 +136,16 @@ impl Stroke {
         };
         let (dx, dy) = (p.x - prev.x, p.y - prev.y);
         let len = (dx * dx + dy * dy).sqrt();
+        if len <= 0.0 {
+            // перо стоит на месте: отпечатков нет, но нажим новой точки запоминается
+            self.last = Some(p);
+            return;
+        }
         let mut pos = 0.0;
         let mut pressure = prev.pressure;
         loop {
-            let need = self.placement_step_at(pressure) - self.carry;
+            // шаг мог уменьшиться (нажим упал) — тогда следующий отпечаток сразу
+            let need = (self.placement_step_at(pressure) - self.carry).max(0.0);
             if pos + need > len {
                 self.carry += len - pos;
                 break;
@@ -154,7 +165,7 @@ impl Stroke {
         if density <= 0.0 {
             return;
         }
-        let shape = if self.large_flat(diameter) {
+        let shape = if self.large_flat(diameter, p.pressure) {
             let s = DabShape::new(diameter, self.params.hardness);
             let o = dab_opacity(&s, diameter, self.step_at(p.pressure), density);
             Shape::Fitted(s, o)

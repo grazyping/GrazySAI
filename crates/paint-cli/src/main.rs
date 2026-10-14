@@ -256,7 +256,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let num = |i: usize, d: f32| args.get(i).and_then(|s| s.parse::<f32>().ok()).unwrap_or(d);
         let (size, step) = (num(4, 30.0), num(5, 5.0) as usize);
         let (x0, y0, sw, sh) = (num(6, 0.0), num(7, 0.0), num(8, 1.0), num(9, 1.0));
-        let params = BrushParams { size, hardness: paint_core::brush::HARDNESS_STEPS[step.clamp(1, 5) - 1], ..Default::default() };
+        // одиннадцатый параметр `d` — нажим управляет плотностью, а не размером
+        let by_density = args.get(11).is_some_and(|v| v == "d");
+        let params = BrushParams {
+            size,
+            hardness: paint_core::brush::HARDNESS_STEPS[step.clamp(1, 5) - 1],
+            size_by_pressure: !by_density,
+            density_by_pressure: by_density,
+            ..Default::default()
+        };
         let mut doc = Document::new(512, 512);
         // десятый параметр — сглаживание как в образце (0–15)
         let level = num(10, 0.0) as usize;

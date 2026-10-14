@@ -216,6 +216,9 @@ impl Dab {
                 }
             }
         }
+        if samples.is_empty() {
+            return 0.0;
+        }
         let total = |a: f64| {
             let mut rest = 1.0 - a * samples[0];
             for s in &samples[1..] {
