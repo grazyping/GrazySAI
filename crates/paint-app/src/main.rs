@@ -112,6 +112,7 @@ fn brush_tools() -> Vec<BrushTool> {
                 mix: Some(MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }),
                 density_by_pressure: true,
                 ver1_density: true,
+                amplify: 0.5,
                 ..b(30.0, 0.5, 0.8)
             },
             enabled: true,
@@ -124,6 +125,7 @@ fn brush_tools() -> Vec<BrushTool> {
                 mix: Some(MixParams { blur_pressure: 0.0, ..MixParams::new(0.0, 0.0, 0.5) }),
                 density_by_pressure: true,
                 ver1_density: true,
+                amplify: 0.5,
                 ..b(6.0, 0.9, 1.0)
             },
             enabled: true,
@@ -1157,6 +1159,13 @@ impl PaintApp {
             ui.weak("   Текстуры кисти — позже");
         }
         if sai_ui::section(ui, "sec_misc", "Разное") {
+            sai_ui::row(ui, "   Усил. плотн.", lw, true, |ui| {
+                let mut v = brush.amplify * 100.0;
+                let text = format!("{:.0}", v);
+                if sai_ui::bar(ui, &mut v, 0.0, 100.0, text, w, true).changed() {
+                    brush.amplify = (v.round() / 100.0).clamp(0.0, 1.0);
+                }
+            });
             ui.checkbox(&mut brush.ver1_density, "Нажим на плотность как в версии 1");
             sai_ui::row(ui, "   Sharpness", lw, true, |ui| {
                 let mut v = brush.sharpness * 100.0;

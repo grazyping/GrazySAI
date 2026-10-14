@@ -99,6 +99,8 @@ pub struct DabInput {
     /// подбирается без нажима и умножается на `нажим^1,2`, край считается по-старому.
     /// У Маркера и Акварели включено по умолчанию.
     pub ver1: bool,
+    /// «Amplify Density», 0..=1: усиление плотности. У Акварели и Маркера по умолчанию 0,5.
+    pub amplify: f32,
 }
 
 /// Готовый отпечаток.
@@ -122,6 +124,10 @@ pub struct Dab {
     /// Цель подбора непрозрачности (у «Ver1» — без нажима) и множитель после подбора.
     solve_target: f32,
     ver1_scale: f32,
+    /// Множитель непрозрачности от усиления плотности (1 — без усиления).
+    amplify_gain: f32,
+    amplify_mix: f32,
+    ver1: bool,
 }
 
 impl Dab {
@@ -136,6 +142,27 @@ impl Dab {
         } else {
             i.density as f64 * ds * i.density_factor as f64 * (e * 0.4 + 0.6)
         };
+        let a = i.amplify.clamp(0.0, 1.0) as f64;
+        let (mut sharp, mut d, mut gain) = (sharp, d, 1.0);
+        if a > 0.0 {
+            // Усиление плотности: край резче, тонкие кисти — к размерам из таблицы образца,
+            // непрозрачность отпечатка умножается на `gain` (растёт с размером и нажимом).
+            let f = i.density_factor as f64;
+            let q = ((f - 0.5).clamp(0.0, 0.5) * 2.0).powi(2);
+            let big = (d - 10.0).clamp(0.0, 10.0);
+            let mid = d.clamp(1.0, 3.0);
+            let tiny = ((1.0 - d.min(1.0)) * a * 2.0).min(1.0);
+            gain = ((1.0 - q) * big * 0.1 + q) * a + 1.0;
+            sharp *= (1.0 - (mid - 1.0) * 0.5 * a * 0.2) * (1.0 - tiny);
+            if d < 10.0 {
+                const SIZES: [f64; 21] =
+                    [0.0, 0.6, 1.15, 1.35, 1.6, 2.0, 2.6, 3.4, 3.8, 4.2, 4.6, 5.2, 5.7, 6.2, 6.8, 7.3, 7.8, 8.4, 9.0, 9.5, 10.0];
+                let x = (d * 2.0).max(0.0);
+                let k = (x as usize).min(19);
+                let t = x - k as f64;
+                d += (SIZES[k] + (SIZES[k + 1] - SIZES[k]) * t - d) * a;
+            }
+        }
         let mut edge_min = sharp + 1.0;
         let d5 = d - (ds + 1.0) * e * 0.1;
         let mut thin = 1.0;
@@ -149,8 +176,8 @@ impl Dab {
         let target = i.density as f64 * (0.999 - (ds * 0.009 + 0.01) * (1.0 - (d / 6.0).min(1.0))) + (d * 4.5e-5).min(0.0009);
         let target_p = target * i.density_factor as f64;
         let mut small = d.min(1.0);
-        if ds < 1.0 {
-            let x = 1.0 - ds;
+        if ds < 1.0 || a > 0.0 {
+            let x = (1.0 - ds).max(a);
             small = (1.0 - x * 0.8) * small + x * 0.8;
         }
         let (inner, edge, profile, solve): (f64, f64, &'static [f32], &'static [f32]) = {
@@ -190,6 +217,9 @@ impl Dab {
             solve_width: solve_width as f32,
             target: target_p as f32,
             solve_target: if i.ver1 { target } else { target_p } as f32,
+            amplify_gain: gain as f32,
+            ver1: i.ver1,
+            amplify_mix: if a > 0.0 { target_p as f32 } else { 0.0 },
             ver1_scale: if i.ver1 { (i.density_factor as f64).max(0.0).powf(1.2) } else { 1.0 } as f32,
         }
     }
@@ -250,7 +280,16 @@ impl Dab {
             let f0 = total(a - H) - target;
             a += (H / (f - f0)) * -f;
         }
-        ((a * self.thin as f64).min(1.0) * self.ver1_scale as f64) as f32
+        let mut o = a * self.thin as f64;
+        let gain = self.amplify_gain as f64;
+        if self.ver1 {
+            // «Ver1»: усиление прямо умножает непрозрачность
+            o = (o * gain).min(1.0);
+        } else if self.amplify_mix > 0.0 {
+            // обычное правило: к усиленной непрозрачности в доле целевой плотности
+            o += ((o * gain).min(1.0) - o) * self.amplify_mix as f64;
+        }
+        (o.min(1.0) * self.ver1_scale as f64) as f32
     }
 }
 

@@ -27,6 +27,8 @@ pub struct BrushParams {
     pub sharpness: f32,
     /// «Ver1 Prs Spec.»: нажим на плотность по правилу версии 1 (`DabInput::ver1`).
     pub ver1_density: bool,
+    /// «Amplify Density», 0..=1 (`DabInput::amplify`).
+    pub amplify: f32,
     /// Смешивание с холстом (Кисть, Акварель, Маркер); `None` — краска не смешивается.
     pub mix: Option<crate::mix::MixParams>,
 }
@@ -46,6 +48,7 @@ impl Default for BrushParams {
             linework: false,
             sharpness: 0.0,
             ver1_density: false,
+            amplify: 0.0,
             mix: None,
         }
     }
