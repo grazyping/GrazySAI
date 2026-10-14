@@ -119,6 +119,29 @@ impl ViewXf {
     }
 }
 
+/// Инструмент слоя контура.
+#[derive(Clone, Copy, PartialEq)]
+enum LineTool {
+    Pen,
+    Eraser,
+    Weight,
+    Color,
+    Edit,
+    Pressure,
+}
+
+/// Идёт правка кривых слоя контура: рабочая копия кривых, исходные кривые и пиксели (для
+/// отмены одной записью), захваченный узел.
+struct LineEdit {
+    path: Vec<usize>,
+    shapes: Vec<paint_formats::sai2_vector::Shape>,
+    orig_pixels: paint_core::tile::ColorMap,
+    node: Option<(usize, usize, usize)>,
+    start_y: f32,
+    start_weight: f32,
+    changed: bool,
+}
+
 /// Какой фильтр открыт.
 #[derive(Clone, Copy, PartialEq)]
 enum FilterKind {
@@ -514,6 +537,8 @@ struct PaintApp {
     sel_stroke: Option<(Stroke, Vec<Vec2>)>,
     /// Мазок пера на слое контура: точки с нажимом (станут кривой при отрыве пера).
     line_stroke: Option<Vec<paint_core::vectorize::StrokePoint>>,
+    line_tool: LineTool,
+    line_edit: Option<LineEdit>,
     /// Диалог «Изменить разрешение» / «Изменить размер»: новые размеры, сохранять пропорции,
     /// способ пересэмплирования, привязка.
     canvas_dialog: Option<CanvasDialog>,
@@ -587,6 +612,8 @@ impl PaintApp {
             transform: None,
             sel_stroke: None,
             line_stroke: None,
+            line_tool: LineTool::Pen,
+            line_edit: None,
             canvas_dialog: None,
             filter: None,
             recovery_at: Instant::now(),
@@ -625,6 +652,20 @@ impl PaintApp {
             app.view_angle = it.next().and_then(|a| a.trim().parse::<f32>().ok()).unwrap_or(0.0).to_radians();
             app.view_flip = it.next().is_some_and(|f| f.trim() == "flip");
         }
+        // PAINT_LAYER=n — выбрать слой n верхнего уровня; PAINT_LINE_TOOL — инструмент контура
+        if let Some(n) = std::env::var("PAINT_LAYER").ok().and_then(|v| v.parse::<usize>().ok()) {
+            if n < app.doc.layers.len() {
+                app.selected = vec![n];
+            }
+        }
+        app.line_tool = match std::env::var("PAINT_LINE_TOOL").as_deref() {
+            Ok("eraser") => LineTool::Eraser,
+            Ok("weight") => LineTool::Weight,
+            Ok("color") => LineTool::Color,
+            Ok("edit") => LineTool::Edit,
+            Ok("pressure") => LineTool::Pressure,
+            _ => LineTool::Pen,
+        };
         // PAINT_LINEWORK — начать на новом слое контура (для проверок пера с кривыми)
         if std::env::var_os("PAINT_LINEWORK").is_some() {
             app.add_linework_layer();
@@ -1029,6 +1070,34 @@ impl PaintApp {
         let liwk = self.doc.layer(&self.selected).is_some_and(|l| {
             l.visible && !l.lock_paint && !l.lock_all && l.vector.as_ref().is_some_and(|v| &v.kind == b"liwk")
         });
+        let tool = if eraser_end { LineTool::Eraser } else { self.line_tool };
+        if liwk && tool != LineTool::Pen && self.filter.is_none() {
+            let layer = self.doc.layer(&self.selected).unwrap();
+            let raw = &layer.vector.as_ref().unwrap().raw;
+            match paint_formats::sai2_vector::parse(raw, true) {
+                Ok(shapes) => {
+                    let reach = 6.0 / self.zoom as f64;
+                    let node = matches!(tool, LineTool::Edit | LineTool::Pressure)
+                        .then(|| paint_formats::linework::hit_node(&shapes, p.x as f64, p.y as f64, reach))
+                        .flatten();
+                    let start_weight = node
+                        .and_then(|(si, pi, ni)| shapes.get(si)?.paths.get(pi)?.points.get(ni).map(|c| c.weight))
+                        .unwrap_or(1.0);
+                    self.line_edit = Some(LineEdit {
+                        path: self.selected.clone(),
+                        shapes,
+                        orig_pixels: layer.pixels.clone(),
+                        node,
+                        start_y: p.y,
+                        start_weight,
+                        changed: false,
+                    });
+                    self.line_apply(tool, p);
+                }
+                Err(e) => self.status = format!("Кривые слоя не прочитаны: {e}"),
+            }
+            return;
+        }
         if liwk && !eraser_end && self.brush != SEL_PEN && self.brush != SEL_ERASER && self.filter.is_none() {
             // перо слоя контура: точки копятся, по отрыву становятся кривой
             self.smoother = Stabilizer::with_level(self.stabilizer);
@@ -1077,6 +1146,11 @@ impl PaintApp {
     }
 
     fn continue_stroke(&mut self, p: InputPoint) {
+        if self.line_edit.is_some() {
+            let tool = if self.pen.lock().is_ok_and(|s| s.eraser) { LineTool::Eraser } else { self.line_tool };
+            self.line_apply(tool, p);
+            return;
+        }
         if let Some(pts) = self.line_stroke.as_mut() {
             let q = self.smoother.push(p);
             pts.push(paint_core::vectorize::StrokePoint { at: [q.x as f64, q.y as f64], pressure: q.pressure as f64 });
@@ -1098,6 +1172,20 @@ impl PaintApp {
     }
 
     fn end_stroke(&mut self) {
+        if let Some(e) = self.line_edit.take() {
+            // показ шёл без истории — вернуть исходные пиксели и записать правку одной записью
+            let keys = self.doc.set_layer_pixels(&e.path, e.orig_pixels);
+            self.invalidate(keys);
+            if e.changed {
+                let raw = paint_formats::sai2_vector::write(&e.shapes, true);
+                let pixels = paint_formats::linework::render_shapes(&e.shapes);
+                let keys = self.doc.set_vector_layer(&e.path, paint_core::layer::VectorData { kind: *b"liwk", raw }, pixels);
+                self.invalidate(keys);
+                self.thumbs.clear();
+                self.dirty = true;
+            }
+            return;
+        }
         if let Some(mut pts) = self.line_stroke.take() {
             for q in self.smoother.finish() {
                 pts.push(paint_core::vectorize::StrokePoint { at: [q.x as f64, q.y as f64], pressure: q.pressure as f64 });
@@ -1123,6 +1211,60 @@ impl PaintApp {
         }
         let keys = self.doc.live_finish(live);
         self.invalidate(keys);
+    }
+
+    /// Инструмент слоя контура в точке `p` (ластик, толщина, цвет — по пути под точкой; узлы и
+    /// нажим — по захваченному узлу). Показ — без истории.
+    fn line_apply(&mut self, tool: LineTool, p: InputPoint) {
+        use paint_formats::linework as lw;
+        let reach = 4.0 / self.zoom as f64;
+        let size = self.brushes[self.brush].params.size;
+        let c = self.color();
+        let Some(e) = self.line_edit.as_mut() else { return };
+        let (x, y) = (p.x as f64, p.y as f64);
+        let mut now = false;
+        match tool {
+            LineTool::Eraser => {
+                while let Some((si, pi)) = lw::hit(&e.shapes, x, y, reach) {
+                    lw::delete_path(&mut e.shapes, si, pi);
+                    now = true;
+                }
+            }
+            LineTool::Weight => {
+                if let Some((si, _)) = lw::hit(&e.shapes, x, y, reach) {
+                    lw::set_size(&mut e.shapes, si, size);
+                    now = true;
+                }
+            }
+            LineTool::Color => {
+                if let Some((si, _)) = lw::hit(&e.shapes, x, y, reach) {
+                    lw::set_color(&mut e.shapes, si, [c.r(), c.g(), c.b()]);
+                    now = true;
+                }
+            }
+            LineTool::Edit => {
+                if let Some(n) = e.node {
+                    lw::move_node(&mut e.shapes, n, x, y);
+                    now = true;
+                }
+            }
+            LineTool::Pressure => {
+                if let Some(n) = e.node {
+                    // вверх — сильнее, вниз — слабее; 100 px — весь размах
+                    let w = e.start_weight - (p.y - e.start_y) / 100.0;
+                    lw::set_node_pressure(&mut e.shapes, n, w);
+                    now = true;
+                }
+            }
+            LineTool::Pen => {}
+        }
+        e.changed |= now;
+        if now {
+            let pixels = lw::render_shapes(&e.shapes);
+            let path = e.path.clone();
+            let keys = self.doc.set_layer_pixels(&path, pixels);
+            self.invalidate(keys);
+        }
     }
 
     /// Штрих пера на слое контура → кривая, добавленная к кривым слоя (одна запись истории).
@@ -2167,6 +2309,25 @@ impl PaintApp {
         } else if self.transform.as_ref().is_some_and(|t| t.dirty && t.drag.is_none()) {
             self.update_transform(false);
         }
+        if self.doc.layer(&self.selected).is_some_and(|l| l.vector.as_ref().is_some_and(|v| &v.kind == b"liwk")) {
+            ui.label("Инструменты контура:");
+            ui.horizontal_wrapped(|ui| {
+                for (t, name, tip) in [
+                    (LineTool::Pen, "Перо", "Рисовать кривые"),
+                    (LineTool::Eraser, "Ластик", "Удалить путь, которого коснулись (E)"),
+                    (LineTool::Weight, "Толщина", "Задать путям размер кисти"),
+                    (LineTool::Color, "Цвет", "Перекрасить пути в основной цвет"),
+                    (LineTool::Edit, "Узлы", "Двигать узлы (I)"),
+                    (LineTool::Pressure, "Нажим", "Нажим узла: тянуть вверх или вниз (P)"),
+                ] {
+                    if ui.selectable_label(self.line_tool == t, name).on_hover_text(tip).clicked() {
+                        self.line_tool = t;
+                        self.tool = Tool::Brush;
+                    }
+                }
+            });
+            ui.add_space(4.0);
+        }
         if matches!(self.tool, Tool::Wand | Tool::Fill) {
             let tol = &mut self.wand_tolerance;
             sai_ui::row(ui, "Допуск", lw, true, |ui| {
@@ -3020,7 +3181,7 @@ impl PaintApp {
                 if let Some(pos) = pointer {
                     self.begin_stroke(point(pos, self.zoom, self.offset), eraser_end);
                 }
-            } else if self.live.is_some() || self.sel_stroke.is_some() || self.line_stroke.is_some() {
+            } else if self.live.is_some() || self.sel_stroke.is_some() || self.line_stroke.is_some() || self.line_edit.is_some() {
                 for pos in moves {
                     self.continue_stroke(point(pos, self.zoom, self.offset));
                 }
@@ -3779,9 +3940,20 @@ impl eframe::App for PaintApp {
                     self.tool = t;
                 }
             }
-            // клавиши кистей SAI: N — карандаш, B — аэрограф, V — кисть, C — акварель, E — ластик
+            // клавиши кистей SAI: N — карандаш, B — аэрограф, V — кисть, C — акварель, E — ластик;
+            // на слое контура: N — перо, E — ластик контура, I — узлы, P — нажим
+            let liwk = self.doc.layer(&self.selected).is_some_and(|l| l.vector.as_ref().is_some_and(|v| &v.kind == b"liwk"));
+            let (key_i, key_p) = ctx.input(|i| (!i.modifiers.any() && i.key_pressed(egui::Key::I), !i.modifiers.any() && i.key_pressed(egui::Key::P)));
+            if liwk {
+                for (k, t) in [(n, LineTool::Pen), (e, LineTool::Eraser), (key_i, LineTool::Edit), (key_p, LineTool::Pressure)] {
+                    if k {
+                        self.line_tool = t;
+                        self.tool = Tool::Brush;
+                    }
+                }
+            }
             for (k, i) in [(n, 0), (bkey, 1), (v, 2), (c, 3), (e, ERASER)] {
-                if k {
+                if k && !(liwk && (i == 0 || i == ERASER)) {
                     self.brush = i;
                     self.tool = Tool::Brush;
                 }

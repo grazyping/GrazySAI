@@ -109,6 +109,131 @@ pub fn render(layer: &Layer) -> io::Result<paint_core::tile::ColorMap> {
     Ok(l.pixels)
 }
 
+/// Узлы пути в координатах холста.
+fn nodes_of(p: &Path) -> Vec<paint_core::vector::Node> {
+    let at = |q: [f64; 2]| [q[0] + p.offset[0], q[1] + p.offset[1]];
+    p.points.iter().map(|c| paint_core::vector::Node { point: at(c.point), handle_in: at(c.handle_in), handle_out: at(c.handle_out) }).collect()
+}
+
+/// Какой путь под точкой (x, y): (объект, путь). Ищется верхний (последний в порядке наложения),
+/// расстояние до кривой не больше `reach` плюс половина толщины.
+pub fn hit(shapes: &[Shape], x: f64, y: f64, reach: f64) -> Option<(usize, usize)> {
+    let mut best: Option<(usize, usize)> = None;
+    for (si, sh) in shapes.iter().enumerate() {
+        let half = match &sh.style {
+            Style::Linework { size, .. } => *size as f64 * 0.5,
+            _ => 0.0,
+        };
+        for (pi, p) in sh.paths.iter().enumerate() {
+            let pts = paint_core::vector::flatten(&nodes_of(p), p.closed, 16);
+            let near = pts.windows(2).any(|w| {
+                let (a, b) = (w[0], w[1]);
+                let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+                let l2 = dx * dx + dy * dy;
+                let t = if l2 > 0.0 { (((x - a[0]) * dx + (y - a[1]) * dy) / l2).clamp(0.0, 1.0) } else { 0.0 };
+                let (cx, cy) = (a[0] + dx * t, a[1] + dy * t);
+                (x - cx).hypot(y - cy) <= reach + half
+            }) || (pts.len() == 1 && (x - pts[0][0]).hypot(y - pts[0][1]) <= reach + half);
+            if near {
+                best = Some((si, pi));
+            }
+        }
+    }
+    best
+}
+
+/// Ближайший узел к (x, y) не дальше `reach`: (объект, путь, узел).
+pub fn hit_node(shapes: &[Shape], x: f64, y: f64, reach: f64) -> Option<(usize, usize, usize)> {
+    let mut best: Option<((usize, usize, usize), f64)> = None;
+    for (si, sh) in shapes.iter().enumerate() {
+        for (pi, p) in sh.paths.iter().enumerate() {
+            for (ni, c) in p.points.iter().enumerate() {
+                let d = (c.point[0] + p.offset[0] - x).hypot(c.point[1] + p.offset[1] - y);
+                if d <= reach && best.is_none_or(|b| d < b.1) {
+                    best = Some(((si, pi, ni), d));
+                }
+            }
+        }
+    }
+    best.map(|b| b.0)
+}
+
+/// Удалить путь; объект без путей удаляется. Цепочки «следующий» связываются заново.
+pub fn delete_path(shapes: &mut Vec<Shape>, si: usize, pi: usize) {
+    let Some(sh) = shapes.get_mut(si) else { return };
+    if pi >= sh.paths.len() {
+        return;
+    }
+    let gone = sh.paths.remove(pi);
+    for p in shapes.iter_mut().flat_map(|s| s.paths.iter_mut()) {
+        if p.next_in_layer == gone.id {
+            p.next_in_layer = gone.next_in_layer;
+        }
+    }
+    if shapes[si].paths.is_empty() {
+        let gone = shapes.remove(si);
+        for s in shapes.iter_mut() {
+            if s.next == gone.id {
+                s.next = gone.next;
+            }
+        }
+    }
+}
+
+/// Пересчитать ручки пути вида «Normal» по его точкам.
+pub fn update_handles(p: &mut Path) {
+    if p.curve != CurveType::Normal {
+        return;
+    }
+    let pts: Vec<[f64; 2]> = p.points.iter().map(|c| c.point).collect();
+    let pointed: Vec<bool> = p.points.iter().map(|c| c.pointed).collect();
+    for (c, (hi, ho)) in p.points.iter_mut().zip(paint_core::vectorize::normal_handles(&pts, &pointed, p.closed)) {
+        c.handle_in = hi;
+        c.handle_out = ho;
+    }
+}
+
+/// Сдвинуть узел в точку холста (x, y); ручки — заново.
+pub fn move_node(shapes: &mut [Shape], (si, pi, ni): (usize, usize, usize), x: f64, y: f64) {
+    let Some(p) = shapes.get_mut(si).and_then(|s| s.paths.get_mut(pi)) else { return };
+    let Some(c) = p.points.get_mut(ni) else { return };
+    let new = [x - p.offset[0], y - p.offset[1]];
+    let (dx, dy) = (new[0] - c.point[0], new[1] - c.point[1]);
+    c.point = new;
+    // у вида «Cubic Bezier» ручки едут вместе с узлом
+    c.handle_in = [c.handle_in[0] + dx, c.handle_in[1] + dy];
+    c.handle_out = [c.handle_out[0] + dx, c.handle_out[1] + dy];
+    update_handles(p);
+}
+
+/// Задать толщину объекта (инструмент «Weight»).
+pub fn set_size(shapes: &mut [Shape], si: usize, value: f32) {
+    if let Some(Style::Linework { size, .. }) = shapes.get_mut(si).map(|s| &mut s.style) {
+        *size = value;
+    }
+}
+
+/// Задать цвет объекта (инструмент «Color»).
+pub fn set_color(shapes: &mut [Shape], si: usize, rgb: [u8; 3]) {
+    if let Some(Style::Linework { color, .. }) = shapes.get_mut(si).map(|s| &mut s.style) {
+        *color = scol(rgb);
+    }
+}
+
+/// Задать нажим узла 0..1 (инструмент «Pressure»).
+pub fn set_node_pressure(shapes: &mut [Shape], (si, pi, ni): (usize, usize, usize), value: f32) {
+    if let Some(c) = shapes.get_mut(si).and_then(|s| s.paths.get_mut(pi)).and_then(|p| p.points.get_mut(ni)) {
+        c.weight = value.clamp(0.0, 1.0);
+    }
+}
+
+/// Пиксели по разобранным кривым слоя контура.
+pub fn render_shapes(shapes: &[Shape]) -> paint_core::tile::ColorMap {
+    let mut l = Layer::new("");
+    crate::sai2_doc::render_linework(&mut l, shapes);
+    l.pixels
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,5 +256,31 @@ mod tests {
         let px = render(&layer).unwrap();
         let p = paint_core::pixel::to_rgba8(px.get(60, (20.0 + 5.0f64.sin() * 5.0).round() as i32));
         assert!(p[3] > 200 && p[0] > 150 && p[1] < 80, "линия нарисована цветом стиля: {p:?}");
+    }
+
+    #[test]
+    fn edit_tools_change_paths() {
+        let raw: Vec<StrokePoint> = (0..=60).map(|i| StrokePoint { at: [10.0 + i as f64, 30.0], pressure: 1.0 }).collect();
+        let (nodes, closed) = vectorize(&raw, 1.0).unwrap();
+        let st = LineStyle { rgb: [0, 0, 0], size: 4.0, density: 1.0, hardness: 4 };
+        let mut block = empty().raw;
+        for _ in 0..3 {
+            block = append(&block, &nodes, closed, &st).unwrap();
+        }
+        let mut shapes = sai2_vector::parse(&block, true).unwrap();
+        assert_eq!(hit(&shapes, 40.0, 31.0, 1.0), Some((2, 0)), "верхний путь под точкой");
+        assert_eq!(hit(&shapes, 40.0, 60.0, 1.0), None);
+        set_size(&mut shapes, 2, 12.0);
+        set_color(&mut shapes, 2, [255, 0, 0]);
+        let n = hit_node(&shapes, 70.0, 30.0, 3.0).unwrap();
+        move_node(&mut shapes, n, 70.0, 50.0);
+        set_node_pressure(&mut shapes, n, 0.25);
+        delete_path(&mut shapes, 1, 0);
+        assert_eq!(shapes.len(), 2);
+        assert_eq!(shapes[0].next, shapes[1].id, "цепочка связана заново");
+        let again = sai2_vector::parse(&sai2_vector::write(&shapes, true), true).unwrap();
+        assert_eq!(again, shapes);
+        let px = render_shapes(&shapes);
+        assert!(paint_core::pixel::to_rgba8(px.get(69, 49))[3] > 0, "сдвинутый узел нарисован");
     }
 }
