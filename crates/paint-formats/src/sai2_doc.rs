@@ -149,7 +149,7 @@ pub fn color_from_file(c: &[u8; 8]) -> paint_core::pixel::Px {
 }
 
 /// Заливка фигур слоя. Узлы и ручки в файле — относительно сдвига пути.
-fn render_shapes(pixels: &mut paint_core::tile::ColorMap, shapes: &[sai2_vector::Shape]) {
+pub fn render_shapes(pixels: &mut paint_core::tile::ColorMap, shapes: &[sai2_vector::Shape]) {
     use paint_core::vector::{fill_shape, Node};
     for sh in shapes {
         let sai2_vector::Style::Fill { color } = &sh.style else { continue };
@@ -168,7 +168,7 @@ fn render_shapes(pixels: &mut paint_core::tile::ColorMap, shapes: &[sai2_vector:
 
 /// Штрихи слоя контура нашим движком кисти: точки вдоль кривой через 0,25 px с нажимом по длине
 /// дуги (docs/11-linework-shapes.md, разделы 4–5).
-fn render_linework(layer: &mut Layer, shapes: &[sai2_vector::Shape]) {
+pub fn render_linework(layer: &mut Layer, shapes: &[sai2_vector::Shape]) {
     use paint_core::brush::HARDNESS_STEPS;
     use paint_core::vector::{sample_path, Node};
     use paint_core::{BrushParams, InputPoint, Stroke};

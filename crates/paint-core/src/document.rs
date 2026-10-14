@@ -18,6 +18,8 @@ enum Op {
     Remove { path: Vec<usize> },
     /// Заменить выделение (обратный шаг — прежнее выделение).
     Selection { mask: MaskMap },
+    /// Заменить кривые слоя контура или фигур (обратный шаг — прежние кривые).
+    Vector { path: Vec<usize>, vector: Option<crate::layer::VectorData> },
     /// Заменить весь холст: размер, слои, выделение (для действий над холстом).
     Canvas { width: u32, height: u32, layers: Vec<Layer>, selection: MaskMap },
 }
@@ -214,6 +216,11 @@ impl Document {
                 keys.sort_unstable();
                 keys.dedup();
                 Some((back, keys))
+            }
+            Op::Vector { path, vector } => {
+                let layer = self.layer_mut(&path)?;
+                let old = std::mem::replace(&mut layer.vector, vector);
+                Some((Op::Vector { path, vector: old }, Vec::new()))
             }
             Op::Selection { mask } => {
                 let old = std::mem::replace(&mut self.selection.mask, mask);
@@ -621,6 +628,17 @@ impl Document {
             self.perform(vec![Op::Tiles { path: path.to_vec(), tiles }]);
         }
         keys
+    }
+
+    /// Новые кривые слоя и их пиксели — одна запись истории.
+    pub fn set_vector_layer(&mut self, path: &[usize], vector: crate::layer::VectorData, pixels: ColorMap) -> Vec<Key> {
+        let Some(layer) = self.layer(path) else { return Vec::new() };
+        let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
+        keys.extend(pixels.tiles.keys().copied());
+        keys.sort_unstable();
+        keys.dedup();
+        let tiles: TileBackup = keys.iter().map(|k| (*k, pixels.tiles.get(k).cloned())).collect();
+        self.perform(vec![Op::Vector { path: path.to_vec(), vector: Some(vector) }, Op::Tiles { path: path.to_vec(), tiles }])
     }
 
     /// Растеризовать слой контура или фигур: кривые отбрасываются, пиксели остаются; отмена —

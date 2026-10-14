@@ -211,3 +211,32 @@ fn linework_layer_matches_the_reference() {
     let mean = sum / (mine.len() / 4) as f64;
     assert!(mean < 2.0, "средняя разница {mean}");
 }
+
+/// Ручки «Normal», посчитанные по правилу образца из одних точек, совпадают с ручками в файле
+/// пользователя (`пинг5.sai2`, слой контура).
+#[test]
+fn normal_handles_match_the_file() {
+    let Some(p) = sample("пинг5.sai2") else { return };
+    let loaded = paint_formats::sai2_doc::load(&p).unwrap();
+    let (mut worst, mut count) = (0.0f64, 0);
+    for (_, shapes) in &loaded.vector_layers {
+        for sh in shapes {
+            for path in &sh.paths {
+                if path.curve != paint_formats::sai2_vector::CurveType::Normal {
+                    continue;
+                }
+                let pts: Vec<[f64; 2]> = path.points.iter().map(|c| c.point).collect();
+                let pointed: Vec<bool> = path.points.iter().map(|c| c.pointed).collect();
+                let h = paint_core::vectorize::normal_handles(&pts, &pointed, path.closed);
+                for (c, (hi, ho)) in path.points.iter().zip(h) {
+                    for (a, b) in [(c.handle_in, hi), (c.handle_out, ho)] {
+                        worst = worst.max((a[0] - b[0]).hypot(a[1] - b[1]));
+                    }
+                    count += 1;
+                }
+            }
+        }
+    }
+    eprintln!("узлов {count}, наибольшее расхождение ручек {worst:.4} px");
+    assert!(count > 100 && worst < 0.01, "узлов {count}, расхождение {worst}");
+}

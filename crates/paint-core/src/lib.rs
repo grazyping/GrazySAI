@@ -17,6 +17,7 @@ pub mod stabilizer;
 pub mod stroke;
 pub mod tile;
 pub mod vector;
+pub mod vectorize;
 
 pub use blend::BlendMode;
 pub use brush::BrushParams;

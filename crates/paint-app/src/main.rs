@@ -512,6 +512,8 @@ struct PaintApp {
     transform: Option<Transform>,
     /// Мазок пера или ластика выделения и его путь на холсте (для показа во время мазка).
     sel_stroke: Option<(Stroke, Vec<Vec2>)>,
+    /// Мазок пера на слое контура: точки с нажимом (станут кривой при отрыве пера).
+    line_stroke: Option<Vec<paint_core::vectorize::StrokePoint>>,
     /// Диалог «Изменить разрешение» / «Изменить размер»: новые размеры, сохранять пропорции,
     /// способ пересэмплирования, привязка.
     canvas_dialog: Option<CanvasDialog>,
@@ -584,6 +586,7 @@ impl PaintApp {
             move_drag: None,
             transform: None,
             sel_stroke: None,
+            line_stroke: None,
             canvas_dialog: None,
             filter: None,
             recovery_at: Instant::now(),
@@ -621,6 +624,10 @@ impl PaintApp {
             let mut it = v.split(',');
             app.view_angle = it.next().and_then(|a| a.trim().parse::<f32>().ok()).unwrap_or(0.0).to_radians();
             app.view_flip = it.next().is_some_and(|f| f.trim() == "flip");
+        }
+        // PAINT_LINEWORK — начать на новом слое контура (для проверок пера с кривыми)
+        if std::env::var_os("PAINT_LINEWORK").is_some() {
+            app.add_linework_layer();
         }
         // PAINT_FILTER=hs|bc|gauss — открыть фильтр при запуске (для проверок)
         match std::env::var("PAINT_FILTER").as_deref() {
@@ -1007,7 +1014,7 @@ impl PaintApp {
         });
         let (pressure, eraser, source) = match (fresh, self.touch_force) {
             (Some((p, e)), _) => (p, e, "перо (XInput 2)"),
-            (None, Some(f)) if self.touch_down || (self.stroke_by_touch && self.live.is_some()) => (f, false, "перо (Windows Ink)"),
+            (None, Some(f)) if self.touch_down || (self.stroke_by_touch && (self.live.is_some() || self.line_stroke.is_some() || self.sel_stroke.is_some())) => (f, false, "перо (Windows Ink)"),
             _ => (1.0, false, "мышь"),
         };
         self.last_pressure = pressure;
@@ -1018,6 +1025,17 @@ impl PaintApp {
     }
 
     fn begin_stroke(&mut self, p: InputPoint, eraser_end: bool) {
+        self.stroke_by_touch = self.touch_down;
+        let liwk = self.doc.layer(&self.selected).is_some_and(|l| {
+            l.visible && !l.lock_paint && !l.lock_all && l.vector.as_ref().is_some_and(|v| &v.kind == b"liwk")
+        });
+        if liwk && !eraser_end && self.brush != SEL_PEN && self.brush != SEL_ERASER && self.filter.is_none() {
+            // перо слоя контура: точки копятся, по отрыву становятся кривой
+            self.smoother = Stabilizer::with_level(self.stabilizer);
+            let q = self.smoother.push(p);
+            self.line_stroke = Some(vec![paint_core::vectorize::StrokePoint { at: [q.x as f64, q.y as f64], pressure: q.pressure as f64 }]);
+            return;
+        }
         if self.filter.is_some() {
             self.status = String::from("Сначала закройте окно фильтра (OK или «Отмена»)");
             return;
@@ -1059,6 +1077,11 @@ impl PaintApp {
     }
 
     fn continue_stroke(&mut self, p: InputPoint) {
+        if let Some(pts) = self.line_stroke.as_mut() {
+            let q = self.smoother.push(p);
+            pts.push(paint_core::vectorize::StrokePoint { at: [q.x as f64, q.y as f64], pressure: q.pressure as f64 });
+            return;
+        }
         if let Some((s, path)) = self.sel_stroke.as_mut() {
             let q = self.smoother.push(p);
             s.add_point(q);
@@ -1075,6 +1098,13 @@ impl PaintApp {
     }
 
     fn end_stroke(&mut self) {
+        if let Some(mut pts) = self.line_stroke.take() {
+            for q in self.smoother.finish() {
+                pts.push(paint_core::vectorize::StrokePoint { at: [q.x as f64, q.y as f64], pressure: q.pressure as f64 });
+            }
+            self.commit_line(&pts);
+            return;
+        }
         if let Some((mut s, _)) = self.sel_stroke.take() {
             for q in self.smoother.finish() {
                 s.add_point(q);
@@ -1093,6 +1123,40 @@ impl PaintApp {
         }
         let keys = self.doc.live_finish(live);
         self.invalidate(keys);
+    }
+
+    /// Штрих пера на слое контура → кривая, добавленная к кривым слоя (одна запись истории).
+    fn commit_line(&mut self, pts: &[paint_core::vectorize::StrokePoint]) {
+        let Some((nodes, closed)) = paint_core::vectorize::vectorize(pts, 1.0) else {
+            self.status = String::from("Штрих слишком короткий для кривой");
+            return;
+        };
+        let path = self.selected.clone();
+        let Some(layer) = self.doc.layer(&path) else { return };
+        let Some(v) = &layer.vector else { return };
+        let b = &self.brushes[self.brush].params;
+        let c = self.color();
+        let step = paint_core::brush::HARDNESS_STEPS.iter().position(|h| (h - b.hardness).abs() < 0.01).unwrap_or(4) as u32;
+        let st = paint_formats::linework::LineStyle { rgb: [c.r(), c.g(), c.b()], size: b.size, density: b.density, hardness: step };
+        let raw = match paint_formats::linework::append(&v.raw, &nodes, closed, &st) {
+            Ok(r) => r,
+            Err(e) => {
+                self.status = format!("Не удалось добавить кривую: {e}");
+                return;
+            }
+        };
+        let mut probe = layer.clone();
+        probe.vector = Some(paint_core::layer::VectorData { kind: *b"liwk", raw: raw.clone() });
+        match paint_formats::linework::render(&probe) {
+            Ok(pixels) => {
+                let keys = self.doc.set_vector_layer(&path, paint_core::layer::VectorData { kind: *b"liwk", raw }, pixels);
+                self.invalidate(keys);
+                self.thumbs.clear();
+                self.dirty = true;
+                self.status = format!("Кривая: узлов {}", nodes.len());
+            }
+            Err(e) => self.status = format!("Не удалось нарисовать кривую: {e}"),
+        }
     }
 
     fn undo(&mut self) {
@@ -1404,6 +1468,19 @@ impl PaintApp {
         self.hsv = sai_ui::rgb_to_hsv(Color32::from_rgb(rgba[i], rgba[i + 1], rgba[i + 2]));
     }
 
+    /// Новый слой контура над текущим: рисовать пером — получаются кривые, как в SAI.
+    fn add_linework_layer(&mut self) {
+        let mut path = self.selected.clone();
+        let index = path.pop().map_or(0, |i| i + 1);
+        let n = count_layers(&self.doc.layers) + 1;
+        let mut layer = Layer::new(&format!("Контур{n}"));
+        layer.vector = Some(paint_formats::linework::empty());
+        path.push(index);
+        let keys = self.doc.insert_layer(&path, layer);
+        self.selected = path;
+        self.after_structure(keys);
+    }
+
     fn add_layer(&mut self, folder: bool) {
         let mut path = self.selected.clone();
         let index = path.pop().map_or(0, |i| i + 1);
@@ -1597,7 +1674,10 @@ impl PaintApp {
                     self.add_layer(false);
                     ui.close_menu();
                 }
-                ui.add_enabled(false, egui::Button::new("Новый слой контура"));
+                if ui.button("Новый слой контура").clicked() {
+                    self.add_linework_layer();
+                    ui.close_menu();
+                }
                 if ui.button("Новая папка").clicked() {
                     self.add_layer(true);
                     ui.close_menu();
@@ -2940,7 +3020,7 @@ impl PaintApp {
                 if let Some(pos) = pointer {
                     self.begin_stroke(point(pos, self.zoom, self.offset), eraser_end);
                 }
-            } else if self.live.is_some() || self.sel_stroke.is_some() {
+            } else if self.live.is_some() || self.sel_stroke.is_some() || self.line_stroke.is_some() {
                 for pos in moves {
                     self.continue_stroke(point(pos, self.zoom, self.offset));
                 }
@@ -3049,6 +3129,15 @@ impl PaintApp {
                 painter.circle_filled(pts[0], width / 2.0, color);
             } else {
                 painter.add(egui::Shape::line(pts, egui::Stroke::new(width, color)));
+            }
+        }
+        // Мазок пера на слое контура — тонкая линия по пути, пока перо не поднято.
+        if let Some(pts) = &self.line_stroke {
+            let c = self.color();
+            let width = (self.brushes[self.brush].params.size * self.zoom).max(1.0);
+            let line: Vec<Pos2> = pts.iter().map(|p| to_screen(p.at[0] as f32, p.at[1] as f32)).collect();
+            if line.len() > 1 {
+                painter.add(egui::Shape::line(line, egui::Stroke::new(width, Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 160))));
             }
         }
         // Рамка трансформации с ручками.
@@ -3464,6 +3553,11 @@ impl eframe::App for PaintApp {
     /// Для проверок: `PAINT_EXPORT_ON_EXIT=файл.png` — сохранить холст и вывести сводку по перу.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.save_settings();
+        // для проверок: PAINT_SAVE_ON_EXIT=файл.sai2 — сохранить документ при выходе
+        if let Ok(out) = std::env::var("PAINT_SAVE_ON_EXIT") {
+            let r = paint_formats::sai2_write::save(&self.doc, std::path::Path::new(&out));
+            eprintln!("save: {} -> {out}", if r.is_ok() { "saved" } else { "failed" });
+        }
         // нормальный выход: копия для восстановления не нужна (если её не предлагали восстановить)
         if self.recovery_found.is_none() {
             if let Some((file, info)) = recovery_files() {
