@@ -118,6 +118,27 @@ impl ViewXf {
     }
 }
 
+/// Какой фильтр открыт.
+#[derive(Clone, Copy, PartialEq)]
+enum FilterKind {
+    HueSaturation,
+    BrightnessContrast,
+    GaussianBlur,
+}
+
+/// Открытый фильтр: настройки, слой и его исходные пиксели (для предпросмотра и отмены).
+struct FilterDialog {
+    kind: FilterKind,
+    hs: paint_core::filters::HueSaturation,
+    bc: paint_core::filters::BrightnessContrast,
+    radius: f64,
+    preview: bool,
+    path: Vec<usize>,
+    original: paint_core::tile::ColorMap,
+    /// Настройки изменились — пересчитать предпросмотр.
+    dirty: bool,
+}
+
 /// Диалог изменения холста.
 struct CanvasDialog {
     resample: bool,
@@ -493,6 +514,7 @@ struct PaintApp {
     /// Диалог «Изменить разрешение» / «Изменить размер»: новые размеры, сохранять пропорции,
     /// способ пересэмплирования, привязка.
     canvas_dialog: Option<CanvasDialog>,
+    filter: Option<FilterDialog>,
     /// Поворот вида (радианы) и зеркало вида по горизонтали — только показ, рисунок не меняется.
     view_angle: f32,
     view_flip: bool,
@@ -556,6 +578,7 @@ impl PaintApp {
             transform: None,
             sel_stroke: None,
             canvas_dialog: None,
+            filter: None,
             view_angle: 0.0,
             view_flip: false,
             sel_outline: Vec::new(),
@@ -582,6 +605,13 @@ impl PaintApp {
             let mut it = v.split(',');
             app.view_angle = it.next().and_then(|a| a.trim().parse::<f32>().ok()).unwrap_or(0.0).to_radians();
             app.view_flip = it.next().is_some_and(|f| f.trim() == "flip");
+        }
+        // PAINT_FILTER=hs|bc|gauss — открыть фильтр при запуске (для проверок)
+        match std::env::var("PAINT_FILTER").as_deref() {
+            Ok("hs") => app.open_filter(FilterKind::HueSaturation),
+            Ok("bc") => app.open_filter(FilterKind::BrightnessContrast),
+            Ok("gauss") => app.open_filter(FilterKind::GaussianBlur),
+            _ => {}
         }
         if std::env::var_os("PAINT_TRANSFORM").is_some() {
             if let Ok(v) = std::env::var("PAINT_SELECT") {
@@ -656,6 +686,9 @@ impl PaintApp {
 
 /// Сохранить в `.sai2`: в тот же файл или, если его нет или в нём были кривые, — спросить путь.
     fn save(&mut self) {
+        if self.filter.is_some() {
+            self.finish_filter(true);
+        }
         if self.transform.is_some() {
             self.finish_transform(true);
         }
@@ -711,6 +744,7 @@ impl PaintApp {
     fn invalidate_all(&mut self) {
         self.sel_dirty = true;
         self.transform = None;
+        self.filter = None;
         self.move_drag = None;
         self.thumbs.clear();
         self.display.clear();
@@ -791,6 +825,10 @@ impl PaintApp {
     }
 
     fn begin_stroke(&mut self, p: InputPoint, eraser_end: bool) {
+        if self.filter.is_some() {
+            self.status = String::from("Сначала закройте окно фильтра (OK или «Отмена»)");
+            return;
+        }
         if !eraser_end && (self.brush == SEL_PEN || self.brush == SEL_ERASER) {
             // перо и ластик выделения рисуют не в слой, а в выделение
             self.smoother = Stabilizer::with_level(self.stabilizer);
@@ -863,6 +901,10 @@ impl PaintApp {
     }
 
     fn undo(&mut self) {
+        if self.filter.is_some() {
+            self.finish_filter(false);
+            return;
+        }
         if self.transform.is_some() {
             self.finish_transform(false);
             return;
@@ -921,6 +963,9 @@ impl PaintApp {
     }
 
     fn begin_move(&mut self, at: Vec2) {
+        if self.filter.is_some() {
+            return;
+        }
         let Some(layer) = self.doc.layer(&self.selected) else { return };
         if layer.children.is_some() || !layer.visible || !layer.movable() {
             self.status = String::from("Двигать можно видимый обычный слой без запрета перемещения");
@@ -957,6 +1002,9 @@ impl PaintApp {
 
     /// Начать трансформацию (Ctrl+T): выделенное или всё содержимое текущего слоя.
     fn begin_transform(&mut self) {
+        if self.filter.is_some() {
+            return;
+        }
         let Some(layer) = self.doc.layer(&self.selected) else { return };
         if layer.children.is_some() || !layer.visible || !layer.movable() {
             self.status = String::from("Трансформировать можно видимый обычный слой без запрета перемещения");
@@ -1024,6 +1072,77 @@ impl PaintApp {
         self.fit_pending = true;
         self.invalidate_all();
         self.status = format!("Холст {}×{}", self.doc.width, self.doc.height);
+    }
+
+    /// Открыть фильтр для текущего слоя.
+    fn open_filter(&mut self, kind: FilterKind) {
+        if self.transform.is_some() {
+            self.finish_transform(true);
+        }
+        if self.filter.is_some() {
+            return;
+        }
+        let Some(layer) = self.doc.layer(&self.selected) else { return };
+        if layer.children.is_some() || !layer.paintable() {
+            self.status = String::from("Фильтр применяется к обычному слою без запрета рисования");
+            return;
+        }
+        self.filter = Some(FilterDialog {
+            kind,
+            hs: Default::default(),
+            bc: Default::default(),
+            radius: 1.0,
+            preview: true,
+            path: self.selected.clone(),
+            original: layer.pixels.clone(),
+            dirty: true,
+        });
+    }
+
+    /// Пиксели слоя после фильтра (с учётом выделения).
+    fn filter_result(&self, f: &FilterDialog) -> paint_core::tile::ColorMap {
+        use paint_core::filters::{gaussian_blur, map_pixels};
+        let sel = &self.doc.selection;
+        let amount = |x: i32, y: i32| sel.amount(x, y);
+        match f.kind {
+            FilterKind::HueSaturation => {
+                let hs = f.hs;
+                map_pixels(&f.original, &amount, &|p| hs.apply(p))
+            }
+            FilterKind::BrightnessContrast => {
+                let bc = f.bc;
+                map_pixels(&f.original, &amount, &|p| bc.apply(p))
+            }
+            FilterKind::GaussianBlur => gaussian_blur(&f.original, self.doc.width, self.doc.height, f.radius, &amount),
+        }
+    }
+
+    /// Пересчитать предпросмотр (или вернуть исходное, если предпросмотр выключен).
+    fn update_filter(&mut self) {
+        let Some(f) = self.filter.as_mut() else { return };
+        f.dirty = false;
+        let (path, preview) = (f.path.clone(), f.preview);
+        let pixels = if preview {
+            let f = self.filter.as_ref().unwrap();
+            self.filter_result(f)
+        } else {
+            self.filter.as_ref().unwrap().original.clone()
+        };
+        let keys = self.doc.set_layer_pixels(&path, pixels);
+        self.invalidate(keys);
+    }
+
+    fn finish_filter(&mut self, apply: bool) {
+        let Some(f) = self.filter.take() else { return };
+        let pixels = if apply { self.filter_result(&f) } else { f.original.clone() };
+        let keys = self.doc.set_layer_pixels(&f.path, pixels);
+        self.invalidate(keys);
+        if apply {
+            let sel = self.doc.selection.clone();
+            self.doc.move_commit(&f.path, f.original, sel);
+            self.dirty = true;
+            self.thumbs.clear();
+        }
     }
 
     /// Сдвиг клавишами (Alt+стрелки).
@@ -1103,6 +1222,9 @@ impl PaintApp {
 
     /// Действия со слоем из кнопок под списком, меню «Слой» и клавиш образца.
     fn layer_action(&mut self, action: LayerAction) {
+        if self.filter.is_some() {
+            self.finish_filter(true);
+        }
         if self.transform.is_some() {
             self.finish_transform(true);
         }
@@ -1351,12 +1473,15 @@ impl PaintApp {
                 ui.add_enabled(false, egui::Button::new("Показать линейку"));
             });
             ui.menu_button("Фильтр(T)", |ui| {
-                for item in [
-                    "Тон и насыщенность…",
-                    "Яркость и контраст…",
-                    "Размытие по Гауссу…",
+                for (item, kind) in [
+                    ("Тон и насыщенность…   Ctrl+U", FilterKind::HueSaturation),
+                    ("Яркость и контраст…", FilterKind::BrightnessContrast),
+                    ("Размытие по Гауссу…", FilterKind::GaussianBlur),
                 ] {
-                    ui.add_enabled(false, egui::Button::new(item));
+                    if ui.button(item).clicked() {
+                        self.open_filter(kind);
+                        ui.close_menu();
+                    }
                 }
             });
             ui.menu_button("Вид(V)", |ui| {
@@ -2085,6 +2210,9 @@ impl PaintApp {
                     if self.transform.is_some() {
                         self.finish_transform(true);
                     }
+                    if self.filter.is_some() {
+                        self.finish_filter(true);
+                    }
                     self.selected = path.clone();
                 }
             }
@@ -2738,6 +2866,72 @@ impl PaintApp {
 
 impl PaintApp {
     fn dialogs(&mut self, ctx: &egui::Context) {
+        let mut finish = None;
+        if let Some(f) = self.filter.as_mut() {
+            let title = match f.kind {
+                FilterKind::HueSaturation => "Тон и насыщенность",
+                FilterKind::BrightnessContrast => "Яркость и контраст",
+                FilterKind::GaussianBlur => "Размытие по Гауссу",
+            };
+            let mut open = true;
+            egui::Window::new(title).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+                let before = (f.hs, f.bc, f.radius, f.preview);
+                egui::Grid::new("filter").num_columns(2).show(ui, |ui| {
+                    match f.kind {
+                        FilterKind::HueSaturation => {
+                            ui.label("Тон :");
+                            ui.add(egui::Slider::new(&mut f.hs.hue, -180..=180));
+                            ui.end_row();
+                            ui.label("Насыщенность :");
+                            ui.add(egui::Slider::new(&mut f.hs.saturation, -100..=100));
+                            ui.end_row();
+                            ui.label("Яркость :");
+                            ui.add(egui::Slider::new(&mut f.hs.luminance, -100..=100));
+                            ui.end_row();
+                            ui.label("");
+                            ui.checkbox(&mut f.hs.colorize, "Окрасить");
+                            ui.end_row();
+                        }
+                        FilterKind::BrightnessContrast => {
+                            ui.label("Яркость :");
+                            ui.add(egui::Slider::new(&mut f.bc.brightness, -100..=100));
+                            ui.end_row();
+                            ui.label("Контраст :");
+                            ui.add(egui::Slider::new(&mut f.bc.contrast, -100..=100));
+                            ui.end_row();
+                            ui.label("Глубина :");
+                            ui.add(egui::Slider::new(&mut f.bc.depth, -100..=100));
+                            ui.end_row();
+                        }
+                        FilterKind::GaussianBlur => {
+                            ui.label("Радиус :");
+                            ui.add(egui::Slider::new(&mut f.radius, 0.1..=40.0).step_by(0.1));
+                            ui.end_row();
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut f.preview, "Предпросмотр");
+                    if ui.button("OK").clicked() {
+                        finish = Some(true);
+                    }
+                    if ui.button("Отмена").clicked() {
+                        finish = Some(false);
+                    }
+                });
+                if before != (f.hs, f.bc, f.radius, f.preview) {
+                    f.dirty = true;
+                }
+            });
+            if !open {
+                finish = Some(false);
+            }
+        }
+        if let Some(apply) = finish {
+            self.finish_filter(apply);
+        } else if self.filter.as_ref().is_some_and(|f| f.dirty) {
+            self.update_filter();
+        }
         let mut apply = None;
         let mut close = false;
         if let Some(d) = self.canvas_dialog.as_mut() {
@@ -3178,6 +3372,10 @@ impl eframe::App for PaintApp {
             if reset {
                 self.rotate_view(0.0);
             }
+        }
+        let key_u = ctx.input(|i| i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::U));
+        if key_u && !ctx.wants_keyboard_input() && self.live.is_none() {
+            self.open_filter(FilterKind::HueSaturation);
         }
         let (key_t, key_enter, key_esc) = ctx.input(|i| {
             (

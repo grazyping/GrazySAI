@@ -349,6 +349,17 @@ impl Document {
         keys
     }
 
+    /// Заменить пиксели слоя без записи в историю (показ фильтра); возвращает плитки для перерисовки.
+    pub fn set_layer_pixels(&mut self, path: &[usize], pixels: ColorMap) -> Vec<Key> {
+        let Some(layer) = self.layer_mut(path) else { return Vec::new() };
+        let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
+        keys.extend(pixels.tiles.keys().copied());
+        layer.pixels = pixels;
+        keys.sort_unstable();
+        keys.dedup();
+        keys
+    }
+
     /// Закончить сдвиг или трансформацию: одна запись истории, отмена возвращает исходные пиксели и выделение.
     pub fn move_commit(&mut self, path: &[usize], original: ColorMap, orig_sel: Selection) {
         let Some(layer) = self.layer(path) else { return };
