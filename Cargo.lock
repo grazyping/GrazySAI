@@ -633,7 +633,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1156,6 +1156,12 @@ dependencies = [
  "getrandom 0.4.3",
  "libc",
 ]
+
+[[package]]
+name = "jpeg-encoder"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b454d911ac55068f53495488d8ccd0646eaa540c033a28ee15b07838afafb01f"
 
 [[package]]
 name = "js-sys"
@@ -1734,7 +1740,7 @@ dependencies = [
 
 [[package]]
 name = "paint-app"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "eframe",
  "paint-core",
@@ -1744,7 +1750,7 @@ dependencies = [
 
 [[package]]
 name = "paint-cli"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "paint-core",
  "paint-formats",
@@ -1752,14 +1758,17 @@ dependencies = [
 
 [[package]]
 name = "paint-core"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
+ "jpeg-encoder",
  "png 0.17.16",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
 name = "paint-formats"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "paint-core",
 ]
@@ -1795,7 +1804,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pen-test"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "paint-core",
  "windows-sys 0.59.0",
@@ -2044,7 +2053,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2475,7 +2484,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "virtual-tablet"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "libc",
 ]
@@ -2855,7 +2864,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3217,3 +3226,18 @@ name = "zlib-rs"
 version = "0.6.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b268e58e7c693d7c271f93ffc4ba3b380412554231c85bf61ca7af91042a4112"
+
+[[package]]
+name = "zune-core"
+version = "0.4.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f423a2c17029964870cfaabb1f13dfab7d092a62a29a89264f4d36990ca414a"
+
+[[package]]
+name = "zune-jpeg"
+version = "0.4.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29ce2c8a9384ad323cf564b67da86e21d3cfdff87908bc1223ed5c99bc792713"
+dependencies = [
+ "zune-core",
+]

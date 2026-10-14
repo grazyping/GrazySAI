@@ -647,3 +647,27 @@ fn luminance_to_alpha_and_selection_source() {
     let src = doc.pick_source(&[1]);
     assert_eq!(src.get(2, 1)[3], paint_core::pixel::ONE as u16);
 }
+
+#[test]
+fn jpeg_and_png_round_trip_through_document() {
+    let dir = std::env::temp_dir().join(format!("sosai-img-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut rgba = Vec::new();
+    for y in 0..32u32 {
+        for x in 0..48u32 {
+            rgba.extend([(x * 5) as u8, (y * 7) as u8, 128, 255]);
+        }
+    }
+    let jpg = dir.join("проба.jpg");
+    paint_core::io::save_jpeg(&jpg, 48, 32, &rgba, 95).unwrap();
+    let (w, h, back) = paint_core::io::load_image(&jpg).unwrap();
+    assert_eq!((w, h), (48, 32));
+    let worst = back.iter().zip(&rgba).map(|(a, b)| (*a as i32 - *b as i32).abs()).max().unwrap();
+    assert!(worst <= 12, "JPEG теряет немного: {worst}");
+    let png = dir.join("проба.png");
+    paint_core::io::save_png(&png, 48, 32, &rgba).unwrap();
+    let (_, _, p) = paint_core::io::load_image(&png).unwrap();
+    let doc = Document::from_rgba(48, 32, &p);
+    assert_eq!(doc.flatten(), rgba);
+    std::fs::remove_dir_all(dir).ok();
+}

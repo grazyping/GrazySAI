@@ -29,3 +29,35 @@ pub fn load_png(path: &Path) -> Result<(u32, u32, Vec<u8>), Box<dyn std::error::
     };
     Ok((info.width, info.height, rgba))
 }
+
+/// Прочитать JPEG как RGBA по 8 бит.
+pub fn load_jpeg(path: &Path) -> Result<(u32, u32, Vec<u8>), Box<dyn std::error::Error>> {
+    let data = std::fs::read(path)?;
+    let opts = zune_core::options::DecoderOptions::default().jpeg_set_out_colorspace(zune_core::colorspace::ColorSpace::RGBA);
+    let mut dec = zune_jpeg::JpegDecoder::new_with_options(&data, opts);
+    let pixels = dec.decode()?;
+    let (w, h) = dec.dimensions().ok_or("JPEG: нет размеров")?;
+    Ok((w as u32, h as u32, pixels))
+}
+
+/// Прочитать картинку по расширению: PNG или JPEG.
+pub fn load_image(path: &Path) -> Result<(u32, u32, Vec<u8>), Box<dyn std::error::Error>> {
+    match path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref() {
+        Some("jpg") | Some("jpeg") => load_jpeg(path),
+        _ => load_png(path),
+    }
+}
+
+/// Сохранить JPEG с качеством 1–100 (прозрачность ложится на белый).
+pub fn save_jpeg(path: &Path, width: u32, height: u32, rgba: &[u8], quality: u8) -> Result<(), Box<dyn std::error::Error>> {
+    let rgb: Vec<u8> = rgba
+        .chunks(4)
+        .flat_map(|p| {
+            let a = p[3] as u32;
+            [0, 1, 2].map(|c| ((p[c] as u32 * a + 255 * (255 - a) + 127) / 255) as u8)
+        })
+        .collect();
+    let enc = jpeg_encoder::Encoder::new_file(path, quality.clamp(1, 100))?;
+    enc.encode(&rgb, width as u16, height as u16, jpeg_encoder::ColorType::Rgb)?;
+    Ok(())
+}

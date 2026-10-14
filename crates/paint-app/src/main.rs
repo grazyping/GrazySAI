@@ -648,6 +648,38 @@ impl PaintApp {
     }
 
     fn open(&mut self, path: PathBuf) {
+        let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
+        if matches!(ext.as_str(), "psd" | "png" | "jpg" | "jpeg") {
+            let started = Instant::now();
+            let loaded = if ext == "psd" {
+                paint_formats::psd::load(&path)
+            } else {
+                paint_core::io::load_image(&path).map(|(w, h, rgba)| Document::from_rgba(w, h, &rgba))
+            };
+            match loaded {
+                Ok(doc) => {
+                    self.doc = doc;
+                    self.had_vectors = false;
+                    self.notes.clear();
+                    self.status = format!(
+                        "Открыт {} — {}×{}, слоёв {}, за {:.1} с",
+                        path.display(),
+                        self.doc.width,
+                        self.doc.height,
+                        self.doc.layers.len(),
+                        started.elapsed().as_secs_f32()
+                    );
+                    self.file = Some(path);
+                    self.selected = first_raster(&self.doc.layers).unwrap_or_default();
+                    self.live = None;
+                    self.fit_pending = true;
+                    self.dirty = false;
+                    self.invalidate_all();
+                }
+                Err(e) => self.status = format!("Не удалось открыть {}: {e}", path.display()),
+            }
+            return;
+        }
         let started = Instant::now();
         match paint_formats::sai2_doc::load(&path) {
             Ok(loaded) => {
@@ -724,6 +756,29 @@ impl PaintApp {
             }
             Err(e) => self.status = format!("Не удалось сохранить {}: {e}", path.display()),
         }
+    }
+
+    /// Экспорт рядом с файлом (или в рабочую папку): `jpg` — сведённая картинка, `psd` — слои.
+    fn export_as(&mut self, ext: &str) {
+        if self.transform.is_some() {
+            self.finish_transform(true);
+        }
+        if self.filter.is_some() {
+            self.finish_filter(true);
+        }
+        let path = match &self.file {
+            Some(f) => f.with_extension(format!("export.{ext}")),
+            None => std::env::current_dir().unwrap_or_default().join(format!("sosai-export.{ext}")),
+        };
+        let result = if ext == "psd" {
+            paint_formats::psd::save(&self.doc, &path)
+        } else {
+            paint_core::io::save_jpeg(&path, self.doc.width, self.doc.height, &self.doc.flatten(), 92)
+        };
+        self.status = match result {
+            Ok(()) => format!("Сохранено: {}", path.display()),
+            Err(e) => format!("Не удалось сохранить {}: {e}", path.display()),
+        };
     }
 
     fn export_png(&mut self) {
@@ -1325,10 +1380,20 @@ impl PaintApp {
                     self.ask_save_as();
                     ui.close_menu();
                 }
-                if ui.button("Экспорт в PNG").clicked() {
-                    self.export_png();
-                    ui.close_menu();
-                }
+                ui.menu_button("Экспорт", |ui| {
+                    if ui.button("PNG (сведённая картинка)").clicked() {
+                        self.export_png();
+                        ui.close_menu();
+                    }
+                    if ui.button("JPEG (качество 92)").clicked() {
+                        self.export_as("jpg");
+                        ui.close_menu();
+                    }
+                    if ui.button("PSD (со слоями)").clicked() {
+                        self.export_as("psd");
+                        ui.close_menu();
+                    }
+                });
                 ui.separator();
                 if ui.button("Выход").clicked() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);

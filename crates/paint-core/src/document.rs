@@ -66,6 +66,17 @@ impl Document {
         }
     }
 
+    /// Документ из картинки RGBA по 8 бит (один слой; фон — белый, как у нового холста).
+    pub fn from_rgba(width: u32, height: u32, rgba: &[u8]) -> Self {
+        let mut doc = Document::new(width, height);
+        for (i, p) in rgba.chunks(4).enumerate() {
+            if p[3] > 0 {
+                doc.layers[0].pixels.set((i as u32 % width) as i32, (i as u32 / width) as i32, crate::pixel::from_rgba8([p[0], p[1], p[2], p[3]]));
+            }
+        }
+        doc
+    }
+
     pub fn add_layer(&mut self, name: &str) -> usize {
         self.layers.push(Layer::new(name));
         self.layers.len() - 1
