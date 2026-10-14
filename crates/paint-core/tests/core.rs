@@ -568,3 +568,28 @@ fn canvas_flip_rotate_resize_and_resolution() {
     doc.flip_layer(&[0], false);
     assert_eq!(pixel(&doc, 1, 17), [0, 0, 0, 255]);
 }
+
+#[test]
+fn free_deform_maps_corners_to_a_quad() {
+    use paint_core::resample::{mul3, square_to_quad, Mode};
+    use paint_core::selection::Warp;
+    let black = paint_core::pixel::from_rgba8([0, 0, 0, 255]);
+    let mut doc = Document::new(100, 100);
+    for x in 10..30 {
+        for y in 10..30 {
+            doc.layers[0].pixels.set(x, y, black);
+        }
+    }
+    let original = doc.layers[0].pixels.clone();
+    let sel = doc.selection.clone();
+    // квадрат 10..30 → трапеция: верх 10..30, низ 0..60 на y = 50
+    let to_unit = [1.0 / 20.0, 0.0, -0.5, 0.0, 1.0 / 20.0, -0.5, 0.0, 0.0, 1.0];
+    let h = mul3(square_to_quad([[10.0, 10.0], [30.0, 10.0], [60.0, 50.0], [0.0, 50.0]]), to_unit);
+    let w = Warp::Projective(h);
+    let (x, y) = w.apply(30.0, 30.0);
+    assert!((x - 60.0).abs() < 1e-9 && (y - 50.0).abs() < 1e-9);
+    doc.warp_preview(&[0], &original, &sel, w, Mode::Bilinear);
+    assert_eq!(pixel(&doc, 20, 12), [0, 0, 0, 255]);
+    assert_eq!(pixel(&doc, 6, 44), [0, 0, 0, 255], "низ растянут влево");
+    assert_eq!(pixel(&doc, 5, 12), [255, 255, 255, 255]);
+}

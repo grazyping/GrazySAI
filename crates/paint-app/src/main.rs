@@ -132,6 +132,8 @@ enum Handle {
     Rotate,
     /// Угол или середина стороны: −1 / 0 / +1 по осям рамки.
     Scale(i8, i8),
+    /// Угол свободной деформации (0 — левый верхний, далее по часовой).
+    Corner(usize),
 }
 
 /// Идёт трансформация (Ctrl+T). Рамка — прямоугольник источника `src`, переведённый в
@@ -147,9 +149,52 @@ struct Transform {
     drag: Option<(Handle, Vec2)>,
     mode: paint_core::resample::Mode,
     dirty: bool,
+    /// Свободная деформация: углы рамки на холсте (левый верхний, правый верхний, правый нижний,
+    /// левый нижний); `None` — обычная рамка.
+    quad: Option<[Vec2; 4]>,
 }
 
 impl Transform {
+    /// Отображение источника в результат: обычная рамка — аффинно, свободная — перспективой.
+    fn warp(&self) -> paint_core::selection::Warp {
+        use paint_core::selection::Warp;
+        match self.quad {
+            None => Warp::Affine(self.matrix()),
+            Some(q) => {
+                let [x0, y0, x1, y1] = self.src;
+                let to_unit = [1.0 / (x1 - x0).max(1e-9), 0.0, -x0 / (x1 - x0).max(1e-9), 0.0, 1.0 / (y1 - y0).max(1e-9), -y0 / (y1 - y0).max(1e-9), 0.0, 0.0, 1.0];
+                let qd = q.map(|p| [p.x as f64, p.y as f64]);
+                Warp::Projective(paint_core::resample::mul3(paint_core::resample::square_to_quad(qd), to_unit))
+            }
+        }
+    }
+
+    /// Углы рамки на холсте по часовой, начиная с левого верхнего.
+    fn corners(&self) -> [Vec2; 4] {
+        match self.quad {
+            Some(q) => q,
+            None => {
+                let [l, t, r, b] = self.edges;
+                [self.world(l, t), self.world(r, t), self.world(r, b), self.world(l, b)]
+            }
+        }
+    }
+
+    /// Ручки на холсте.
+    fn handle_points(&self) -> Vec<(Handle, Vec2)> {
+        match self.quad {
+            Some(q) => (0..4).map(|i| (Handle::Corner(i), q[i])).collect(),
+            None => self.handles().into_iter().map(|(h, u, v)| (h, self.world(u, v))).collect(),
+        }
+    }
+
+    /// Точка внутри рамки.
+    fn contains(&self, p: Vec2) -> bool {
+        let c = self.corners();
+        let side = |a: Vec2, b: Vec2| (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+        let s: Vec<f32> = (0..4).map(|i| side(c[i], c[(i + 1) % 4])).collect();
+        s.iter().all(|&v| v >= 0.0) || s.iter().all(|&v| v <= 0.0)
+    }
     fn center(&self) -> [f64; 2] {
         [(self.src[0] + self.src[2]) / 2.0, (self.src[1] + self.src[3]) / 2.0]
     }
@@ -198,7 +243,20 @@ impl Transform {
     }
 
     fn drag_to(&mut self, handle: Handle, from: Vec2, to: Vec2) {
+        if let Some(q) = self.quad.as_mut() {
+            match handle {
+                Handle::Corner(i) => q[i] = to,
+                _ => {
+                    for p in q.iter_mut() {
+                        *p += to - from;
+                    }
+                }
+            }
+            self.dirty = true;
+            return;
+        }
         match handle {
+            Handle::Corner(_) => {}
             Handle::Move => {
                 self.shift[0] += (to.x - from.x) as f64;
                 self.shift[1] += (to.y - from.y) as f64;
@@ -530,6 +588,12 @@ impl PaintApp {
                 }
             }
             app.begin_transform();
+            // PAINT_TRANSFORM=free — сразу свободная деформация
+            if std::env::var("PAINT_TRANSFORM").as_deref() == Ok("free") {
+                if let Some(t) = app.transform.as_mut() {
+                    t.quad = Some(t.corners());
+                }
+            }
         } else if let Ok(v) = std::env::var("PAINT_SELECT") {
             let n: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
             if n.len() == 4 {
@@ -914,8 +978,9 @@ impl PaintApp {
             drag: None,
             mode: paint_core::resample::Mode::Bilinear,
             dirty: false,
+            quad: None,
         });
-        self.status = String::from("Трансформация: углы и стороны — размер, внутри — сдвиг, снаружи — поворот; Enter — применить, Esc — отмена");
+        self.status = String::from("Трансформация: углы и стороны — размер, Ctrl + угол — свободная деформация, внутри — сдвиг, снаружи — поворот; Enter — применить, Esc — отмена");
     }
 
     /// Пересчитать показ трансформации (во время протяжки — быстрым билинейным способом).
@@ -923,7 +988,7 @@ impl PaintApp {
         let Some(t) = self.transform.as_mut() else { return };
         t.dirty = false;
         let mode = if fast { paint_core::resample::Mode::Bilinear } else { t.mode };
-        let keys = self.doc.transform_preview(&t.path, &t.original, &t.orig_sel, t.matrix(), mode);
+        let keys = self.doc.warp_preview(&t.path, &t.original, &t.orig_sel, t.warp(), mode);
         self.sel_dirty = true;
         self.invalidate(keys);
     }
@@ -2343,11 +2408,23 @@ impl PaintApp {
             if pressed && response.hovered() {
                 if let (Some(pos), Some(t)) = (pointer, self.transform.as_mut()) {
                     let c = to_canvas(pos, zoom, self.offset);
-                    let near = t.handles().into_iter().find(|&(_, u, v)| (screen(t.world(u, v)) - pos).length() < 8.0);
-                    let [u, v] = t.local(c);
-                    let [l, tp, r, b] = t.edges;
-                    let inside = u >= l.min(r) && u <= l.max(r) && v >= tp.min(b) && v <= tp.max(b);
-                    let handle = near.map(|h| h.0).unwrap_or(if inside { Handle::Move } else { Handle::Rotate });
+                    let near = t.handle_points().into_iter().find(|&(_, p)| (screen(p) - pos).length() < 8.0).map(|h| h.0);
+                    // Ctrl + угол — свободная деформация: дальше каждый угол двигается отдельно
+                    let near = match near {
+                        Some(Handle::Scale(hx, hy)) if ctrl && hx != 0 && hy != 0 => {
+                            t.quad = Some(t.corners());
+                            Some(Handle::Corner(match (hx, hy) {
+                                (-1, -1) => 0,
+                                (1, -1) => 1,
+                                (1, 1) => 2,
+                                _ => 3,
+                            }))
+                        }
+                        other => other,
+                    };
+                    let inside = t.contains(c);
+                    let free = t.quad.is_some();
+                    let handle = near.unwrap_or(if inside || free { Handle::Move } else { Handle::Rotate });
                     t.drag = Some((handle, c));
                 }
             } else if let Some(t) = self.transform.as_mut() {
@@ -2576,15 +2653,11 @@ impl PaintApp {
         }
         // Рамка трансформации с ручками.
         if let Some(t) = &self.transform {
-            let [l, tp, r, b] = t.edges;
-            let pts: Vec<Pos2> = [(l, tp), (r, tp), (r, b), (l, b), (l, tp)]
-                .iter()
-                .map(|&(u, v)| { let w = t.world(u, v); to_screen(w.x, w.y) })
-                .collect();
+            let c = t.corners();
+            let pts: Vec<Pos2> = [c[0], c[1], c[2], c[3], c[0]].iter().map(|w| to_screen(w.x, w.y)).collect();
             painter.add(egui::Shape::line(pts.clone(), egui::Stroke::new(1.0_f32, Color32::WHITE)));
             painter.extend(egui::Shape::dashed_line(&pts, egui::Stroke::new(1.0_f32, Color32::BLACK), 4.0, 4.0));
-            for (_, u, v) in t.handles() {
-                let w = t.world(u, v);
+            for (_, w) in t.handle_points() {
                 let c = to_screen(w.x, w.y);
                 let hr = Rect::from_center_size(c, Vec2::splat(7.0));
                 painter.rect_filled(hr, 0.0, Color32::WHITE);

@@ -316,11 +316,40 @@ pub fn shift_pixels(src: &ColorMap, sel: &Selection, dx: i32, dy: i32) -> ColorM
 /// без выделения — весь слой, с выделением — выделенная часть поверх остального. Выделение
 /// трансформируется так же. Возвращает (пиксели, маска выделения).
 pub fn transform_pixels(src: &ColorMap, sel: &Selection, m: [f64; 6], mode: crate::resample::Mode) -> (ColorMap, MaskMap) {
+    warp_pixels(src, sel, Warp::Affine(m), mode)
+}
+
+/// Отображение точки источника в точку результата.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Warp {
+    /// `x' = m0·x + m1·y + m2`, `y' = m3·x + m4·y + m5`.
+    Affine([f64; 6]),
+    /// Матрица 3×3 по строкам (перспектива, свободная деформация).
+    Projective([f64; 9]),
+}
+
+impl Warp {
+    fn full(self) -> [f64; 9] {
+        match self {
+            Warp::Affine(m) => [m[0], m[1], m[2], m[3], m[4], m[5], 0.0, 0.0, 1.0],
+            Warp::Projective(m) => m,
+        }
+    }
+
+    pub fn apply(self, x: f64, y: f64) -> (f64, f64) {
+        let m = self.full();
+        let w = m[6] * x + m[7] * y + m[8];
+        ((m[0] * x + m[1] * y + m[2]) / w, (m[3] * x + m[4] * y + m[5]) / w)
+    }
+}
+
+/// Как `transform_pixels`, но с любым отображением `warp`.
+pub fn warp_pixels(src: &ColorMap, sel: &Selection, warp: Warp, mode: crate::resample::Mode) -> (ColorMap, MaskMap) {
     let whole = sel.mask.tiles.is_empty();
     // область источника
     let bounds = if whole { content_bounds(src) } else { sel.bounds() };
     let Some((x0, y0, x1, y1)) = bounds else { return (src.clone(), sel.mask.clone()) };
-    let Some(inv) = crate::resample::invert_affine(m) else { return (src.clone(), sel.mask.clone()) };
+    let Some(inv) = crate::resample::invert3(warp.full()) else { return (src.clone(), sel.mask.clone()) };
     let (sw, sh) = ((x1 - x0) as usize, (y1 - y0) as usize);
     let k = 1.0 / ONE as f32;
     let mut part = vec![[0f32; 4]; sw * sh];
@@ -348,16 +377,19 @@ pub fn transform_pixels(src: &ColorMap, sel: &Selection, m: [f64; 6], mode: crat
         }
     }
     // область результата — образ углов
-    let corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].map(|(x, y)| (m[0] * x as f64 + m[1] * y as f64 + m[2], m[3] * x as f64 + m[4] * y as f64 + m[5]));
+    let corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].map(|(x, y)| warp.apply(x as f64, y as f64));
     let dx0 = corners.iter().map(|c| c.0).fold(f64::MAX, f64::min).floor() as i32 - 1;
     let dy0 = corners.iter().map(|c| c.1).fold(f64::MAX, f64::min).floor() as i32 - 1;
     let dx1 = corners.iter().map(|c| c.0).fold(f64::MIN, f64::max).ceil() as i32 + 1;
     let dy1 = corners.iter().map(|c| c.1).fold(f64::MIN, f64::max).ceil() as i32 + 1;
     let (dw, dh) = ((dx1 - dx0) as usize, (dy1 - dy0) as usize);
-    // матрица в координатах буфера источника
-    let inv_local = [inv[0], inv[1], inv[2] - x0 as f64, inv[3], inv[4], inv[5] - y0 as f64];
-    let moved = crate::resample::affine(&part, sw, sh, inv_local, dx0, dy0, dw, dh, mode);
-    let mmask = crate::resample::affine(&mpart, sw, sh, inv_local, dx0, dy0, dw, dh, mode);
+    // обратное отображение в координаты буфера источника
+    let back = |x: f64, y: f64| {
+        let w = inv[6] * x + inv[7] * y + inv[8];
+        (w.abs() > 1e-12).then(|| ((inv[0] * x + inv[1] * y + inv[2]) / w - x0 as f64, (inv[3] * x + inv[4] * y + inv[5]) / w - y0 as f64))
+    };
+    let moved = crate::resample::sample_map(&part, sw, sh, dx0, dy0, dw, dh, mode, back);
+    let mmask = crate::resample::sample_map(&mpart, sw, sh, dx0, dy0, dw, dh, mode, back);
     let mut mask = MaskMap::new();
     for j in 0..dh {
         for i in 0..dw {

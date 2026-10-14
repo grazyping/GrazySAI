@@ -333,7 +333,12 @@ impl Document {
     /// Показ трансформации без записи в историю (как `move_preview`): матрица `m` переводит точку
     /// исходного слоя в точку результата.
     pub fn transform_preview(&mut self, path: &[usize], original: &ColorMap, orig_sel: &Selection, m: [f64; 6], mode: crate::resample::Mode) -> Vec<Key> {
-        let (pixels, mask) = crate::selection::transform_pixels(original, orig_sel, m, mode);
+        self.warp_preview(path, original, orig_sel, crate::selection::Warp::Affine(m), mode)
+    }
+
+    /// Как `transform_preview`, но с любым отображением (в том числе перспективой).
+    pub fn warp_preview(&mut self, path: &[usize], original: &ColorMap, orig_sel: &Selection, warp: crate::selection::Warp, mode: crate::resample::Mode) -> Vec<Key> {
+        let (pixels, mask) = crate::selection::warp_pixels(original, orig_sel, warp, mode);
         let Some(layer) = self.layer_mut(path) else { return Vec::new() };
         let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
         keys.extend(pixels.tiles.keys().copied());

@@ -149,19 +149,13 @@ pub fn resize(src: &[[f32; 4]], sw: usize, sh: usize, dw: usize, dh: usize, mode
     out
 }
 
-/// Выборка по аффинной матрице (для трансформации слоя): `inv` переводит точку результата в
-/// точку источника, `x = inv[0]·X + inv[1]·Y + inv[2]`, `y = inv[3]·X + inv[4]·Y + inv[5]`.
-/// Результат — `dw`×`dh` с левым верхним углом (`ox`, `oy`) в координатах результата. Ядро —
-/// то же, что у `resize`; при уменьшении растягивается. За краем источника — прозрачность (края
-/// при повороте не размазываются), веса нормируются по всем отсчётам окна.
+/// Выборка по произвольному отображению точки результата в точку источника (`map`; `None` —
+/// точки нет). Ядро — то же, что у `resize`; при уменьшении растягивается по местному масштабу
+/// (по разности соседних точек). За краем источника — прозрачность, веса нормируются по всем
+/// отсчётам окна. Результат — `dw`×`dh` с левым верхним углом (`ox`, `oy`).
 #[allow(clippy::too_many_arguments)]
-pub fn affine(src: &[[f32; 4]], sw: usize, sh: usize, inv: [f64; 6], ox: i32, oy: i32, dw: usize, dh: usize, mode: Mode) -> Vec<[f32; 4]> {
+pub fn sample_map(src: &[[f32; 4]], sw: usize, sh: usize, ox: i32, oy: i32, dw: usize, dh: usize, mode: Mode, map: impl Fn(f64, f64) -> Option<(f64, f64)>) -> Vec<[f32; 4]> {
     let table = mode.table();
-    // во сколько раз источник крупнее результата по каждой оси
-    let kx = (inv[0] * inv[0] + inv[3] * inv[3]).sqrt().max(1.0);
-    let ky = (inv[1] * inv[1] + inv[4] * inv[4]).sqrt().max(1.0);
-    let k = kx.max(ky);
-    let reach = if mode == Mode::Nearest { 0.5 } else { mode.support() * k };
     let cross = matches!(mode, Mode::Bicubic | Mode::Lanczos2);
     let get = |x: isize, y: isize| -> [f32; 4] {
         if x < 0 || y < 0 || x >= sw as isize || y >= sh as isize {
@@ -174,12 +168,17 @@ pub fn affine(src: &[[f32; 4]], sw: usize, sh: usize, inv: [f64; 6], ox: i32, oy
     for j in 0..dh {
         for i in 0..dw {
             let (cx, cy) = ((ox + i as i32) as f64 + 0.5, (oy + j as i32) as f64 + 0.5);
-            let sx = inv[0] * cx + inv[1] * cy + inv[2];
-            let sy = inv[3] * cx + inv[4] * cy + inv[5];
+            let Some((sx, sy)) = map(cx, cy) else { continue };
             if mode == Mode::Nearest {
                 out[j * dw + i] = get(sx.floor() as isize, sy.floor() as isize);
                 continue;
             }
+            // местный масштаб: насколько сдвигается точка источника при шаге в 1 px результата
+            let k = match (map(cx + 1.0, cy), map(cx, cy + 1.0)) {
+                (Some((ax, ay)), Some((bx, by))) => ((ax - sx).hypot(ay - sy)).max((bx - sx).hypot(by - sy)).max(1.0),
+                _ => 1.0,
+            };
+            let reach = mode.support() * k;
             let (x0, x1) = ((sx - 0.5 - reach).floor() as isize + 1, (sx - 0.5 + reach).ceil() as isize);
             let (y0, y1) = ((sy - 0.5 - reach).floor() as isize + 1, (sy - 0.5 + reach).ceil() as isize);
             if x1 < 0 || y1 < 0 || x0 >= sw as isize || y0 >= sh as isize {
@@ -214,6 +213,47 @@ pub fn affine(src: &[[f32; 4]], sw: usize, sh: usize, inv: [f64; 6], ox: i32, oy
         }
     }
     out
+}
+
+/// Выборка по аффинной матрице: `inv` переводит точку результата в точку источника,
+/// `x = inv[0]·X + inv[1]·Y + inv[2]`, `y = inv[3]·X + inv[4]·Y + inv[5]`.
+#[allow(clippy::too_many_arguments)]
+pub fn affine(src: &[[f32; 4]], sw: usize, sh: usize, inv: [f64; 6], ox: i32, oy: i32, dw: usize, dh: usize, mode: Mode) -> Vec<[f32; 4]> {
+    sample_map(src, sw, sh, ox, oy, dw, dh, mode, |x, y| Some((inv[0] * x + inv[1] * y + inv[2], inv[3] * x + inv[4] * y + inv[5])))
+}
+
+/// Проективная матрица 3×3 (по строкам), переводящая единичный квадрат (0,0)-(1,0)-(1,1)-(0,1)
+/// в четырёхугольник `q` (те же углы по порядку).
+pub fn square_to_quad(q: [[f64; 2]; 4]) -> [f64; 9] {
+    let [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = q;
+    let (dx1, dx2, dx3) = (x1 - x2, x3 - x2, x0 - x1 + x2 - x3);
+    let (dy1, dy2, dy3) = (y1 - y2, y3 - y2, y0 - y1 + y2 - y3);
+    let det = dx1 * dy2 - dx2 * dy1;
+    let (g, h) = if det.abs() < 1e-12 { (0.0, 0.0) } else { ((dx3 * dy2 - dx2 * dy3) / det, (dx1 * dy3 - dx3 * dy1) / det) };
+    [x1 - x0 + g * x1, x3 - x0 + h * x3, x0, y1 - y0 + g * y1, y3 - y0 + h * y3, y0, g, h, 1.0]
+}
+
+/// Обратная матрица 3×3 (`None` — вырождена).
+pub fn invert3(m: [f64; 9]) -> Option<[f64; 9]> {
+    let [a, b, c, d, e, f, g, h, i] = m;
+    let (ca, cb, cc) = (e * i - f * h, -(d * i - f * g), d * h - e * g);
+    let det = a * ca + b * cb + c * cc;
+    if det.abs() < 1e-12 {
+        return None;
+    }
+    let r = [ca, -(b * i - c * h), b * f - c * e, cb, a * i - c * g, -(a * f - c * d), cc, -(a * h - b * g), a * e - b * d];
+    Some(r.map(|v| v / det))
+}
+
+/// Произведение матриц 3×3.
+pub fn mul3(a: [f64; 9], b: [f64; 9]) -> [f64; 9] {
+    let mut r = [0.0; 9];
+    for i in 0..3 {
+        for j in 0..3 {
+            r[i * 3 + j] = (0..3).map(|k| a[i * 3 + k] * b[k * 3 + j]).sum();
+        }
+    }
+    r
 }
 
 /// Обратная аффинная матрица (`None` — вырождена).
