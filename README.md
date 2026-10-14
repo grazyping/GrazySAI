@@ -1,7 +1,8 @@
 # SOsai
 
 Редактор для рисования на Rust по образцу PaintTool SAI 2 — личный проект. Версия 0.4.0 —
-что готово и что впереди, в [ROADMAP.md](ROADMAP.md); готовые сборки — в разделе Releases. Linux и Windows,
+что готово и что впереди, в [ROADMAP.md](ROADMAP.md) и на вкладке
+[Milestones](https://github.com/grazyping/SOsai/milestones); готовые сборки — в разделе Releases. Linux и Windows,
 перо планшета (XPPen Artist 24 Pro), открытие файлов `.sai2`.
 
 ## Что умеет
