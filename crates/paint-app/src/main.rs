@@ -182,7 +182,7 @@ struct PaintApp {
     /// Основной цвет в HSV (тон хранится и у серых), фоновый — RGB.
     hsv: [f32; 3],
     back: Color32,
-    stabilizer: usize,
+    stabilizer: paint_core::stabilizer::Level,
     selected: Vec<usize>,
     live: Option<LiveStroke>,
     smoother: Stabilizer,
@@ -241,7 +241,7 @@ impl PaintApp {
             brush: 0,
             hsv: [0.0, 0.0, 0.08],
             back: Color32::WHITE,
-            stabilizer: 3,
+            stabilizer: paint_core::stabilizer::Level::Plain(3),
             selected: vec![0],
             live: None,
             smoother: Stabilizer::new(3),
@@ -464,7 +464,7 @@ impl PaintApp {
             self.brushes[self.brush].params
         };
         self.stroke_by_touch = self.touch_down;
-        self.smoother = Stabilizer::new(self.stabilizer);
+        self.smoother = Stabilizer::with_level(self.stabilizer);
         let c = self.color();
         let mut live = LiveStroke::new(
             self.selected.clone(),
@@ -844,11 +844,12 @@ impl PaintApp {
             ui.separator();
             ui.label("Сглаживание");
             egui::ComboBox::from_id_salt("stab")
-                .selected_text(self.stabilizer.to_string())
-                .width(40.0)
+                .selected_text(self.stabilizer.label())
+                .width(44.0)
+                .height(420.0)
                 .show_ui(ui, |ui| {
-                    for v in [0usize, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] {
-                        ui.selectable_value(&mut self.stabilizer, v, v.to_string());
+                    for v in paint_core::stabilizer::Level::all() {
+                        ui.selectable_value(&mut self.stabilizer, v, v.label());
                     }
                 });
             sai_ui::icon_button(ui, b, false, false, "Прямая линия", |p, r, c| {

@@ -436,3 +436,27 @@ fn layer_operations_undo_and_redo() {
     assert_eq!(doc.layers[1].name, "Синий");
     assert_eq!(doc.flatten(), before);
 }
+
+#[test]
+fn stabilizer_follows_the_reference_rules() {
+    use paint_core::stabilizer::{Level, Stabilizer};
+    // уровень 4: буфер заполнен первой точкой — вторая выходит на 1/4 пути
+    let mut st = Stabilizer::with_level(Level::Plain(4));
+    st.push(InputPoint { x: 0.0, y: 0.0, pressure: 1.0 });
+    let p = st.push(InputPoint { x: 8.0, y: 0.0, pressure: 1.0 });
+    assert_eq!(p.x, 2.0);
+    // S-7: две ступени (15 и 8) — отстаёт сильнее уровня 15, но в конце доходит до пера
+    let mut s7 = Stabilizer::with_level(Level::S(7));
+    let mut l15 = Stabilizer::with_level(Level::Plain(15));
+    let (mut a, mut b) = (0.0, 0.0);
+    for i in 0..60 {
+        let q = InputPoint { x: i as f32, y: 0.0, pressure: 1.0 };
+        a = s7.push(q).x;
+        b = l15.push(q).x;
+    }
+    assert!(a < b, "S-7 {a} должен отставать больше, чем 15 {b}");
+    let tail = s7.finish();
+    assert_eq!(tail.len(), 15 * 8);
+    assert!((tail.last().unwrap().x - 59.0).abs() < 1e-3);
+    assert_eq!(Level::all().len(), 23);
+}

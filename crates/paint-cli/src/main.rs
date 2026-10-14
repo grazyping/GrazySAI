@@ -258,7 +258,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (x0, y0, sw, sh) = (num(6, 0.0), num(7, 0.0), num(8, 1.0), num(9, 1.0));
         let params = BrushParams { size, hardness: paint_core::brush::HARDNESS_STEPS[step.clamp(1, 5) - 1], ..Default::default() };
         let mut doc = Document::new(512, 512);
+        // десятый параметр — сглаживание как в образце (0–15)
+        let level = num(10, 0.0) as usize;
         let mut stroke: Option<Stroke> = None;
+        let mut st = Stabilizer::new(level);
         for line in std::fs::read_to_string(args.get(2).ok_or("нужен файл")?)?.lines() {
             let f: Vec<&str> = line.split(',').collect();
             if f.len() < 5 || line.starts_with('t') || line.starts_with('#') {
@@ -267,11 +270,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (x, y, p) = (f[1].parse::<f32>()? * sw - x0, f[2].parse::<f32>()? * sh - y0, f[3].parse::<f32>()?);
             match f[4] {
                 "up" => {
-                    if let Some(s) = stroke.take() {
+                    if let Some(mut s) = stroke.take() {
+                        for q in st.finish() {
+                            s.add_point(q);
+                        }
                         doc.commit_stroke(0, &s, [0, 0, 0]);
                     }
+                    st = Stabilizer::new(level);
                 }
-                _ => stroke.get_or_insert_with(|| Stroke::new(params)).add_point(InputPoint { x, y, pressure: p }),
+                _ => {
+                    let q = st.push(InputPoint { x, y, pressure: p });
+                    stroke.get_or_insert_with(|| Stroke::new(params)).add_point(q);
+                }
             }
         }
         let out = args.get(3).ok_or("нужен выходной файл")?;
