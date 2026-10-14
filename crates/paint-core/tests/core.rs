@@ -387,3 +387,52 @@ fn blend_modes_match_the_reference_program() {
     }
     assert!(bad.is_empty(), "{}", bad.join("\n"));
 }
+
+#[test]
+fn layer_operations_undo_and_redo() {
+    use paint_core::{BrushParams, Document, InputPoint, Layer, Stroke};
+    let mut doc = Document::new(64, 64);
+    // слой 0 — красная точка, слой 1 — синяя точка в другом месте
+    let dab = |x: f32| {
+        let mut s = Stroke::new(BrushParams { size: 8.0, size_by_pressure: false, ..Default::default() });
+        s.add_point(InputPoint { x, y: 32.0, pressure: 1.0 });
+        s
+    };
+    doc.commit_stroke(0, &dab(16.0), [255, 0, 0]);
+    doc.insert_layer(&[1], Layer::new("Синий"));
+    doc.commit_stroke(1, &dab(48.0), [0, 0, 255]);
+    let before = doc.flatten();
+
+    // удаление и отмена
+    doc.delete_layer(&[1]);
+    assert_eq!(doc.layers.len(), 1);
+    doc.undo();
+    assert_eq!(doc.layers.len(), 2);
+    assert_eq!(doc.flatten(), before);
+    doc.redo();
+    assert_eq!(doc.layers.len(), 1);
+    doc.undo();
+
+    // слияние с нижним не меняет картинку, отмена возвращает оба слоя
+    let (below, _) = doc.merge_down(&[1]).unwrap();
+    assert_eq!(below, vec![0]);
+    assert_eq!(doc.layers.len(), 1);
+    let merged = doc.flatten();
+    for (a, b) in merged.iter().zip(&before) {
+        assert!(a.abs_diff(*b) <= 1);
+    }
+    doc.undo();
+    assert_eq!(doc.layers.len(), 2);
+    assert_eq!(doc.flatten(), before);
+
+    // очистка и перенос
+    doc.clear_layer(&[0]);
+    assert!(doc.layers[0].pixels.tiles.is_empty());
+    doc.undo();
+    let (moved, _) = doc.move_layer(&[1], -1).unwrap();
+    assert_eq!(moved, vec![0]);
+    assert_eq!(doc.layers[0].name, "Синий");
+    doc.undo();
+    assert_eq!(doc.layers[1].name, "Синий");
+    assert_eq!(doc.flatten(), before);
+}

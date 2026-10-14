@@ -486,6 +486,12 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
             p.rect_stroke(r, 0.0, s);
             p.circle_filled(ctr, k * 0.5, c);
         }
+        "lower" => {
+            p.add(Shape::convex_polygon(vec![ctr + Vec2::new(-k * 0.6, -k * 0.3), ctr + Vec2::new(k * 0.6, -k * 0.3), ctr + Vec2::new(0.0, k * 0.6)], c, Stroke::NONE));
+        }
+        "up" => {
+            p.add(Shape::convex_polygon(vec![ctr + Vec2::new(-k * 0.6, k * 0.3), ctr + Vec2::new(k * 0.6, k * 0.3), ctr + Vec2::new(0.0, -k * 0.6)], c, Stroke::NONE));
+        }
         "down" => {
             p.add(Shape::convex_polygon(
                 vec![

@@ -141,6 +141,17 @@ fn brush_tools() -> Vec<BrushTool> {
     ]
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum LayerAction {
+    Duplicate,
+    Delete,
+    Clear,
+    Merge,
+    Transfer,
+    Up,
+    Down,
+}
+
 /// Номер ластика в сетке — им рисует обратный конец пера.
 const ERASER: usize = 5;
 
@@ -194,6 +205,12 @@ struct PaintApp {
     show_new: bool,
     new_size: [u32; 2],
     show_about: bool,
+    /// Есть несохранённые изменения.
+    dirty: bool,
+    /// В открытом файле были слои контура или фигур (их кривые при сохранении станут растром).
+    had_vectors: bool,
+    show_save_as: bool,
+    save_path: String,
     /// Миниатюры слоёв по пути в дереве; сбрасываются после правок.
     thumbs: HashMap<Vec<usize>, egui::TextureHandle>,
     /// Виртуальное перо для проверок без планшета (`PAINT_VIRTUAL_PEN`).
@@ -242,6 +259,10 @@ impl PaintApp {
             show_new: false,
             new_size: [1200, 900],
             show_about: false,
+            dirty: false,
+            had_vectors: false,
+            show_save_as: false,
+            save_path: String::new(),
             thumbs: HashMap::new(),
             virtual_pen: virtual_pen::VirtualPen::from_env(),
             virtual_done: 0,
@@ -270,6 +291,7 @@ impl PaintApp {
         let started = Instant::now();
         match paint_formats::sai2_doc::load(&path) {
             Ok(loaded) => {
+                self.had_vectors = !loaded.vector_layers.is_empty();
                 self.doc = loaded.document;
                 self.notes = loaded.warnings;
                 self.status = format!(
@@ -292,6 +314,7 @@ impl PaintApp {
 
     fn new_canvas(&mut self, w: u32, h: u32) {
         self.doc = Document::new(w, h);
+        self.had_vectors = false;
         self.file = None;
         self.notes.clear();
         self.selected = vec![0];
@@ -299,6 +322,39 @@ impl PaintApp {
         self.fit_pending = true;
         self.status = format!("Новый холст {w}×{h}");
         self.invalidate_all();
+    }
+
+/// Сохранить в `.sai2`: в тот же файл или, если его нет или в нём были кривые, — спросить путь.
+    fn save(&mut self) {
+        match self.file.clone() {
+            Some(f) if !self.had_vectors && f.extension().is_some_and(|e| e.eq_ignore_ascii_case("sai2")) => self.save_to(f),
+            _ => self.ask_save_as(),
+        }
+    }
+
+    fn ask_save_as(&mut self) {
+        let base = self.file.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("НовыйХолст1.sai2"));
+        let suggested = if self.had_vectors {
+            let stem = base.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            base.with_file_name(format!("{stem}-paint-rs.sai2"))
+        } else {
+            base.with_extension("sai2")
+        };
+        self.save_path = suggested.display().to_string();
+        self.show_save_as = true;
+    }
+
+    fn save_to(&mut self, path: PathBuf) {
+        let started = Instant::now();
+        match paint_formats::sai2_write::save(&self.doc, &path) {
+            Ok(()) => {
+                self.status = format!("Сохранено: {} (за {:.1} с)", path.display(), started.elapsed().as_secs_f32());
+                self.file = Some(path);
+                self.dirty = false;
+                self.had_vectors = false;
+            }
+            Err(e) => self.status = format!("Не удалось сохранить {}: {e}", path.display()),
+        }
     }
 
     fn export_png(&mut self) {
@@ -433,6 +489,7 @@ impl PaintApp {
 
     fn end_stroke(&mut self) {
         self.thumbs.clear();
+        self.dirty = true;
         let Some(mut live) = self.live.take() else {
             return;
         };
@@ -444,16 +501,14 @@ impl PaintApp {
     }
 
     fn undo(&mut self) {
-        self.thumbs.clear();
         if let Some(keys) = self.doc.undo() {
-            self.invalidate(keys);
+            self.after_structure(keys);
         }
     }
 
     fn redo(&mut self) {
-        self.thumbs.clear();
         if let Some(keys) = self.doc.redo() {
-            self.invalidate(keys);
+            self.after_structure(keys);
         }
     }
 
@@ -466,28 +521,66 @@ impl PaintApp {
 
     fn add_layer(&mut self, folder: bool) {
         let mut path = self.selected.clone();
-        let index = path.pop().map(|i| i + 1);
+        let index = path.pop().map_or(0, |i| i + 1);
         let n = count_layers(&self.doc.layers) + 1;
-        let name = if folder {
-            format!("Папка{n}")
-        } else {
-            format!("Слой{n}")
+        let new = if folder { Layer::folder(&format!("Папка{n}"), Vec::new()) } else { Layer::new(&format!("Слой{n}")) };
+        path.push(index);
+        let keys = self.doc.insert_layer(&path, new);
+        self.selected = path;
+        self.after_structure(keys);
+    }
+
+    /// Действия со слоем из кнопок под списком, меню «Слой» и клавиш образца.
+    fn layer_action(&mut self, action: LayerAction) {
+        let path = self.selected.clone();
+        let result = match action {
+            LayerAction::Duplicate => {
+                let keys = self.doc.duplicate_layer(&path);
+                let mut p = path.clone();
+                *p.last_mut().unwrap_or(&mut 0) += 1;
+                Some((p, keys))
+            }
+            LayerAction::Delete => {
+                let keys = self.doc.delete_layer(&path);
+                Some((path.clone(), keys))
+            }
+            LayerAction::Clear => Some((path.clone(), self.doc.clear_layer(&path))),
+            LayerAction::Merge => self.doc.merge_down(&path),
+            LayerAction::Transfer => self.doc.transfer_down(&path).map(|(_, k)| (path.clone(), k)),
+            LayerAction::Up => self.doc.move_layer(&path, 1),
+            LayerAction::Down => self.doc.move_layer(&path, -1),
         };
-        let new = if folder {
-            Layer::folder(&name, Vec::new())
-        } else {
-            Layer::new(&name)
-        };
-        let stack = match path.as_slice() {
-            [] => Some(&mut self.doc.layers),
-            p => self.doc.layer_mut(p).and_then(|l| l.children.as_mut()),
-        };
-        if let Some(stack) = stack {
-            let at = index.unwrap_or(stack.len()).min(stack.len());
-            stack.insert(at, new);
-            path.push(at);
-            self.selected = path;
+        match result {
+            Some((p, keys)) => {
+                self.selected = p;
+                self.after_structure(keys);
+            }
+            None => self.status = String::from("С этим слоем так нельзя (нужен обычный слой и обычный слой под ним)"),
         }
+    }
+
+    /// После изменения стопки: проверить выбор, перерисовать, обновить миниатюры.
+    fn after_structure(&mut self, keys: Vec<Key>) {
+        self.dirty = true;
+        if self.doc.layer(&self.selected).is_none() {
+            let mut p = self.selected.clone();
+            while let Some(last) = p.last_mut() {
+                if *last > 0 {
+                    *last -= 1;
+                    if self.doc.layer(&p).is_some() {
+                        break;
+                    }
+                } else {
+                    p.pop();
+                    if self.doc.layer(&p).is_some() {
+                        break;
+                    }
+                }
+            }
+            self.selected = if self.doc.layer(&p).is_some() { p } else { first_raster(&self.doc.layers).unwrap_or_default() };
+        }
+        self.thumbs.clear();
+        self.invalidate(keys);
     }
 
     /// Масштаб вокруг центра области просмотра.
@@ -512,7 +605,14 @@ impl PaintApp {
                     self.show_open = true;
                     ui.close_menu();
                 }
-                ui.add_enabled(false, egui::Button::new("Сохранить (.sai2 — позже)"));
+                if ui.button("Сохранить                Ctrl+S").clicked() {
+                    self.save();
+                    ui.close_menu();
+                }
+                if ui.button("Сохранить как…      Shift+Ctrl+S").clicked() {
+                    self.ask_save_as();
+                    ui.close_menu();
+                }
                 if ui.button("Экспорт в PNG").clicked() {
                     self.export_png();
                     ui.close_menu();
@@ -567,15 +667,21 @@ impl PaintApp {
                     ui.close_menu();
                 }
                 ui.separator();
-                for item in [
-                    "Копировать слой",
-                    "Удалить слой",
-                    "Очистить слой",
-                    "Слить с нижним",
-                    "Свести всё",
+                for (item, action) in [
+                    ("Копировать слой", LayerAction::Duplicate),
+                    ("Удалить слой", LayerAction::Delete),
+                    ("Очистить слой           Delete", LayerAction::Clear),
+                    ("Перенести на нижний     F", LayerAction::Transfer),
+                    ("Слить с нижним          Ctrl+E", LayerAction::Merge),
+                    ("Поднять слой", LayerAction::Up),
+                    ("Опустить слой", LayerAction::Down),
                 ] {
-                    ui.add_enabled(false, egui::Button::new(item));
+                    if ui.button(item).clicked() {
+                        self.layer_action(action);
+                        ui.close_menu();
+                    }
                 }
+                ui.add_enabled(false, egui::Button::new("Свести всё"));
             });
             ui.menu_button("Выделение(S)", |ui| {
                 for item in ["Выделить всё", "Снять выделение", "Инвертировать"]
@@ -1469,15 +1575,21 @@ impl PaintApp {
             );
         });
         ui.horizontal(|ui| {
-            for (g, tip) in [
-                ("down", "Перенести на нижний — позже"),
-                ("merge", "Слить с нижним — позже"),
-                ("clear", "Очистить — позже"),
-                ("delete", "Удалить — позже"),
+            for (g, tip, action) in [
+                ("down", "Перенести на нижний (F)", LayerAction::Transfer),
+                ("merge", "Слить с нижним (Ctrl+E)", LayerAction::Merge),
+                ("clear", "Очистить слой (Delete)", LayerAction::Clear),
+                ("delete", "Удалить слой", LayerAction::Delete),
             ] {
-                sai_ui::icon_button(ui, b2, false, false, tip, |p, r, c| {
-                    sai_ui::glyph(p, r, c, g)
-                });
+                if sai_ui::icon_button(ui, b2, false, true, tip, |p, r, c| sai_ui::glyph(p, r, c, g)).clicked() {
+                    self.layer_action(action);
+                }
+            }
+            if sai_ui::icon_button(ui, b2, false, true, "Слой выше", |p, r, c| sai_ui::glyph(p, r, c, "up")).clicked() {
+                self.layer_action(LayerAction::Up);
+            }
+            if sai_ui::icon_button(ui, b2, false, true, "Слой ниже", |p, r, c| sai_ui::glyph(p, r, c, "lower")).clicked() {
+                self.layer_action(LayerAction::Down);
             }
         });
         egui::Frame::none()
@@ -1494,6 +1606,7 @@ impl PaintApp {
                     });
             });
         if changed {
+            self.dirty = true;
             self.invalidate_all();
         }
     }
@@ -1759,10 +1872,36 @@ impl PaintApp {
                 });
             self.show_new &= open;
         }
+        if self.show_save_as {
+            let mut open = true;
+            egui::Window::new("Сохранить как").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.label("Путь к файлу .sai2:");
+                ui.add(egui::TextEdit::singleline(&mut self.save_path).desired_width(460.0));
+                if self.had_vectors {
+                    ui.colored_label(egui::Color32::from_rgb(170, 60, 20), "В открытом файле есть слои контура или фигур: их кривые пока сохраняются\nрастром. Поэтому предложен новый файл — исходный останется нетронутым.");
+                }
+                let path = PathBuf::from(self.save_path.trim());
+                let exists = path.exists();
+                if exists {
+                    ui.colored_label(egui::Color32::from_rgb(170, 60, 20), "Такой файл уже есть — он будет заменён.");
+                }
+                ui.horizontal(|ui| {
+                    if ui.button(if exists { "Заменить" } else { "Сохранить" }).clicked() && !self.save_path.trim().is_empty() {
+                        self.save_to(path.with_extension("sai2"));
+                        self.show_save_as = false;
+                    }
+                    if ui.button("Отмена").clicked() {
+                        self.show_save_as = false;
+                    }
+                });
+            });
+            self.show_save_as &= open;
+        }
         if self.show_about {
             let mut open = true;
             egui::Window::new("О программе").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
-                ui.label("paint-rs — редактор по образцу PaintTool SAI 2, личный проект.");
+                ui.label(format!("SOsai {} — редактор по образцу PaintTool SAI 2, личный проект.", env!("CARGO_PKG_VERSION")));
+                ui.label("Исходный код: github.com/grazyping/SOsai");
                 ui.label("Открывает .sai2 (растровые слои, папки, контур, фигуры), рисует кистью образца.");
             });
             self.show_about &= open;
@@ -1937,6 +2076,34 @@ impl eframe::App for PaintApp {
                 i.modifiers.command && i.key_pressed(egui::Key::Minus),
             )
         });
+        let (key_save, key_save_as) = ctx.input(|i| {
+            let s = i.modifiers.command && i.key_pressed(egui::Key::S);
+            (s && !i.modifiers.shift, s && i.modifiers.shift)
+        });
+        if key_save {
+            self.save();
+        }
+        if key_save_as {
+            self.ask_save_as();
+        }
+        let (key_clear, key_merge, key_transfer) = ctx.input(|i| {
+            (
+                i.key_pressed(egui::Key::Delete),
+                i.modifiers.command && i.key_pressed(egui::Key::E),
+                !i.modifiers.any() && i.key_pressed(egui::Key::F),
+            )
+        });
+        if !ctx.wants_keyboard_input() && self.live.is_none() {
+            if key_clear {
+                self.layer_action(LayerAction::Clear);
+            }
+            if key_merge {
+                self.layer_action(LayerAction::Merge);
+            }
+            if key_transfer {
+                self.layer_action(LayerAction::Transfer);
+            }
+        }
         if !ctx.wants_keyboard_input() {
             let size = &mut self.brushes[self.brush].params.size;
             if bigger {
@@ -1969,9 +2136,10 @@ impl eframe::App for PaintApp {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
         let title = format!(
-            "paint-rs — {}{}",
+            "SOsai {} — {}{}",
+            env!("CARGO_PKG_VERSION"),
             self.file_name(),
-            if self.doc.can_undo() { " (*)" } else { "" }
+            if self.dirty { " (*)" } else { "" }
         );
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         egui::TopBottomPanel::top("menu").show(ctx, |ui| self.menu_bar(ui));
@@ -2062,11 +2230,11 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1360.0, 900.0])
             .with_fullscreen(std::env::var_os("PAINT_FULLSCREEN").is_some())
-            .with_title("paint-rs"),
+            .with_title("SOsai"),
         ..Default::default()
     };
     eframe::run_native(
-        "paint-rs",
+        "SOsai",
         options,
         Box::new(move |cc| {
             sai_ui::apply_style(&cc.egui_ctx);

@@ -225,6 +225,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         io::save_png(Path::new(args.get(3).ok_or("нужен выходной файл")?), dw as u32, dh as u32, &bytes)?;
         return Ok(());
     }
+    if args.get(1).map(String::as_str) == Some("resave") {
+        // `paint-cli resave <вход.sai2> <выход.sai2>` — прочитать и записать заново, сверить.
+        let (src, dst) = (Path::new(args.get(2).ok_or("нужен файл")?), Path::new(args.get(3).ok_or("нужен выходной файл")?));
+        let t = std::time::Instant::now();
+        let a = paint_formats::sai2_doc::load(src)?;
+        let t_load = t.elapsed();
+        paint_formats::sai2_write::save(&a.document, dst)?;
+        let t_save = t.elapsed() - t_load;
+        let b = paint_formats::sai2_doc::load(dst)?;
+        let (fa, fb) = (a.document.flatten(), b.document.flatten());
+        let worst = fa.iter().zip(&fb).map(|(x, y)| x.abs_diff(*y)).max().unwrap_or(0);
+        let (sa, sb) = (std::fs::metadata(src)?.len(), std::fs::metadata(dst)?.len());
+        println!(
+            "слоёв {} → {}, сведение: наибольшая разница {worst}; размер {:.1} → {:.1} МБ; чтение {:.1} с, запись {:.1} с; замечания: {:?}",
+            a.info.layers.len(),
+            b.info.layers.len(),
+            sa as f64 / 1e6,
+            sb as f64 / 1e6,
+            t_load.as_secs_f32(),
+            t_save.as_secs_f32(),
+            b.warnings
+        );
+        return Ok(());
+    }
     if args.get(1).map(String::as_str) == Some("strokes") {
         // `paint-cli strokes <файл.csv> <out.png> <размер> [ступень 1..5] [x0 y0 sw sh]` — мазки из
         // CSV `t_ms,x,y,pressure,phase` (как у virtual-tablet) нашим движком на холсте 512×512.

@@ -3,6 +3,10 @@ name = "paint-app"
 edition.workspace = true
 version.workspace = true
 
+[[bin]]
+name = "SOsai"
+path = "src/main.rs"
+
 [dependencies]
 paint-core = { path = "../paint-core" }
 paint-formats = { path = "../paint-formats" }

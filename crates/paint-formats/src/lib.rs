@@ -5,3 +5,4 @@ pub mod sai2;
 pub mod sai2_doc;
 pub mod sai2_pixels;
 pub mod sai2_vector;
+pub mod sai2_write;

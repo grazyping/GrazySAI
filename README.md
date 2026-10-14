@@ -1,6 +1,7 @@
-# paint-rs
+# SOsai
 
-Редактор для рисования на Rust по образцу PaintTool SAI 2 — личный проект. Linux и Windows,
+Редактор для рисования на Rust по образцу PaintTool SAI 2 — личный проект. Версия 0.4.0 —
+что готово и что впереди, в [ROADMAP.md](ROADMAP.md); готовые сборки — в разделе Releases. Linux и Windows,
 перо планшета (XPPen Artist 24 Pro), открытие файлов `.sai2`.
 
 ## Что умеет
@@ -16,7 +17,7 @@
 ## Сборка
 
 ```bash
-cargo build --release -p paint-app      # редактор: target/release/paint-app [файл.sai2]
+cargo build --release -p paint-app      # редактор: target/release/SOsai [файл.sai2]
 cargo build --release -p paint-cli      # командная строка: сверки, рендер, разбор .sai2
 cargo test --workspace --release
 ```
