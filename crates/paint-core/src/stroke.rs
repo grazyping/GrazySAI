@@ -124,6 +124,7 @@ impl Stroke {
             density_factor: factor,
             density_scale: 1.0 - self.params.sharpness.clamp(0.0, 1.0),
             flat: !self.params.linework && self.params.hardness >= 1.0,
+            ver1: self.params.ver1_density,
         })
     }
 

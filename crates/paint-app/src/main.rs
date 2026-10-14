@@ -102,13 +102,18 @@ fn brush_tools() -> Vec<BrushTool> {
         BrushTool {
             name: "Кисть",
             icon: "brush",
-            params: BrushParams { mix: Some(MixParams::new(0.0, 0.0, 0.5)), ..b(15.0, 0.75, 1.0) },
+            params: BrushParams { mix: Some(MixParams::new(0.0, 0.0, 0.5)), density_by_pressure: true, ..b(15.0, 0.75, 1.0) },
             enabled: true,
         },
         BrushTool {
             name: "Акварель",
             icon: "water",
-            params: BrushParams { mix: Some(MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }), ..b(30.0, 0.5, 0.8) },
+            params: BrushParams {
+                mix: Some(MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }),
+                density_by_pressure: true,
+                ver1_density: true,
+                ..b(30.0, 0.5, 0.8)
+            },
             enabled: true,
         },
         BrushTool {
@@ -117,6 +122,8 @@ fn brush_tools() -> Vec<BrushTool> {
             // у Маркера в SAI нет порога размытия
             params: BrushParams {
                 mix: Some(MixParams { blur_pressure: 0.0, ..MixParams::new(0.0, 0.0, 0.5) }),
+                density_by_pressure: true,
+                ver1_density: true,
                 ..b(6.0, 0.9, 1.0)
             },
             enabled: true,
@@ -1150,6 +1157,7 @@ impl PaintApp {
             ui.weak("   Текстуры кисти — позже");
         }
         if sai_ui::section(ui, "sec_misc", "Разное") {
+            ui.checkbox(&mut brush.ver1_density, "Нажим на плотность как в версии 1");
             sai_ui::row(ui, "   Sharpness", lw, true, |ui| {
                 let mut v = brush.sharpness * 100.0;
                 let text = format!("{:.0}", v);

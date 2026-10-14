@@ -95,6 +95,10 @@ pub struct DabInput {
     /// включается). До 20 px — обычная геометрия с рампой 16 (измерено), от 20 px штрих рисует
     /// подобранная модель `DabShape` (см. `Stroke`).
     pub flat: bool,
+    /// «Ver1 Prs Spec.»: нажим на плотность по правилу версии 1 — непрозрачность отпечатка
+    /// подбирается без нажима и умножается на `нажим^1,2`, край считается по-старому
+    ///. У Маркера и Акварели включено по умолчанию.
+    pub ver1: bool,
 }
 
 /// Готовый отпечаток.
@@ -115,6 +119,9 @@ pub struct Dab {
     solve_inner: f32,
     solve_width: f32,
     target: f32,
+    /// Цель подбора непрозрачности (у «Ver1» — без нажима) и множитель после подбора.
+    solve_target: f32,
+    ver1_scale: f32,
 }
 
 impl Dab {
@@ -124,7 +131,11 @@ impl Dab {
         let ds = i.density_scale as f64;
         // dab_size_and_density
         let e = (d - 1.0).clamp(0.0, 1.0);
-        let sharp = i.density as f64 * ds * i.density_factor as f64 * (e * 0.4 + 0.6);
+        let sharp = if i.ver1 {
+            (i.density as f64 * i.density_factor as f64 * 0.6 + 0.4) * ds * (e * 0.4 + 0.6)
+        } else {
+            i.density as f64 * ds * i.density_factor as f64 * (e * 0.4 + 0.6)
+        };
         let mut edge_min = sharp + 1.0;
         let d5 = d - (ds + 1.0) * e * 0.1;
         let mut thin = 1.0;
@@ -178,6 +189,8 @@ impl Dab {
             solve_inner: inner as f32,
             solve_width: solve_width as f32,
             target: target_p as f32,
+            solve_target: if i.ver1 { target } else { target_p } as f32,
+            ver1_scale: if i.ver1 { (i.density_factor as f64).max(0.0).powf(1.2) } else { 1.0 } as f32,
         }
     }
 
@@ -197,8 +210,8 @@ impl Dab {
     /// Непрозрачность одного отпечатка при шаге `step` px (`dab_solve_opacity`), с ослаблением
     /// тонкой кисти.
     pub fn opacity(&self, step: f32) -> f32 {
-        let target = self.target as f64;
-        if target < 3.0517578125e-05 {
+        let target = self.solve_target as f64;
+        if (self.target as f64) < 3.0517578125e-05 || target < 3.0517578125e-05 {
             return 0.0;
         }
         let n = self.solve.len();
@@ -237,7 +250,7 @@ impl Dab {
             let f0 = total(a - H) - target;
             a += (H / (f - f0)) * -f;
         }
-        (a * self.thin as f64) as f32
+        ((a * self.thin as f64).min(1.0) * self.ver1_scale as f64) as f32
     }
 }
 

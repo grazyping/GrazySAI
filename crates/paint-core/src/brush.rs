@@ -25,6 +25,8 @@ pub struct BrushParams {
     /// Sharpness из раздела Miscellaneous, 0..=1 (у карандаша по умолчанию 0): от неё зависит
     /// ширина края тонкой кисти.
     pub sharpness: f32,
+    /// «Ver1 Prs Spec.»: нажим на плотность по правилу версии 1 (`DabInput::ver1`).
+    pub ver1_density: bool,
     /// Смешивание с холстом (Кисть, Акварель, Маркер); `None` — краска не смешивается.
     pub mix: Option<crate::mix::MixParams>,
 }
@@ -43,6 +45,7 @@ impl Default for BrushParams {
             erase: false,
             linework: false,
             sharpness: 0.0,
+            ver1_density: false,
             mix: None,
         }
     }
