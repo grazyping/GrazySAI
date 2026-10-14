@@ -71,6 +71,8 @@ enum Tool {
     Lasso,
     /// Волшебная палочка (W).
     Wand,
+    /// Заливка: связная область похожего цвета (допуск — общий с палочкой).
+    Fill,
     /// Перемещение слоя или выделенного (то же — Ctrl + перетаскивание).
     Move,
 }
@@ -569,6 +571,7 @@ impl PaintApp {
         // PAINT_SELECT=x0,y0,x1,y1 — готовое выделение прямоугольником.
         app.tool = match std::env::var("PAINT_TOOL").as_deref() {
             Ok("move") => Tool::Move,
+            Ok("fill") => Tool::Fill,
             Ok("marquee") => Tool::Marquee,
             Ok("lasso") => Tool::Lasso,
             Ok("wand") => Tool::Wand,
@@ -766,7 +769,7 @@ impl PaintApp {
     fn can_paint(&self) -> bool {
         self.doc
             .layer(&self.selected)
-            .is_some_and(|l| l.children.is_none() && l.visible)
+            .is_some_and(|l| l.children.is_none() && l.visible && l.paintable())
     }
 
     /// Текущий нажим и признак «ластик на обратном конце пера».
@@ -919,8 +922,8 @@ impl PaintApp {
 
     fn begin_move(&mut self, at: Vec2) {
         let Some(layer) = self.doc.layer(&self.selected) else { return };
-        if layer.children.is_some() || !layer.visible {
-            self.status = String::from("Двигать можно видимый обычный слой");
+        if layer.children.is_some() || !layer.visible || !layer.movable() {
+            self.status = String::from("Двигать можно видимый обычный слой без запрета перемещения");
             return;
         }
         self.move_drag = Some(MoveDrag {
@@ -955,8 +958,8 @@ impl PaintApp {
     /// Начать трансформацию (Ctrl+T): выделенное или всё содержимое текущего слоя.
     fn begin_transform(&mut self) {
         let Some(layer) = self.doc.layer(&self.selected) else { return };
-        if layer.children.is_some() || !layer.visible {
-            self.status = String::from("Трансформировать можно видимый обычный слой");
+        if layer.children.is_some() || !layer.visible || !layer.movable() {
+            self.status = String::from("Трансформировать можно видимый обычный слой без запрета перемещения");
             return;
         }
         let sel = self.doc.selection.clone();
@@ -1025,6 +1028,9 @@ impl PaintApp {
 
     /// Сдвиг клавишами (Alt+стрелки).
     fn nudge(&mut self, dx: i32, dy: i32) {
+        if !self.doc.layer(&self.selected).is_some_and(|l| l.movable()) {
+            return;
+        }
         let keys = self.doc.move_layer_pixels(&self.selected.clone(), dx, dy);
         if !keys.is_empty() {
             self.invalidate(keys);
@@ -1032,6 +1038,32 @@ impl PaintApp {
             self.thumbs.clear();
             self.dirty = true;
         }
+    }
+
+    /// Залить область `area` основным цветом на текущем слое.
+    fn fill_area(&mut self, area: &paint_core::tile::MaskMap) {
+        if !self.can_paint() {
+            self.status = String::from("Заливать можно видимый обычный слой без запрета рисования");
+            return;
+        }
+        let c = self.color();
+        let keys = self.doc.fill(&self.selected.clone(), area, [c.r(), c.g(), c.b()]);
+        self.invalidate(keys);
+        self.thumbs.clear();
+        self.dirty = true;
+    }
+
+    /// Заливка «ведром» с точки (x, y).
+    fn fill_at(&mut self, x: f32, y: f32) {
+        let Some(layer) = self.doc.layer(&self.selected) else { return };
+        let area = paint_core::selection::magic_wand(&layer.pixels, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, self.wand_tolerance);
+        self.fill_area(&area);
+    }
+
+    /// Alt+Delete: залить выделенное (без выделения — весь слой).
+    fn fill_selection(&mut self) {
+        let all = paint_core::selection::Selection::all(self.doc.width, self.doc.height);
+        self.fill_area(&all);
     }
 
     /// Выделение по непрозрачности слоя (Ctrl + щелчок по миниатюре).
@@ -1272,7 +1304,11 @@ impl PaintApp {
                         ui.close_menu();
                     }
                 }
-                ui.add_enabled(false, egui::Button::new("Свести всё"));
+                if ui.button("Свести всё").clicked() {
+                    self.canvas_op(|d| d.flatten_layers());
+                    self.selected = vec![0];
+                    ui.close_menu();
+                }
             });
             ui.menu_button("Выделение(S)", |ui| {
                 let has = !self.doc.selection.is_empty();
@@ -1520,11 +1556,10 @@ impl PaintApp {
                             self.tool = tool;
                         }
                     }
-                    for (g, tip) in [("bucket", "Заливка"), ("text", "Текст")] {
-                        sai_ui::icon_button(ui, b, false, false, tip, |p, r, c| {
-                            sai_ui::glyph(p, r, c, g)
-                        });
+                    if sai_ui::icon_button(ui, b, self.tool == Tool::Fill, true, "Заливка (Alt+Delete — залить выделенное)", |p, r, c| sai_ui::glyph(p, r, c, "bucket")).clicked() {
+                        self.tool = Tool::Fill;
                     }
+                    sai_ui::icon_button(ui, b, false, false, "Текст", |p, r, c| sai_ui::glyph(p, r, c, "text"));
                 });
                 ui.horizontal(|ui| {
                     if sai_ui::icon_button(
@@ -1706,7 +1741,7 @@ impl PaintApp {
         } else if self.transform.as_ref().is_some_and(|t| t.dirty && t.drag.is_none()) {
             self.update_transform(false);
         }
-        if self.tool == Tool::Wand {
+        if matches!(self.tool, Tool::Wand | Tool::Fill) {
             let tol = &mut self.wand_tolerance;
             sai_ui::row(ui, "Допуск", lw, true, |ui| {
                 let mut v = *tol as f32;
@@ -2218,14 +2253,20 @@ impl PaintApp {
                 {
                     layer.preserve_opacity = !layer.preserve_opacity;
                 }
-                for (g, tip) in [
-                    ("lock_paint", "Запрет рисования — позже"),
-                    ("move", "Запрет перемещения — позже"),
-                    ("lock_all", "Запрет всего — позже"),
+                for (g, tip, which) in [
+                    ("lock_paint", "Запрет рисования", 0),
+                    ("move", "Запрет перемещения", 1),
+                    ("lock_all", "Запрет всего", 2),
                 ] {
-                    sai_ui::icon_button(ui, b, false, false, tip, |p, r, c| {
-                        sai_ui::glyph(p, r, c, g)
-                    });
+                    let on = [layer.lock_paint, layer.lock_move, layer.lock_all][which];
+                    if sai_ui::icon_button(ui, b, on, true, tip, |p, r, c| sai_ui::glyph(p, r, c, g)).clicked() {
+                        match which {
+                            0 => layer.lock_paint = !on,
+                            1 => layer.lock_move = !on,
+                            _ => layer.lock_all = !on,
+                        }
+                        changed = true;
+                    }
                 }
             });
             changed |= ui.checkbox(&mut layer.clipping, "Прикрепление").changed();
@@ -2475,6 +2516,13 @@ impl PaintApp {
                     })
                     .clamp(0.02, 32.0);
                     self.offset += anchor - to_canvas(pos, self.zoom, self.offset);
+                }
+            }
+        } else if self.tool == Tool::Fill {
+            if pressed && response.hovered() {
+                if let Some(pos) = pointer {
+                    let c = to_canvas(pos, self.zoom, self.offset);
+                    self.fill_at(c.x, c.y);
                 }
             }
         } else if matches!(self.tool, Tool::Marquee | Tool::Lasso | Tool::Wand) {
@@ -3049,9 +3097,13 @@ impl eframe::App for PaintApp {
         if key_save_as {
             self.ask_save_as();
         }
+        let key_fill = ctx.input(|i| i.modifiers.alt && !i.modifiers.command && i.key_pressed(egui::Key::Delete));
+        if key_fill && !ctx.wants_keyboard_input() && self.live.is_none() {
+            self.fill_selection();
+        }
         let (key_clear, key_merge, key_transfer) = ctx.input(|i| {
             (
-                i.key_pressed(egui::Key::Delete),
+                i.key_pressed(egui::Key::Delete) && !i.modifiers.alt,
                 i.modifiers.command && i.key_pressed(egui::Key::E),
                 !i.modifiers.any() && i.key_pressed(egui::Key::F),
             )

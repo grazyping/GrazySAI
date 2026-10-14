@@ -278,7 +278,8 @@ fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4]) -> Vec<u8> {
     d.extend(if l.children.is_some() && l.pass_through { b"pass" } else { blend_tag(l.mode) });
     d.extend(((l.opacity.clamp(0.0, 1.0) * 100.0).round() as u32).to_le_bytes());
     d.push(f.depth);
-    d.push(l.preserve_opacity as u8);
+    // замки: бит 0 — сохранять непрозрачность, 1 — рисование, 2 — перемещение, 7 — всё
+    d.push(l.preserve_opacity as u8 | (l.lock_paint as u8) << 1 | (l.lock_move as u8) << 2 | (l.lock_all as u8) << 7);
     d.push(l.visible as u8);
     d.push((l.clipping as u8) | if l.children.is_some() { 0x40 } else { 0 });
     // имя: u16 число символов, UTF-16, дополнение до 4 байт

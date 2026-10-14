@@ -269,7 +269,7 @@ impl Document {
     /// Очищает слой; при выделении — только выделенное (как Delete в SAI).
     pub fn clear_layer(&mut self, path: &[usize]) -> Vec<Key> {
         let Some(layer) = self.layer(path) else { return Vec::new() };
-        if layer.children.is_some() {
+        if layer.children.is_some() || !layer.paintable() {
             return Vec::new();
         }
         let tiles: TileBackup = if self.selection.is_empty() {
@@ -464,6 +464,57 @@ impl Document {
         let keys = self.transform_preview(path, &original, &sel, m, crate::resample::Mode::Nearest);
         self.move_commit(path, original, sel);
         keys
+    }
+
+    /// Залить слой цветом `rgb` в пределах `area` (доля 0..=ONE) и выделения — одна запись истории.
+    /// С «сохранять непрозрачность» меняется только цвет.
+    pub fn fill(&mut self, path: &[usize], area: &MaskMap, rgb: [u8; 3]) -> Vec<Key> {
+        let Some(layer) = self.layer(path) else { return Vec::new() };
+        if layer.children.is_some() || !layer.paintable() {
+            return Vec::new();
+        }
+        let mut tiles: TileBackup = Vec::new();
+        for (key, a) in &area.tiles {
+            let sel = self.selection.tile(*key);
+            let mut t = layer.pixels.tiles.get(key).cloned().unwrap_or_else(|| Tile::filled([0; 4]));
+            let mut any = false;
+            for (i, px) in t.0.iter_mut().enumerate() {
+                let m = match &sel {
+                    Some(s) => crate::selection::limit(a.0[i] as u32, s.0[i]),
+                    None => a.0[i] as u32,
+                };
+                if m == 0 {
+                    continue;
+                }
+                any = true;
+                *px = blend_paint(*px, rgb, m, layer.preserve_opacity);
+            }
+            if any {
+                tiles.push((*key, Some(t)));
+            }
+        }
+        let keys = tiles.iter().map(|(k, _)| *k).collect();
+        if !tiles.is_empty() {
+            self.perform(vec![Op::Tiles { path: path.to_vec(), tiles }]);
+        }
+        keys
+    }
+
+    /// «Свести всё»: все слои в один обычный слой (фон холста не входит).
+    pub fn flatten_layers(&mut self) -> Vec<Key> {
+        let mut layer = Layer::new("Слой 1");
+        let (tw, th) = ((self.width as i32 + TILE - 1) / TILE, (self.height as i32 + TILE - 1) / TILE);
+        for ty in 0..th {
+            for tx in 0..tw {
+                let mut buf = vec![[0f32; 4]; TILE_LEN];
+                render_group(&self.layers, (tx, ty), &mut buf);
+                if buf.iter().any(|p| p[3] > 0.0) {
+                    layer.pixels.tiles.insert((tx, ty), Tile(buf.iter().map(|p| from_f32(*p)).collect()));
+                }
+            }
+        }
+        let selection = self.selection.mask.clone();
+        self.perform(vec![Op::Canvas { width: self.width, height: self.height, layers: vec![layer], selection }])
     }
 
     /// Расширить или сузить выделение на 1 px.
@@ -695,4 +746,25 @@ fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]]) {
             }
         }
     }
+}
+
+/// Пиксель после наложения краски `rgb` с долей `m` (0..=ONE): «поверх»; при сохранении
+/// непрозрачности — только цвет, альфа прежняя.
+fn blend_paint(px: Px, rgb: [u8; 3], m: u32, preserve: bool) -> Px {
+    let color = rgb.map(|c| (c as u32 * ONE + 127) / 255);
+    let inv = ONE - m;
+    let mut out = px;
+    if preserve {
+        let a = px[3] as u32;
+        for i in 0..3 {
+            let src = color[i] * a / ONE;
+            out[i] = ((src * m + px[i] as u32 * inv + ONE / 2) / ONE) as u16;
+        }
+    } else {
+        for i in 0..3 {
+            out[i] = ((color[i] * m + px[i] as u32 * inv + ONE / 2) / ONE) as u16;
+        }
+        out[3] = (m + (px[3] as u32 * inv + ONE / 2) / ONE).min(ONE) as u16;
+    }
+    out
 }

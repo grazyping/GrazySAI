@@ -17,6 +17,10 @@ pub struct Layer {
     pub visible: bool,
     /// «Сохранять непрозрачность»: красить можно только там, где уже есть краска.
     pub preserve_opacity: bool,
+    /// Запрет рисования, запрет перемещения, запрет всего (замки SAI).
+    pub lock_paint: bool,
+    pub lock_move: bool,
+    pub lock_all: bool,
     /// Обтравка: слой виден только в пределах слоя, лежащего под ним.
     pub clipping: bool,
     /// Папка: вложенные слои снизу вверх. У обычного слоя — `None`.
@@ -34,10 +38,23 @@ impl Layer {
             mode: BlendMode::Normal,
             visible: true,
             preserve_opacity: false,
+            lock_paint: false,
+            lock_move: false,
+            lock_all: false,
             clipping: false,
             children: None,
             pass_through: false,
         }
+    }
+
+    /// Рисовать на слое можно (нет запрета рисования или «всего»).
+    pub fn paintable(&self) -> bool {
+        !self.lock_paint && !self.lock_all
+    }
+
+    /// Двигать и трансформировать слой можно.
+    pub fn movable(&self) -> bool {
+        !self.lock_move && !self.lock_all
     }
 
     pub fn folder(name: &str, children: Vec<Layer>) -> Self {

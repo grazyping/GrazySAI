@@ -70,6 +70,9 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
         layer.visible = li.visible;
         layer.clipping = li.clipping;
         layer.preserve_opacity = li.locks[0];
+        layer.lock_paint = li.locks[1];
+        layer.lock_move = li.locks[2];
+        layer.lock_all = li.locks[3];
         layer.mode = blend_from_tag(&li.blend).unwrap_or_else(|| {
             notes.insert(format!("режим «{}» заменён приближённым", li.blend));
             blend_fallback(&li.blend)

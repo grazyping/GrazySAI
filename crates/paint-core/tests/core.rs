@@ -593,3 +593,34 @@ fn free_deform_maps_corners_to_a_quad() {
     assert_eq!(pixel(&doc, 6, 44), [0, 0, 0, 255], "низ растянут влево");
     assert_eq!(pixel(&doc, 5, 12), [255, 255, 255, 255]);
 }
+
+#[test]
+fn fill_flatten_and_locks() {
+    use paint_core::selection::{magic_wand, rect, Combine};
+    let mut doc = Document::new(40, 20);
+    // заливка выделения
+    doc.select(&rect(0.0, 0.0, 10.0, 20.0), Combine::Replace);
+    let all = paint_core::selection::Selection::all(40, 20);
+    doc.fill(&[0], &all, [255, 0, 0]);
+    assert_eq!(pixel(&doc, 5, 5), [255, 0, 0, 255]);
+    assert_eq!(pixel(&doc, 15, 5), [255, 255, 255, 255]);
+    doc.deselect();
+    // заливка «ведром»: пустая область справа
+    let area = magic_wand(&doc.layers[0].pixels, 40, 20, 30, 5, 0);
+    doc.fill(&[0], &area, [0, 0, 255]);
+    assert_eq!(pixel(&doc, 30, 5), [0, 0, 255, 255]);
+    assert_eq!(pixel(&doc, 5, 5), [255, 0, 0, 255]);
+    // запрет рисования
+    doc.layers[0].lock_paint = true;
+    assert!(doc.fill(&[0], &all, [0, 255, 0]).is_empty());
+    doc.layers[0].lock_paint = false;
+    // свести всё: два слоя → один, картинка та же
+    doc.add_layer("верх");
+    doc.layers[1].pixels.set(20, 10, paint_core::pixel::from_rgba8([0, 0, 0, 255]));
+    let before = doc.flatten();
+    doc.flatten_layers();
+    assert_eq!(doc.layers.len(), 1);
+    assert_eq!(doc.flatten(), before);
+    doc.undo();
+    assert_eq!(doc.layers.len(), 2);
+}
