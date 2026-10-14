@@ -21,6 +21,8 @@ pub struct Layer {
     pub lock_paint: bool,
     pub lock_move: bool,
     pub lock_all: bool,
+    /// «Источник выбора»: палочка и заливка берут цвет со сведённых слоёв-источников.
+    pub selection_source: bool,
     /// Обтравка: слой виден только в пределах слоя, лежащего под ним.
     pub clipping: bool,
     /// Папка: вложенные слои снизу вверх. У обычного слоя — `None`.
@@ -41,6 +43,7 @@ impl Layer {
             lock_paint: false,
             lock_move: false,
             lock_all: false,
+            selection_source: false,
             clipping: false,
             children: None,
             pass_through: false,

@@ -68,6 +68,7 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
         let mut layer = Layer::new(&li.name);
         layer.opacity = li.opacity.min(100) as f32 / 100.0;
         layer.visible = li.visible;
+        layer.selection_source = li.selection_source;
         layer.clipping = li.clipping;
         layer.preserve_opacity = li.locks[0];
         layer.lock_paint = li.locks[1];

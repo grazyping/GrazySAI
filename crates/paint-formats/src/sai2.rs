@@ -37,6 +37,8 @@ pub struct LayerInfo {
     pub blend: String,
     pub opacity: u32,
     pub visible: bool,
+    /// «Источник выбора» (байт 54, бит 7; по записи образца — вероятно).
+    pub selection_source: bool,
     pub name: String,
     pub has_pixels: bool,
 }
@@ -102,6 +104,7 @@ fn parse_layer(d: &[u8], has_pixels: bool) -> io::Result<LayerInfo> {
         blend: tag_text(&d[44..48]),
         opacity: u32_at(d, 48)?,
         visible: d[54] & 1 != 0,
+        selection_source: d[54] & 0x80 != 0,
         name,
         has_pixels,
     })

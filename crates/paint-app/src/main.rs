@@ -1055,8 +1055,8 @@ impl PaintApp {
 
     /// Заливка «ведром» с точки (x, y).
     fn fill_at(&mut self, x: f32, y: f32) {
-        let Some(layer) = self.doc.layer(&self.selected) else { return };
-        let area = paint_core::selection::magic_wand(&layer.pixels, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, self.wand_tolerance);
+        let src = self.doc.pick_source(&self.selected);
+        let area = paint_core::selection::magic_wand(&src, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, self.wand_tolerance);
         self.fill_area(&area);
     }
 
@@ -1078,8 +1078,8 @@ impl PaintApp {
 
     /// Волшебная палочка по текущему слою.
     fn wand_at(&mut self, x: f32, y: f32, mode: Combine) {
-        let Some(layer) = self.doc.layer(&self.selected) else { return };
-        let area = paint_core::selection::magic_wand(&layer.pixels, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, self.wand_tolerance);
+        let src = self.doc.pick_source(&self.selected);
+        let area = paint_core::selection::magic_wand(&src, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, self.wand_tolerance);
         self.apply_selection(&area, mode);
     }
 
@@ -1303,6 +1303,13 @@ impl PaintApp {
                         self.dirty = true;
                         ui.close_menu();
                     }
+                }
+                if ui.button("Яркость в прозрачность").clicked() {
+                    let keys = self.doc.luminance_to_alpha(&self.selected.clone());
+                    self.invalidate(keys);
+                    self.thumbs.clear();
+                    self.dirty = true;
+                    ui.close_menu();
                 }
                 if ui.button("Свести всё").clicked() {
                     self.canvas_op(|d| d.flatten_layers());
@@ -2275,7 +2282,10 @@ impl PaintApp {
                     .checkbox(&mut layer.pass_through, "Насквозь (папка)")
                     .changed();
             }
-            ui.add_enabled(false, egui::RadioButton::new(false, "Источник выбора"));
+            if ui.radio(layer.selection_source, "Источник выбора").on_hover_text("Палочка и заливка берут цвет со всех слоёв-источников").clicked() {
+                layer.selection_source = !layer.selection_source;
+                changed = true;
+            }
         }
         ui.add_space(3.0);
         let b2 = Vec2::splat(22.0);

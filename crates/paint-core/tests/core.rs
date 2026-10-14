@@ -624,3 +624,26 @@ fn fill_flatten_and_locks() {
     doc.undo();
     assert_eq!(doc.layers.len(), 2);
 }
+
+#[test]
+fn luminance_to_alpha_and_selection_source() {
+    use paint_core::pixel::from_rgba8;
+    let mut doc = Document::new(10, 10);
+    doc.layers[0].pixels.set(1, 1, from_rgba8([255, 255, 255, 255]));
+    doc.layers[0].pixels.set(2, 1, from_rgba8([0, 0, 0, 255]));
+    doc.layers[0].pixels.set(3, 1, from_rgba8([128, 128, 128, 255]));
+    doc.luminance_to_alpha(&[0]);
+    let px = |x| paint_core::pixel::to_rgba8(doc.layers[0].pixels.get(x, 1));
+    assert_eq!(px(1)[3], 0, "белое прозрачно");
+    assert_eq!(px(2), [0, 0, 0, 255], "чёрное осталось");
+    let g = px(3);
+    assert!(g[0] < 5 && (126..=129).contains(&g[3]), "серое — полупрозрачное чёрное: {g:?}");
+    assert_eq!(pixel(&doc, 3, 1), [128, 128, 128, 255], "поверх белого картинка та же");
+    // источник выбора: палочка смотрит на слой-источник, а не на текущий
+    doc.add_layer("пустой");
+    let src = doc.pick_source(&[1]);
+    assert!(src.tiles.is_empty(), "без источников — текущий (пустой) слой");
+    doc.layers[0].selection_source = true;
+    let src = doc.pick_source(&[1]);
+    assert_eq!(src.get(2, 1)[3], paint_core::pixel::ONE as u16);
+}

@@ -280,7 +280,7 @@ fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4]) -> Vec<u8> {
     d.push(f.depth);
     // замки: бит 0 — сохранять непрозрачность, 1 — рисование, 2 — перемещение, 7 — всё
     d.push(l.preserve_opacity as u8 | (l.lock_paint as u8) << 1 | (l.lock_move as u8) << 2 | (l.lock_all as u8) << 7);
-    d.push(l.visible as u8);
+    d.push(l.visible as u8 | (l.selection_source as u8) << 7);
     d.push((l.clipping as u8) | if l.children.is_some() { 0x40 } else { 0 });
     // имя: u16 число символов, UTF-16, дополнение до 4 байт
     let units: Vec<u16> = l.name.encode_utf16().take(255).collect();

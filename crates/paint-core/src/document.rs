@@ -500,6 +500,94 @@ impl Document {
         keys
     }
 
+    /// Откуда палочка и заливка берут цвет: сведённые слои с «Источником выбора», а если таких
+    /// нет — пиксели слоя `path`.
+    pub fn pick_source(&self, path: &[usize]) -> ColorMap {
+        fn only_sources(layers: &[Layer]) -> (Vec<Layer>, bool) {
+            let mut any = false;
+            let out = layers
+                .iter()
+                .map(|l| {
+                    let mut c = l.clone();
+                    match &l.children {
+                        Some(ch) => {
+                            let (inner, a) = only_sources(ch);
+                            any |= a || l.selection_source;
+                            if !l.selection_source {
+                                c.children = Some(inner);
+                            }
+                        }
+                        None => {
+                            any |= l.selection_source;
+                            if !l.selection_source {
+                                c.visible = false;
+                            }
+                        }
+                    }
+                    c
+                })
+                .collect();
+            (out, any)
+        }
+        let (layers, any) = only_sources(&self.layers);
+        if !any {
+            return self.layer(path).map(|l| l.pixels.clone()).unwrap_or_default();
+        }
+        let mut out = ColorMap::new();
+        let (tw, th) = ((self.width as i32 + TILE - 1) / TILE, (self.height as i32 + TILE - 1) / TILE);
+        for ty in 0..th {
+            for tx in 0..tw {
+                let mut buf = vec![[0f32; 4]; TILE_LEN];
+                render_group(&layers, (tx, ty), &mut buf);
+                if buf.iter().any(|p| p[3] > 0.0) {
+                    out.tiles.insert((tx, ty), Tile(buf.iter().map(|p| from_f32(*p)).collect()));
+                }
+            }
+        }
+        out
+    }
+
+    /// «Яркость в прозрачность»: белое становится прозрачным, тёмное остаётся, цвет линий
+    /// сохраняется (как «цвет в альфу» по белому). С выделением — только выделенное.
+    pub fn luminance_to_alpha(&mut self, path: &[usize]) -> Vec<Key> {
+        let Some(layer) = self.layer(path) else { return Vec::new() };
+        if layer.children.is_some() || !layer.paintable() {
+            return Vec::new();
+        }
+        let mut tiles: TileBackup = Vec::new();
+        for (key, t) in &layer.pixels.tiles {
+            let sel = self.selection.tile(*key);
+            let mut nt = t.clone();
+            for (i, px) in nt.0.iter_mut().enumerate() {
+                let s = sel.as_ref().map_or(ONE, |s| s.0[i] as u32);
+                if s == 0 || px[3] == 0 {
+                    continue;
+                }
+                let f = to_f32(*px);
+                let a = f[3];
+                let c = [f[0] / a, f[1] / a, f[2] / a];
+                // новая альфа — насколько цвет темнее белого; цвет — такой, чтобы поверх белого было то же
+                let na = (1.0 - c[0]).max(1.0 - c[1]).max(1.0 - c[2]);
+                let out = if na <= 1e-6 {
+                    [0.0; 4]
+                } else {
+                    let nc = c.map(|v| ((v - (1.0 - na)) / na).clamp(0.0, 1.0));
+                    let aa = a * na;
+                    [nc[0] * aa, nc[1] * aa, nc[2] * aa, aa]
+                };
+                let k = s as f32 / ONE as f32;
+                let mixed = [0, 1, 2, 3].map(|c| f[c] + (out[c] - f[c]) * k);
+                *px = from_f32(mixed);
+            }
+            tiles.push((*key, Some(nt)));
+        }
+        let keys = tiles.iter().map(|(k, _)| *k).collect();
+        if !tiles.is_empty() {
+            self.perform(vec![Op::Tiles { path: path.to_vec(), tiles }]);
+        }
+        keys
+    }
+
     /// «Свести всё»: все слои в один обычный слой (фон холста не входит).
     pub fn flatten_layers(&mut self) -> Vec<Key> {
         let mut layer = Layer::new("Слой 1");
