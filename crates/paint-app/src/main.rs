@@ -75,6 +75,113 @@ enum Tool {
     Move,
 }
 
+/// За какую часть рамки трансформации тянут.
+#[derive(Clone, Copy, PartialEq)]
+enum Handle {
+    Move,
+    Rotate,
+    /// Угол или середина стороны: −1 / 0 / +1 по осям рамки.
+    Scale(i8, i8),
+}
+
+/// Идёт трансформация (Ctrl+T). Рамка — прямоугольник источника `src`, переведённый в
+/// «местные» края `l, r, t, b` (от центра источника), повёрнутый на `angle` и сдвинутый на `shift`.
+struct Transform {
+    path: Vec<usize>,
+    original: paint_core::tile::ColorMap,
+    orig_sel: paint_core::selection::Selection,
+    src: [f64; 4],
+    edges: [f64; 4],
+    angle: f64,
+    shift: [f64; 2],
+    drag: Option<(Handle, Vec2)>,
+    mode: paint_core::resample::Mode,
+    dirty: bool,
+}
+
+impl Transform {
+    fn center(&self) -> [f64; 2] {
+        [(self.src[0] + self.src[2]) / 2.0, (self.src[1] + self.src[3]) / 2.0]
+    }
+
+    /// Матрица: точка источника → точка результата.
+    fn matrix(&self) -> [f64; 6] {
+        let [x0, y0, x1, y1] = self.src;
+        let [l, t, r, b] = self.edges;
+        let su = (r - l) / (x1 - x0).max(1e-9);
+        let sv = (b - t) / (y1 - y0).max(1e-9);
+        let (ou, ov) = (l - x0 * su, t - y0 * sv);
+        let (s, c) = self.angle.sin_cos();
+        let [cx, cy] = self.center();
+        [c * su, -s * sv, c * ou - s * ov + cx + self.shift[0], s * su, c * sv, s * ou + c * ov + cy + self.shift[1]]
+    }
+
+    /// Точка рамки по местным координатам (u, v) → холст.
+    fn world(&self, u: f64, v: f64) -> Vec2 {
+        let (s, c) = self.angle.sin_cos();
+        let [cx, cy] = self.center();
+        Vec2::new((cx + self.shift[0] + c * u - s * v) as f32, (cy + self.shift[1] + s * u + c * v) as f32)
+    }
+
+    /// Точка холста → местные координаты рамки.
+    fn local(&self, p: Vec2) -> [f64; 2] {
+        let (s, c) = self.angle.sin_cos();
+        let [cx, cy] = self.center();
+        let (dx, dy) = (p.x as f64 - cx - self.shift[0], p.y as f64 - cy - self.shift[1]);
+        [c * dx + s * dy, -s * dx + c * dy]
+    }
+
+    /// Ручки: (вид, местные координаты).
+    fn handles(&self) -> Vec<(Handle, f64, f64)> {
+        let [l, t, r, b] = self.edges;
+        let (mx, my) = ((l + r) / 2.0, (t + b) / 2.0);
+        vec![
+            (Handle::Scale(-1, -1), l, t),
+            (Handle::Scale(0, -1), mx, t),
+            (Handle::Scale(1, -1), r, t),
+            (Handle::Scale(1, 0), r, my),
+            (Handle::Scale(1, 1), r, b),
+            (Handle::Scale(0, 1), mx, b),
+            (Handle::Scale(-1, 1), l, b),
+            (Handle::Scale(-1, 0), l, my),
+        ]
+    }
+
+    fn drag_to(&mut self, handle: Handle, from: Vec2, to: Vec2) {
+        match handle {
+            Handle::Move => {
+                self.shift[0] += (to.x - from.x) as f64;
+                self.shift[1] += (to.y - from.y) as f64;
+            }
+            Handle::Rotate => {
+                let [l, t, r, b] = self.edges;
+                let mid = self.world((l + r) / 2.0, (t + b) / 2.0);
+                let a0 = ((from.y - mid.y) as f64).atan2((from.x - mid.x) as f64);
+                let a1 = ((to.y - mid.y) as f64).atan2((to.x - mid.x) as f64);
+                self.angle += a1 - a0;
+                // центр рамки остаётся на месте
+                let after = self.world((l + r) / 2.0, (t + b) / 2.0);
+                self.shift[0] += (mid.x - after.x) as f64;
+                self.shift[1] += (mid.y - after.y) as f64;
+            }
+            Handle::Scale(hx, hy) => {
+                let [u, v] = self.local(to);
+                match hx {
+                    -1 => self.edges[0] = u,
+                    1 => self.edges[2] = u,
+                    _ => {}
+                }
+                match hy {
+                    -1 => self.edges[1] = v,
+                    1 => self.edges[3] = v,
+                    _ => {}
+                }
+            }
+        }
+        self.dirty = true;
+    }
+}
+
 /// Идёт перемещение: исходные пиксели слоя и выделение, точка начала, текущий сдвиг.
 struct MoveDrag {
     path: Vec<usize>,
@@ -266,6 +373,7 @@ struct PaintApp {
     started: Instant,
     sel_drag: Option<SelDrag>,
     move_drag: Option<MoveDrag>,
+    transform: Option<Transform>,
     /// Граница выделения для показа; пересчитывается после правок выделения.
     sel_outline: Vec<[(i32, i32); 2]>,
     sel_dirty: bool,
@@ -323,6 +431,7 @@ impl PaintApp {
             started: Instant::now(),
             sel_drag: None,
             move_drag: None,
+            transform: None,
             sel_outline: Vec::new(),
             sel_dirty: false,
             show_selection: true,
@@ -341,7 +450,15 @@ impl PaintApp {
             Ok("wand") => Tool::Wand,
             _ => app.tool,
         };
-        if let Ok(v) = std::env::var("PAINT_SELECT") {
+        if std::env::var_os("PAINT_TRANSFORM").is_some() {
+            if let Ok(v) = std::env::var("PAINT_SELECT") {
+                let n: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+                if n.len() == 4 {
+                    app.apply_selection(&paint_core::selection::rect(n[0], n[1], n[2], n[3]), Combine::Replace);
+                }
+            }
+            app.begin_transform();
+        } else if let Ok(v) = std::env::var("PAINT_SELECT") {
             let n: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
             if n.len() == 4 {
                 app.apply_selection(&paint_core::selection::rect(n[0], n[1], n[2], n[3]), Combine::Replace);
@@ -400,6 +517,9 @@ impl PaintApp {
 
 /// Сохранить в `.sai2`: в тот же файл или, если его нет или в нём были кривые, — спросить путь.
     fn save(&mut self) {
+        if self.transform.is_some() {
+            self.finish_transform(true);
+        }
         match self.file.clone() {
             Some(f) if !self.had_vectors && f.extension().is_some_and(|e| e.eq_ignore_ascii_case("sai2")) => self.save_to(f),
             _ => self.ask_save_as(),
@@ -419,6 +539,9 @@ impl PaintApp {
     }
 
     fn save_to(&mut self, path: PathBuf) {
+        if self.transform.is_some() {
+            self.finish_transform(true);
+        }
         let started = Instant::now();
         match paint_formats::sai2_write::save(&self.doc, &path) {
             Ok(()) => {
@@ -448,6 +571,8 @@ impl PaintApp {
 
     fn invalidate_all(&mut self) {
         self.sel_dirty = true;
+        self.transform = None;
+        self.move_drag = None;
         self.thumbs.clear();
         self.display.clear();
         self.queue.clear();
@@ -576,6 +701,10 @@ impl PaintApp {
     }
 
     fn undo(&mut self) {
+        if self.transform.is_some() {
+            self.finish_transform(false);
+            return;
+        }
         if let Some(keys) = self.doc.undo() {
             self.after_structure(keys);
         }
@@ -583,6 +712,9 @@ impl PaintApp {
     }
 
     fn redo(&mut self) {
+        if self.transform.is_some() {
+            return;
+        }
         if let Some(keys) = self.doc.redo() {
             self.after_structure(keys);
         }
@@ -651,6 +783,64 @@ impl PaintApp {
         self.dirty = true;
     }
 
+    /// Начать трансформацию (Ctrl+T): выделенное или всё содержимое текущего слоя.
+    fn begin_transform(&mut self) {
+        let Some(layer) = self.doc.layer(&self.selected) else { return };
+        if layer.children.is_some() || !layer.visible {
+            self.status = String::from("Трансформировать можно видимый обычный слой");
+            return;
+        }
+        let sel = self.doc.selection.clone();
+        let bounds = if sel.mask.tiles.is_empty() { paint_core::selection::content_bounds(&layer.pixels) } else { sel.bounds() };
+        let Some((x0, y0, x1, y1)) = bounds else {
+            self.status = String::from("На слое нечего трансформировать");
+            return;
+        };
+        let src = [x0 as f64, y0 as f64, x1 as f64, y1 as f64];
+        let (cx, cy) = ((src[0] + src[2]) / 2.0, (src[1] + src[3]) / 2.0);
+        self.transform = Some(Transform {
+            path: self.selected.clone(),
+            original: layer.pixels.clone(),
+            orig_sel: sel,
+            src,
+            edges: [src[0] - cx, src[1] - cy, src[2] - cx, src[3] - cy],
+            angle: 0.0,
+            shift: [0.0, 0.0],
+            drag: None,
+            mode: paint_core::resample::Mode::Bilinear,
+            dirty: false,
+        });
+        self.status = String::from("Трансформация: углы и стороны — размер, внутри — сдвиг, снаружи — поворот; Enter — применить, Esc — отмена");
+    }
+
+    /// Пересчитать показ трансформации (во время протяжки — быстрым билинейным способом).
+    fn update_transform(&mut self, fast: bool) {
+        let Some(t) = self.transform.as_mut() else { return };
+        t.dirty = false;
+        let mode = if fast { paint_core::resample::Mode::Bilinear } else { t.mode };
+        let keys = self.doc.transform_preview(&t.path, &t.original, &t.orig_sel, t.matrix(), mode);
+        self.sel_dirty = true;
+        self.invalidate(keys);
+    }
+
+    fn finish_transform(&mut self, apply: bool) {
+        if apply {
+            self.update_transform(false);
+        }
+        let Some(t) = self.transform.take() else { return };
+        if apply {
+            self.doc.move_commit(&t.path, t.original, t.orig_sel);
+            self.dirty = true;
+            self.status = String::from("Трансформация применена");
+        } else {
+            let keys = self.doc.move_preview(&t.path, &t.original, &t.orig_sel, 0, 0);
+            self.invalidate(keys);
+            self.status = String::from("Трансформация отменена");
+        }
+        self.sel_dirty = true;
+        self.thumbs.clear();
+    }
+
     /// Сдвиг клавишами (Alt+стрелки).
     fn nudge(&mut self, dx: i32, dy: i32) {
         let keys = self.doc.move_layer_pixels(&self.selected.clone(), dx, dy);
@@ -689,6 +879,9 @@ impl PaintApp {
 
     /// Действия со слоем из кнопок под списком, меню «Слой» и клавиш образца.
     fn layer_action(&mut self, action: LayerAction) {
+        if self.transform.is_some() {
+            self.finish_transform(true);
+        }
         let path = self.selected.clone();
         let result = match action {
             LayerAction::Duplicate => {
@@ -1223,6 +1416,42 @@ impl PaintApp {
         ui.add_space(4.0);
         let lw = 92.0;
         let w = ui.available_width() - lw - 8.0;
+        let mut finish = None;
+        if let Some(t) = self.transform.as_mut() {
+            sai_ui::row(ui, "Трансформация", lw, true, |ui| {
+                use paint_core::resample::Mode;
+                let name = |m: Mode| match m {
+                    Mode::Nearest => "Ближайший",
+                    Mode::Bilinear => "Билинейный",
+                    Mode::Bicubic => "Бикубический",
+                    Mode::Lanczos2 => "Ланцош 2",
+                    Mode::Lanczos3 => "Ланцош 3",
+                };
+                let before = t.mode;
+                egui::ComboBox::from_id_salt("tmode").selected_text(name(t.mode)).width(w - 8.0).show_ui(ui, |ui| {
+                    for m in [Mode::Nearest, Mode::Bilinear, Mode::Bicubic, Mode::Lanczos2, Mode::Lanczos3] {
+                        ui.selectable_value(&mut t.mode, m, name(m));
+                    }
+                });
+                if t.mode != before {
+                    t.dirty = true;
+                }
+            });
+            ui.horizontal(|ui| {
+                if ui.button("Применить (Enter)").clicked() {
+                    finish = Some(true);
+                }
+                if ui.button("Отмена (Esc)").clicked() {
+                    finish = Some(false);
+                }
+            });
+            ui.add_space(4.0);
+        }
+        if let Some(apply) = finish {
+            self.finish_transform(apply);
+        } else if self.transform.as_ref().is_some_and(|t| t.dirty && t.drag.is_none()) {
+            self.update_transform(false);
+        }
         if self.tool == Tool::Wand {
             let tol = &mut self.wand_tolerance;
             sai_ui::row(ui, "Допуск", lw, true, |ui| {
@@ -1554,6 +1783,9 @@ impl PaintApp {
                     open = !open;
                     ui.data_mut(|d| d.insert_persisted(fid, open));
                 } else {
+                    if self.transform.is_some() {
+                        self.finish_transform(true);
+                    }
                     self.selected = path.clone();
                 }
             }
@@ -1912,7 +2144,39 @@ impl PaintApp {
         }
         let panning = middle || space || self.tool == Tool::Hand;
         let ctrl = ui.input(|i| i.modifiers.command);
-        if self.move_drag.is_some() || (!panning && self.live.is_none() && pressed && response.hovered() && (self.tool == Tool::Move || ctrl)) {
+        if self.transform.is_some() && !panning {
+            let zoom = self.zoom;
+            let screen = |c: Vec2| rect.min + (c - self.offset) * zoom;
+            if pressed && response.hovered() {
+                if let (Some(pos), Some(t)) = (pointer, self.transform.as_mut()) {
+                    let c = to_canvas(pos, zoom, self.offset);
+                    let near = t.handles().into_iter().find(|&(_, u, v)| (screen(t.world(u, v)) - pos).length() < 8.0);
+                    let [u, v] = t.local(c);
+                    let [l, tp, r, b] = t.edges;
+                    let inside = u >= l.min(r) && u <= l.max(r) && v >= tp.min(b) && v <= tp.max(b);
+                    let handle = near.map(|h| h.0).unwrap_or(if inside { Handle::Move } else { Handle::Rotate });
+                    t.drag = Some((handle, c));
+                }
+            } else if let Some(t) = self.transform.as_mut() {
+                if let Some((h, mut last)) = t.drag {
+                    for pos in &moves {
+                        let c = to_canvas(*pos, zoom, self.offset);
+                        t.drag_to(h, last, c);
+                        last = c;
+                    }
+                    t.drag = Some((h, last));
+                }
+            }
+            if released {
+                if let Some(t) = self.transform.as_mut() {
+                    t.drag = None;
+                    t.dirty = true;
+                }
+                self.update_transform(false);
+            } else if self.transform.as_ref().is_some_and(|t| t.dirty) {
+                self.update_transform(true);
+            }
+        } else if self.move_drag.is_some() || (!panning && self.live.is_none() && pressed && response.hovered() && (self.tool == Tool::Move || ctrl)) {
             // Перемещение: инструмент «Перемещение» или Ctrl + перетаскивание (как в SAI).
             if self.move_drag.is_none() {
                 if let Some(pos) = pointer {
@@ -2094,6 +2358,23 @@ impl PaintApp {
             };
             painter.add(egui::Shape::line(pts.clone(), egui::Stroke::new(1.0_f32, Color32::WHITE)));
             painter.extend(egui::Shape::dashed_line(&pts, egui::Stroke::new(1.0_f32, Color32::BLACK), 4.0, 4.0));
+        }
+        // Рамка трансформации с ручками.
+        if let Some(t) = &self.transform {
+            let [l, tp, r, b] = t.edges;
+            let pts: Vec<Pos2> = [(l, tp), (r, tp), (r, b), (l, b), (l, tp)]
+                .iter()
+                .map(|&(u, v)| { let w = t.world(u, v); to_screen(w.x, w.y) })
+                .collect();
+            painter.add(egui::Shape::line(pts.clone(), egui::Stroke::new(1.0_f32, Color32::WHITE)));
+            painter.extend(egui::Shape::dashed_line(&pts, egui::Stroke::new(1.0_f32, Color32::BLACK), 4.0, 4.0));
+            for (_, u, v) in t.handles() {
+                let w = t.world(u, v);
+                let c = to_screen(w.x, w.y);
+                let hr = Rect::from_center_size(c, Vec2::splat(7.0));
+                painter.rect_filled(hr, 0.0, Color32::WHITE);
+                painter.rect_stroke(hr, 0.0, egui::Stroke::new(1.0_f32, Color32::BLACK));
+            }
         }
         // Кружок размера кисти.
         if let Some(pos) = pointer.filter(|p| rect.contains(*p)) {
@@ -2434,6 +2715,24 @@ impl eframe::App for PaintApp {
             }
             d
         });
+        let (key_t, key_enter, key_esc) = ctx.input(|i| {
+            (
+                i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::T),
+                i.key_pressed(egui::Key::Enter),
+                i.key_pressed(egui::Key::Escape),
+            )
+        });
+        if !ctx.wants_keyboard_input() && self.live.is_none() {
+            if self.transform.is_some() {
+                if key_enter || key_t {
+                    self.finish_transform(true);
+                } else if key_esc {
+                    self.finish_transform(false);
+                }
+            } else if key_t && self.move_drag.is_none() {
+                self.begin_transform();
+            }
+        }
         if nudge != (0, 0) && !ctx.wants_keyboard_input() && self.live.is_none() && self.move_drag.is_none() {
             self.nudge(nudge.0, nudge.1);
         }

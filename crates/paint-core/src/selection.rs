@@ -312,6 +312,95 @@ pub fn shift_pixels(src: &ColorMap, sel: &Selection, dx: i32, dy: i32) -> ColorM
     out
 }
 
+/// Пиксели слоя после трансформации матрицей `m` (точка источника → точка результата):
+/// без выделения — весь слой, с выделением — выделенная часть поверх остального. Выделение
+/// трансформируется так же. Возвращает (пиксели, маска выделения).
+pub fn transform_pixels(src: &ColorMap, sel: &Selection, m: [f64; 6], mode: crate::resample::Mode) -> (ColorMap, MaskMap) {
+    let whole = sel.mask.tiles.is_empty();
+    // область источника
+    let bounds = if whole { content_bounds(src) } else { sel.bounds() };
+    let Some((x0, y0, x1, y1)) = bounds else { return (src.clone(), sel.mask.clone()) };
+    let Some(inv) = crate::resample::invert_affine(m) else { return (src.clone(), sel.mask.clone()) };
+    let (sw, sh) = ((x1 - x0) as usize, (y1 - y0) as usize);
+    let k = 1.0 / ONE as f32;
+    let mut part = vec![[0f32; 4]; sw * sh];
+    let mut mpart = vec![[0f32; 4]; sw * sh];
+    let mut out = ColorMap::new();
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let p = src.get(x, y);
+            let s = if whole { ONE } else { sel.amount(x, y) };
+            let i = (y - y0) as usize * sw + (x - x0) as usize;
+            let f = s as f32 / ONE as f32;
+            part[i] = p.map(|c| c as f32 * k * f);
+            mpart[i] = [f, f, f, f];
+        }
+    }
+    if !whole {
+        for (&(tx, ty), t) in &src.tiles {
+            for (i, &p) in t.0.iter().enumerate() {
+                let (x, y) = (tx * TILE + i as i32 % TILE, ty * TILE + i as i32 / TILE);
+                let keep = ONE - sel.amount(x, y);
+                if keep > 0 && p[3] > 0 {
+                    out.set(x, y, p.map(|c| ((c as u32 * keep + ONE / 2) / ONE) as u16));
+                }
+            }
+        }
+    }
+    // область результата — образ углов
+    let corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].map(|(x, y)| (m[0] * x as f64 + m[1] * y as f64 + m[2], m[3] * x as f64 + m[4] * y as f64 + m[5]));
+    let dx0 = corners.iter().map(|c| c.0).fold(f64::MAX, f64::min).floor() as i32 - 1;
+    let dy0 = corners.iter().map(|c| c.1).fold(f64::MAX, f64::min).floor() as i32 - 1;
+    let dx1 = corners.iter().map(|c| c.0).fold(f64::MIN, f64::max).ceil() as i32 + 1;
+    let dy1 = corners.iter().map(|c| c.1).fold(f64::MIN, f64::max).ceil() as i32 + 1;
+    let (dw, dh) = ((dx1 - dx0) as usize, (dy1 - dy0) as usize);
+    // матрица в координатах буфера источника
+    let inv_local = [inv[0], inv[1], inv[2] - x0 as f64, inv[3], inv[4], inv[5] - y0 as f64];
+    let moved = crate::resample::affine(&part, sw, sh, inv_local, dx0, dy0, dw, dh, mode);
+    let mmask = crate::resample::affine(&mpart, sw, sh, inv_local, dx0, dy0, dw, dh, mode);
+    let mut mask = MaskMap::new();
+    for j in 0..dh {
+        for i in 0..dw {
+            let (x, y) = (dx0 + i as i32, dy0 + j as i32);
+            let p = moved[j * dw + i];
+            if p[3] > 0.0 {
+                let mv = p.map(|c| (c.clamp(0.0, 1.0) * ONE as f32 + 0.5) as u32);
+                let under = out.get(x, y);
+                let inv_a = ONE - mv[3].min(ONE);
+                let v = [0, 1, 2, 3].map(|c| (mv[c] + (under[c] as u32 * inv_a + ONE / 2) / ONE).min(ONE) as u16);
+                out.set(x, y, v);
+            }
+            if !whole {
+                let a = (mmask[j * dw + i][3].clamp(0.0, 1.0) * ONE as f32 + 0.5) as u16;
+                if a > 0 {
+                    mask.set(x, y, a);
+                }
+            }
+        }
+    }
+    out.tiles.retain(|_, t| t.0.iter().any(|p| p[3] != 0));
+    mask.tiles.retain(|_, t| t.0.iter().any(|&v| v != 0));
+    (out, mask)
+}
+
+/// Границы непустых пикселей слоя.
+pub fn content_bounds(src: &ColorMap) -> Option<(i32, i32, i32, i32)> {
+    let mut b: Option<(i32, i32, i32, i32)> = None;
+    for (&(tx, ty), t) in &src.tiles {
+        for (i, p) in t.0.iter().enumerate() {
+            if p[3] == 0 {
+                continue;
+            }
+            let (x, y) = (tx * TILE + i as i32 % TILE, ty * TILE + i as i32 / TILE);
+            b = Some(match b {
+                None => (x, y, x + 1, y + 1),
+                Some((a, c, d, e)) => (a.min(x), c.min(y), d.max(x + 1), e.max(y + 1)),
+            });
+        }
+    }
+    b
+}
+
 /// Ограничивает покрытие `m` (0..=ONE) выделением: доля `sel` (0..=ONE).
 #[inline]
 pub fn limit(m: u32, sel: u16) -> u32 {

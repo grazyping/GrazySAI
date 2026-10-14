@@ -307,7 +307,21 @@ impl Document {
         keys
     }
 
-    /// Закончить сдвиг: одна запись истории, отмена возвращает исходные пиксели и выделение.
+    /// Показ трансформации без записи в историю (как `move_preview`): матрица `m` переводит точку
+    /// исходного слоя в точку результата.
+    pub fn transform_preview(&mut self, path: &[usize], original: &ColorMap, orig_sel: &Selection, m: [f64; 6], mode: crate::resample::Mode) -> Vec<Key> {
+        let (pixels, mask) = crate::selection::transform_pixels(original, orig_sel, m, mode);
+        let Some(layer) = self.layer_mut(path) else { return Vec::new() };
+        let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
+        keys.extend(pixels.tiles.keys().copied());
+        layer.pixels = pixels;
+        self.selection.mask = mask;
+        keys.sort_unstable();
+        keys.dedup();
+        keys
+    }
+
+    /// Закончить сдвиг или трансформацию: одна запись истории, отмена возвращает исходные пиксели и выделение.
     pub fn move_commit(&mut self, path: &[usize], original: ColorMap, orig_sel: Selection) {
         let Some(layer) = self.layer(path) else { return };
         if layer.pixels == original && self.selection == orig_sel {

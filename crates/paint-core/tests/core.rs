@@ -516,3 +516,28 @@ fn moving_a_layer_and_a_selected_part() {
     assert_eq!(pixel(&doc, 2, 5), [0, 0, 0, 255]);
     assert_eq!(doc.selection.bounds(), Some((0, 0, 20, 10)));
 }
+
+#[test]
+fn transform_scales_and_rotates_a_layer() {
+    use paint_core::resample::Mode;
+    let black = paint_core::pixel::from_rgba8([0, 0, 0, 255]);
+    let mut doc = Document::new(80, 80);
+    for x in 10..20 {
+        for y in 10..20 {
+            doc.layers[0].pixels.set(x, y, black);
+        }
+    }
+    let original = doc.layers[0].pixels.clone();
+    let sel = doc.selection.clone();
+    // вдвое вокруг (10, 10)
+    doc.transform_preview(&[0], &original, &sel, [2.0, 0.0, -10.0, 0.0, 2.0, -10.0], Mode::Bilinear);
+    assert_eq!(pixel(&doc, 28, 28), [0, 0, 0, 255]);
+    assert_eq!(pixel(&doc, 32, 15), [255, 255, 255, 255]);
+    doc.move_commit(&[0], original.clone(), sel.clone());
+    doc.undo();
+    assert_eq!(pixel(&doc, 28, 28), [255, 255, 255, 255]);
+    // поворот на 90° вокруг (40, 40): квадрат 10..20 уходит в x 60..70, y 10..20
+    doc.transform_preview(&[0], &original, &sel, [0.0, -1.0, 80.0, 1.0, 0.0, 0.0], Mode::Bicubic);
+    assert_eq!(pixel(&doc, 65, 15), [0, 0, 0, 255]);
+    assert_eq!(pixel(&doc, 15, 15), [255, 255, 255, 255]);
+}

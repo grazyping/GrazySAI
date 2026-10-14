@@ -148,3 +148,80 @@ pub fn resize(src: &[[f32; 4]], sw: usize, sh: usize, dw: usize, dh: usize, mode
     }
     out
 }
+
+/// Выборка по аффинной матрице (для трансформации слоя): `inv` переводит точку результата в
+/// точку источника, `x = inv[0]·X + inv[1]·Y + inv[2]`, `y = inv[3]·X + inv[4]·Y + inv[5]`.
+/// Результат — `dw`×`dh` с левым верхним углом (`ox`, `oy`) в координатах результата. Ядро —
+/// то же, что у `resize`; при уменьшении растягивается. За краем источника — прозрачность (края
+/// при повороте не размазываются), веса нормируются по всем отсчётам окна.
+#[allow(clippy::too_many_arguments)]
+pub fn affine(src: &[[f32; 4]], sw: usize, sh: usize, inv: [f64; 6], ox: i32, oy: i32, dw: usize, dh: usize, mode: Mode) -> Vec<[f32; 4]> {
+    let table = mode.table();
+    // во сколько раз источник крупнее результата по каждой оси
+    let kx = (inv[0] * inv[0] + inv[3] * inv[3]).sqrt().max(1.0);
+    let ky = (inv[1] * inv[1] + inv[4] * inv[4]).sqrt().max(1.0);
+    let k = kx.max(ky);
+    let reach = if mode == Mode::Nearest { 0.5 } else { mode.support() * k };
+    let cross = matches!(mode, Mode::Bicubic | Mode::Lanczos2);
+    let get = |x: isize, y: isize| -> [f32; 4] {
+        if x < 0 || y < 0 || x >= sw as isize || y >= sh as isize {
+            [0.0; 4]
+        } else {
+            src[y as usize * sw + x as usize]
+        }
+    };
+    let mut out = vec![[0f32; 4]; dw * dh];
+    for j in 0..dh {
+        for i in 0..dw {
+            let (cx, cy) = ((ox + i as i32) as f64 + 0.5, (oy + j as i32) as f64 + 0.5);
+            let sx = inv[0] * cx + inv[1] * cy + inv[2];
+            let sy = inv[3] * cx + inv[4] * cy + inv[5];
+            if mode == Mode::Nearest {
+                out[j * dw + i] = get(sx.floor() as isize, sy.floor() as isize);
+                continue;
+            }
+            let (x0, x1) = ((sx - 0.5 - reach).floor() as isize + 1, (sx - 0.5 + reach).ceil() as isize);
+            let (y0, y1) = ((sy - 0.5 - reach).floor() as isize + 1, (sy - 0.5 + reach).ceil() as isize);
+            if x1 < 0 || y1 < 0 || x0 >= sw as isize || y0 >= sh as isize {
+                continue;
+            }
+            let mut acc = [0f64; 4];
+            let mut total = 0f64;
+            for y in y0..y1 {
+                let ty = (y as f64 + 0.5 - sy) / k;
+                let wy = lookup(&table, ty);
+                for x in x0..x1 {
+                    let tx = (x as f64 + 0.5 - sx) / k;
+                    if cross && tx.abs() >= 1.0 && ty.abs() >= 1.0 {
+                        continue;
+                    }
+                    let w = lookup(&table, tx) * wy;
+                    if w == 0.0 {
+                        continue;
+                    }
+                    total += w;
+                    let p = get(x, y);
+                    for c in 0..4 {
+                        acc[c] += p[c] as f64 * w;
+                    }
+                }
+            }
+            if total.abs() > 1e-9 {
+                let a = (acc[3] / total).clamp(0.0, 1.0);
+                let px = [0, 1, 2].map(|c| (acc[c] / total).clamp(0.0, a) as f32);
+                out[j * dw + i] = [px[0], px[1], px[2], a as f32];
+            }
+        }
+    }
+    out
+}
+
+/// Обратная аффинная матрица (`None` — вырождена).
+pub fn invert_affine(m: [f64; 6]) -> Option<[f64; 6]> {
+    let det = m[0] * m[4] - m[1] * m[3];
+    if det.abs() < 1e-12 {
+        return None;
+    }
+    let (a, b, d, e) = (m[4] / det, -m[1] / det, -m[3] / det, m[0] / det);
+    Some([a, b, -(a * m[2] + b * m[5]), d, e, -(d * m[2] + e * m[5])])
+}
