@@ -2,6 +2,7 @@
 name = "paint-cli"
 edition.workspace = true
 version.workspace = true
+license.workspace = true
 
 [dependencies]
 paint-core = { path = "../paint-core" }

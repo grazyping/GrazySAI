@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 /// Плитка показа: 256×256 точек, то есть 4×4 плитки ядра. Одна текстура на плитку.
 const DT: i32 = 256;
 
-/// Режимы в том же порядке, что в списке образца (docs/ref/sai2-2017-blend-modes.png).
+/// Режимы в том же порядке, что в списке образца.
 const MODES: [(BlendMode, &str); 28] = [
     (BlendMode::Normal, "Обычный"),
     (BlendMode::Multiply, "Умножение"),

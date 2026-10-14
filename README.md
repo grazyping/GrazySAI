@@ -43,5 +43,12 @@ cargo test --workspace --release
 | `crates/paint-cli` | Командная строка для сверок с образцом |
 | `crates/pen-test` | Журнал событий пера (Windows Ink, WinTab, XInput 2) |
 | `crates/virtual-tablet` | Виртуальный планшет через `/dev/uinput` (Linux) |
-| `docs/` | План, формат `.sai2`, разбор образца, сверки, интерфейс |
+| `docs/` | План, формат `.sai2`, правила образца своими словами, сверки, интерфейс |
 | `tools/` | Проверка виртуальным пером |
+
+## Лицензия
+
+MIT — см. [LICENSE](LICENSE). SOsai — независимый проект и не связан с SYSTEMAX Software
+Development, автором PaintTool SAI; названия SAI и PaintTool SAI принадлежат их владельцу.
+Код написан заново по наблюдаемому поведению программы и формату файлов; кода PaintTool SAI в
+репозитории нет.
