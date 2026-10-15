@@ -47,9 +47,84 @@ impl Shape {
     }
 }
 use crate::mix::{Mixer, Sample};
+use crate::paper::PaperTexture;
+use std::sync::Arc;
 use crate::pixel::{Px, ONE};
 use crate::tile::{key_of, ColorMap, Key, MaskMap, Tile, TILE};
 use std::collections::{HashMap, HashSet};
+
+/// Форма «пятно» и текстура кисти, как в SAI (docs/29-brush-form-texture.md). Обе текстуры
+/// привязаны к холсту, а не к отпечатку.
+#[derive(Clone, Debug)]
+pub struct Grain {
+    /// Форма «пятно» (`blotmap`): текстура, сила 0..=1, масштаб %.
+    pub blot: Option<(Arc<PaperTexture>, f32, u16)>,
+    /// Текстура кисти (`brushtex` или бумага слоя): текстура, сила 0..=1, масштаб %.
+    pub texture: Option<(Arc<PaperTexture>, f32, u16)>,
+    /// Текстура — бумага слоя: значения берутся обратными (как `FUN_1400e941e`).
+    pub paper: bool,
+    /// «Affect by MinDens»: сила текстуры зависит от размера и минимальной плотности.
+    pub by_min_density: bool,
+}
+
+/// Коэффициенты порога «пятна» по ступени жёсткости 0..=4 (таблицы образца).
+const BLOT_B: [f64; 5] = [1.263157894736842, 2.0, 2.5714285714285716, 4.0, 6.0];
+const BLOT_C: [f64; 5] = [0.15789473684210525, 0.2727272727272727, 0.42857142857142855, 0.5, 0.5];
+const BLOT_D: [f64; 5] = [0.6666666666666666, 0.7272727272727273, 0.8888888888888888, 1.0, 1.3333333333333333];
+
+/// Номер ступени жёсткости (0 — самая мягкая).
+fn hardness_index(h: f32) -> usize {
+    let mut best = 0;
+    for (i, v) in crate::brush::HARDNESS_STEPS.iter().enumerate() {
+        if (h - v).abs() < (h - crate::brush::HARDNESS_STEPS[best]).abs() {
+            best = i;
+        }
+    }
+    best
+}
+
+/// Значения текстуры на плитках, которые задевает отпечаток.
+struct GrainTiles {
+    tx0: i32,
+    ty0: i32,
+    nx: i32,
+    tiles: Vec<Arc<[u8]>>,
+}
+
+impl GrainTiles {
+    fn at(&self, x: i32, y: i32) -> u32 {
+        let (tx, ty) = (x.div_euclid(TILE) - self.tx0, y.div_euclid(TILE) - self.ty0);
+        let t = &self.tiles[(ty * self.nx + tx) as usize];
+        t[(y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize] as u32
+    }
+}
+
+/// Форма и текстура одного отпечатка.
+struct DabGrain {
+    /// Пятно: текстура и коэффициенты `покрытие = край·B - t·A - C`.
+    blot: Option<(GrainTiles, [f32; 3])>,
+    /// Текстура: значения и сила в 1/256 (как `dab_make_node`: `(int)(сила·256)`).
+    tex: Option<(GrainTiles, u32)>,
+}
+
+impl DabGrain {
+    /// Покрытие точки (x, y) по покрытию края `cov` (у «пятна» — до порога).
+    fn apply(&self, cov: f32, x: i32, y: i32) -> f32 {
+        let mut cov = cov;
+        if let Some((t, [a, b, c])) = &self.blot {
+            cov = (cov * b - t.at(x, y) as f32 * a - c).clamp(0.0, 1.0);
+        }
+        if let Some((t, s)) = &self.tex {
+            // FUN_1400e8c12: 0x4000 - ((t·257/2 + 1)/2), умножить на силу, вычесть с насыщением
+            let g = t.at(x, y);
+            let v = 0x4000 - ((((g * 257) >> 1) + 1) >> 1);
+            let sub = ((v * s) >> 8).min(0xffff);
+            let q = ((cov * 16384.0) as u32).saturating_sub(sub);
+            cov = q as f32 * (1.0 / 16384.0);
+        }
+        cov
+    }
+}
 
 /// Отпечаток обычной кисти, ждущий наложения в покрытие штриха (`flush_dabs`).
 struct Placed {
@@ -66,18 +141,21 @@ struct Placed {
     flat_cov: f32,
     flat_r2: f32,
     flat_a: u32,
+    grain: Option<DabGrain>,
 }
 
 impl Placed {
-    fn new(p: InputPoint, shape: Shape, density: f32) -> Self {
+    fn new(p: InputPoint, shape: Shape, density: f32, grain: Option<DabGrain>) -> Self {
         let opacity = shape.opacity();
         let cap = (density * ONE as f32 + 0.5) as u32;
         let reach = shape.outer() + 1.0;
         // За пределами круга `reach` покрытие нулевое — строки обходятся только внутри круга.
         let round = shape.coverage(reach - 1.0) <= 0.0;
         let flat_cov = shape.coverage(0.0);
-        let flat_r2 = shape.flat_r2();
+        // с формой или текстурой покрытие меняется от точки к точке
+        let flat_r2 = if grain.is_some() { -1.0 } else { shape.flat_r2() };
         Self {
+            grain,
             p,
             opacity,
             cap,
@@ -130,7 +208,10 @@ impl Placed {
                     }
                     self.flat_a
                 } else {
-                    let cov = self.shape.coverage(d2.sqrt());
+                    let mut cov = self.shape.coverage(d2.sqrt());
+                    if let Some(g) = &self.grain {
+                        cov = g.apply(cov, x, y);
+                    }
                     if cov <= 0.0 {
                         continue;
                     }
@@ -153,6 +234,7 @@ struct Pending {
     y: f32,
     pressure: f32,
     shape: Shape,
+    grain: Option<DabGrain>,
 }
 
 /// Наибольший шаг между отпечатками большой жёсткой кисти, px (см. `placement_step_at`).
@@ -180,6 +262,10 @@ pub struct Stroke {
     /// Отпечатки обычной кисти, ещё не наложенные в покрытие.
     queued: Vec<Placed>,
     mixer: Option<Mixer>,
+    /// Форма «пятно» и текстура кисти.
+    grain: Option<Grain>,
+    /// Значения текстур по плиткам холста: пятно и текстура.
+    grain_cache: [HashMap<Key, Arc<[u8]>>; 2],
 }
 
 impl Stroke {
@@ -194,7 +280,75 @@ impl Stroke {
             pending: Vec::new(),
             queued: Vec::new(),
             mixer: None,
+            grain: None,
+            grain_cache: Default::default(),
         }
+    }
+
+    /// Форма «пятно» и текстура кисти для этого штриха.
+    pub fn set_grain(&mut self, grain: Option<Grain>) {
+        self.grain = grain.filter(|g| g.blot.is_some() || g.texture.is_some());
+        self.grain_cache = Default::default();
+    }
+
+    fn blot_on(&self) -> bool {
+        self.grain.as_ref().is_some_and(|g| g.blot.is_some())
+    }
+
+    /// Плитки текстуры `which` (0 — пятно, 1 — текстура) под прямоугольником отпечатка.
+    fn grain_tiles(&mut self, which: usize, x0: i32, y0: i32, x1: i32, y1: i32) -> Option<GrainTiles> {
+        let g = self.grain.as_ref()?;
+        let (tex, _, scale) = if which == 0 { g.blot.as_ref()? } else { g.texture.as_ref()? };
+        let invert = which == 1 && g.paper;
+        let (tx0, ty0, tx1, ty1) = (x0.div_euclid(TILE), y0.div_euclid(TILE), x1.div_euclid(TILE), y1.div_euclid(TILE));
+        let mut tiles = Vec::new();
+        for ty in ty0..=ty1 {
+            for tx in tx0..=tx1 {
+                let t = self.grain_cache[which].entry((tx, ty)).or_insert_with(|| {
+                    let mut v = crate::paper::sample(tex, *scale, tx * TILE, ty * TILE, TILE as usize, TILE as usize);
+                    if invert {
+                        // бумага слоя: каждые 4 байта как одно 32-битное число с обратным знаком
+                        for c in v.as_chunks_mut::<4>().0 {
+                            *c = u32::from_le_bytes(*c).wrapping_neg().to_le_bytes();
+                        }
+                    }
+                    v.into()
+                });
+                tiles.push(t.clone());
+            }
+        }
+        Some(GrainTiles { tx0, ty0, nx: tx1 - tx0 + 1, tiles })
+    }
+
+    /// Форма и текстура отпечатка в точке `p` диаметром `diameter`.
+    fn dab_grain(&mut self, p: InputPoint, diameter: f32, reach: f32) -> Option<DabGrain> {
+        let g = self.grain.clone()?;
+        let (x0, x1) = ((p.x - reach).floor() as i32, (p.x + reach).ceil() as i32);
+        let (y0, y1) = ((p.y - reach).floor() as i32, (p.y + reach).ceil() as i32);
+        let blot = match &g.blot {
+            Some((_, strength, _)) => {
+                let h = hardness_index(self.params.hardness);
+                let (b, c) = (BLOT_B[h], BLOT_C[h]);
+                let a = b * BLOT_D[h] * *strength as f64 / 255.0;
+                Some((self.grain_tiles(0, x0, y0, x1, y1)?, [a as f32, b as f32, c as f32]))
+            }
+            None => None,
+        };
+        let tex = match &g.texture {
+            Some((_, strength, _)) => {
+                // FUN_1400e0160
+                let mut s = *strength as f64;
+                if g.by_min_density {
+                    let p = if self.params.density_by_pressure { p.pressure.clamp(0.0, 1.0) } else { 1.0 };
+                    let q = 1.0 - p as f64;
+                    s *= (self.params.min_density as f64 * 32.0 * q * q + 1.0) * (diameter as f64).clamp(1.0, 5.0) * 0.2;
+                }
+                let s = ((s.min(255.0) * 256.0) as i64 as u32) & 0xffff;
+                Some((self.grain_tiles(1, x0, y0, x1, y1)?, s))
+            }
+            None => None,
+        };
+        Some(DabGrain { blot, tex })
     }
 
     /// Краска смешивается с холстом: штрих рисуется прямо в слой ([`Stroke::paint_mixed`]).
@@ -220,7 +374,7 @@ impl Stroke {
     /// `docs/14-virtual-pen.md`).
     fn large_flat(&self, d: f32, pressure: f32) -> bool {
         let full = self.params.density_at(pressure) >= self.params.density * 0.999;
-        self.params.spacing <= 0.0 && !self.params.linework && self.params.hardness >= 1.0 && d >= 20.0 && full
+        self.params.spacing <= 0.0 && !self.params.linework && self.params.hardness >= 1.0 && d >= 20.0 && full && !self.blot_on()
     }
 
     /// Отпечаток по модели образца (docs/13-thin-brushes.md).
@@ -236,6 +390,7 @@ impl Stroke {
             flat: !self.params.linework && self.params.hardness >= 1.0,
             ver1: self.params.ver1_density,
             amplify: self.params.amplify,
+            blot: self.blot_on(),
         })
     }
 
@@ -316,11 +471,12 @@ impl Stroke {
             Shape::Sai(d, o)
         };
         self.dab_count += 1;
+        let grain = if self.grain.is_some() { self.dab_grain(p, diameter, shape.outer() + 1.0) } else { None };
         if self.is_mixing() {
-            self.pending.push(Pending { x: p.x, y: p.y, pressure: p.pressure, shape });
+            self.pending.push(Pending { x: p.x, y: p.y, pressure: p.pressure, shape, grain });
             return;
         }
-        self.queued.push(Placed::new(p, shape, density));
+        self.queued.push(Placed::new(p, shape, density, grain));
     }
 
     /// Кладёт отложенные отпечатки в покрытие штриха. Каждая плитка получает свои отпечатки в
@@ -645,7 +801,7 @@ fn for_rows(d: &Pending, mut f: impl FnMut(i32, i32, i32, &dyn Fn(i32) -> f32)) 
     let (y0, y1) = ((d.y - reach).floor() as i32, (d.y + reach).ceil() as i32);
     let round = d.shape.coverage(reach - 1.0) <= 0.0;
     let flat_cov = d.shape.coverage(0.0);
-    let flat_r2 = d.shape.flat_r2();
+    let flat_r2 = if d.grain.is_some() { -1.0 } else { d.shape.flat_r2() };
     for y in y0..=y1 {
         let cy = y as f32 + 0.5 - d.y;
         let (mut ra, mut rb) = (x0, x1);
@@ -661,7 +817,13 @@ fn for_rows(d: &Pending, mut f: impl FnMut(i32, i32, i32, &dyn Fn(i32) -> f32)) 
         let cov_at = |x: i32| {
             let cx = x as f32 + 0.5 - d.x;
             let d2 = cx * cx + cy * cy;
-            if d2 < flat_r2 { flat_cov } else { d.shape.coverage(d2.sqrt()) }
+            if d2 < flat_r2 {
+                flat_cov
+            } else if let Some(g) = &d.grain {
+                g.apply(d.shape.coverage(d2.sqrt()), x, y)
+            } else {
+                d.shape.coverage(d2.sqrt())
+            }
         };
         f(y, ra, rb, &cov_at);
     }

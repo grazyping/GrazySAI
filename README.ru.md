@@ -2,7 +2,7 @@
 
 [English](README.md) | **Русский**
 
-Редактор для рисования на Rust по образцу PaintTool SAI 2 — личный проект. Версия 0.8.6.
+Редактор для рисования на Rust по образцу PaintTool SAI 2 — личный проект. Версия 0.8.7.
 Как пользоваться — в [руководстве](docs/manual.md); что готово и что впереди — в [ROADMAP.md](ROADMAP.md) и на вкладке
 [Milestones](https://github.com/grazyping/SOsai/milestones); готовые сборки — в разделе Releases. Linux и Windows,
 перо планшета (XPPen Artist 24 Pro), открытие файлов `.sai2`.
@@ -26,6 +26,8 @@
 - Открытие и экспорт PSD со слоями, PNG, JPEG (`docs/21-file-formats.md`).
 - Настройки между запусками и восстановление после сбоя (`docs/22-settings-recovery.md`).
 - Слои контура и фигур: перо рисует кривые, правка кривых, фигуры — как в SAI (`docs/11-linework-shapes.md`).
+- Формы кисти («пятна») и текстуры, бумага слоя как текстура кисти — как в SAI 2017
+  (`docs/29-brush-form-texture.md`).
 - Линейки: прямая и эллипс, как в SAI 2017 (`docs/27-rulers.md`).
 - Пересэмплирование пяти видов, как в образце (`docs/12-resampling.md`).
 - Окно в раскладке SAI 2 (`docs/04-ui-layout.md`, `docs/ref/paint-rs-ui.png`).

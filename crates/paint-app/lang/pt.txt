@@ -146,9 +146,7 @@ PSD (со слоями) = PSD (com camadas)
 Стойкость = Persistência
 Порог размыт. = Limiar de desf.
 Форма = Forma
-Формы кисти — позже = Formas de pincel — mais tarde
 Текстура = Textura
-Текстуры кисти — позже = Texturas de pincel — mais tarde
 Разное = Avançado
 Усил. плотн. = Ampl. densidade
 Нажим на плотность как в версии 1 = Pressão na densidade como na versão 1
@@ -360,3 +358,15 @@ SOsai на GitHub = SOsai no GitHub
 Скачать и установить = Baixar e instalar
 Страница выпуска = Página da versão
 Страница выпусков = Página de versões
+
+# Форма и текстура кисти, подсказки клавиш / Brush form and texture, key hints
+[ Простой круг ] = [ Círculo simples ]
+[ Нет текстуры ] = [ Sem textura ]
+[ Бумага слоя ] = [ Papel da camada ]
+Зависит от мин. плотн. = Conforme densidade mín.
+Как «Affect by MinDens» в SAI: у тонкой кисти и при слабом нажиме текстура слабее = Como “Affect by MinDens” no SAI: a textura é mais fraca em pincéis finos e com pressão leve
+Папка SAI (с blotmap и brushtex): = Pasta do SAI (com blotmap e brushtex):
+Показывать быстрые клавиши = Mostrar atalhos de teclado
+Клавиши в пунктах меню и во всплывающих подсказках = Atalhos nos itens de menu e nas dicas
+Рисунки = Imagens
+Все файлы = Todos os arquivos

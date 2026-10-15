@@ -146,10 +146,8 @@ PSD (со слоями) = PSD (with layers)
 Разбавление = Dilution
 Стойкость = Persistence
 Порог размыт. = Blur Pressure
-Форма = Blotmap
-Формы кисти — позже = Brush shapes — later
+Форма = Form
 Текстура = Texture
-Текстуры кисти — позже = Brush textures — later
 Разное = Advanced Settings
 Усил. плотн. = Amplify Dens.
 Нажим на плотность как в версии 1 = Ver1 pressure on density
@@ -361,3 +359,15 @@ SOsai на GitHub = SOsai on GitHub
 Скачать и установить = Download and Install
 Страница выпуска = Release Page
 Страница выпусков = Releases Page
+
+# Форма и текстура кисти, подсказки клавиш / Brush form and texture, key hints
+[ Простой круг ] = [ Simple Circle ]
+[ Нет текстуры ] = [ No Texture ]
+[ Бумага слоя ] = [ Layer Paper ]
+Зависит от мин. плотн. = Affect by MinDens
+Как «Affect by MinDens» в SAI: у тонкой кисти и при слабом нажиме текстура слабее = Like “Affect by MinDens” in SAI: the texture is weaker on thin brushes and at light pressure
+Папка SAI (с blotmap и brushtex): = SAI folder (with blotmap and brushtex):
+Показывать быстрые клавиши = Show shortcut keys
+Клавиши в пунктах меню и во всплывающих подсказках = Keys in menu items and tooltips
+Рисунки = Images
+Все файлы = All files

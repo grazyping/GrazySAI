@@ -4,10 +4,35 @@
 use eframe::egui::{InputState, Key};
 use std::collections::HashMap;
 
+static HINTS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Показывать ли быстрые клавиши в меню и подсказках («Окно → Показывать быстрые клавиши»).
+pub fn set_hints(on: bool) {
+    HINTS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn hints() -> bool {
+    HINTS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Подпись с клавишей в скобках в конце («Отменить (Ctrl+Z)», «Файл(F)»): при выключенных
+/// подсказках — без скобок. Переводы держат клавишу так же в конце (проверяет тест).
+pub fn hint(s: &str) -> String {
+    if hints() {
+        return s.to_string();
+    }
+    let t = s.trim_end();
+    match (t.ends_with(')'), t.rfind('(')) {
+        (true, Some(i)) => t[..i].trim_end().to_string(),
+        _ => s.to_string(),
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
     Undo,
     Redo,
+    Open,
     Save,
     SaveAs,
     SizeDown,
@@ -42,9 +67,10 @@ pub enum Action {
 }
 
 /// Действие, имя для настроек, подпись в окне, клавиша по умолчанию.
-pub const ALL: [(Action, &str, &str, &str); 33] = [
+pub const ALL: [(Action, &str, &str, &str); 34] = [
     (Action::Undo, "undo", "Отменить", "Ctrl+Z"),
     (Action::Redo, "redo", "Повторить", "Ctrl+Y"),
+    (Action::Open, "open", "Открыть", "Ctrl+O"),
     (Action::Save, "save", "Сохранить", "Ctrl+S"),
     (Action::SaveAs, "save_as", "Сохранить как", "Ctrl+Shift+S"),
     (Action::SizeDown, "size_down", "Размер кисти меньше", "OpenBracket"),
@@ -169,5 +195,31 @@ mod tests {
         for b in d.values().flatten() {
             assert!(seen.insert(b.text()), "повтор {}", b.text());
         }
+    }
+}
+
+#[cfg(test)]
+mod hint_tests {
+    use super::*;
+
+    /// Подписи с клавишей в скобках: на всех языках клавиша остаётся в конце, и без неё
+    /// остаётся непустая подпись.
+    #[test]
+    fn hints_strip_on_every_language() {
+        let src = include_str!("main.rs");
+        let keys: Vec<&str> = src.split("keys::hint(tr(\"").skip(1).filter_map(|r| r.split("\")").next()).collect();
+        assert!(keys.len() >= 25, "мало подписей: {}", keys.len());
+        set_hints(false);
+        for (code, _, _) in crate::i18n::LANGS {
+            crate::i18n::set(code);
+            for k in &keys {
+                let full = crate::i18n::tr(k);
+                let short = hint(full);
+                assert!(full.trim_end().ends_with(')'), "{code}: клавиша не в конце: «{full}»");
+                assert!(!short.is_empty() && !short.contains('('), "{code}: «{full}» → «{short}»");
+            }
+        }
+        crate::i18n::set("en");
+        set_hints(true);
     }
 }

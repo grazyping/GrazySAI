@@ -229,20 +229,42 @@ pub fn set_folder(dir: Option<PathBuf>) {
     *FOLDER.lock().unwrap() = dir;
 }
 
-fn dirs() -> Vec<PathBuf> {
-    let mut out: Vec<PathBuf> = FOLDER.lock().unwrap().iter().cloned().collect();
+/// Папки, где искать текстуры вида `kind` (`papertex`, `brushtex`, `blotmap`). Выбранная в
+/// программе папка может быть самой `papertex` или папкой SAI — соседние папки ищутся рядом.
+fn dirs(kind: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(d) = FOLDER.lock().unwrap().clone() {
+        if kind == "papertex" {
+            out.push(d.clone());
+        }
+        out.push(d.join(kind));
+        if let Some(parent) = d.parent() {
+            out.push(parent.join(kind));
+        }
+    }
     if let Some(d) = std::env::var_os("SOSAI_PAPERTEX") {
-        out.push(PathBuf::from(d));
+        let d = PathBuf::from(d);
+        if kind == "papertex" {
+            out.push(d.clone());
+        }
+        if let Some(parent) = d.parent() {
+            out.push(parent.join(kind));
+        }
     }
     if let Some(exe) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
-        out.push(exe.join("papertex"));
+        out.push(exe.join(kind));
     }
     out
 }
 
-/// Имена текстур (файлы `.bmp`) в первой найденной папке, по алфавиту.
+/// Имена текстур бумаги (файлы `.bmp`) в первой найденной папке, по алфавиту.
 pub fn names() -> Vec<String> {
-    for d in dirs() {
+    names_of("papertex")
+}
+
+/// Имена текстур вида `kind` в первой найденной папке, по алфавиту.
+pub fn names_of(kind: &str) -> Vec<String> {
+    for d in dirs(kind) {
         let Ok(rd) = std::fs::read_dir(&d) else { continue };
         let mut out: Vec<String> = rd
             .flatten()
@@ -253,27 +275,33 @@ pub fn names() -> Vec<String> {
             })
             .collect();
         if !out.is_empty() {
-            out.sort();
+            out.sort_by_key(|n| n.to_lowercase());
             return out;
         }
     }
     Vec::new()
 }
 
-/// Текстура по имени (имя файла без `.bmp`); прочитанные держатся в памяти, ненайденные ищутся
-/// снова в следующий раз (папку могли указать позже).
+/// Текстура бумаги по имени (имя файла без `.bmp`).
 pub fn texture(name: &str) -> Option<Arc<PaperTexture>> {
+    texture_of("papertex", name)
+}
+
+/// Текстура вида `kind` по имени; прочитанные держатся в памяти, ненайденные ищутся снова в
+/// следующий раз (папку могли указать позже).
+pub fn texture_of(kind: &str, name: &str) -> Option<Arc<PaperTexture>> {
     static CACHE: OnceLock<Mutex<HashMap<String, Arc<PaperTexture>>>> = OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
-    if let Some(t) = cache.lock().unwrap().get(name) {
+    let key = format!("{kind}/{name}");
+    if let Some(t) = cache.lock().unwrap().get(&key) {
         return Some(t.clone());
     }
-    let found = dirs().into_iter().find_map(|d| {
+    let found = dirs(kind).into_iter().find_map(|d| {
         let bytes = std::fs::read(d.join(format!("{name}.bmp"))).ok()?;
         PaperTexture::from_bmp(&bytes).map(Arc::new)
     });
     if let Some(t) = &found {
-        cache.lock().unwrap().insert(name.to_string(), t.clone());
+        cache.lock().unwrap().insert(key, t.clone());
     }
     found
 }

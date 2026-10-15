@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.6)
+### 0.8 — linework and shapes (current version 0.8.7)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -77,7 +77,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 ### Beyond the plan
 - [x] Filters: hue and saturation, brightness and contrast, Gaussian blur — by SAI's rules, compared with live SAI (`docs/20-filters.md`); the other filters do not work in SAI itself
 - [x] Brush, color and stabilizer settings kept between runs (`docs/22-settings-recovery.md`)
-- [x] Custom shortcuts: “Help → Shortcut Keys…”, 33 actions, SAI's defaults
+- [x] Custom shortcuts: “Help → Shortcut Keys…”, 34 actions, SAI's defaults
 - [x] PSD (with layers) and JPEG export; opening PSD, PNG and JPEG (`docs/21-file-formats.md`)
 - [x] Work recovery after a crash (a copy every 3 minutes)
 - [x] Undo history: 100 steps, as in SAI, and no more than 2 GB of memory
@@ -88,11 +88,14 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Layer dragging with clear feedback: the layer fades in place, a label at the cursor, an insertion bar, folder highlight, scrolling at the edges, Esc
 - [x] Interface in 10 languages (English, Russian, Ukrainian, German, French, Spanish, Portuguese, Japanese, Chinese, Korean), system language by default, switchable without a restart; labels and columns adapt to the length of each translation, a light CJK font
 - [x] Updating from the program: GitHub releases are checked at startup, a “Version is out” notice in the menu bar, download with SHA-256 check and file replacement, restart; a GitHub link in the menu bar (`docs/28-updates.md`)
+- [x] System “Open”, “Save As” and “Export” windows (File Explorer on Windows, the desktop dialog on Linux), Ctrl+O
+- [x] Shortcut keys in menus and tooltips can be hidden (“Window → Show shortcut keys”)
 
 ## Ahead
 
 ### 0.9 — brushes in full, text and rulers
-- [ ] Brush shapes and textures (`blotmap`, `brushtex`)
+- [x] Brush forms and textures (`blotmap`, `brushtex`) — from SAI's code, checked against live SAI (`docs/29-brush-form-texture.md`)
+- [ ] Bristle brush form (`bristle`)
 - [x] Marker at light pressure — as in SAI: its own compositing from SAI's code, paint amount from live SAI (`docs/16-mixing.md`)
 - [ ] Water with Amplify Density
 - [ ] The hardest edge step from 20 px by SAI's rules (currently fitted)

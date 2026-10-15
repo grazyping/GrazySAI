@@ -58,6 +58,8 @@ The layout follows SAI 2:
 - **Right**: navigator, layer properties (blend mode, opacity, locks, “Clipping Group”,
   “Selection Source”), layer buttons, layer list with thumbnails.
 
+Shortcut keys in menu items and tooltips can be hidden: “Window → Show shortcut keys”.
+
 ## Painting
 
 ### Brushes
@@ -86,6 +88,18 @@ it lags behind the pen.
 - “Blur Pressure” — below this pressure the brush only smears.
 
 Water also blurs the layer under the stroke.
+
+**Form and texture** (the “Form” and “Texture” sections, as in SAI 2):
+
+- “Form” — a simple circle or a blot from the `blotmap` folder: the stroke edge becomes ragged
+  following the pattern. “Strength” sets how much, “Zoom” the pattern size (10–500 %). Brush
+  hardness changes how sharp the blot is.
+- “Texture” — a pattern from the `brushtex` folder or the current layer's paper: light parts of
+  the pattern let less paint through. “Strength”, “Zoom”, “Affect by MinDens” (the pattern is
+  weaker on thin brushes and at light pressure).
+- Patterns are fixed to the canvas, not to the stroke. The pattern files come from SAI: if the
+  lists are empty, enter the SAI folder (with `blotmap` and `brushtex`) right in the section;
+  the paper folder works too.
 
 ### Color
 
@@ -236,9 +250,12 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 
 | Format | Open | Save |
 |---|---|---|
-| `.sai2` | Yes | Ctrl+S, Shift+Ctrl+S (in the same format as SAI 2) |
+| `.sai2` | Yes (Ctrl+O) | Ctrl+S, Shift+Ctrl+S (in the same format as SAI 2) |
 | `.psd` | Yes (RGB, 8 bit) | “File → Export → PSD”: with layers, folders, modes |
 | `.png`, `.jpg` | Yes, as one layer | “File → Export → PNG / JPEG” (flattened image) |
+
+“Open”, “Save As” and “Export” show the system window: File Explorer on Windows, the desktop's
+own dialog on Linux (KDE, GNOME). Without one, a simple window with the file path appears.
 
 Text layers and perspective rulers from `.sai2` are not read yet: a note appears when such a
 file is opened.

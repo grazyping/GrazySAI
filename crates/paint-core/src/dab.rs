@@ -99,6 +99,9 @@ pub struct DabInput {
     /// подбирается без нажима и умножается на `нажим^1,2`, край считается по-старому.
     /// У Маркера и Акварели включено по умолчанию.
     pub ver1: bool,
+    /// Форма «пятно» (blotmap): край — конус от центра, профиль считается формулой, а не таблицей
+    /// (`dab_make_node`, ветка формы 1). Порог по текстуре пятна — в `stroke.rs`.
+    pub blot: bool,
     /// «Amplify Density», 0..=1: усиление плотности. У Акварели и Маркера по умолчанию 0,5.
     pub amplify: f32,
 }
@@ -128,6 +131,8 @@ pub struct Dab {
     amplify_gain: f32,
     amplify_mix: f32,
     ver1: bool,
+    /// Форма «пятно»: выпуклость края `a` в `((f³ - f)·a + f)`.
+    blot: Option<f32>,
 }
 
 impl Dab {
@@ -180,7 +185,17 @@ impl Dab {
             let x = (1.0 - ds).max(a);
             small = (1.0 - x * 0.8) * small + x * 0.8;
         }
-        let (inner, edge, profile, solve): (f64, f64, &'static [f32], &'static [f32]) = {
+        let mix = small * target_p * 0.8 + ds * 0.2;
+        let mut blot = None;
+        let (inner, edge, profile, solve): (f64, f64, &'static [f32], &'static [f32]) = if i.blot {
+            // Край от самого центра, ширина как у самой мягкой ступени на любой жёсткости: ветка
+            // формы в `brush_params_from_tool` мягкость не задаёт, и по сверке с живой SAI она 1
+            // (жёсткость меняет только порог пятна). Выпуклость — пока край уже двух минимальных.
+            let edge = 1.5 * radius + edge_min;
+            let a = if edge < edge_min * 2.0 { mix * (1.0 - (edge - edge_min) / edge_min) } else { 0.0 };
+            blot = Some((a * 0.85) as f32);
+            (0.0, edge, &t.ramp[0][0], &t.ramp[0][0])
+        } else {
             let s = i.softness as f64;
             let inner = (1.0 - s) * radius;
             let edge = s * radius * 1.7 + edge_min;
@@ -194,7 +209,6 @@ impl Dab {
                 };
                 (inner, edge, tab, tab)
             } else {
-                let mix = small * target_p * 0.8 + ds * 0.2;
                 let j = (((edge - edge_min) / edge_min * 8.0) as i32).min(7) as usize;
                 // В ветке самой жёсткой ступени обычных инструментов (`flat`) образец по коду
                 // берёт другую таблицу, но по измерению отпечатки 2–10 px и край линии 10 px
@@ -219,6 +233,7 @@ impl Dab {
             solve_target: if i.ver1 { target } else { target_p } as f32,
             amplify_gain: gain as f32,
             ver1: i.ver1,
+            blot,
             amplify_mix: if a > 0.0 { target_p as f32 } else { 0.0 },
             ver1_scale: if i.ver1 { (i.density_factor as f64).max(0.0).powf(1.2) } else { 1.0 } as f32,
         }
@@ -236,6 +251,11 @@ impl Dab {
     }
 
     pub fn coverage(&self, dist: f32) -> f32 {
+        if let Some(a) = self.blot {
+            // как `FUN_1400e87f9`: f = 1 - d/край, затем (f³ - f)·a + f — в float
+            let f = (1.0 - dist * (1.0 / self.edge)).max(0.0);
+            return (f * f * f - f) * a + f;
+        }
         let n = self.profile.len();
         let u = (dist.min(self.outer()) - self.inner).max(0.0);
         let idx = (u * ((n - 1) as f32 + 0.001) / self.edge) as usize;
