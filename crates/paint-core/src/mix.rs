@@ -28,13 +28,17 @@ pub struct MixParams {
     pub blur_pressure: f32,
     /// Акварель: слой под мазком размывается (`water_blur`).
     pub blur: bool,
+    /// Маркер: где пиксель уже непрозрачен не меньше, чем станет от краски, он перекрашивается
+    /// чистым цветом кисти с прежней непрозрачностью; подхваченный цвет ложится только на
+    /// прозрачное (`stroke::lay`, docs/16-mixing.md).
+    pub marker: bool,
 }
 
 impl MixParams {
     /// Значения нового инструмента в образце: Кисть и Маркер — 0/0/50, Акварель — 30/30/50;
     /// порог размытия 50, нажим на смешивание включён.
     pub fn new(blending: f32, dilution: f32, persistence: f32) -> Self {
-        Self { blending, dilution, persistence, blend_by_pressure: true, blur_pressure: 0.5, blur: false }
+        Self { blending, dilution, persistence, blend_by_pressure: true, blur_pressure: 0.5, blur: false, marker: false }
     }
 }
 
@@ -270,6 +274,23 @@ impl Mixer {
             out[i] = c + (a * self.brush[i] - c) * blend;
         }
         out[3] = a;
+        // Маркер: на прозрачном краска ложится тем прозрачнее, чем слабее нажим, — по живой SAI
+        // 2017 итог на пустом слое равен p² при любой скорости мазка, а перекраска непрозрачного
+        // набирает 1 − exp(−4,2·p^1,2). Отсюда непрозрачность краски p² / (1 − exp(−4,2·p^1,2)).
+        // Подобрано по измерениям, не прочитано.
+        if self.params.marker {
+            let p = pressure.clamp(0.0, 1.0) as f64;
+            let q = 1.0 - (-4.2 * p.powf(1.2)).exp();
+            let target = if q > 1e-9 { (p * p / q).min(1.0) } else { 0.0 };
+            // непрозрачность холста не подмешивается: где холст непрозрачнее, побеждает перекраска
+            let want = target;
+            if out[3] > 1e-9 {
+                let k = (want / out[3]).min(1.0);
+                for v in out.iter_mut() {
+                    *v *= k;
+                }
+            }
+        }
         // Стойкость: краска тянется из прошлой пачки.
         if let Some(last) = self.last {
             for i in 0..4 {

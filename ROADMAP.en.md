@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.4)
+### 0.8 — linework and shapes (current version 0.8.5)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -92,7 +92,8 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 
 ### 0.9 — brushes in full, text and rulers
 - [ ] Brush shapes and textures (`blotmap`, `brushtex`)
-- [ ] Marker: at light pressure it drags paint more than SAI; Water with Amplify Density
+- [x] Marker at light pressure — as in SAI: its own compositing from SAI's code, paint amount from live SAI (`docs/16-mixing.md`)
+- [ ] Water with Amplify Density
 - [ ] The hardest edge step from 20 px by SAI's rules (currently fitted)
 - [ ] Text layers and perspective rulers (reading and writing)
 - [x] Rulers: straight line and ellipse, as in SAI 2017 — compared with live SAI (`docs/27-rulers.md`)

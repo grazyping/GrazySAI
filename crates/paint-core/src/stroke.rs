@@ -426,7 +426,8 @@ impl Stroke {
                 let size = self.params.diameter_at(batch[0].pressure);
                 water_blur(pixels, &batch, size, sel, originals, &mut changed);
             }
-            lay_batch(pixels, &batch, paint, preserve_opacity, sel, originals, &mut changed);
+            let marker = (mix.marker && !preserve_opacity).then(|| rgb.map(|c| c as f64 / 255.0));
+            lay_batch(pixels, &batch, paint, marker, preserve_opacity, sel, originals, &mut changed);
         }
         let keys: Vec<Key> = changed.into_iter().collect();
         self.touched.extend(keys.iter().copied());
@@ -436,10 +437,12 @@ impl Stroke {
 
 /// Пачка отпечатков кладёт краску `paint`. Плитки независимы: каждая получает свои отпечатки в
 /// прежнем порядке, поэтому результат тот же, что при поштучном счёте; много работы — параллельно.
+#[allow(clippy::too_many_arguments)]
 fn lay_batch(
     pixels: &mut ColorMap,
     batch: &[Pending],
     paint: [f64; 4],
+    marker: Option<[f64; 3]>,
     preserve_opacity: bool,
     sel: &crate::selection::Selection,
     originals: &mut HashMap<Key, Option<Tile<Px>>>,
@@ -468,7 +471,7 @@ fn lay_batch(
         let mut hit = false;
         for &n in list.iter() {
             let d = &batch[n];
-            let opacity = d.shape.opacity();
+            let opacity = d.shape.opacity() * if marker.is_some() { marker_dab_scale() } else { 1.0 };
             for_rows(d, |y, ra, rb, cov_at| {
                 if y < ty0 || y >= ty0 + TILE {
                     return;
@@ -486,7 +489,10 @@ fn lay_batch(
                     hit = true;
                     let t = tile.get_or_insert_with(|| Tile::filled([0; 4]));
                     let i = ((y - ty0) * TILE + x - tx0) as usize;
-                    t.0[i] = lay(t.0[i], paint, (cov * opacity) as f64, preserve_opacity);
+                    t.0[i] = match marker {
+                        Some(brush) => lay_marker(t.0[i], paint, brush, (cov * opacity) as f64),
+                        None => lay(t.0[i], paint, (cov * opacity) as f64, preserve_opacity),
+                    };
                 }
             });
         }
@@ -689,6 +695,37 @@ impl<T: Copy> Grid<T> {
 }
 
 /// Пиксель сдвигается к краске `paint` (предумноженной, 0..=1) на долю `a`.
+/// Маркер кладёт отпечатки слабее остальных кистей «Ver1»: множитель подобран по живой SAI 2017
+/// (перекраска непрозрачного при нажиме 0,3 / 0,5 / 0,75 — 0,66 / 0,84 / 0,954;
+/// docs/16-mixing.md). По коду образца не объяснён.
+const MARKER_DAB_SCALE: f32 = 0.38;
+
+fn marker_dab_scale() -> f32 {
+    MARKER_DAB_SCALE
+}
+
+/// Маркер, как в образце: из двух результатов — «перекрасить цветом кисти, сохранив
+/// непрозрачность пикселя» и обычного «сдвинуть к краске пачки» — берётся тот, что
+/// непрозрачнее; при равенстве — перекраска. Поэтому на непрозрачном Маркер кладёт чистый цвет и
+/// не тянет подхваченное дальше, а краска с примесью ложится только туда, где было прозрачнее.
+fn lay_marker(px: Px, paint: [f64; 4], brush: [f64; 3], a: f64) -> Px {
+    let k = ONE as f64;
+    let v = px.map(|c| c as f64 / k);
+    let mut normal = [0.0f64; 4];
+    let mut recolour = [0.0f64; 4];
+    for i in 0..4 {
+        normal[i] = v[i] + (paint[i] - v[i]) * a;
+        let target = if i < 3 { brush[i] * v[3] } else { v[3] };
+        recolour[i] = v[i] + (target - v[i]) * a;
+    }
+    // сравнение — в шкале образца (0x4000 = 1): разница меньше его шага не считается
+    let q14 = |v: f64| (v * 16384.0).round() as i32;
+    let out = if q14(recolour[3]) < q14(normal[3]) { normal } else { recolour };
+    let q = |v: f64| (v.clamp(0.0, 1.0) * k + 0.5) as u16;
+    let al = q(out[3]);
+    [q(out[0]).min(al), q(out[1]).min(al), q(out[2]).min(al), al]
+}
+
 fn lay(px: Px, paint: [f64; 4], a: f64, preserve_opacity: bool) -> Px {
     let k = ONE as f64;
     let mut out = [0.0f64; 4];

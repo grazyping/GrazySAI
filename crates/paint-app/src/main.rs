@@ -440,7 +440,7 @@ fn brush_tools() -> Vec<BrushTool> {
                 density_by_pressure: true,
                 ver1_density: true,
                 amplify: 0.5,
-                mix: Some(MixParams { blur_pressure: 0.0, ..MixParams::new(0.0, 0.0, 0.5) }),
+                mix: Some(MixParams { blur_pressure: 0.0, marker: true, ..MixParams::new(0.0, 0.0, 0.5) }),
                 ..b(50.0, 1.0, 1.0)
             },
             enabled: true,

@@ -14,7 +14,7 @@ fn data(name: &str) -> std::path::PathBuf {
 
 pub fn render(csv: &str, mix: MixParams, ver1: bool) -> Vec<u8> {
     // у Акварели и Маркера по умолчанию «Amplify Dens.» 50 (панель SAI), у Кисти 0
-    let amplify = if ver1 { 0.5 } else { 0.0 };
+    let amplify = if ver1 { std::env::var("AMP").ok().and_then(|v| v.parse().ok()).unwrap_or(0.5) } else { 0.0 };
     let pencil = BrushParams { size: 30.0, hardness: 1.0, ..Default::default() };
     let brush = BrushParams {
         size: 50.0,
@@ -50,6 +50,10 @@ pub fn render(csv: &str, mix: MixParams, ver1: bool) -> Vec<u8> {
         } else {
             let q = st.push(InputPoint { x, y, pressure: p });
             let l = live.get_or_insert_with(|| {
+                if strokes == 3 && std::env::var("DUMP_ALPHA").is_ok() {
+                    let row: Vec<u16> = (180..270).step_by(5).map(|x| doc.layers[0].pixels.get(x, 320)[3]).collect();
+                    eprintln!("alpha y=320: {row:?}");
+                }
                 let (params, rgb) = if strokes < 3 { (pencil, [0, 0, 0]) } else { (brush, [255, 255, 255]) };
                 LiveStroke::new(vec![0], Stroke::new(params), rgb)
             });
@@ -122,19 +126,74 @@ fn water_color_like_the_reference_program() {
 }
 
 /// Маркер по умолчанию (смешивание 0, стойкость 50, без порога размытия, «Ver1 Prs Spec.»)
-/// тем же сценарием. Расходится больше остальных: у SAI Маркер почти не тянет краску за
-/// полосу, у нас тянет (docs/16-mixing.md).
+/// тем же сценарием: по непрозрачной полосе он перекрашивает чистым цветом и не тянет чёрное
+/// за полосу (docs/16-mixing.md).
 #[test]
 fn marker_like_the_reference_program() {
     let (_, _, sai) = paint_core::io::load_png(&data("sai-marker-default.png")).unwrap();
-    let ours = render("marker-strokes.csv", MixParams { blur_pressure: 0.0, ..MixParams::new(0.0, 0.0, 0.5) }, true);
+    let ours = render("marker-strokes.csv", MixParams { blur_pressure: 0.0, marker: true, ..MixParams::new(0.0, 0.0, 0.5) }, true);
     if let Ok(out) = std::env::var("MARKER_LIVE_OUT") {
         paint_core::io::save_png(Path::new(&out), 512, 512, &ours).unwrap();
     }
-    let limits = [2.0f32, 4.0, 8.0, 17.0, 8.0];
-    for (k, y) in [80usize, 160, 240, 320, 400].iter().enumerate() {
-        let mean = region_diff(&sai, &ours, *y);
+    let limits = [2.5f32, 5.5, 6.5, 6.5, 7.5];
+    let means: Vec<f32> = [80usize, 160, 240, 320, 400].iter().map(|y| region_diff(&sai, &ours, *y)).collect();
+    for (k, mean) in means.iter().enumerate() {
         eprintln!("маркер, мазок {k}: средняя разница {mean:.1}");
-        assert!(mean <= limits[k], "мазок {k}: средняя разница {mean} больше {}", limits[k]);
+    }
+    for (k, mean) in means.iter().enumerate() {
+        assert!(*mean <= limits[k], "мазок {k}: средняя разница {mean} больше {}", limits[k]);
+    }
+}
+
+/// Маркер по умолчанию тёмным цветом по пустому слою, нажим 0,1 … 1,0 (живая SAI 2017, холст
+/// 1000×1000 при 75 %; снимок — область холста на экране). У SAI итог ровно p².
+#[test]
+fn marker_on_empty_layer_like_the_reference_program() {
+    let (sw, _, sai) = paint_core::io::load_png(&data("sai-marker-transparent.png")).unwrap();
+    let brush = BrushParams {
+        size: 50.0,
+        min_size: 0.5,
+        hardness: 1.0,
+        density_by_pressure: true,
+        mix: Some(MixParams { blur_pressure: 0.0, marker: true, ..MixParams::new(0.0, 0.0, 0.5) }),
+        ver1_density: true,
+        amplify: 0.5,
+        ..Default::default()
+    };
+    let rgb = [0u8, 38, 58];
+    let mut doc = Document::new(1000, 1000);
+    let mut live: Option<LiveStroke> = None;
+    for line in std::fs::read_to_string(data("marker-transparent-strokes.csv")).unwrap().lines().skip(1) {
+        let f: Vec<&str> = line.split(',').collect();
+        let x = (f[1].parse::<f32>().unwrap() * 1920.0 - 783.0) / 0.75;
+        let y = (f[2].parse::<f32>().unwrap() * 1080.0 - 223.0) / 0.75;
+        let p = f[3].parse::<f32>().unwrap();
+        if x < 0.0 {
+            continue; // касание стрелки цветов
+        }
+        if f[4] == "up" {
+            if let Some(l) = live.take() {
+                doc.live_finish(l);
+            }
+        } else {
+            let l = live.get_or_insert_with(|| LiveStroke::new(vec![0], Stroke::new(brush), rgb));
+            l.stroke.add_point(InputPoint { x, y, pressure: p });
+            doc.live_update(l);
+        }
+    }
+    let ours = doc.flatten();
+    for (i, p) in [0.1f32, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 0.9, 1.0].iter().enumerate() {
+        let cy = 80 + i * 95;
+        let (mut a, mut b, mut n) = (0.0, 0.0, 0.0);
+        for cx in (300..500).step_by(4) {
+            let si = (((cy as f32 * 0.75) as usize) * sw as usize + (cx as f32 * 0.75) as usize) * 4;
+            let oi = (cy * 1000 + cx) * 4;
+            a += sai[si] as f32;
+            b += ours[oi] as f32;
+            n += 1.0;
+        }
+        let (fa, fb) = ((255.0 - a / n) / 255.0, (255.0 - b / n) / 255.0);
+        eprintln!("маркер по пустому, нажим {p}: SAI {fa:.3}, у нас {fb:.3}");
+        assert!((fa - fb).abs() < 0.04, "нажим {p}: SAI {fa}, у нас {fb}");
     }
 }

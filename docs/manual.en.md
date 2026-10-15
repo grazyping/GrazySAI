@@ -272,7 +272,6 @@ restores all defaults. Assignments are saved in the settings. The defaults are b
 
 The full list is in [ROADMAP.en.md](../ROADMAP.en.md). The main points:
 - No brush shapes and textures, text or perspective rulers yet.
-- At light pressure the Marker drags paint more than SAI does.
 
 ## If something is wrong
 
