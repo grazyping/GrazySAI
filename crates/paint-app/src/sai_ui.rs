@@ -889,6 +889,41 @@ pub fn color_wheel(ui: &mut Ui, hsv: &mut [f32; 3], size: f32) -> bool {
 
 /// Ползунок одного канала цвета, как у образца: подпись, полоса с переходом цвета, метка,
 /// число справа. `color(t)` — цвет полосы в доле `t` (0..1). Значение — 0..=`max`.
+/// Насыщенность и яркость (или светлота) ползунков HSV в режиме SAI 2017 из обычных HSV (s, v),
+/// всё 0..=1. `mode`: 0 — V-HSV (по умолчанию в SAI), 1 — HSL, 2 — HSV. В V-HSV хрома
+/// C = max − min связана с насыщенностью как C = s′ + (v − 1)/2 · s′² (`FUN_140013e00`).
+pub fn sliders_from_hsv(mode: u8, s: f32, v: f32) -> (f32, f32) {
+    let c = s * v;
+    match mode {
+        1 => {
+            let l = v - c / 2.0;
+            let d = 1.0 - (2.0 * l - 1.0).abs();
+            (if d > 1e-6 { (c / d).min(1.0) } else { 0.0 }, l)
+        }
+        2 => (s, v),
+        _ => {
+            let k = 1.0 - v;
+            (if k < 1e-6 { c } else { ((1.0 - (1.0 - 2.0 * k * c).max(0.0).sqrt()) / k).clamp(0.0, 1.0) }, v)
+        }
+    }
+}
+
+/// Обратно: обычные HSV (s, v) из значений ползунков режима `mode`.
+pub fn hsv_from_sliders(mode: u8, a: f32, b: f32) -> (f32, f32) {
+    match mode {
+        1 => {
+            let c = (1.0 - (2.0 * b - 1.0).abs()) * a;
+            let v = b + c / 2.0;
+            (if v > 1e-6 { (c / v).clamp(0.0, 1.0) } else { 0.0 }, v.clamp(0.0, 1.0))
+        }
+        2 => (a, b),
+        _ => {
+            let c = a + (b - 1.0) / 2.0 * a * a;
+            (if b > 1e-6 { (c / b).clamp(0.0, 1.0) } else { 0.0 }, b)
+        }
+    }
+}
+
 pub fn channel_slider(ui: &mut Ui, label: &str, value: &mut f32, max: f32, color: impl Fn(f32) -> Color32) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
@@ -1069,4 +1104,24 @@ pub fn swatches(ui: &mut Ui, cells: &[Option<Color32>], selected: &mut usize, la
         });
     });
     action
+}
+
+#[cfg(test)]
+mod slider_tests {
+    use super::*;
+
+    #[test]
+    fn v_hsv_matches_sai() {
+        // живая SAI 2017, режим V-HSV: (R, G, B) → S в процентах
+        for (rgb, want) in [([13u8, 7, 243], 95), ([200, 98, 48], 64), ([58, 180, 118], 52), ([240, 230, 38], 81), ([88, 88, 160], 30)] {
+            let [_, s, v] = rgb_to_hsv(Color32::from_rgb(rgb[0], rgb[1], rgb[2]));
+            let (sv, vv) = sliders_from_hsv(0, s, v);
+            assert_eq!((sv * 100.0).round() as i32, want, "{rgb:?}");
+            let (s2, v2) = hsv_from_sliders(0, sv, vv);
+            assert!((s2 - s).abs() < 1e-4 && (v2 - v).abs() < 1e-6);
+        }
+        // HSL: L = 49 у (13, 7, 243)
+        let [_, s, v] = rgb_to_hsv(Color32::from_rgb(13, 7, 243));
+        assert_eq!((sliders_from_hsv(1, s, v).1 * 100.0).round() as i32, 49);
+    }
 }

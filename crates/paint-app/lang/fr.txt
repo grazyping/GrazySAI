@@ -491,3 +491,6 @@ S-кривая = Courbe en S
 Закрыть холст = Fermer le canevas
 В «{0}» есть несохранённые изменения. = « {0} » a des modifications non enregistrées.
 Закрыть без сохранения = Fermer sans enregistrer
+
+# Режим ползунков HSV (0.8.25)
+Режим ползунков HSV = Mode HSV/HSL

@@ -222,11 +222,13 @@ struct WindowOpts {
     panels_hidden: bool,
     dot_cursor: bool,
     brush_circle: bool,
+    /// Режим ползунков HSV: 0 — V-HSV (как SAI по умолчанию), 1 — HSL, 2 — HSV.
+    hsv_mode: u8,
 }
 
 impl Default for WindowOpts {
     fn default() -> Self {
-        Self { ui_scale: 1.0, tools_right: false, layers_right: true, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true }
+        Self { ui_scale: 1.0, tools_right: false, layers_right: true, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true, hsv_mode: 0 }
     }
 }
 
@@ -1210,6 +1212,9 @@ impl PaintApp {
         s.read_bool("layers_right", &mut self.win.layers_right);
         s.read_bool("dot_cursor", &mut self.win.dot_cursor);
         s.read_bool("brush_circle", &mut self.win.brush_circle);
+        if let Some(v) = s.f32("hsv_mode") {
+            self.win.hsv_mode = (v as u8).min(2);
+        }
         if let Some(v) = s.f32("transform_perspective") {
             self.transform_perspective = v.clamp(0.0, 100.0) as u8;
         }
@@ -1340,6 +1345,7 @@ impl PaintApp {
         s.set("layers_right", w.layers_right as u8);
         s.set("dot_cursor", w.dot_cursor as u8);
         s.set("brush_circle", w.brush_circle as u8);
+        s.set("hsv_mode", w.hsv_mode);
         s.set("lasso_polygon", self.lasso_polygon);
         s.set("lasso_aa", self.lasso_aa);
         s.set("gradient_circle", self.grad_opts.circle);
@@ -3586,6 +3592,14 @@ impl PaintApp {
                         }
                     }
                 });
+                ui.menu_button(tr("Режим ползунков HSV"), |ui| {
+                    for (m, name) in [(2u8, "HSV"), (1, "HSL"), (0, "V-HSV")] {
+                        if ui.radio(w.hsv_mode == m, name).clicked() {
+                            w.hsv_mode = m;
+                            ui.close_menu();
+                        }
+                    }
+                });
                 ui.checkbox(&mut w.tools_right, tr("Панель цвета и инструментов справа"));
                 ui.checkbox(&mut w.layers_right, tr("Панель навигатора и слоёв справа"));
                 ui.separator();
@@ -3856,18 +3870,29 @@ impl PaintApp {
             }
         }
         if self.color_views[2] {
+            // как в SAI 2017: тон 0–359, насыщенность и яркость (светлота) 0–100 в режиме
+            // «Окно → Режим ползунков HSV» (V-HSV, HSL, HSV)
             let hsv = self.hsv;
+            let mode = self.win.hsv_mode;
+            let (a, b) = sai_ui::sliders_from_hsv(mode, hsv[1], hsv[2]);
             let mut h = (hsv[0] * 360.0).round();
-            let mut sat = (hsv[1] * 255.0).round();
-            let mut val = (hsv[2] * 255.0).round();
+            let (mut sat, mut val) = ((a * 100.0).round(), (b * 100.0).round());
+            let rgb_of = |a: f32, b: f32| {
+                let (s, v) = sai_ui::hsv_from_sliders(mode, a, b);
+                sai_ui::hsv_to_rgb(hsv[0], s, v)
+            };
             if sai_ui::channel_slider(ui, "H", &mut h, 359.0, |t| sai_ui::hsv_to_rgb(t * 359.0 / 360.0, 1.0, 1.0)) {
                 self.hsv[0] = h / 360.0;
             }
-            if sai_ui::channel_slider(ui, "S", &mut sat, 255.0, |t| sai_ui::hsv_to_rgb(hsv[0], t, hsv[2])) {
-                self.hsv[1] = sat / 255.0;
+            if sai_ui::channel_slider(ui, "S", &mut sat, 100.0, |t| rgb_of(t, b)) {
+                let (s, v) = sai_ui::hsv_from_sliders(mode, sat / 100.0, b);
+                self.hsv[1] = s;
+                self.hsv[2] = v;
             }
-            if sai_ui::channel_slider(ui, "V", &mut val, 255.0, |t| sai_ui::hsv_to_rgb(hsv[0], hsv[1], t)) {
-                self.hsv[2] = val / 255.0;
+            if sai_ui::channel_slider(ui, if mode == 1 { "L" } else { "V" }, &mut val, 100.0, |t| rgb_of(a, t)) {
+                let (s, v) = sai_ui::hsv_from_sliders(mode, a, val / 100.0);
+                self.hsv[1] = s;
+                self.hsv[2] = v;
             }
         }
         if self.color_views[3] {

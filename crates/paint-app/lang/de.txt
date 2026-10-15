@@ -491,3 +491,6 @@ S-кривая = S-Kurve
 Закрыть холст = Leinwand schließen
 В «{0}» есть несохранённые изменения. = „{0}“ hat ungespeicherte Änderungen.
 Закрыть без сохранения = Ohne Speichern schließen
+
+# Режим ползунков HSV (0.8.25)
+Режим ползунков HSV = HSV/HSL-Modus

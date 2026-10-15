@@ -117,7 +117,7 @@ Water also blurs the layer under the stroke.
 
 - Color wheel: the ring is hue, the square is saturation (to the right) and value (up).
 - The buttons above the wheel show and hide color panel views: the wheel, RGB sliders (red,
-  green, blue, 0–255), HSV sliders (hue 0–359, saturation and value 0–255). Several can be shown
+  green, blue, 0–255), HSV sliders (hue 0–359, saturation and value 0–100; “Window → HSV/HSL Mode”: V-HSV as SAI’s default, HSL or HSV). Several can be shown
   at once; the choice is remembered.
 - Color Mixer (fourth button): four bars. Clicking an end of a bar puts the current color there;
   clicking or dragging in the middle takes the mixed color — a marker shows where.

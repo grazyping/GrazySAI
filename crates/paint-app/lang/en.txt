@@ -492,3 +492,6 @@ S-кривая = S-Curve Gradation
 Закрыть холст = Close Canvas
 В «{0}» есть несохранённые изменения. = “{0}” has unsaved changes.
 Закрыть без сохранения = Close Without Saving
+
+# Режим ползунков HSV (0.8.25)
+Режим ползунков HSV = HSV/HSL Mode
