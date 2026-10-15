@@ -124,6 +124,27 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
                         notes.insert(format!("контур слоя «{}» не прочитан: {e}", li.name));
                     }
                 },
+                "text" => match read_raw(file, info, li) {
+                    Some(raw) => {
+                        match crate::sai2_text::parse(&raw.raw) {
+                            Some(t) => crate::sai2_text::render(&t, &mut layer.pixels),
+                            None => {
+                                notes.insert(format!("текст слоя «{}» не разобран — сохранится как был", li.name));
+                            }
+                        }
+                        layer.vector = Some(raw);
+                    }
+                    None => {
+                        notes.insert(format!("текст слоя «{}» не прочитан", li.name));
+                    }
+                },
+                // линейки и сетки перспективы: не рисуются, но сохраняются как были
+                k @ ("pers" | "grid") => match read_raw(file, info, li) {
+                    Some(raw) => layer.vector = Some(raw),
+                    None => {
+                        notes.insert(format!("слой вида «{k}» прочитан как пустой"));
+                    }
+                },
                 k => {
                     notes.insert(format!("слой вида «{k}» прочитан как пустой"));
                 }

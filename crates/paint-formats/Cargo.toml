@@ -6,3 +6,5 @@ license.workspace = true
 
 [dependencies]
 paint-core = { path = "../paint-core" }
+ab_glyph = "0.2.32"
+ttf-parser = "0.25.1"

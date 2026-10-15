@@ -587,7 +587,12 @@ impl Stroke {
                 water_blur(pixels, &batch, size, sel, originals, &mut changed, &mut self.level_cache);
             }
             let marker = (mix.marker && !preserve_opacity).then(|| rgb.map(|c| c as f64 / 255.0));
-            lay_batch(pixels, &batch, paint, marker, preserve_opacity, sel, originals, &mut changed);
+            // Акварель при нажиме не выше порога размытия только размывает — краску не кладёт
+            // (по сверке с живой SAI: мазки 0,5 и 0,3 сошлись с 12,9 и 8,9 до 2,1 и 1,4 уровня).
+            let only_blur = mix.blur && mix.blend_by_pressure && batch[0].pressure <= mix.blur_pressure + 1e-6;
+            if !only_blur {
+                lay_batch(pixels, &batch, paint, marker, preserve_opacity, sel, originals, &mut changed);
+            }
             if mix.blur {
                 // изменённые плитки пересчитаются в копии при следующей пачке
                 for key in &changed {

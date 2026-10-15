@@ -345,7 +345,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let shrink = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(1usize).max(1);
         return render_sai2(src, dst, shrink);
     }
-    let out = args.get(1).cloned().unwrap_or_else(|| "demo.png".to_string());
+    // Демонстрационная картинка — только по явной команде и только в новый файл .png: чужой
+    // файл (например, .sai2 пользователя) так не перезаписать.
+    if args.get(1).map(String::as_str) != Some("demo") {
+        eprintln!("команды: demo <новый.png>, sai2, alpha, resize, resave, strokes, vectors, hardlines, refsheet, brushes");
+        std::process::exit(2);
+    }
+    let out = args.get(2).cloned().unwrap_or_else(|| "demo.png".to_string());
+    if !out.to_lowercase().ends_with(".png") || Path::new(&out).exists() {
+        eprintln!("demo пишет только в новый файл .png: {out}");
+        std::process::exit(2);
+    }
     let mut doc = Document::new(800, 520);
 
     // 1. Жёсткое перо: толщина по давлению.

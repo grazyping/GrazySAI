@@ -285,3 +285,30 @@ fn layer_mask_survives_save() {
     assert_eq!(a.document.flatten(), b.document.flatten());
     assert!(b.warnings.is_empty(), "{:?}", b.warnings);
 }
+
+/// Текстовые слои: читаются, рисуются шрифтом и сохраняются обратно байт в байт
+/// (`буковки2.sai2` — шесть текстовых слоёв, сохранённых в SAI 2017).
+#[test]
+fn text_layers_round_trip() {
+    let Some(p) = sample("буковки2.sai2") else { return };
+    let blocks = |path: &std::path::Path| -> Vec<Vec<u8>> {
+        let info = read_info(path).unwrap();
+        let data = std::fs::read(path).unwrap();
+        let mut out = Vec::new();
+        for li in info.layers.iter().filter(|l| l.kind == "text") {
+            let e = info.entries.iter().find(|e| &e.tag == b"text" && e.id == li.id).unwrap();
+            out.push(data[e.offset as usize..(e.offset + e.len) as usize].to_vec());
+        }
+        out
+    };
+    let loaded = sai2_doc::load(&p).unwrap();
+    let texts = loaded.document.layers.iter().filter(|l| l.vector.as_ref().is_some_and(|v| &v.kind == b"text")).count();
+    assert_eq!(texts, 6);
+    let painted = loaded.document.layers.iter().filter(|l| !l.pixels.tiles.is_empty()).count();
+    assert!(painted >= 5, "нарисовано текстовых слоёв: {painted}");
+    let out = std::env::temp_dir().join(format!("sosai-text-{}.sai2", std::process::id()));
+    paint_formats::sai2_write::save(&loaded.document, &out).unwrap();
+    let (a, b) = (blocks(&p), blocks(&out));
+    let _ = std::fs::remove_file(&out);
+    assert_eq!(a, b, "блоки text после сохранения изменились");
+}

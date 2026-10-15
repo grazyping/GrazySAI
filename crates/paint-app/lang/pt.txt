@@ -374,3 +374,5 @@ SOsai на GitHub = SOsai no GitHub
 Образцы цвета = Amostras
 Зарегистрировать цвет = Registrar cor
 Удалить цвет = Excluir cor
+Это текстовый слой: кистью он не правится (как в SAI). «Слой → Растеризовать слой» — сделать обычным = É uma camada de texto: os pincéis não a editam (como no SAI). “Camada → Rasterizar camada” a torna normal
+Это линейка перспективы из более новой SAI: она сохранится в файле как была = É uma régua de perspectiva de um SAI mais novo: fica no arquivo como estava

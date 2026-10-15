@@ -262,8 +262,9 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 “Open”, “Save As” and “Export” show the system window: File Explorer on Windows, the desktop's
 own dialog on Linux (KDE, GNOME). Without one, a simple window with the file path appears.
 
-Text layers and perspective rulers from `.sai2` are not read yet: a note appears when such a
-file is opened.
+Text layers from `.sai2` are shown with the font chosen in SAI (if it is installed) and saved as
+they were. Text can't be edited yet — only rasterized (“Layer → Rasterize Layer”). Perspective
+rulers from newer SAI versions are not shown but are saved too.
 
 ## Settings and recovery
 

@@ -421,7 +421,12 @@ pub fn save(doc: &Document, path: &Path) -> io::Result<()> {
         }
     }
     for (i, f) in flat.iter().enumerate() {
-        blocks.push((*b"layr", ids[i], layer_record(f, ids[i], count - i as u32, rect, mask_ids[i])));
+        // текст и линейки перспективы у образца без области пикселей
+        let own = match &f.layer.vector {
+            Some(v) if matches!(&v.kind, b"text" | b"pers" | b"grid") => [0; 4],
+            _ => rect,
+        };
+        blocks.push((*b"layr", ids[i], layer_record(f, ids[i], count - i as u32, own, mask_ids[i])));
     }
     // пиксели слоёв кодируются параллельно, по слою на поток
     // слои контура и фигур — своим векторным блоком, без пикселей (как у образца)

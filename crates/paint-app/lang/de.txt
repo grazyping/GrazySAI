@@ -374,3 +374,5 @@ SOsai на GitHub = SOsai auf GitHub
 Образцы цвета = Farbfelder
 Зарегистрировать цвет = Farbe speichern
 Удалить цвет = Farbe löschen
+Это текстовый слой: кистью он не правится (как в SAI). «Слой → Растеризовать слой» — сделать обычным = Dies ist eine Textebene: Pinsel bearbeiten sie nicht (wie in SAI). „Ebene → Ebene rastern“ macht sie zur normalen Ebene
+Это линейка перспективы из более новой SAI: она сохранится в файле как была = Dies ist ein Perspektivlineal aus einer neueren SAI: es bleibt in der Datei unverändert

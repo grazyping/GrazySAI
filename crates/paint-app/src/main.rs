@@ -1633,7 +1633,12 @@ impl PaintApp {
             return;
         }
         if !self.can_paint() {
-            self.status = if self.doc.layer(&self.selected).is_some_and(|l| l.vector.is_some()) {
+            let kind = self.doc.layer(&self.selected).and_then(|l| l.vector.as_ref().map(|v| v.kind));
+            self.status = if kind == Some(*b"text") {
+                String::from(tr("Это текстовый слой: кистью он не правится (как в SAI). «Слой → Растеризовать слой» — сделать обычным"))
+            } else if kind == Some(*b"pers") || kind == Some(*b"grid") {
+                String::from(tr("Это линейка перспективы из более новой SAI: она сохранится в файле как была"))
+            } else if kind.is_some() {
                 String::from(tr("Это слой контура или фигур: кистью он не правится (как в SAI). «Слой → Растеризовать слой» — сделать обычным"))
             } else {
                 String::from(tr("Рисовать можно на видимом обычном слое без запрета рисования — выберите его в списке справа"))

@@ -375,3 +375,5 @@ SOsai на GitHub = SOsai on GitHub
 Образцы цвета = Swatches
 Зарегистрировать цвет = Register Color
 Удалить цвет = Delete Color
+Это текстовый слой: кистью он не правится (как в SAI). «Слой → Растеризовать слой» — сделать обычным = This is a text layer: brushes don't edit it (as in SAI). “Layer → Rasterize Layer” makes it a normal layer
+Это линейка перспективы из более новой SAI: она сохранится в файле как была = This is a perspective ruler from a newer SAI: it is kept in the file as it was
