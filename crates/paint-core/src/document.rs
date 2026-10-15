@@ -398,34 +398,41 @@ impl Document {
     }
 
     /// Показ сдвига без записи в историю: пиксели слоя `path` и выделение берутся из исходных
-    /// (`original`, `orig_sel`) и сдвигаются на (`dx`, `dy`). Возвращает плитки для перерисовки.
-    pub fn move_preview(&mut self, path: &[usize], original: &ColorMap, orig_sel: &Selection, dx: i32, dy: i32) -> Vec<Key> {
+    /// (`original`, `orig_sel`) и сдвигаются на (`dx`, `dy`); маска слоя (`orig_mask` — какой она
+    /// была до сдвига) едет вместе с ними. Возвращает плитки для перерисовки.
+    pub fn move_preview(&mut self, path: &[usize], original: &ColorMap, orig_mask: Option<&MaskMap>, orig_sel: &Selection, dx: i32, dy: i32) -> Vec<Key> {
         let moved = crate::selection::shift_pixels(original, orig_sel, dx, dy);
+        let mask = orig_mask.map(|m| color_as_mask(&crate::selection::shift_pixels(&mask_as_color(m), orig_sel, dx, dy)));
         let new_sel = if orig_sel.mask.tiles.is_empty() { MaskMap::new() } else { crate::selection::shift_mask(&orig_sel.mask, dx, dy) };
-        let Some(layer) = self.layer_mut(path) else { return Vec::new() };
-        let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
-        keys.extend(moved.tiles.keys().copied());
-        layer.pixels = moved;
         self.selection.mask = new_sel;
-        keys.sort_unstable();
-        keys.dedup();
-        keys
+        self.replace_preview(path, moved, mask)
     }
 
     /// Показ трансформации без записи в историю (как `move_preview`): матрица `m` переводит точку
     /// исходного слоя в точку результата.
-    pub fn transform_preview(&mut self, path: &[usize], original: &ColorMap, orig_sel: &Selection, m: [f64; 6], mode: crate::resample::Mode) -> Vec<Key> {
-        self.warp_preview(path, original, orig_sel, crate::selection::Warp::Affine(m), mode)
+    pub fn transform_preview(&mut self, path: &[usize], original: &ColorMap, orig_mask: Option<&MaskMap>, orig_sel: &Selection, m: [f64; 6], mode: crate::resample::Mode) -> Vec<Key> {
+        self.warp_preview(path, original, orig_mask, orig_sel, crate::selection::Warp::Affine(m), mode)
     }
 
     /// Как `transform_preview`, но с любым отображением (в том числе перспективой).
-    pub fn warp_preview(&mut self, path: &[usize], original: &ColorMap, orig_sel: &Selection, warp: crate::selection::Warp, mode: crate::resample::Mode) -> Vec<Key> {
-        let (pixels, mask) = crate::selection::warp_pixels(original, orig_sel, warp, mode);
+    pub fn warp_preview(&mut self, path: &[usize], original: &ColorMap, orig_mask: Option<&MaskMap>, orig_sel: &Selection, warp: crate::selection::Warp, mode: crate::resample::Mode) -> Vec<Key> {
+        let (pixels, sel) = crate::selection::warp_pixels(original, orig_sel, warp, mode);
+        let mask = orig_mask.map(|m| color_as_mask(&crate::selection::warp_pixels(&mask_as_color(m), orig_sel, warp, mode).0));
+        self.selection.mask = sel;
+        self.replace_preview(path, pixels, mask)
+    }
+
+    /// Поставить слою пиксели (и маску, если есть) без записи в историю; плитки для перерисовки.
+    fn replace_preview(&mut self, path: &[usize], pixels: ColorMap, mask: Option<MaskMap>) -> Vec<Key> {
         let Some(layer) = self.layer_mut(path) else { return Vec::new() };
         let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
         keys.extend(pixels.tiles.keys().copied());
         layer.pixels = pixels;
-        self.selection.mask = mask;
+        if let (Some(new), Some(m)) = (mask, layer.mask.as_mut()) {
+            keys.extend(m.hide.tiles.keys().copied());
+            keys.extend(new.tiles.keys().copied());
+            m.hide = new;
+        }
         keys.sort_unstable();
         keys.dedup();
         keys
@@ -442,10 +449,15 @@ impl Document {
         keys
     }
 
-    /// Закончить сдвиг или трансформацию: одна запись истории, отмена возвращает исходные пиксели и выделение.
-    pub fn move_commit(&mut self, path: &[usize], original: ColorMap, orig_sel: Selection) {
+    /// Закончить сдвиг или трансформацию: одна запись истории, отмена возвращает исходные
+    /// пиксели, маску (`orig_mask`, если она двигалась) и выделение.
+    pub fn move_commit(&mut self, path: &[usize], original: ColorMap, orig_mask: Option<MaskMap>, orig_sel: Selection) {
         let Some(layer) = self.layer(path) else { return };
-        if layer.pixels == original && self.selection == orig_sel {
+        let mask_changed = match (&orig_mask, &layer.mask) {
+            (Some(o), Some(m)) => *o != m.hide,
+            _ => false,
+        };
+        if layer.pixels == original && self.selection == orig_sel && !mask_changed {
             return;
         }
         let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
@@ -453,19 +465,30 @@ impl Document {
         keys.sort_unstable();
         keys.dedup();
         let tiles: TileBackup = keys.into_iter().map(|k| (k, original.tiles.get(&k).cloned())).collect();
-        self.push(vec![Op::Tiles { path: path.to_vec(), tiles }, Op::Selection { mask: orig_sel.mask }]);
+        let mut ops = vec![Op::Tiles { path: path.to_vec(), tiles }, Op::Selection { mask: orig_sel.mask }];
+        if mask_changed {
+            let flags = layer.mask.as_ref().map_or([1, 1, 1, 0], |m| m.flags);
+            ops.push(Op::Mask { path: path.to_vec(), mask: orig_mask.map(|hide| crate::layer::LayerMask { hide, flags }) });
+        }
+        self.push(ops);
     }
 
-    /// Сдвиг слоя (или выделенного на нём) на целые пиксели одной записью истории.
+    /// Маска слоя такой, какая она сейчас (для `move_preview` и `move_commit`).
+    pub fn mask_snapshot(&self, path: &[usize]) -> Option<MaskMap> {
+        self.layer(path)?.mask.as_ref().map(|m| m.hide.clone())
+    }
+
+    /// Сдвиг слоя (или выделенного на нём) на целые пиксели одной записью истории; маска — вместе.
     pub fn move_layer_pixels(&mut self, path: &[usize], dx: i32, dy: i32) -> Vec<Key> {
         let Some(layer) = self.layer(path) else { return Vec::new() };
         if layer.children.is_some() {
             return Vec::new();
         }
         let original = layer.pixels.clone();
+        let mask = self.mask_snapshot(path);
         let orig_sel = self.selection.clone();
-        let keys = self.move_preview(path, &original, &orig_sel, dx, dy);
-        self.move_commit(path, original, orig_sel);
+        let keys = self.move_preview(path, &original, mask.as_ref(), &orig_sel, dx, dy);
+        self.move_commit(path, original, mask, orig_sel);
         keys
     }
 
@@ -521,6 +544,19 @@ impl Document {
                             }
                         }
                         l.pixels.tiles.retain(|_, t| t.0.iter().any(|p| p[3] != 0));
+                        if let Some(m) = l.mask.as_mut() {
+                            let keys: Vec<Key> = m.hide.tiles.keys().copied().collect();
+                            for k in keys {
+                                let t = m.hide.tile_mut(k);
+                                for (i, v) in t.0.iter_mut().enumerate() {
+                                    let (x, y) = (k.0 * TILE + i as i32 % TILE, k.1 * TILE + i as i32 / TILE);
+                                    if x < 0 || y < 0 || x >= w || y >= h {
+                                        *v = 0;
+                                    }
+                                }
+                            }
+                            m.hide.tiles.retain(|_, t| t.0.iter().any(|&v| v != 0));
+                        }
                     }
                 }
             }
@@ -554,8 +590,9 @@ impl Document {
             [1.0, 0.0, 0.0, 0.0, -1.0, (y0 + y1) as f64]
         };
         let original = layer.pixels.clone();
-        let keys = self.transform_preview(path, &original, &sel, m, crate::resample::Mode::Nearest);
-        self.move_commit(path, original, sel);
+        let mask = self.mask_snapshot(path);
+        let keys = self.transform_preview(path, &original, mask.as_ref(), &sel, m, crate::resample::Mode::Nearest);
+        self.move_commit(path, original, mask, sel);
         keys
     }
 
@@ -874,10 +911,13 @@ impl Document {
         below.push(last - 1);
         let upper = self.layer(path)?;
         let lower = self.layer(&below)?;
-        // слияние на слой с маской пока не делается: маска нижнего легла бы и на верхний
-        if upper.children.is_some() || lower.children.is_some() || lower.mask.is_some() {
+        if upper.children.is_some() || lower.children.is_some() {
             return None;
         }
+        // У нижнего слоя с маской маска сначала применяется (как «Применить маску»), иначе она
+        // легла бы и на рисунок верхнего; у верхнего маска учитывается при наложении. Итоговый
+        // нижний слой — без маски.
+        let lower_masked = lower.mask.is_some();
         // Нижний слой — как обычный непрозрачный «фон» пары; верхний — со своими свойствами.
         let mut base = lower.clone();
         base.mode = crate::blend::BlendMode::Normal;
@@ -888,6 +928,9 @@ impl Document {
         top.visible = true;
         let pair = [base, top];
         let mut keys: Vec<Key> = lower.pixels.tiles.keys().chain(upper.pixels.tiles.keys()).copied().collect();
+        if let Some(m) = &lower.mask {
+            keys.extend(m.hide.tiles.keys().copied());
+        }
         keys.sort_unstable();
         keys.dedup();
         let mut tiles: TileBackup = Vec::with_capacity(keys.len());
@@ -907,7 +950,12 @@ impl Document {
         } else {
             Op::Remove { path: path.to_vec() }
         };
-        let k = self.perform(vec![Op::Tiles { path: below.clone(), tiles }, second]);
+        let mut ops = vec![Op::Tiles { path: below.clone(), tiles }];
+        if lower_masked {
+            ops.push(Op::Mask { path: below.clone(), mask: None });
+        }
+        ops.push(second);
+        let k = self.perform(ops);
         Some((below, k))
     }
 
@@ -1047,6 +1095,33 @@ fn apply_paper(layer: &Layer, key: Key, buf: &mut [[f32; 4]]) {
 
 /// Накладывает стопку слоёв (снизу вверх) на `backdrop` в пределах одной плитки.
 /// `size` — размер холста (кайма за краем холста продолжает крайние точки, как в SAI).
+/// Маска как картинка (значение — во всех каналах), чтобы сдвигать и трансформировать её теми
+/// же функциями, что и пиксели слоя. 0x4000 у маски — это ONE у пикселя.
+fn mask_as_color(m: &MaskMap) -> ColorMap {
+    let mut out = ColorMap::new();
+    for (k, t) in &m.tiles {
+        let tile = out.tile_mut(*k);
+        for (p, &v) in tile.0.iter_mut().zip(t.0.iter()) {
+            let a = (v.min(0x4000) as u32 * 2).min(ONE) as u16;
+            *p = [a, a, a, a];
+        }
+    }
+    out.tiles.retain(|_, t| t.0.iter().any(|p| p[3] != 0));
+    out
+}
+
+fn color_as_mask(c: &ColorMap) -> MaskMap {
+    let mut out = MaskMap::new();
+    for (k, t) in &c.tiles {
+        let tile = out.tile_mut(*k);
+        for (v, p) in tile.0.iter_mut().zip(t.0.iter()) {
+            *v = (p[3] as u32).div_ceil(2).min(0x4000) as u16;
+        }
+    }
+    out.tiles.retain(|_, t| t.0.iter().any(|&v| v != 0));
+    out
+}
+
 fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]], size: (i32, i32)) {
     let mut i = 0;
     while i < layers.len() {

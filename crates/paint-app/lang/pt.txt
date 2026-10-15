@@ -330,3 +330,11 @@ SOsai {0} — редактор по образцу PaintTool SAI 2, личный
 перо: Windows Ink (сила касания) = caneta: Windows Ink (força de toque)
 перо: планшет в X11 не найден, рисование мышью = caneta: sem mesa no X11, mouse
 перо: XInput 2, {0} = caneta: XInput 2, {0}
+
+# Rulers
+Прямая = Reta
+Не замечать линейку = Ignorar régua
+Закрепить ось = Travar pivô
+Ctrl + перетаскивание полосы поворачивает линейку вокруг оси = Ctrl + arrastar a faixa gira a régua em torno do pivô
+Сбросить линейку = Redefinir régua
+Показать/скрыть линейку = Mostrar/ocultar régua

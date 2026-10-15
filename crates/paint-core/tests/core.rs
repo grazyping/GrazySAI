@@ -530,14 +530,14 @@ fn transform_scales_and_rotates_a_layer() {
     let original = doc.layers[0].pixels.clone();
     let sel = doc.selection.clone();
     // вдвое вокруг (10, 10)
-    doc.transform_preview(&[0], &original, &sel, [2.0, 0.0, -10.0, 0.0, 2.0, -10.0], Mode::Bilinear);
+    doc.transform_preview(&[0], &original, None, &sel, [2.0, 0.0, -10.0, 0.0, 2.0, -10.0], Mode::Bilinear);
     assert_eq!(pixel(&doc, 28, 28), [0, 0, 0, 255]);
     assert_eq!(pixel(&doc, 32, 15), [255, 255, 255, 255]);
-    doc.move_commit(&[0], original.clone(), sel.clone());
+    doc.move_commit(&[0], original.clone(), None, sel.clone());
     doc.undo();
     assert_eq!(pixel(&doc, 28, 28), [255, 255, 255, 255]);
     // поворот на 90° вокруг (40, 40): квадрат 10..20 уходит в x 60..70, y 10..20
-    doc.transform_preview(&[0], &original, &sel, [0.0, -1.0, 80.0, 1.0, 0.0, 0.0], Mode::Bicubic);
+    doc.transform_preview(&[0], &original, None, &sel, [0.0, -1.0, 80.0, 1.0, 0.0, 0.0], Mode::Bicubic);
     assert_eq!(pixel(&doc, 65, 15), [0, 0, 0, 255]);
     assert_eq!(pixel(&doc, 15, 15), [255, 255, 255, 255]);
 }
@@ -588,7 +588,7 @@ fn free_deform_maps_corners_to_a_quad() {
     let w = Warp::Projective(h);
     let (x, y) = w.apply(30.0, 30.0);
     assert!((x - 60.0).abs() < 1e-9 && (y - 50.0).abs() < 1e-9);
-    doc.warp_preview(&[0], &original, &sel, w, Mode::Bilinear);
+    doc.warp_preview(&[0], &original, None, &sel, w, Mode::Bilinear);
     assert_eq!(pixel(&doc, 20, 12), [0, 0, 0, 255]);
     assert_eq!(pixel(&doc, 6, 44), [0, 0, 0, 255], "низ растянут влево");
     assert_eq!(pixel(&doc, 5, 12), [255, 255, 255, 255]);
@@ -814,6 +814,96 @@ fn mask_create_paint_apply_undo() {
     doc.undo();
     assert!(doc.layers[0].mask.is_some());
     assert_eq!(doc.layers[0].pixels.get(5, 5)[3], paint_core::pixel::ONE as u16);
+}
+
+/// Маска едет со слоем: сдвиг, отражение, трансформация; отмена возвращает и маску.
+#[test]
+fn mask_moves_and_transforms_with_layer() {
+    use paint_core::tile::MaskMap;
+    let mut doc = paint_core::Document::new(64, 64);
+    doc.background = None;
+    for y in 0..64 {
+        for x in 0..64 {
+            doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([200, 100, 50, 255]));
+        }
+    }
+    doc.new_mask(&[0]);
+    // скрыт квадрат 8..16
+    let mut hide = MaskMap::new();
+    for y in 8..16 {
+        for x in 8..16 {
+            hide.set(x, y, 0x4000);
+        }
+    }
+    doc.layers[0].mask.as_mut().unwrap().hide = hide.clone();
+    let m = |d: &paint_core::Document, x, y| d.layers[0].mask.as_ref().unwrap().hide.get(x, y);
+
+    doc.move_layer_pixels(&[0], 10, 0);
+    assert_eq!((m(&doc, 9, 9), m(&doc, 19, 9), m(&doc, 25, 9)), (0, 0x4000, 0x4000), "маска сдвинулась на 10");
+    doc.undo();
+    assert_eq!(doc.layers[0].mask.as_ref().unwrap().hide, hide, "отмена вернула маску");
+    doc.redo();
+    assert_eq!(m(&doc, 19, 9), 0x4000);
+    doc.undo();
+
+    doc.flip_layer(&[0], true);
+    assert_eq!((m(&doc, 9, 9), m(&doc, 50, 9)), (0, 0x4000), "маска отражена вместе со слоем");
+    doc.undo();
+
+    // трансформация: увеличение вдвое от угла
+    let original = doc.layers[0].pixels.clone();
+    let mask = doc.mask_snapshot(&[0]);
+    let sel = doc.selection.clone();
+    doc.transform_preview(&[0], &original, mask.as_ref(), &sel, [2.0, 0.0, 0.0, 0.0, 2.0, 0.0], paint_core::resample::Mode::Nearest);
+    doc.move_commit(&[0], original, mask, sel);
+    assert_eq!((m(&doc, 12, 12), m(&doc, 20, 20), m(&doc, 30, 30), m(&doc, 34, 34)), (0, 0x4000, 0x4000, 0), "маска увеличена вдвое");
+    doc.undo();
+    assert_eq!(doc.layers[0].mask.as_ref().unwrap().hide, hide);
+}
+
+/// «Слить с нижним» работает и со слоями с масками: картинка не меняется, у итогового слоя
+/// маски нет, отмена возвращает всё.
+#[test]
+fn merge_down_with_masks() {
+    use paint_core::tile::MaskMap;
+    let mut doc = paint_core::Document::new(64, 64);
+    doc.background = Some([255, 255, 255]);
+    for y in 0..64 {
+        for x in 0..64 {
+            doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([200, 100, 50, 255]));
+        }
+    }
+    doc.add_layer("top");
+    for y in 20..40 {
+        for x in 0..64 {
+            doc.layers[1].pixels.set(x, y, paint_core::pixel::from_rgba8([0, 0, 255, 255]));
+        }
+    }
+    let half = |x0: i32, x1: i32| {
+        let mut h = MaskMap::new();
+        for y in 0..64 {
+            for x in x0..x1 {
+                h.set(x, y, 0x4000);
+            }
+        }
+        h
+    };
+    for (i, h) in [(0, half(0, 16)), (1, half(48, 64))] {
+        doc.new_mask(&[i]);
+        doc.layers[i].mask.as_mut().unwrap().hide = h;
+    }
+    let before = doc.flatten();
+    let (below, _) = doc.merge_down(&[1]).expect("слияние на слой с маской");
+    assert_eq!(below, vec![0]);
+    assert_eq!(doc.layers.len(), 1);
+    assert!(doc.layers[0].mask.is_none(), "маска нижнего применена");
+    for (a, b) in doc.flatten().iter().zip(&before) {
+        assert!(a.abs_diff(*b) <= 1);
+    }
+    doc.undo();
+    assert_eq!(doc.layers.len(), 2);
+    assert!(doc.layers[0].mask.is_some() && doc.layers[1].mask.is_some());
+    assert_eq!(doc.flatten(), before);
 }
 
 /// Скорость большого карандаша (запуск: `cargo test --release big_pencil -- --ignored --nocapture`)

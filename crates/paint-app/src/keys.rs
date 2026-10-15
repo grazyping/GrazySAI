@@ -38,10 +38,11 @@ pub enum Action {
     ResetRotation,
     HueSaturation,
     Transform,
+    Ruler,
 }
 
 /// Действие, имя для настроек, подпись в окне, клавиша по умолчанию.
-pub const ALL: [(Action, &str, &str, &str); 32] = [
+pub const ALL: [(Action, &str, &str, &str); 33] = [
     (Action::Undo, "undo", "Отменить", "Ctrl+Z"),
     (Action::Redo, "redo", "Повторить", "Ctrl+Y"),
     (Action::Save, "save", "Сохранить", "Ctrl+S"),
@@ -74,6 +75,7 @@ pub const ALL: [(Action, &str, &str, &str); 32] = [
     (Action::ResetRotation, "reset_rotation", "Сбросить поворот вида", "Shift+Home"),
     (Action::HueSaturation, "hue_saturation", "Тон и насыщенность", "Ctrl+U"),
     (Action::Transform, "transform", "Трансформация", "Ctrl+T"),
+    (Action::Ruler, "ruler", "Показать/скрыть линейку", "Ctrl+R"),
 ];
 
 /// Клавиша с модификаторами (Ctrl — это Cmd на macOS).

@@ -330,3 +330,11 @@ SOsai {0} — редактор по образцу PaintTool SAI 2, личный
 перо: Windows Ink (сила касания) = Stift: Windows Ink (Andruckkraft)
 перо: планшет в X11 не найден, рисование мышью = Stift: kein Tablett in X11, Maus aktiv
 перо: XInput 2, {0} = Stift: XInput 2, {0}
+
+# Rulers
+Прямая = Gerade
+Не замечать линейку = Lineal ignorieren
+Закрепить ось = Drehpunkt sperren
+Ctrl + перетаскивание полосы поворачивает линейку вокруг оси = Strg + Ziehen am Band dreht das Lineal um den Drehpunkt
+Сбросить линейку = Lineal zurücksetzen
+Показать/скрыть линейку = Lineal ein-/ausblenden

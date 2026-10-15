@@ -330,3 +330,11 @@ SOsai {0} — редактор по образцу PaintTool SAI 2, личный
 перо: Windows Ink (сила касания) = lápiz: Windows Ink (fuerza de contacto)
 перо: планшет в X11 не найден, рисование мышью = lápiz: sin tableta en X11, ratón
 перо: XInput 2, {0} = lápiz: XInput 2, {0}
+
+# Rulers
+Прямая = Recta
+Не замечать линейку = Ignorar regla
+Закрепить ось = Bloquear pivote
+Ctrl + перетаскивание полосы поворачивает линейку вокруг оси = Ctrl + arrastrar la banda gira la regla alrededor del pivote
+Сбросить линейку = Restablecer regla
+Показать/скрыть линейку = Mostrar/ocultar regla

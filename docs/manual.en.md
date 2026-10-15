@@ -129,6 +129,8 @@ remembered. `.sai2` files with paper open and save with it.
   the layer again.
 - “Layer → Apply Mask” erases the hidden part from the layer and removes the mask; “Delete
   Mask” removes the mask without changing the layer.
+- The mask moves, transforms and flips together with its layer. Merge Down works with masked
+  layers too: the lower layer's mask is applied to it.
 - Masks from SAI files open and save.
 
 ### Layer effects
@@ -177,6 +179,18 @@ Normal layers only (not folders).
   - H — flip the view.
 
   View rotation and flip change only the display, not the image.
+
+## Ruler
+
+“Ruler → Show Ruler” (Ctrl+R). While the ruler is shown, every stroke lies on it entirely,
+wherever it starts.
+
+- **Straight**: a translucent band, the line is its edge. Ctrl + drag the band to move it;
+  with “Lock Pivot” — to rotate it around the pivot (the cross).
+- **Ellipse**: a ring; strokes lie on its outer edge. Holding Ctrl shows a frame: inside —
+  move, outside — rotate, a side or a corner — stretch.
+- “Ignore Ruler” (menu or the quick bar button) — draw freely without hiding it; “Reset
+  Ruler” — place it again in the middle of the view.
 
 ## Filters
 
@@ -248,6 +262,7 @@ restores all defaults. Assignments are saved in the settings. The defaults are b
 | Alt+arrows (with Shift — by 10) | Move the layer or the selection |
 | Ctrl + drag | Move the layer or the selection |
 | Ctrl+U | Hue and saturation |
+| Ctrl+R | Show or hide the ruler |
 | Shift+PageUp / Shift+PageDown / Shift+Home / H | Rotate view / reset / flip view |
 | X | Swap main and background color |
 | Alt + click | Color picker |
@@ -256,7 +271,7 @@ restores all defaults. Assignments are saved in the settings. The defaults are b
 ## How it still differs from SAI
 
 The full list is in [ROADMAP.en.md](../ROADMAP.en.md). The main points:
-- No brush shapes and textures, text or rulers yet. The mask does not move with its layer yet.
+- No brush shapes and textures, text or perspective rulers yet.
 - At light pressure the Marker drags paint more than SAI does.
 
 ## If something is wrong

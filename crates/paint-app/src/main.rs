@@ -4,6 +4,7 @@
 
 mod i18n;
 mod pen;
+mod ruler;
 mod sai_ui;
 mod keys;
 mod settings;
@@ -191,6 +192,8 @@ enum Handle {
 struct Transform {
     path: Vec<usize>,
     original: paint_core::tile::ColorMap,
+    /// Маска слоя до трансформации — трансформируется вместе со слоем.
+    orig_mask: Option<paint_core::tile::MaskMap>,
     orig_sel: paint_core::selection::Selection,
     src: [f64; 4],
     edges: [f64; 4],
@@ -361,6 +364,7 @@ struct MoveDrag {
     path: Vec<usize>,
     start: Vec2,
     original: paint_core::tile::ColorMap,
+    orig_mask: Option<paint_core::tile::MaskMap>,
     orig_sel: paint_core::selection::Selection,
     offset: (i32, i32),
 }
@@ -504,6 +508,9 @@ struct PaintApp {
     paper_names: Option<Vec<String>>,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
+    /// Линейка (прямая или эллипс) и её правка Ctrl + перетаскиванием: что взяли и где было.
+    ruler: ruler::Ruler,
+    ruler_drag: Option<(ruler::Grip, [f32; 2])>,
     /// Кисть рисует в маске выбранного слоя, а не в слое.
     mask_edit: bool,
     /// Мазок в маске: штрих (его покрытие), маска до мазка, к какому значению ведёт мазок.
@@ -612,6 +619,8 @@ impl PaintApp {
             paper_dir: String::new(),
             paper_names: None,
             layer_drag: None,
+            ruler: ruler::Ruler::default(),
+            ruler_drag: None,
             color_views: [true, false, true],
             mask_edit: false,
             mask_stroke: None,
@@ -688,6 +697,15 @@ impl PaintApp {
         match path {
             Some(p) => app.open(p),
             None => app.invalidate_all(),
+        }
+        // Для проверок: PAINT_RULER=straight|ellipse — показать линейку при запуске.
+        match std::env::var("PAINT_RULER").as_deref() {
+            Ok("straight") => app.ruler.visible = true,
+            Ok("ellipse") => {
+                app.ruler.visible = true;
+                app.ruler.kind = ruler::Kind::Ellipse;
+            }
+            _ => {}
         }
         // Для проверок вида на разных языках: PAINT_SHOW_DIALOG — открыть окно при запуске.
         match std::env::var("PAINT_SHOW_DIALOG").as_deref() {
@@ -964,6 +982,7 @@ impl PaintApp {
                     self.selected = first_raster(&self.doc.layers).unwrap_or_default();
                     self.live = None;
                     self.fit_pending = true;
+                    self.ruler.placed = false;
                     self.dirty = false;
                     self.invalidate_all();
                 }
@@ -986,6 +1005,7 @@ impl PaintApp {
                 self.selected = first_raster(&self.doc.layers).unwrap_or_default();
                 self.live = None;
                 self.fit_pending = true;
+                self.ruler.placed = false;
                 self.invalidate_all();
             }
             Err(e) => self.status = trf("Не удалось открыть {0}: {1}", &[&path.display(), &e]),
@@ -1000,6 +1020,7 @@ impl PaintApp {
         self.selected = vec![0];
         self.live = None;
         self.fit_pending = true;
+        self.ruler.placed = false;
         self.status = trf("Новый холст {0}×{1}", &[&w, &h]);
         self.invalidate_all();
     }
@@ -1200,6 +1221,30 @@ impl PaintApp {
         (pressure, eraser)
     }
 
+    /// Точка штриха на линейке, если линейка показана и не отключена.
+    fn snap_to_ruler(&self, p: InputPoint) -> InputPoint {
+        if !self.ruler.active() {
+            return p;
+        }
+        let [x, y] = self.ruler.snap([p.x, p.y]);
+        InputPoint { x, y, ..p }
+    }
+
+    /// Показать или спрятать линейку; при первом показе на холсте — поставить посреди вида.
+    fn toggle_ruler(&mut self) {
+        self.ruler.visible = !self.ruler.visible;
+        if self.ruler.visible && !self.ruler.placed {
+            self.reset_ruler();
+        }
+    }
+
+    fn reset_ruler(&mut self) {
+        let xf = ViewXf::new(self.view, self.zoom, self.offset, self.view_angle, self.view_flip);
+        let c = xf.to_canvas(self.view.center());
+        let min = self.view.width().min(self.view.height()).max(100.0) / self.zoom;
+        self.ruler.reset([c.x, c.y], min);
+    }
+
     fn begin_stroke(&mut self, p: InputPoint, eraser_end: bool) {
         self.stroke_by_touch = self.touch_down;
         let shap = self.doc.layer(&self.selected).is_some_and(|l| {
@@ -1241,6 +1286,7 @@ impl PaintApp {
             }
             return;
         }
+        let p = self.snap_to_ruler(p);
         if liwk && !eraser_end && self.brush != SEL_PEN && self.brush != SEL_ERASER && self.filter.is_none() {
             // перо слоя контура: точки копятся, по отрыву становятся кривой
             self.smoother = Stabilizer::with_level(self.stabilizer);
@@ -1320,6 +1366,7 @@ impl PaintApp {
             self.line_apply(tool, p);
             return;
         }
+        let p = self.snap_to_ruler(p);
         if let Some(pts) = self.line_stroke.as_mut() {
             let q = self.smoother.push(p);
             pts.push(paint_core::vectorize::StrokePoint { at: [q.x as f64, q.y as f64], pressure: q.pressure as f64 });
@@ -1611,6 +1658,7 @@ impl PaintApp {
             path: self.selected.clone(),
             start: at,
             original: layer.pixels.clone(),
+            orig_mask: self.doc.mask_snapshot(&self.selected),
             orig_sel: self.doc.selection.clone(),
             offset: (0, 0),
         });
@@ -1623,7 +1671,7 @@ impl PaintApp {
             return;
         }
         d.offset = off;
-        let keys = self.doc.move_preview(&d.path, &d.original, &d.orig_sel, off.0, off.1);
+        let keys = self.doc.move_preview(&d.path, &d.original, d.orig_mask.as_ref(), &d.orig_sel, off.0, off.1);
         self.status = trf("Сдвиг: {0}, {1}", &[&off.0, &off.1]);
         self.sel_dirty = true;
         self.invalidate(keys);
@@ -1631,7 +1679,7 @@ impl PaintApp {
 
     fn end_move(&mut self) {
         let Some(d) = self.move_drag.take() else { return };
-        self.doc.move_commit(&d.path, d.original, d.orig_sel);
+        self.doc.move_commit(&d.path, d.original, d.orig_mask, d.orig_sel);
         self.thumbs.clear();
         self.dirty = true;
     }
@@ -1657,6 +1705,7 @@ impl PaintApp {
         self.transform = Some(Transform {
             path: self.selected.clone(),
             original: layer.pixels.clone(),
+            orig_mask: self.doc.mask_snapshot(&self.selected),
             orig_sel: sel,
             src,
             edges: [src[0] - cx, src[1] - cy, src[2] - cx, src[3] - cy],
@@ -1675,7 +1724,7 @@ impl PaintApp {
         let Some(t) = self.transform.as_mut() else { return };
         t.dirty = false;
         let mode = if fast { paint_core::resample::Mode::Bilinear } else { t.mode };
-        let keys = self.doc.warp_preview(&t.path, &t.original, &t.orig_sel, t.warp(), mode);
+        let keys = self.doc.warp_preview(&t.path, &t.original, t.orig_mask.as_ref(), &t.orig_sel, t.warp(), mode);
         self.sel_dirty = true;
         self.invalidate(keys);
     }
@@ -1686,11 +1735,11 @@ impl PaintApp {
         }
         let Some(t) = self.transform.take() else { return };
         if apply {
-            self.doc.move_commit(&t.path, t.original, t.orig_sel);
+            self.doc.move_commit(&t.path, t.original, t.orig_mask, t.orig_sel);
             self.dirty = true;
             self.status = String::from(tr("Трансформация применена"));
         } else {
-            let keys = self.doc.move_preview(&t.path, &t.original, &t.orig_sel, 0, 0);
+            let keys = self.doc.move_preview(&t.path, &t.original, t.orig_mask.as_ref(), &t.orig_sel, 0, 0);
             self.invalidate(keys);
             self.status = String::from(tr("Трансформация отменена"));
         }
@@ -1775,7 +1824,7 @@ impl PaintApp {
         self.invalidate(keys);
         if apply {
             let sel = self.doc.selection.clone();
-            self.doc.move_commit(&f.path, f.original, sel);
+            self.doc.move_commit(&f.path, f.original, None, sel);
             self.dirty = true;
             self.thumbs.clear();
         }
@@ -2182,7 +2231,31 @@ impl PaintApp {
                 }
             });
             ui.menu_button(tr("Линейка(R)"), |ui| {
-                ui.add_enabled(false, egui::Button::new(tr("Показать линейку")));
+                let mut shown = self.ruler.visible;
+                if ui.checkbox(&mut shown, tr("Показать линейку")).on_hover_text("Ctrl+R").clicked() {
+                    self.toggle_ruler();
+                    ui.close_menu();
+                }
+                ui.separator();
+                for (kind, label) in [(ruler::Kind::Straight, tr("Прямая")), (ruler::Kind::Ellipse, tr("Эллипс"))] {
+                    if ui.radio(self.ruler.kind == kind, label).clicked() {
+                        self.ruler.kind = kind;
+                        if !self.ruler.visible {
+                            self.toggle_ruler();
+                        }
+                        ui.close_menu();
+                    }
+                }
+                ui.separator();
+                ui.checkbox(&mut self.ruler.ignore, tr("Не замечать линейку"));
+                ui.add_enabled_ui(self.ruler.kind == ruler::Kind::Straight, |ui| {
+                    ui.checkbox(&mut self.ruler.lock_pivot, tr("Закрепить ось"))
+                        .on_hover_text(tr("Ctrl + перетаскивание полосы поворачивает линейку вокруг оси"));
+                });
+                if ui.add_enabled(self.ruler.visible, egui::Button::new(tr("Сбросить линейку"))).clicked() {
+                    self.reset_ruler();
+                    ui.close_menu();
+                }
             });
             ui.menu_button(tr("Фильтр(T)"), |ui| {
                 for (item, key, kind) in [
@@ -2366,6 +2439,13 @@ impl PaintApp {
             sai_ui::icon_button(ui, b, false, false, tr("Прямая линия"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "line")
             });
+            if sai_ui::icon_button(ui, b, self.ruler.ignore, self.ruler.visible, tr("Не замечать линейку"), |p, r, c| {
+                sai_ui::glyph(p, r, c, "ruler")
+            })
+            .clicked()
+            {
+                self.ruler.ignore = !self.ruler.ignore;
+            }
         });
     }
 
@@ -3593,6 +3673,91 @@ impl PaintApp {
         self.invalidate_all();
     }
 
+    /// За что возьмёт линейку Ctrl + нажатие в точке экрана `pointer`.
+    fn ruler_grip(&self, pointer: Option<Pos2>, rect: Rect) -> Option<ruler::Grip> {
+        let pos = pointer?;
+        let c = ViewXf::new(rect, self.zoom, self.offset, self.view_angle, self.view_flip).to_canvas(pos);
+        self.ruler.hit([c.x, c.y], self.zoom)
+    }
+
+    /// Линейка поверх холста, как у образца: прямая — полупрозрачная бирюзовая полоса по одну
+    /// сторону линии с осью-крестиком; эллипс — кольцо внутрь от линии и крестик в центре; с
+    /// зажатым Ctrl у эллипса видна рамка с ручками.
+    fn draw_ruler(&self, painter: &egui::Painter, xf: ViewXf, ctrl: bool) {
+        let r = &self.ruler;
+        if !r.visible || !r.placed {
+            return;
+        }
+        // Цвета подобраны по снимку образца: на белом полоса (164, 230, 220), кромка
+        // (210, 243, 238). Задаются предумноженными: так их смешивает egui.
+        let (band, edge) = if r.ignore {
+            (Color32::from_rgba_premultiplied(12, 45, 40, 60), Color32::from_rgba_premultiplied(6, 22, 20, 30))
+        } else {
+            (Color32::from_rgba_premultiplied(24, 90, 80, 115), Color32::from_rgba_premultiplied(10, 43, 38, 55))
+        };
+        let ink = Color32::from_rgb(40, 190, 165);
+        let s = |p: [f32; 2]| xf.to_screen(Vec2::new(p[0], p[1]));
+        let cross = |c: Pos2| {
+            for d in [Vec2::new(8.0, 0.0), Vec2::new(0.0, 8.0)] {
+                painter.line_segment([c - d, c + d], egui::Stroke::new(1.0_f32, ink));
+            }
+        };
+        match r.kind {
+            ruler::Kind::Straight => {
+                // линия на экране и нормаль в сторону полосы
+                let (sn, cs) = r.angle.sin_cos();
+                let a = s(r.pivot);
+                let b = s([r.pivot[0] + cs * 100.0, r.pivot[1] + sn * 100.0]);
+                let n0 = s([r.pivot[0] - sn * 100.0, r.pivot[1] + cs * 100.0]);
+                let dir = (b - a).normalized();
+                let nrm = (n0 - a).normalized();
+                let far = painter.clip_rect().size().length();
+                let quad = |d0: f32, d1: f32, col: Color32| {
+                    let pts = vec![
+                        a - dir * far + nrm * d0,
+                        a + dir * far + nrm * d0,
+                        a + dir * far + nrm * d1,
+                        a - dir * far + nrm * d1,
+                    ];
+                    painter.add(egui::Shape::convex_polygon(pts, col, egui::Stroke::NONE));
+                };
+                quad(0.0, 8.0, edge);
+                quad(8.0, ruler::BAND, band);
+                cross(a);
+                if r.lock_pivot {
+                    painter.circle_stroke(a, 5.0, egui::Stroke::new(1.0_f32, ink));
+                }
+            }
+            ruler::Kind::Ellipse => {
+                let z = self.zoom;
+                let inset = ruler::RING / 2.0 / z;
+                let n = 96;
+                let pts: Vec<Pos2> = (0..n)
+                    .map(|i| {
+                        let t = i as f32 / n as f32 * std::f32::consts::TAU;
+                        let (st, ct) = t.sin_cos();
+                        let l = [(r.rx - inset).max(0.0) * ct, (r.ry - inset).max(0.0) * st];
+                        let (sn, cs) = r.tilt.sin_cos();
+                        s([r.center[0] + cs * l[0] - sn * l[1], r.center[1] + sn * l[0] + cs * l[1]])
+                    })
+                    .collect();
+                painter.add(egui::Shape::closed_line(pts, egui::Stroke::new(ruler::RING, band)));
+                let c = s(r.center);
+                cross(c);
+                if ctrl {
+                    let (sn, cs) = r.tilt.sin_cos();
+                    let corner = |x: f32, y: f32| s([r.center[0] + cs * x - sn * y, r.center[1] + sn * x + cs * y]);
+                    let box_pts = [corner(-r.rx, -r.ry), corner(r.rx, -r.ry), corner(r.rx, r.ry), corner(-r.rx, r.ry)];
+                    painter.add(egui::Shape::closed_line(box_pts.to_vec(), egui::Stroke::new(1.0_f32, ink)));
+                    for p in box_pts {
+                        painter.circle_filled(p, 3.5, ink);
+                    }
+                    painter.rect_filled(Rect::from_center_size(c, Vec2::splat(7.0)), 0.0, Color32::from_rgb(240, 150, 40));
+                }
+            }
+        }
+    }
+
     fn canvas(&mut self, ui: &mut egui::Ui) {
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
@@ -3723,6 +3888,27 @@ impl PaintApp {
                 self.update_transform(false);
             } else if self.transform.as_ref().is_some_and(|t| t.dirty) {
                 self.update_transform(true);
+            }
+        } else if self.ruler_drag.is_some()
+            || (!panning && self.live.is_none() && pressed && response.hovered() && ctrl && self.ruler_grip(pointer, rect).is_some())
+        {
+            // Правка линейки Ctrl + перетаскиванием (как в SAI): над полосой или рамкой.
+            let xf = ViewXf::new(rect, self.zoom, self.offset, vang, vflip);
+            let c = |p: Pos2| { let v = xf.to_canvas(p); [v.x, v.y] };
+            if self.ruler_drag.is_none() {
+                if let (Some(pos), Some(g)) = (pointer, self.ruler_grip(pointer, rect)) {
+                    self.ruler_drag = Some((g, c(pos)));
+                }
+            } else if let Some((g, mut last)) = self.ruler_drag {
+                for pos in &moves {
+                    let now = c(*pos);
+                    self.ruler.drag(g, last, now);
+                    last = now;
+                }
+                self.ruler_drag = Some((g, last));
+            }
+            if released || !ui.input(|i| i.pointer.primary_down()) {
+                self.ruler_drag = None;
             }
         } else if self.move_drag.is_some() || (!panning && self.live.is_none() && pressed && response.hovered() && (self.tool == Tool::Move || ctrl)) {
             // Перемещение: инструмент «Перемещение» или Ctrl + перетаскивание (как в SAI).
@@ -3893,6 +4079,11 @@ impl PaintApp {
                 painter.add(egui::Shape::mesh(mesh));
             }
         }
+        if self.ruler.visible && !self.ruler.placed {
+            // новый или открытый холст — линейка встаёт посреди вида
+            self.reset_ruler();
+        }
+        self.draw_ruler(&painter, xf, ctrl);
         // Граница выделения («бегущие муравьи») и выделение, которое сейчас тянут.
         if self.sel_dirty {
             self.sel_outline = self.doc.selection.outline();
@@ -4585,6 +4776,9 @@ impl eframe::App for PaintApp {
             d
         });
         if !typing {
+            if hit(A::Ruler) {
+                self.toggle_ruler();
+            }
             if hit(A::FlipView) {
                 self.view_flip = !self.view_flip;
             }
