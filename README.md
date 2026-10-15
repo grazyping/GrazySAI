@@ -1,6 +1,6 @@
 # SOsai
 
-Редактор для рисования на Rust по образцу PaintTool SAI 2 — личный проект. Версия 0.4.24.
+Редактор для рисования на Rust по образцу PaintTool SAI 2 — личный проект. Версия 0.8.0.
 Как пользоваться — в [руководстве](docs/manual.md); что готово и что впереди — в [ROADMAP.md](ROADMAP.md) и на вкладке
 [Milestones](https://github.com/grazyping/SOsai/milestones); готовые сборки — в разделе Releases. Linux и Windows,
 перо планшета (XPPen Artist 24 Pro), открытие файлов `.sai2`.
@@ -18,6 +18,8 @@
   слоя или выделенного (`docs/17-selection-move.md`).
 - Разрешение, размер, отражение и поворот холста; поворот и зеркало вида (`docs/18-canvas-view.md`).
 - Заливка, «Свести всё», замки слоя (`docs/19-fill-locks.md`).
+- Бумага слоя, эффекты «Кайма» и «Двухцветный», маски слоя — как в SAI
+  (`docs/24-paper.md`, `docs/25-layer-effects.md`, `docs/26-layer-masks.md`).
 - Фильтры: тон и насыщенность, яркость и контраст, размытие по Гауссу (`docs/20-filters.md`).
 - Открытие и экспорт PSD со слоями, PNG, JPEG (`docs/21-file-formats.md`).
 - Настройки между запусками и восстановление после сбоя (`docs/22-settings-recovery.md`).

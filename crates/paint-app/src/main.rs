@@ -486,6 +486,10 @@ struct PaintApp {
     paper_names: Option<Vec<String>>,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<Vec<usize>>,
+    /// Кисть рисует в маске выбранного слоя, а не в слое.
+    mask_edit: bool,
+    /// Мазок в маске: штрих (его покрытие), маска до мазка, к какому значению ведёт мазок.
+    mask_stroke: Option<(Stroke, paint_core::layer::LayerMask, u16)>,
     /// Виды панели цвета: круг, ползунки RGB, ползунки HSV.
     color_views: [bool; 3],
     layer_rects: Vec<(Vec<usize>, Rect, bool)>,
@@ -591,6 +595,8 @@ impl PaintApp {
             paper_names: None,
             layer_drag: None,
             color_views: [true, false, true],
+            mask_edit: false,
+            mask_stroke: None,
             layer_rects: Vec::new(),
             status: String::from("Новый холст 1200×900"),
             notes: Vec::new(),
@@ -1154,7 +1160,7 @@ impl PaintApp {
         });
         let (pressure, eraser, source) = match (fresh, self.touch_force) {
             (Some((p, e)), _) => (p, e, "перо (XInput 2)"),
-            (None, Some(f)) if self.touch_down || (self.stroke_by_touch && (self.live.is_some() || self.line_stroke.is_some() || self.sel_stroke.is_some())) => (f, false, "перо (Windows Ink)"),
+            (None, Some(f)) if self.touch_down || (self.stroke_by_touch && (self.live.is_some() || self.line_stroke.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some())) => (f, false, "перо (Windows Ink)"),
             _ => (1.0, false, "мышь"),
         };
         self.last_pressure = pressure;
@@ -1216,6 +1222,28 @@ impl PaintApp {
             self.status = String::from("Сначала закройте окно фильтра (OK или «Отмена»)");
             return;
         }
+        if self.mask_edit && self.brush != SEL_PEN && self.brush != SEL_ERASER {
+            // кисть рисует в маске: тёмный цвет скрывает слой, светлый и ластик — показывают
+            let Some(orig) = self.doc.layer(&self.selected).and_then(|l| l.mask.clone()) else {
+                self.mask_edit = false;
+                self.status = String::from("У слоя нет маски");
+                return;
+            };
+            let mut params = if eraser_end { self.brushes[ERASER].params } else { self.brushes[self.brush].params };
+            params.mix = None;
+            let erase = eraser_end || self.brush == ERASER;
+            let c = self.color();
+            let lum = (c.r() as u32 * 77 + c.g() as u32 * 150 + c.b() as u32 * 29) >> 8;
+            let target = if erase { 0 } else { ((255 - lum.min(255)) * 0x4000 / 255) as u16 };
+            self.smoother = Stabilizer::with_level(self.stabilizer);
+            self.stroke_by_touch = self.touch_down;
+            let mut st = Stroke::new(params);
+            st.add_point(self.smoother.push(p));
+            let keys = self.doc.mask_stroke_preview(&self.selected.clone(), &orig.hide, &st.mask, target);
+            self.invalidate(keys);
+            self.mask_stroke = Some((st, orig, target));
+            return;
+        }
         if !eraser_end && (self.brush == SEL_PEN || self.brush == SEL_ERASER) {
             // перо и ластик выделения рисуют не в слой, а в выделение
             self.smoother = Stabilizer::with_level(self.stabilizer);
@@ -1273,6 +1301,13 @@ impl PaintApp {
             path.push(Vec2::new(q.x, q.y));
             return;
         }
+        if let Some((st, orig, target)) = self.mask_stroke.as_mut() {
+            st.add_point(self.smoother.push(p));
+            let path = self.selected.clone();
+            let keys = self.doc.mask_stroke_preview(&path, &orig.hide, &st.mask, *target);
+            self.invalidate(keys);
+            return;
+        }
         let Some(mut live) = self.live.take() else {
             return;
         };
@@ -1306,6 +1341,18 @@ impl PaintApp {
                 pts.push(paint_core::vectorize::StrokePoint { at: [q.x as f64, q.y as f64], pressure: q.pressure as f64 });
             }
             self.commit_line(&pts);
+            return;
+        }
+        if let Some((mut st, orig, target)) = self.mask_stroke.take() {
+            for q in self.smoother.finish() {
+                st.add_point(q);
+            }
+            let path = self.selected.clone();
+            let keys = self.doc.mask_stroke_preview(&path, &orig.hide, &st.mask, target);
+            self.invalidate(keys);
+            self.doc.mask_stroke_commit(&path, orig);
+            self.thumbs.clear();
+            self.dirty = true;
             return;
         }
         if let Some((mut s, _)) = self.sel_stroke.take() {
@@ -1793,6 +1840,27 @@ impl PaintApp {
     }
 
     /// Действия со слоем из кнопок под списком, меню «Слой» и клавиш образца.
+    /// Маска выбранного слоя: 0 — новая, 1 — применить, 2 — удалить.
+    fn mask_command(&mut self, what: u8) {
+        if self.filter.is_some() {
+            self.finish_filter(true);
+        }
+        if self.transform.is_some() {
+            self.finish_transform(true);
+        }
+        let path = self.selected.clone();
+        let keys = match what {
+            0 => self.doc.new_mask(&path),
+            1 => self.doc.apply_mask(&path),
+            _ => self.doc.set_mask(&path, None),
+        };
+        // после новой маски кисть сразу рисует в ней
+        self.mask_edit = what == 0 && self.doc.layer(&path).is_some_and(|l| l.mask.is_some());
+        self.invalidate(keys);
+        self.thumbs.clear();
+        self.dirty = true;
+    }
+
     fn layer_action(&mut self, action: LayerAction) {
         if self.filter.is_some() {
             self.finish_filter(true);
@@ -2015,6 +2083,22 @@ impl PaintApp {
                         ui.close_menu();
                     }
                 }
+                ui.separator();
+                let masked = self.doc.layer(&self.selected).is_some_and(|l| l.mask.is_some());
+                let raster = self.doc.layer(&self.selected).is_some_and(|l| l.children.is_none());
+                if ui.add_enabled(!masked, egui::Button::new("Новая маска слоя")).clicked() {
+                    self.mask_command(0);
+                    ui.close_menu();
+                }
+                if ui.add_enabled(masked && raster, egui::Button::new("Применить маску")).clicked() {
+                    self.mask_command(1);
+                    ui.close_menu();
+                }
+                if ui.add_enabled(masked, egui::Button::new("Удалить маску")).clicked() {
+                    self.mask_command(2);
+                    ui.close_menu();
+                }
+                ui.separator();
                 let is_vec = self.doc.layer(&self.selected).is_some_and(|l| l.vector.is_some());
                 if ui.add_enabled(is_vec, egui::Button::new("Растеризовать слой")).clicked() {
                     let path = self.selected.clone();
@@ -2906,7 +2990,13 @@ impl PaintApp {
                         self.finish_filter(true);
                     }
                     self.selected = path.clone();
+                    // щелчок по миниатюре маски — рисовать в маске, по остальному — в слое
+                    self.mask_edit = has_mask && thumb.contains(at);
                 }
+            }
+            if selected && has_mask {
+                let active = if self.mask_edit { thumb } else { layer_thumb };
+                ui.painter().rect_stroke(active.expand(1.0), 0.0, egui::Stroke::new(2.0_f32, sai_ui::SELECT_EDGE));
             }
             if response.drag_started() {
                 let at = response.interact_pointer_pos().unwrap_or_default();
@@ -3136,14 +3226,10 @@ impl PaintApp {
                 "Линейка перспективы — позже",
                 |p, r, c| sai_ui::glyph(p, r, c, "ruler"),
             );
-            sai_ui::icon_button(
-                ui,
-                b2,
-                false,
-                false,
-                "Маска слоя — позже",
-                |p, r, c| sai_ui::glyph(p, r, c, "mask"),
-            );
+            let masked = self.doc.layer(&self.selected).is_some_and(|l| l.mask.is_some());
+            if sai_ui::icon_button(ui, b2, false, !masked, "Новая маска слоя", |p, r, c| sai_ui::glyph(p, r, c, "mask")).clicked() {
+                self.mask_command(0);
+            }
         });
         ui.horizontal(|ui| {
             for (g, tip, action) in [
@@ -3591,7 +3677,7 @@ impl PaintApp {
                 if let Some(pos) = pointer {
                     self.begin_stroke(point(pos, self.zoom, self.offset), eraser_end);
                 }
-            } else if self.live.is_some() || self.sel_stroke.is_some() || self.line_stroke.is_some() || self.line_edit.is_some() || self.shape_drag.is_some() {
+            } else if self.live.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some() || self.line_stroke.is_some() || self.line_edit.is_some() || self.shape_drag.is_some() {
                 for pos in moves {
                     self.continue_stroke(point(pos, self.zoom, self.offset));
                 }

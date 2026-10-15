@@ -20,6 +20,8 @@ enum Op {
     Selection { mask: MaskMap },
     /// Заменить кривые слоя контура или фигур (обратный шаг — прежние кривые).
     Vector { path: Vec<usize>, vector: Option<crate::layer::VectorData> },
+    /// Заменить маску слоя (обратный шаг — прежняя маска).
+    Mask { path: Vec<usize>, mask: Option<crate::layer::LayerMask> },
     /// Заменить весь холст: размер, слои, выделение (для действий над холстом).
     Canvas { width: u32, height: u32, layers: Vec<Layer>, selection: MaskMap },
 }
@@ -48,6 +50,7 @@ impl HistoryEntry {
                 Op::Selection { mask } => mask.tiles.len() * TILE_LEN * 2,
                 Op::Vector { vector, .. } => vector.as_ref().map_or(0, |v| v.raw.len()),
                 Op::Remove { .. } => 0,
+                Op::Mask { mask, .. } => mask.as_ref().map_or(0, |m| m.hide.tiles.len() * TILE_LEN * 2),
             })
             .sum::<usize>()
             + 64
@@ -260,6 +263,15 @@ impl Document {
                 let layer = self.layer_mut(&path)?;
                 let old = std::mem::replace(&mut layer.vector, vector);
                 Some((Op::Vector { path, vector: old }, Vec::new()))
+            }
+            Op::Mask { path, mask } => {
+                let layer = self.layer_mut(&path)?;
+                let old = std::mem::replace(&mut layer.mask, mask);
+                let mut keys = layer_keys(layer);
+                keys.extend(old.iter().chain(layer.mask.iter()).flat_map(|m| m.hide.tiles.keys().copied()));
+                keys.sort_unstable();
+                keys.dedup();
+                Some((Op::Mask { path, mask: old }, keys))
             }
             Op::Selection { mask } => {
                 let old = std::mem::replace(&mut self.selection.mask, mask);
@@ -775,6 +787,69 @@ impl Document {
         let layer = self.layer(from)?.clone();
         let keys = self.perform(vec![Op::Remove { path: from.to_vec() }, Op::Insert { path: dst.clone(), layer: Box::new(layer) }]);
         Some((dst, keys))
+    }
+
+    /// Задать или убрать маску слоя (с отменой).
+    pub fn set_mask(&mut self, path: &[usize], mask: Option<crate::layer::LayerMask>) -> Vec<Key> {
+        if self.layer(path).is_none() {
+            return Vec::new();
+        }
+        self.perform(vec![Op::Mask { path: path.to_vec(), mask }])
+    }
+
+    /// Новая маска слоя: пустая, слой виден целиком (как в SAI).
+    pub fn new_mask(&mut self, path: &[usize]) -> Vec<Key> {
+        if self.layer(path).is_none_or(|l| l.mask.is_some()) {
+            return Vec::new();
+        }
+        self.set_mask(path, Some(crate::layer::LayerMask { hide: MaskMap::new(), flags: [1, 1, 1, 0] }))
+    }
+
+    /// Применить маску: скрытое по маске стирается из пикселей слоя, маска убирается (с отменой).
+    /// Только у обычных слоёв.
+    pub fn apply_mask(&mut self, path: &[usize]) -> Vec<Key> {
+        let Some(layer) = self.layer(path) else { return Vec::new() };
+        let Some(mask) = &layer.mask else { return Vec::new() };
+        if layer.children.is_some() {
+            return Vec::new();
+        }
+        let mut pixels = layer.pixels.clone();
+        for (key, tile) in pixels.tiles.iter_mut() {
+            if let Some(m) = mask.hide.tiles.get(key) {
+                for (px, &h) in tile.0.iter_mut().zip(m.0.iter()) {
+                    let k = 0x4000 - h.min(0x4000) as u32;
+                    *px = px.map(|c| ((c as u32 * k + 0x2000) >> 14) as u16);
+                }
+            }
+        }
+        let tiles: TileBackup = pixels.tiles.into_iter().map(|(k, t)| (k, Some(t))).collect();
+        self.perform(vec![Op::Tiles { path: path.to_vec(), tiles }, Op::Mask { path: path.to_vec(), mask: None }])
+    }
+
+    /// Мазок в маске без записи в историю (показ, пока перо не поднято): `orig` — маска до мазка,
+    /// `cover` — покрытие мазка (0..=ONE), `target` — значение маски, к которому ведёт мазок
+    /// (0 — показать, 16384 — скрыть). Возвращает изменившиеся плитки.
+    pub fn mask_stroke_preview(&mut self, path: &[usize], orig: &MaskMap, cover: &MaskMap, target: u16) -> Vec<Key> {
+        let Some(mask) = self.layer_mut(path).and_then(|l| l.mask.as_mut()) else { return Vec::new() };
+        let target = target.min(0x4000) as i32;
+        let mut keys = Vec::new();
+        for (key, c) in &cover.tiles {
+            let base = orig.tiles.get(key);
+            let tile = mask.hide.tile_mut(*key);
+            for (i, &cv) in c.0.iter().enumerate() {
+                let o = base.map_or(0, |t| t.0[i]) as i32;
+                tile.0[i] = (o + ((target - o) * cv as i32 + (ONE as i32) / 2) / ONE as i32).clamp(0, 0x4000) as u16;
+            }
+            keys.push(*key);
+        }
+        keys
+    }
+
+    /// Записать мазок в маске в историю: `orig` — маска до мазка.
+    pub fn mask_stroke_commit(&mut self, path: &[usize], orig: crate::layer::LayerMask) {
+        if self.layer(path).is_some() {
+            self.push(vec![Op::Mask { path: path.to_vec(), mask: Some(orig) }]);
+        }
     }
 
     /// Сливает обычный слой с нижним обычным слоем той же стопки (с отменой): нижний получает

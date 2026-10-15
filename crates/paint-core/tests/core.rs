@@ -780,3 +780,38 @@ fn layers_move_anywhere_and_undo() {
     doc.undo();
     assert_eq!(names(&doc).join(" "), "A B C F [ x ]");
 }
+
+#[test]
+fn mask_create_paint_apply_undo() {
+    use paint_core::tile::MaskMap;
+    let mut doc = paint_core::Document::new(64, 64);
+    doc.background = None;
+    for y in 0..64 {
+        for x in 0..64 {
+            doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([200, 100, 50, 255]));
+        }
+    }
+    doc.new_mask(&[0]);
+    assert!(doc.layers[0].mask.is_some());
+    // мазок «скрыть» по левой половине с полным покрытием
+    let orig = doc.layers[0].mask.clone().unwrap();
+    let mut cover = MaskMap::new();
+    for y in 0..64 {
+        for x in 0..32 {
+            cover.set(x, y, paint_core::pixel::ONE as u16);
+        }
+    }
+    doc.mask_stroke_preview(&[0], &orig.hide, &cover, 0x4000);
+    doc.mask_stroke_commit(&[0], orig);
+    let a = |d: &paint_core::Document, x: usize| d.flatten()[x * 4 + 3];
+    assert_eq!((a(&doc, 5), a(&doc, 50)), (0, 255));
+    doc.undo();
+    assert_eq!(a(&doc, 5), 255, "отмена мазка");
+    doc.redo();
+    doc.apply_mask(&[0]);
+    assert!(doc.layers[0].mask.is_none());
+    assert_eq!((a(&doc, 5), a(&doc, 50)), (0, 255), "применённая маска");
+    doc.undo();
+    assert!(doc.layers[0].mask.is_some());
+    assert_eq!(doc.layers[0].pixels.get(5, 5)[3], paint_core::pixel::ONE as u16);
+}
