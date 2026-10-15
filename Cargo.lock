@@ -1752,7 +1752,7 @@ dependencies = [
 
 [[package]]
 name = "paint-app"
-version = "0.8.10"
+version = "0.8.11"
 dependencies = [
  "eframe",
  "paint-core",
@@ -1763,7 +1763,7 @@ dependencies = [
 
 [[package]]
 name = "paint-cli"
-version = "0.8.10"
+version = "0.8.11"
 dependencies = [
  "paint-core",
  "paint-formats",
@@ -1771,7 +1771,7 @@ dependencies = [
 
 [[package]]
 name = "paint-core"
-version = "0.8.10"
+version = "0.8.11"
 dependencies = [
  "jpeg-encoder",
  "png 0.17.16",
@@ -1781,7 +1781,7 @@ dependencies = [
 
 [[package]]
 name = "paint-formats"
-version = "0.8.10"
+version = "0.8.11"
 dependencies = [
  "ab_glyph",
  "paint-core",
@@ -1819,7 +1819,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pen-test"
-version = "0.8.10"
+version = "0.8.11"
 dependencies = [
  "paint-core",
  "windows-sys 0.59.0",
@@ -2529,7 +2529,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "virtual-tablet"
-version = "0.8.10"
+version = "0.8.11"
 dependencies = [
  "libc",
 ]

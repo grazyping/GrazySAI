@@ -55,7 +55,65 @@ fn brush_sheet_matches_the_reference_program() {
             }
             // ступени 1–4 — модель образца, совпадение до округления; самая жёсткая — до 4
             let limit = if h < 4 { 1.0 } else { 4.0 };
+            if h == 4 { eprintln!("ступень 5 размер {s}: {worst}"); }
             assert!(worst <= limit, "ступень {} размер {s}: расхождение {worst}", h + 1);
+        }
+    }
+}
+
+/// Линии самой жёсткой ступени против живого образца: 10–30 px (`ref-sheet3-hard-lines.png`) и
+/// 50, 100 px (`ref-sheet4-hard-lines-50-100.png`); мышь, сдвиг холста (4,5; 1,5). С 20 px
+/// образец ограничивает отпечатки маской штриха (docs/13-thin-brushes.md, раздел 4).
+#[test]
+fn hard_lines_match_the_reference_program() {
+    let (dx, dy) = (4.5f32, 1.5f32);
+    let draw = |items: &[(f32, (f32, f32), (f32, f32, f32))]| {
+        let mut doc = Document::new(540, 540);
+        for &(size, dab, line) in items {
+            let params = BrushParams { size, hardness: 1.0, size_by_pressure: false, ..Default::default() };
+            for pts in [vec![dab], vec![(line.0, line.2), (line.1, line.2)]] {
+                let mut s = Stroke::new(params);
+                for (x, y) in pts {
+                    s.add_point(InputPoint { x: x + dx, y: y + dy, pressure: 1.0 });
+                }
+                doc.commit_stroke(0, &s, [0, 0, 0]);
+            }
+        }
+        doc.flatten()
+    };
+    let small: Vec<_> = [10.0f32, 12.0, 14.0, 16.0, 20.0, 25.0, 30.0]
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| (s, (30.0, 30.0 + i as f32 * 70.0), (80.0, 520.0, 30.0 + i as f32 * 70.0)))
+        .collect();
+    let large = [(50.0f32, (40.0, 60.0), (100.0, 520.0, 60.0)), (100.0, (70.0, 230.0), (70.0, 480.0, 420.0))];
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/brush");
+    for (file, items, limits) in [
+        ("ref-sheet3-hard-lines.png", small.as_slice(), [0.6f32, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6].as_slice()),
+        ("ref-sheet4-hard-lines-50-100.png", large.as_slice(), [0.6f32, 2.5].as_slice()),
+    ] {
+        let (_, _, reference) = paint_core::io::load_png(&dir.join(file)).unwrap();
+        let mine = draw(items);
+        let gray = |b: &[u8], x: usize, y: usize| {
+            let i = (y * 540 + x) * 4;
+            let a = b[i + 3] as f32 / 255.0;
+            let l = 0.299 * b[i] as f32 + 0.587 * b[i + 1] as f32 + 0.114 * b[i + 2] as f32;
+            (l * a + 255.0 * (1.0 - a)).round()
+        };
+        for (&(size, _, (x0, x1, y)), limit) in items.iter().zip(limits) {
+            let (s, y) = (size as usize, y as usize);
+            let r = (size * 0.6) as usize + 4;
+            let (mut e, mut n) = (0.0f32, 0.0f32);
+            for yy in y - r..=y + r {
+                for xx in x0 as usize + s..x1 as usize - s {
+                    let d = gray(&mine, xx, yy) - gray(&reference, xx, yy);
+                    e += d * d;
+                    n += 1.0;
+                }
+            }
+            let rms = (e / n).sqrt();
+            eprintln!("линия {size}: {rms:.2}");
+            assert!(rms <= *limit, "линия {size}: {rms} больше {limit}");
         }
     }
 }

@@ -6,32 +6,35 @@
 //! растёт, поэтому повторный проход тем же штрихом краску не темнит. На слой штрих переносится
 //! целиком — это же даёт одну запись отмены.
 
-use crate::brush::{dab_opacity, step_fraction, BrushParams, DabShape};
+use crate::brush::BrushParams;
 use crate::dab::{step_factor, Dab, DabInput};
 
-/// Отпечаток: по модели образца или подобранный (крупная самая жёсткая кисть).
+/// Отпечаток по модели образца.
 #[derive(Clone)]
 enum Shape {
     Sai(Dab, f32),
-    Fitted(DabShape, f32),
 }
 
 impl Shape {
     fn opacity(&self) -> f32 {
         match self {
-            Shape::Sai(_, o) | Shape::Fitted(_, o) => *o,
+            Shape::Sai(_, o) => *o,
         }
     }
     fn outer(&self) -> f32 {
         match self {
             Shape::Sai(d, _) => d.outer(),
-            Shape::Fitted(s, _) => s.outer(),
+        }
+    }
+    /// Форма для маски штриха у самой жёсткой ступени от 20 px.
+    fn mask(&self) -> Option<(f32, f32, f32)> {
+        match self {
+            Shape::Sai(d, _) => d.mask,
         }
     }
     fn coverage(&self, dist: f32) -> f32 {
         match self {
             Shape::Sai(d, _) => d.coverage(dist),
-            Shape::Fitted(s, _) => s.coverage(dist),
         }
     }
     /// Квадрат радиуса, внутри которого покрытие постоянно (`coverage(0)`): там не нужны ни
@@ -39,7 +42,6 @@ impl Shape {
     fn flat_r2(&self) -> f32 {
         let r = match self {
             Shape::Sai(d, _) => d.inner_radius(),
-            Shape::Fitted(s, _) => s.r_in,
         };
         // чуть меньше, чтобы округление квадрата не задело край
         let r = (r - 1e-3).max(0.0);
@@ -153,7 +155,15 @@ impl Placed {
         let round = shape.coverage(reach - 1.0) <= 0.0;
         let flat_cov = shape.coverage(0.0);
         // с формой или текстурой покрытие меняется от точки к точке
-        let flat_r2 = if grain.is_some() { -1.0 } else { shape.flat_r2() };
+        let flat_r2 = match (&grain, shape.mask()) {
+            (Some(_), _) => -1.0,
+            // внутри жёсткой формы маска полная — там покрытие постоянно
+            (None, Some((inner, _, _))) => {
+                let r = (inner - 1e-3).max(0.0).min(shape.flat_r2().sqrt());
+                r * r
+            }
+            (None, None) => shape.flat_r2(),
+        };
         Self {
             grain,
             p,
@@ -174,7 +184,8 @@ impl Placed {
 
     /// Накладывает отпечаток на одну плитку покрытия (создаёт её при первом попадании).
     /// Возвращает, было ли попадание.
-    fn paint_tile(&self, key: Key, tile: &mut Option<Tile<u16>>) -> bool {
+    fn paint_tile(&self, key: Key, tile: &mut Option<Tile<u16>>, mask: Option<&Tile<u16>>) -> bool {
+        let masked = self.shape.mask().is_some();
         let p = self.p;
         let (tx, ty) = key;
         let (ya, yb) = ((ty * TILE).max(self.y0), (ty * TILE + TILE - 1).min(self.y1));
@@ -209,6 +220,11 @@ impl Placed {
                     self.flat_a
                 } else {
                     let mut cov = self.shape.coverage(d2.sqrt());
+                    if masked {
+                        // FUN_1400e83d4: не больше маски штриха (в 1/16384)
+                        let m = mask.map_or(0, |t| t.0[(row + x) as usize]) as f32 / 16384.0;
+                        cov = cov.min(m);
+                    }
                     if let Some(g) = &self.grain {
                         cov = g.apply(cov, x, y);
                     }
@@ -237,8 +253,6 @@ struct Pending {
     grain: Option<DabGrain>,
 }
 
-/// Наибольший шаг между отпечатками большой жёсткой кисти, px (см. `placement_step_at`).
-const FLAT_LARGE_STEP_PX: f32 = 0.85;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct InputPoint {
@@ -269,6 +283,8 @@ pub struct Stroke {
     /// Акварель: уменьшенная копия слоя по плиткам (плитка → её точки уровня), пока плитка не
     /// изменилась.
     level_cache: HashMap<Key, Box<[[f64; 4]]>>,
+    /// Самая жёсткая ступень от 20 px: максимум «жёстких» форм отпечатков (0..=16384).
+    hard_mask: MaskMap,
 }
 
 impl Stroke {
@@ -286,6 +302,7 @@ impl Stroke {
             grain: None,
             grain_cache: Default::default(),
             level_cache: HashMap::new(),
+            hard_mask: MaskMap::new(),
         }
     }
 
@@ -370,17 +387,6 @@ impl Stroke {
         std::mem::take(&mut self.touched)
     }
 
-    /// Самая жёсткая ступень от 20 px у обычных инструментов: образец рисует её отдельной веткой,
-    /// у нас — подобранной моделью `DabShape` (docs/08-brush-verification.md).
-    ///
-    /// Только при полной плотности: если нажим снижает плотность, образец рисует обычной веткой —
-    /// сечение линии «куполом», а не плато (сверено с живой SAI через виртуальный планшет,
-    /// `docs/14-virtual-pen.md`).
-    fn large_flat(&self, d: f32, pressure: f32) -> bool {
-        let full = self.params.density_at(pressure) >= self.params.density * 0.999;
-        self.params.spacing <= 0.0 && !self.params.linework && self.params.hardness >= 1.0 && d >= 20.0 && full && !self.blot_on()
-    }
-
     /// Отпечаток по модели образца (docs/13-thin-brushes.md).
     fn sai_dab(&self, pressure: f32) -> Dab {
         let density = self.params.density;
@@ -395,6 +401,10 @@ impl Stroke {
             ver1: self.params.ver1_density,
             amplify: self.params.amplify,
             blot: self.blot_on(),
+            taper: match self.params.mix {
+                Some(m) if m.blur && m.blend_by_pressure && m.blur_pressure > 0.0 => (1.0 - pressure / m.blur_pressure).max(0.0),
+                _ => 0.0,
+            },
         })
     }
 
@@ -404,26 +414,8 @@ impl Stroke {
         if self.params.spacing > 0.0 {
             return (self.params.spacing * d.max(1.0)).max(0.05);
         }
-        if self.large_flat(d, pressure) {
-            return (step_fraction(d, self.params.hardness) * d.max(1.0)).max(0.05);
-        }
         let dab = self.sai_dab(pressure);
         (step_factor(dab.step_diameter, 1.0 - self.params.hardness.clamp(0.0, 1.0)) * dab.step_size).max(0.05)
-    }
-
-    /// Шаг, с которым отпечатки ставятся вдоль мазка. Обычно совпадает с `step_at`. У самой жёсткой
-    /// ступени при размере от 20 px образец рисует мазок по отдельной ветке: край линии у него
-    /// плотнее, чем у цепочки одиночных отпечатков, и почти не зависит от размера. Это повторяет
-    /// шаг не больше 0,85 px (подбор по линиям 20–100 px, docs/08-brush-verification.md).
-    /// Поправка подобрана измерением, а не прочитана в коде образца.
-    fn placement_step_at(&self, pressure: f32) -> f32 {
-        let step = self.step_at(pressure);
-        let d = self.params.diameter_at(pressure);
-        if self.large_flat(d, pressure) {
-            step.min(FLAT_LARGE_STEP_PX)
-        } else {
-            step
-        }
     }
 
     pub fn add_point(&mut self, p: InputPoint) {
@@ -444,7 +436,7 @@ impl Stroke {
         let mut pressure = prev.pressure;
         loop {
             // шаг мог уменьшиться (нажим упал) — тогда следующий отпечаток сразу
-            let need = (self.placement_step_at(pressure) - self.carry).max(0.0);
+            let need = (self.step_at(pressure) - self.carry).max(0.0);
             if pos + need > len {
                 self.carry += len - pos;
                 break;
@@ -465,15 +457,12 @@ impl Stroke {
         if density <= 0.0 {
             return;
         }
-        let shape = if self.large_flat(diameter, p.pressure) {
-            let s = DabShape::new(diameter, self.params.hardness);
-            let o = dab_opacity(&s, diameter, self.step_at(p.pressure), density);
-            Shape::Fitted(s, o)
-        } else {
-            let d = self.sai_dab(p.pressure);
-            let o = d.opacity(self.step_at(p.pressure));
-            Shape::Sai(d, o)
-        };
+        let d = self.sai_dab(p.pressure);
+        let o = d.opacity(self.step_at(p.pressure));
+        let shape = Shape::Sai(d, o);
+        // маска штриха — сразу: у образца её строят по окну отпечатков вокруг пачки, включая
+        // следующие, так что все известные отпечатки уже в ней
+        add_to_hard_mask(&mut self.hard_mask, p.x, p.y, &shape);
         self.dab_count += 1;
         let grain = if self.grain.is_some() { self.dab_grain(p, diameter, shape.outer() + 1.0) } else { None };
         if self.is_mixing() {
@@ -491,6 +480,7 @@ impl Stroke {
         if dabs.is_empty() {
             return;
         }
+
         // плитка → номера отпечатков, задевающих её, по порядку
         let mut per_tile: HashMap<Key, Vec<usize>> = HashMap::new();
         let mut work = 0usize;
@@ -504,11 +494,12 @@ impl Stroke {
         }
         let mut jobs: Vec<(Key, Option<Tile<u16>>, Vec<usize>)> =
             per_tile.into_iter().map(|(k, list)| (k, self.mask.tiles.remove(&k), list)).collect();
+        let hard_mask = &self.hard_mask;
         let run = |job: &mut (Key, Option<Tile<u16>>, Vec<usize>)| -> bool {
             let (key, tile, list) = job;
             let mut hit = false;
             for &n in list.iter() {
-                hit |= dabs[n].paint_tile(*key, tile);
+                hit |= dabs[n].paint_tile(*key, tile, hard_mask.tiles.get(key));
             }
             hit
         };
@@ -556,12 +547,13 @@ impl Stroke {
             }
             let n = mixer.next_batch(softness).min(self.pending.len());
             let batch: Vec<Pending> = self.pending.drain(..n).collect();
+            let mask = &self.hard_mask;
             // Средний цвет холста под пачкой — по всем пикселям, которых она касается.
             let mut seen = Grid::over(&batch, false);
             let mut sample = Sample::default();
             let k = 1.0 / ONE as f64;
             for d in &batch {
-                for_rows(d, |y, ra, rb, cov_at| {
+                for_rows(d, mask, |y, ra, rb, cov_at| {
                     let mut cached: (Key, Option<&Tile<Px>>) = ((i32::MIN, 0), None);
                     for x in ra..=rb {
                         if cov_at(x) <= 0.0 {
@@ -584,14 +576,14 @@ impl Stroke {
             let paint = mixer.paint(sample, n, batch[0].pressure);
             if mix.blur {
                 let size = self.params.diameter_at(batch[0].pressure);
-                water_blur(pixels, &batch, size, sel, originals, &mut changed, &mut self.level_cache);
+                water_blur(pixels, &batch, mask, size, sel, originals, &mut changed, &mut self.level_cache);
             }
             let marker = (mix.marker && !preserve_opacity).then(|| rgb.map(|c| c as f64 / 255.0));
             // Акварель при нажиме не выше порога размытия только размывает — краску не кладёт
             // (по сверке с живой SAI: мазки 0,5 и 0,3 сошлись с 12,9 и 8,9 до 2,1 и 1,4 уровня).
             let only_blur = mix.blur && mix.blend_by_pressure && batch[0].pressure <= mix.blur_pressure + 1e-6;
             if !only_blur {
-                lay_batch(pixels, &batch, paint, marker, preserve_opacity, sel, originals, &mut changed);
+                lay_batch(pixels, &batch, mask, paint, marker, preserve_opacity, sel, originals, &mut changed);
             }
             if mix.blur {
                 // изменённые плитки пересчитаются в копии при следующей пачке
@@ -612,6 +604,7 @@ impl Stroke {
 fn lay_batch(
     pixels: &mut ColorMap,
     batch: &[Pending],
+    mask: &MaskMap,
     paint: [f64; 4],
     marker: Option<[f64; 3]>,
     preserve_opacity: bool,
@@ -643,7 +636,7 @@ fn lay_batch(
         for &n in list.iter() {
             let d = &batch[n];
             let opacity = d.shape.opacity() * if marker.is_some() { marker_dab_scale() } else { 1.0 };
-            for_rows(d, |y, ra, rb, cov_at| {
+            for_rows(d, mask, |y, ra, rb, cov_at| {
                 if y < ty0 || y >= ty0 + TILE {
                     return;
                 }
@@ -693,9 +686,11 @@ fn lay_batch(
 }
 
 /// Акварель: пиксели под пачкой сдвигаются к размытому слою на долю, набранную отпечатками.
+#[allow(clippy::too_many_arguments)]
 fn water_blur(
     pixels: &mut ColorMap,
     batch: &[Pending],
+    mask: &MaskMap,
     size: f32,
     sel: &crate::selection::Selection,
     originals: &mut HashMap<Key, Option<Tile<Px>>>,
@@ -718,7 +713,7 @@ fn water_blur(
         let mut r = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
         for d in batch {
             let o = d.shape.opacity();
-            for_rows(d, |y, ra, rb, cov_at| {
+            for_rows(d, mask, |y, ra, rb, cov_at| {
                 if y < ya || y >= yb {
                     return;
                 }
@@ -889,14 +884,36 @@ fn water_blur(
     BUF.with(|b| *b.borrow_mut() = buf);
 }
 
-/// Строки отпечатка: `f(y, x_from, x_to, покрытие(x))`.
-fn for_rows(d: &Pending, mut f: impl FnMut(i32, i32, i32, &dyn Fn(i32) -> f32)) {
+/// Самая жёсткая ступень от 20 px: форма отпечатка в маску штриха — максимумом (`FUN_1400e820e`).
+fn add_to_hard_mask(mask: &mut MaskMap, px: f32, py: f32, shape: &Shape) {
+    let Some((inner, edge, a)) = shape.mask() else { return };
+    let reach = inner + edge + 1.0;
+    for y in (py - reach).floor() as i32..=(py + reach).ceil() as i32 {
+        let cy = y as f32 + 0.5 - py;
+        for x in (px - reach).floor() as i32..=(px + reach).ceil() as i32 {
+            let cx = x as f32 + 0.5 - px;
+            let e = ((cx * cx + cy * cy).sqrt() - inner).max(0.0);
+            let f = (1.0 - e / edge).max(0.0);
+            let v = (((f * f * f - f) * a + f) * 16384.0) as i32;
+            if v > 0 {
+                let (k, i) = (key_of(x, y), (y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize);
+                let t = mask.tiles.entry(k).or_insert_with(|| Tile::filled(0));
+                t.0[i] = t.0[i].max(v as u16);
+            }
+        }
+    }
+}
+
+/// Строки отпечатка: `f(y, x_from, x_to, покрытие(x))`. `mask` — маска штриха самой жёсткой
+/// ступени от 20 px: покрытие не больше её (`FUN_1400e83d4`).
+fn for_rows(d: &Pending, mask: &MaskMap, mut f: impl FnMut(i32, i32, i32, &dyn Fn(i32) -> f32)) {
+    let masked = d.shape.mask().is_some();
     let reach = d.shape.outer() + 1.0;
     let (x0, x1) = ((d.x - reach).floor() as i32, (d.x + reach).ceil() as i32);
     let (y0, y1) = ((d.y - reach).floor() as i32, (d.y + reach).ceil() as i32);
     let round = d.shape.coverage(reach - 1.0) <= 0.0;
     let flat_cov = d.shape.coverage(0.0);
-    let flat_r2 = if d.grain.is_some() { -1.0 } else { d.shape.flat_r2() };
+    let flat_r2 = if d.grain.is_some() || masked { -1.0 } else { d.shape.flat_r2() };
     for y in y0..=y1 {
         let cy = y as f32 + 0.5 - d.y;
         let (mut ra, mut rb) = (x0, x1);
@@ -913,11 +930,15 @@ fn for_rows(d: &Pending, mut f: impl FnMut(i32, i32, i32, &dyn Fn(i32) -> f32)) 
             let cx = x as f32 + 0.5 - d.x;
             let d2 = cx * cx + cy * cy;
             if d2 < flat_r2 {
-                flat_cov
-            } else if let Some(g) = &d.grain {
-                g.apply(d.shape.coverage(d2.sqrt()), x, y)
-            } else {
-                d.shape.coverage(d2.sqrt())
+                return flat_cov;
+            }
+            let mut cov = d.shape.coverage(d2.sqrt());
+            if masked {
+                cov = cov.min(mask.get(x, y) as f32 / 16384.0);
+            }
+            match &d.grain {
+                Some(g) => g.apply(cov, x, y),
+                None => cov,
             }
         };
         f(y, ra, rb, &cov_at);
@@ -957,8 +978,8 @@ impl<T: Copy> Grid<T> {
 /// Пиксель сдвигается к краске `paint` (предумноженной, 0..=1) на долю `a`.
 /// Маркер кладёт отпечатки слабее остальных кистей «Ver1»: множитель подобран по живой SAI 2017
 /// (перекраска непрозрачного при нажиме 0,3 / 0,5 / 0,75 — 0,66 / 0,84 / 0,954;
-/// docs/16-mixing.md). По коду образца не объяснён.
-const MARKER_DAB_SCALE: f32 = 0.38;
+/// docs/16-mixing.md); 0,41 — после перехода жёсткой ступени на код образца (0.8.11). По коду образца не объяснён.
+const MARKER_DAB_SCALE: f32 = 0.41;
 
 fn marker_dab_scale() -> f32 {
     MARKER_DAB_SCALE

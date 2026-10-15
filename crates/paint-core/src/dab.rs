@@ -91,9 +91,8 @@ pub struct DabInput {
     pub density_factor: f32,
     /// `1 − Sharpness` (у карандаша по умолчанию Sharpness = 0, значит 1).
     pub density_scale: f32,
-    /// Ветка самой жёсткой ступени (у обычных инструментов при мягкости 0; у слоя контура не
-    /// включается). До 20 px — обычная геометрия с рампой 16 (измерено), от 20 px штрих рисует
-    /// подобранная модель `DabShape` (см. `Stroke`).
+    /// Ветка самой жёсткой ступени (`field_0x5a1`: у обычных инструментов при мягкости 0; у слоя
+    /// контура не включается) — по коду образца, docs/13-thin-brushes.md, раздел 4.
     pub flat: bool,
     /// «Ver1 Prs Spec.»: нажим на плотность по правилу версии 1 — непрозрачность отпечатка
     /// подбирается без нажима и умножается на `нажим^1,2`, край считается по-старому.
@@ -102,6 +101,8 @@ pub struct DabInput {
     /// Форма «пятно» (blotmap): край — конус от центра, профиль считается формулой, а не таблицей
     /// (`dab_make_node`, ветка формы 1). Порог по текстуре пятна — в `stroke.rs`.
     pub blot: bool,
+    /// Акварель ниже «Порога размытия»: `1 − нажим/порог` (иначе 0) — край мягче и шире.
+    pub taper: f32,
     /// «Amplify Density», 0..=1: усиление плотности. У Акварели и Маркера по умолчанию 0,5.
     pub amplify: f32,
 }
@@ -133,6 +134,12 @@ pub struct Dab {
     ver1: bool,
     /// Форма «пятно»: выпуклость края `a` в `((f³ - f)·a + f)`.
     blot: Option<f32>,
+    /// Самая жёсткая ступень: край формулой `((f³ - f)·a + f)` от `inner` на ширину `edge`
+    /// (`FUN_1400e8615`), а не таблицей.
+    hard: Option<f32>,
+    /// Самая жёсткая ступень от 20 px: форма для маски штриха (внутр. радиус, край, выпуклость) —
+    /// покрытие отпечатка не больше максимума таких форм (`FUN_1400e820e`, `FUN_1400e83d4`).
+    pub mask: Option<(f32, f32, f32)>,
 }
 
 impl Dab {
@@ -187,6 +194,10 @@ impl Dab {
         }
         let mix = small * target_p * 0.8 + ds * 0.2;
         let mut blot = None;
+        let mut hard = None;
+        let mut hard_solve: Option<(f64, f64)> = None;
+        let mut mask = None;
+        let taper = i.taper.clamp(0.0, 1.0) as f64;
         let (inner, edge, profile, solve): (f64, f64, &'static [f32], &'static [f32]) = if i.blot {
             // Край от самого центра, ширина как у самой мягкой ступени на любой жёсткости: ветка
             // формы в `brush_params_from_tool` мягкость не задаёт, и по сверке с живой SAI она 1
@@ -195,8 +206,31 @@ impl Dab {
             let a = if edge < edge_min * 2.0 { mix * (1.0 - (edge - edge_min) / edge_min) } else { 0.0 };
             blot = Some((a * 0.85) as f32);
             (0.0, edge, &t.ramp[0][0], &t.ramp[0][0])
+        } else if i.flat {
+            // Ветка самой жёсткой ступени (`field_0x5a1`, dab_make_node): полное покрытие до
+            // радиуса, дальше край шириной в минимальный; непрозрачность — по линейной таблице с
+            // краем `max(0,18·r, мин. край)`. У Акварели ниже порога размытия край мягче, а
+            // радиус больше на `taper/2`.
+            let r = radius * (1.0 + taper * 0.5);
+            let th = taper * 0.5;
+            let e = (r * 0.18).max(edge_min);
+            let e2 = e + (edge_min - e) * (th * 10.0).min(1.0);
+            let cov_edge = th * r + edge_min;
+            let solve_edge = r * th + e2;
+            hard_solve = Some(((r + edge_min - cov_edge).max(0.0), solve_edge));
+            if d >= 20.0 {
+                // с 20 px: край — cos² на ширину решателя, сверху ограничен маской штриха
+                let ds2 = ds * 0.2;
+                mask = Some(((r - ds2).max(0.0) as f32, (edge_min + ds2) as f32, (mix * 0.85) as f32));
+                ((r + edge_min - cov_edge).max(0.0), solve_edge, &t.cos2[0], &t.ramp[0][0])
+            } else {
+                hard = Some((mix * 0.85) as f32);
+                ((r + edge_min - cov_edge).max(0.0), cov_edge, &t.ramp[0][0], &t.ramp[0][0])
+            }
         } else {
+            // у Акварели ниже порога размытия мягкость растёт к (s + 1) / 2
             let s = i.softness as f64;
+            let s = s + ((s + 1.0) * 0.5 - s) * taper;
             let inner = (1.0 - s) * radius;
             let edge = s * radius * 1.7 + edge_min;
             if edge >= edge_min * 2.0 {
@@ -218,7 +252,8 @@ impl Dab {
                 (inner, edge, &t.ramp[k][j], &t.ramp[0][j])
             }
         };
-        let solve_width = (target_p * 3.0 - small * 0.8).max(edge);
+        let (solve_inner, solve_edge) = hard_solve.unwrap_or((inner, edge));
+        let solve_width = (target_p * 3.0 - small * 0.8).max(solve_edge);
         Dab {
             inner: inner as f32,
             edge: edge as f32,
@@ -227,13 +262,15 @@ impl Dab {
             step_size: size as f32,
             step_diameter: d5 as f32,
             solve,
-            solve_inner: inner as f32,
+            solve_inner: solve_inner as f32,
             solve_width: solve_width as f32,
             target: target_p as f32,
             solve_target: if i.ver1 { target } else { target_p } as f32,
             amplify_gain: gain as f32,
             ver1: i.ver1,
             blot,
+            hard,
+            mask,
             amplify_mix: if a > 0.0 { target_p as f32 } else { 0.0 },
             ver1_scale: if i.ver1 { (i.density_factor as f64).max(0.0).powf(1.2) } else { 1.0 } as f32,
         }
@@ -251,6 +288,11 @@ impl Dab {
     }
 
     pub fn coverage(&self, dist: f32) -> f32 {
+        if let Some(a) = self.hard {
+            // FUN_1400e8615: f = 1 - max(0, d - внутр.)/край, затем (f³ - f)·a + f
+            let f = (1.0 - (dist - self.inner).max(0.0) / self.edge).max(0.0);
+            return (f * f * f - f) * a + f;
+        }
         if let Some(a) = self.blot {
             // как `FUN_1400e87f9`: f = 1 - d/край, затем (f³ - f)·a + f — в float
             let f = (1.0 - dist * (1.0 / self.edge)).max(0.0);
