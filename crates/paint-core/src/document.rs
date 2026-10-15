@@ -619,7 +619,7 @@ impl Document {
         for ty in 0..th {
             for tx in 0..tw {
                 let mut buf = vec![[0f32; 4]; TILE_LEN];
-                render_group(&layers, (tx, ty), &mut buf);
+                render_group(&layers, (tx, ty), &mut buf, self.size());
                 if buf.iter().any(|p| p[3] > 0.0) {
                     out.tiles.insert((tx, ty), Tile(buf.iter().map(|p| from_f32(*p)).collect()));
                 }
@@ -710,7 +710,7 @@ impl Document {
         for ty in 0..th {
             for tx in 0..tw {
                 let mut buf = vec![[0f32; 4]; TILE_LEN];
-                render_group(&self.layers, (tx, ty), &mut buf);
+                render_group(&self.layers, (tx, ty), &mut buf, self.size());
                 if buf.iter().any(|p| p[3] > 0.0) {
                     layer.pixels.tiles.insert((tx, ty), Tile(buf.iter().map(|p| from_f32(*p)).collect()));
                 }
@@ -790,7 +790,7 @@ impl Document {
         let mut tiles: TileBackup = Vec::with_capacity(keys.len());
         for key in &keys {
             let mut buf = vec![[0f32; 4]; TILE_LEN];
-            render_group(&pair, *key, &mut buf);
+            render_group(&pair, *key, &mut buf, self.size());
             let tile: Vec<Px> = buf.iter().map(|c| from_f32(*c)).collect();
             if tile.iter().all(|p| p[3] == 0) {
                 tiles.push((*key, None));
@@ -816,6 +816,10 @@ impl Document {
         !self.redo.is_empty()
     }
 
+    fn size(&self) -> (i32, i32) {
+        (self.width as i32, self.height as i32)
+    }
+
     fn background_f32(&self) -> [f32; 4] {
         match self.background {
             Some(c) => [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, 1.0],
@@ -826,7 +830,7 @@ impl Document {
     /// Сведённая плитка для показа: RGBA по 8 бит, 64×64.
     pub fn render_tile(&self, key: Key) -> Vec<u8> {
         let mut buf = vec![self.background_f32(); TILE_LEN];
-        render_group(&self.layers, key, &mut buf);
+        render_group(&self.layers, key, &mut buf, self.size());
         let mut out = vec![0u8; TILE_LEN * 4];
         for (px, o) in buf.iter().zip(out.as_chunks_mut::<4>().0) {
             *o = to_rgba8(from_f32(*px));
@@ -858,7 +862,7 @@ impl Document {
                         let mut strip = strips[ty as usize].lock().unwrap();
                         for tx in 0..cols {
                             buf.fill(bg);
-                            render_group(&self.layers, (tx, ty), &mut buf);
+                            render_group(&self.layers, (tx, ty), &mut buf, self.size());
                             for y in 0..TILE {
                                 if ty * TILE + y >= h {
                                     break;
@@ -902,14 +906,14 @@ fn touches(layer: &Layer, key: Key) -> bool {
 }
 
 /// Содержимое слоя или папки в одной плитке, без учёта его режима и непрозрачности.
-fn layer_source(layer: &Layer, key: Key) -> Option<Buf> {
+fn layer_source(layer: &Layer, key: Key, size: (i32, i32)) -> Option<Buf> {
     match &layer.children {
         Some(children) => {
             if !children.iter().any(|c| c.visible && touches(c, key)) {
                 return None;
             }
             let mut buf = vec![[0.0f32; 4]; TILE_LEN];
-            render_group(children, key, &mut buf);
+            render_group(children, key, &mut buf, size);
             Some(buf)
         }
         None => layer.pixels.tiles.get(&key).map(|t| t.0.iter().map(|p| to_f32(*p)).collect()),
@@ -927,7 +931,8 @@ fn apply_paper(layer: &Layer, key: Key, buf: &mut [[f32; 4]]) {
 }
 
 /// Накладывает стопку слоёв (снизу вверх) на `backdrop` в пределах одной плитки.
-fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]]) {
+/// `size` — размер холста (кайма за краем холста продолжает крайние точки, как в SAI).
+fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]], size: (i32, i32)) {
     let mut i = 0;
     while i < layers.len() {
         let base = &layers[i];
@@ -948,7 +953,7 @@ fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]]) {
                 continue;
             }
             let mut inner = backdrop.to_vec();
-            render_group(base.children.as_deref().unwrap_or(&[]), key, &mut inner);
+            render_group(base.children.as_deref().unwrap_or(&[]), key, &mut inner, size);
             let k = base.opacity.clamp(0.0, 1.0);
             for (dst, src) in backdrop.iter_mut().zip(inner.iter()) {
                 for c in 0..4 {
@@ -957,11 +962,13 @@ fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]]) {
             }
             continue;
         }
-        let Some(mut src) = layer_source(base, key) else { continue };
-        // бумага — до прикреплённых слоёв (сверено со сведённой картинкой образца)
+        let Some(mut src) = layer_source(base, key, size) else { continue };
+        // эффект и бумага — до прикреплённых слоёв (бумага сверена со сведённой картинкой образца)
+        crate::effects::apply(base, key, &mut src, size);
         apply_paper(base, key, &mut src);
         for clip in clips.iter().filter(|c| c.visible && c.opacity > 0.0) {
-            let Some(mut top) = layer_source(clip, key) else { continue };
+            let Some(mut top) = layer_source(clip, key, size) else { continue };
+            crate::effects::apply(clip, key, &mut top, size);
             apply_paper(clip, key, &mut top);
             for (b, t) in src.iter_mut().zip(top.iter()) {
                 if b[3] <= 0.0 || t[3] <= 0.0 {

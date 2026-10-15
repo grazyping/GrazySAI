@@ -41,6 +41,8 @@ pub struct Layer {
     pub pass_through: bool,
     /// Бумага слоя.
     pub paper: Option<crate::paper::Paper>,
+    /// Эффект слоя: кайма или двухцветный.
+    pub effect: Option<crate::effects::Effect>,
     /// Прочие вложенные блоки описания слоя из `.sai2` (эффекты и т. п.) — записываются обратно
     /// как были.
     pub extra: Vec<([u8; 4], Vec<u8>)>,
@@ -64,6 +66,7 @@ impl Layer {
             children: None,
             pass_through: false,
             paper: None,
+            effect: None,
             extra: Vec::new(),
         }
     }

@@ -73,7 +73,12 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
         if let Some(p) = layer.paper.as_ref().filter(|p| p.texture.is_none()) {
             notes.insert(format!("текстура бумаги «{}» не найдена — укажите папку papertex из SAI (свойства слоя → «Текстура»)", p.name));
         }
-        layer.extra = li.extra.clone();
+        for (tag, body) in &li.extra {
+            match paint_core::effects::Effect::from_block(tag, body) {
+                Some(e) => layer.effect = Some(e),
+                None => layer.extra.push((*tag, body.clone())),
+            }
+        }
         layer.clipping = li.clipping;
         layer.preserve_opacity = li.locks[0];
         layer.lock_paint = li.locks[1];

@@ -699,3 +699,44 @@ fn history_keeps_at_most_100_steps_like_sai() {
     assert!(doc.undo().is_none(), "старше 100 шагов отменить нельзя");
     assert_eq!(pixel(&doc, 3, 3), [29, 0, 0, 255], "остался 30-й шаг");
 }
+
+/// Кайма и двухцветный — сверено с живой SAI: заливка 201×201 цветом (130,4,4) на белом.
+#[test]
+fn layer_effects_match_live_sai() {
+    use paint_core::effects::Effect;
+    let shot = |effect: Effect| {
+        let mut doc = paint_core::Document::new(400, 400);
+        doc.background = Some([255, 255, 255]);
+        for y in 100..=300 {
+            for x in 100..=300 {
+                doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([130, 4, 4, 255]));
+            }
+        }
+        doc.layers[0].effect = Some(effect);
+        let img = doc.flatten();
+        move |x: usize, y: usize| -> [u8; 3] {
+            let o = (y * 400 + x) * 4;
+            [img[o], img[o + 1], img[o + 2]]
+        }
+    };
+    let p = shot(Effect::Fringe { kind: *b"watr", width: 2, strength: 100 });
+    assert_eq!([p(100, 200), p(101, 200), p(102, 200), p(101, 101)], [[5, 0, 0], [18, 0, 0], [130, 4, 4], [5, 0, 0]]);
+    let p = shot(Effect::Fringe { kind: *b"watr", width: 13, strength: 85 });
+    assert_eq!([p(100, 200), p(106, 200), p(107, 200)], [[23, 1, 1], [23, 1, 1], [24, 1, 1]]);
+    let p = shot(Effect::Binary { threshold: 50, rest: 0 });
+    assert_eq!([p(200, 200), p(100, 100), p(99, 200)], [[255, 0, 0], [255, 0, 0], [255, 255, 255]]);
+}
+
+/// Слой на весь холст: у края холста каймы нет (за краем берутся крайние точки).
+#[test]
+fn fringe_ignores_canvas_border() {
+    let mut doc = paint_core::Document::new(100, 80);
+    for y in 0..80 {
+        for x in 0..100 {
+            doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([130, 4, 4, 255]));
+        }
+    }
+    doc.layers[0].effect = Some(paint_core::effects::Effect::Fringe { kind: *b"watr", width: 5, strength: 100 });
+    let img = doc.flatten();
+    assert!(img.as_chunks::<4>().0.iter().all(|p| p[..3] == [130, 4, 4]));
+}

@@ -101,17 +101,21 @@ fn vector_layers_survive_save() {
 }
 
 #[test]
-fn paper_and_unknown_layer_blocks_survive_save() {
+fn paper_effect_and_unknown_layer_blocks_survive_save() {
     let mut doc = Document::new(64, 64);
     dab(&mut doc, &[0], 10.0, 20.0, 12.0, [200, 30, 40]);
     doc.layers[0].paper = Some(paint_core::paper::Paper::new("Water Color 2", 30, 120, 1));
-    doc.layers[0].extra = vec![(*b"frng", vec![b'w', b'a', b't', b'r', 3, 0, 50, 0])];
+    doc.layers[0].effect = Some(paint_core::effects::Effect::Fringe { kind: *b"watr", width: 3, strength: 50 });
+    doc.layers[0].extra = vec![(*b"zzzz", vec![1, 2, 3, 4])];
     let out = std::env::temp_dir().join(format!("sosai-paper-{}.sai2", std::process::id()));
     paint_formats::sai2_write::save(&doc, &out).unwrap();
     let info = paint_formats::sai2::read_info(&out).unwrap();
-    std::fs::remove_file(&out).ok();
     let l = &info.layers[0];
     assert_eq!(l.paper, Some(("Water Color 2".to_string(), 30, 120, 1)));
-    assert_eq!(l.extra, doc.layers[0].extra);
+    assert_eq!(l.extra, vec![(*b"frng", vec![b'w', b'a', b't', b'r', 3, 0, 50, 0]), (*b"zzzz", vec![1, 2, 3, 4])]);
+    let back = paint_formats::sai2_doc::load(&out).unwrap();
+    assert_eq!(back.document.layers[0].effect, doc.layers[0].effect);
+    assert_eq!(back.document.layers[0].extra, vec![(*b"zzzz", vec![1, 2, 3, 4])]);
+    std::fs::remove_file(&out).ok();
 }
 

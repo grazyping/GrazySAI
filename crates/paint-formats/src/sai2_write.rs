@@ -315,7 +315,8 @@ fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4]) -> Vec<u8> {
     d.extend(b"name");
     d.extend((name.len() as u32).to_le_bytes());
     d.extend(name);
-    for (tag, body) in &l.extra {
+    let effect = l.effect.as_ref().map(|e| e.to_block());
+    for (tag, body) in effect.iter().chain(&l.extra) {
         d.extend(tag);
         d.extend((body.len() as u32).to_le_bytes());
         d.extend(body);

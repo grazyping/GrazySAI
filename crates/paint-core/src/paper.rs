@@ -173,25 +173,38 @@ pub fn apply_q14(p: [i32; 4], g: u8, strength: u16) -> [i32; 4] {
     let t = (g as i32 * 257) >> 1;
     let k = (((t - one) * s) >> 16) * 2;
     let w = k.abs();
+    let target = if k < 0 { dense_q14(p) } else { light_q14(p) };
+    toward_q14(p, target, w)
+}
+
+/// «Густая» цель (её же использует кайма): цвет чуть сводится к серому (на 1/8 разброса
+/// каналов), затем удваивается с поправкой у ярких каналов; непрозрачность растёт примерно в
+/// полтора раза, избыток сверх единицы вычитается из всех каналов. Без ограничения 0..единица.
+pub(crate) fn dense_q14(p: [i32; 4]) -> [i32; 4] {
+    let one = 0x4000;
     let [c0, c1, c2, a] = p;
-    let target = if k < 0 {
-        // гуще и темнее
-        let mn = c0.min(c1).min(c2);
-        let mx = c0.max(c1).max(c2);
-        let d = (mx - mn) >> 3;
-        let cp = [c0, c1, c2].map(|c| (c - d).max(0));
-        let col = cp.map(|c| 2 * c - (a >> 1).min((2 * (mx - c)).min(0x7fff)));
-        let alpha = a + ((a.min(mx) + a) >> 1);
-        let e = (alpha - one).max(0);
-        [col[0] - e, col[1] - e, col[2] - e, alpha - e]
-    } else {
-        // светлее
-        let l = |c: i32| ((((3 * c + a) & 0xffff) >> 2) + c).min(a);
-        [l(c0), l(c1), l(c2), a]
-    };
+    let mn = c0.min(c1).min(c2);
+    let mx = c0.max(c1).max(c2);
+    let d = (mx - mn) >> 3;
+    let cp = [c0, c1, c2].map(|c| (c - d).max(0));
+    let col = cp.map(|c| 2 * c - (a >> 1).min((2 * (mx - c)).min(0x7fff)));
+    let alpha = a + ((a.min(mx) + a) >> 1);
+    let e = (alpha - one).max(0);
+    [col[0] - e, col[1] - e, col[2] - e, alpha - e]
+}
+
+/// «Светлая» цель: каждый канал сдвигается к непрозрачности (к белому), непрозрачность прежняя.
+fn light_q14(p: [i32; 4]) -> [i32; 4] {
+    let [c0, c1, c2, a] = p;
+    let l = |c: i32| ((((3 * c + a) & 0xffff) >> 2) + c).min(a);
+    [l(c0), l(c1), l(c2), a]
+}
+
+/// Пиксель на долю `w` (единица — 16384) к цели `target`, с ограничением цели 0..единица.
+pub(crate) fn toward_q14(p: [i32; 4], target: [i32; 4], w: i32) -> [i32; 4] {
     let mut out = p;
     for i in 0..4 {
-        let diff = target[i].clamp(0, one) - p[i];
+        let diff = target[i].clamp(0, 0x4000) - p[i];
         out[i] = p[i] + ((diff * w) >> 14);
     }
     out

@@ -2939,12 +2939,7 @@ impl PaintApp {
         });
         ui.add_space(3.0);
         if sai_ui::section(ui, "sec_effect", "Эффекты слоя") {
-            sai_ui::row(ui, "   Эффект", lw + 10.0, false, |ui| {
-                egui::ComboBox::from_id_salt("effect")
-                    .selected_text("[ Нет ]")
-                    .width(100.0)
-                    .show_ui(ui, |_| {});
-            });
+            changed |= self.effect_panel(ui, lw);
         }
         if sai_ui::section(ui, "sec_paper", "Текстура") {
             changed |= self.paper_panel(ui, lw);
@@ -3094,6 +3089,55 @@ impl PaintApp {
             self.dirty = true;
             self.invalidate_all();
         }
+    }
+
+    /// Эффект выбранного слоя: кайма (ширина, сила) или двухцветный (порог). Как в SAI — только у
+    /// обычных слоёв; значения по умолчанию как у SAI.
+    fn effect_panel(&mut self, ui: &mut egui::Ui, lw: f32) -> bool {
+        use paint_core::effects::Effect;
+        let mut changed = false;
+        let path = self.selected.clone();
+        let Some(layer) = self.doc.layer_mut(&path) else { return false };
+        let enabled = layer.children.is_none();
+        let current = match &layer.effect {
+            None => "[ Нет ]",
+            Some(Effect::Fringe { .. }) => "Кайма",
+            Some(Effect::Binary { .. }) => "Двухцветный",
+        };
+        sai_ui::row(ui, "   Эффект", lw + 10.0, enabled, |ui| {
+            egui::ComboBox::from_id_salt("effect").selected_text(current).width(100.0).show_ui(ui, |ui| {
+                let choices = [
+                    ("[ Нет ]", None),
+                    ("Кайма", Some(Effect::Fringe { kind: *b"watr", width: 2, strength: 100 })),
+                    ("Двухцветный", Some(Effect::Binary { threshold: 50, rest: 0 })),
+                ];
+                for (name, e) in choices {
+                    if ui.selectable_label(current == name, name).clicked() && current != name {
+                        layer.effect = e;
+                        changed = true;
+                    }
+                }
+            });
+        });
+        let w = ui.available_width() - lw - 18.0;
+        let mut bar = |ui: &mut egui::Ui, label: &str, v: &mut u16, lo: u16, hi: u16| {
+            sai_ui::row(ui, label, lw + 10.0, true, |ui| {
+                let mut f = *v as f32;
+                if sai_ui::bar(ui, &mut f, lo as f32, hi as f32, format!("{v}"), w, true).changed() {
+                    *v = (f.round() as u16).clamp(lo, hi);
+                    changed = true;
+                }
+            });
+        };
+        match &mut layer.effect {
+            Some(Effect::Fringe { width, strength, .. }) => {
+                bar(ui, "   Ширина", width, 1, 15);
+                bar(ui, "   Сила", strength, 0, 100);
+            }
+            Some(Effect::Binary { threshold, .. }) => bar(ui, "   Порог", threshold, 0, 100),
+            None => {}
+        }
+        changed
     }
 
     /// Бумага выбранного слоя: текстура, масштаб, сила. Текстуры — из папки `papertex` SAI.
