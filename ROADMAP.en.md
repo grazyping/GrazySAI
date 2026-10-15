@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.8)
+### 0.8 — linework and shapes (current version 0.8.9)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -80,7 +80,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Custom shortcuts: “Help → Shortcut Keys…”, 34 actions, SAI's defaults
 - [x] PSD (with layers) and JPEG export; opening PSD, PNG and JPEG (`docs/21-file-formats.md`)
 - [x] Work recovery after a crash (a copy every 3 minutes)
-- [x] Undo history: 100 steps, as in SAI, and no more than 2 GB of memory
+- [x] Undo history: 100 steps, as in SAI; beyond 1 GB — on disk
 - [x] Fast on large canvases: 2300×4096 with 191 layers — reading 0.3 s, display 0.3 s (`docs/23-performance.md`)
 - [x] User manual (`docs/manual.en.md`, updated with every version)
 - [x] RGB and HSV color sliders, dragging layers in the list
@@ -107,4 +107,4 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 
 ### 1.0 — finished
 - [ ] `.sai2` read and written without loss for every kind of layer
-- [ ] Undo history on disk (for very large canvases)
+- [x] Undo history on disk (for very large canvases): beyond 1 GB, steps go to temporary files and all 100 steps are kept

@@ -12,6 +12,8 @@ use std::collections::HashMap;
 enum Op {
     /// Вернуть плитки слоя к сохранённому виду.
     Tiles { path: Vec<usize>, tiles: TileBackup },
+    /// То же, плитки выгружены на диск (`history_disk`).
+    TilesOnDisk { path: Vec<usize>, spill: crate::history_disk::Spill },
     /// Вставить слой на место `path` (последний номер — место в стопке).
     Insert { path: Vec<usize>, layer: Box<Layer> },
     /// Убрать слой с места `path`.
@@ -32,7 +34,8 @@ struct HistoryEntry(Vec<Op>);
 
 /// Шагов отмены не больше этого — как в SAI (100).
 pub const HISTORY_STEPS: usize = 100;
-/// И не больше этой памяти на историю; лишние старые шаги отбрасываются.
+/// И не больше этой памяти на шаги, которые нельзя выгрузить на диск (слои целиком, холст);
+/// плитки сверх `history_disk::ram_budget` уходят на диск.
 pub const HISTORY_BYTES: usize = 2 << 30;
 
 impl HistoryEntry {
@@ -49,7 +52,7 @@ impl HistoryEntry {
                 Op::Canvas { layers, selection, .. } => layers.iter().map(layer_bytes).sum::<usize>() + selection.tiles.len() * TILE_LEN * 2,
                 Op::Selection { mask } => mask.tiles.len() * TILE_LEN * 2,
                 Op::Vector { vector, .. } => vector.as_ref().map_or(0, |v| v.raw.len()),
-                Op::Remove { .. } => 0,
+                Op::Remove { .. } | Op::TilesOnDisk { .. } => 0,
                 Op::Mask { mask, .. } => mask.as_ref().map_or(0, |m| m.hide.tiles.len() * TILE_LEN * 2),
             })
             .sum::<usize>()
@@ -202,11 +205,27 @@ impl Document {
     fn push(&mut self, ops: Vec<Op>) {
         self.undo.push(HistoryEntry(ops));
         self.redo.clear();
-        // как в SAI: не больше 100 шагов; и общий предел памяти
+        // как в SAI: не больше 100 шагов
         while self.undo.len() > HISTORY_STEPS {
             self.undo.remove(0);
         }
+        // сверх бюджета памяти — старые плитки на диск, начиная с самых старых шагов
+        let budget = crate::history_disk::ram_budget();
         let mut total: usize = self.undo.iter().map(HistoryEntry::bytes).sum();
+        let mut i = 0;
+        while total > budget && i + 1 < self.undo.len() {
+            let before = self.undo[i].bytes();
+            for op in self.undo[i].0.iter_mut() {
+                if let Op::Tiles { path, tiles } = op {
+                    if let Some(spill) = crate::history_disk::spill(tiles) {
+                        *op = Op::TilesOnDisk { path: std::mem::take(path), spill };
+                    }
+                }
+            }
+            total = total - before + self.undo[i].bytes();
+            i += 1;
+        }
+        // и общий предел памяти для того, что на диск не ушло
         while total > HISTORY_BYTES && self.undo.len() > 1 {
             total -= self.undo.remove(0).bytes();
         }
@@ -231,6 +250,10 @@ impl Document {
                 let keys = tiles.iter().map(|(k, _)| *k).collect();
                 let back = self.layer_mut(&path)?.restore(tiles);
                 Some((Op::Tiles { path, tiles: back }, keys))
+            }
+            Op::TilesOnDisk { path, spill } => {
+                let tiles = crate::history_disk::load(&spill)?;
+                self.apply_op(Op::Tiles { path, tiles })
             }
             Op::Insert { path, layer } => {
                 let keys = layer_keys(&layer);

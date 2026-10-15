@@ -5114,6 +5114,7 @@ impl eframe::App for PaintApp {
     /// Для проверок: `PAINT_EXPORT_ON_EXIT=файл.png` — сохранить холст и вывести сводку по перу.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.save_settings();
+        paint_core::history_disk::cleanup();
         // для проверок: PAINT_SAVE_ON_EXIT=файл.sai2 — сохранить документ при выходе
         if let Ok(out) = std::env::var("PAINT_SAVE_ON_EXIT") {
             let r = paint_formats::sai2_write::save(&self.doc, std::path::Path::new(&out));
