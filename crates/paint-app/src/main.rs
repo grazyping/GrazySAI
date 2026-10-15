@@ -1346,10 +1346,10 @@ impl PaintApp {
         }
         let n = count_layers(&self.doc.layers) + 1;
         let mut layer = Layer::new(&trf("Слой{0}", &[&n]));
-        for (i, px) in img.rgba.chunks_exact(4).enumerate() {
+        for (i, px) in img.rgba.as_chunks::<4>().0.iter().enumerate() {
             if px[3] > 0 {
                 let (dx, dy) = ((i as u32 % img.width) as i32, (i as u32 / img.width) as i32);
-                layer.pixels.set(x + dx, y + dy, paint_core::pixel::from_rgba8([px[0], px[1], px[2], px[3]]));
+                layer.pixels.set(x + dx, y + dy, paint_core::pixel::from_rgba8(*px));
             }
         }
         let mut path = self.selected.clone();
@@ -1374,10 +1374,10 @@ impl PaintApp {
             return;
         };
         self.new_canvas(img.width, img.height);
-        for (i, px) in img.rgba.chunks_exact(4).enumerate() {
+        for (i, px) in img.rgba.as_chunks::<4>().0.iter().enumerate() {
             if px[3] > 0 {
                 let (x, y) = ((i as u32 % img.width) as i32, (i as u32 / img.width) as i32);
-                self.doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([px[0], px[1], px[2], px[3]]));
+                self.doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8(*px));
             }
         }
         self.invalidate_all();
