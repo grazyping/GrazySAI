@@ -141,43 +141,7 @@ impl Selection {
         for (i, v) in buf.iter_mut().enumerate() {
             *v = self.mask.get(ox + (i % bw) as i32, oy + (i / bw) as i32);
         }
-        let pick = |a: u16, b: u16| if grow { a.max(b) } else { a.min(b) };
-        let at = |buf: &[u16], x: isize, y: isize| -> u16 {
-            if x < 0 || y < 0 || x >= bw as isize || y >= bh as isize {
-                0
-            } else {
-                buf[y as usize * bw + x as usize]
-            }
-        };
-        for step in 0..n {
-            let mut next = vec![0u16; bw * bh];
-            if step % 2 == 0 {
-                // квадрат: по строке, затем по столбцу
-                let mut row = vec![0u16; bw * bh];
-                for y in 0..bh as isize {
-                    for x in 0..bw as isize {
-                        let v = pick(pick(at(&buf, x - 1, y), at(&buf, x, y)), at(&buf, x + 1, y));
-                        row[y as usize * bw + x as usize] = v;
-                    }
-                }
-                for y in 0..bh as isize {
-                    for x in 0..bw as isize {
-                        next[y as usize * bw + x as usize] = pick(pick(at(&row, x, y - 1), at(&row, x, y)), at(&row, x, y + 1));
-                    }
-                }
-            } else {
-                for y in 0..bh as isize {
-                    for x in 0..bw as isize {
-                        let mut v = at(&buf, x, y);
-                        for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                            v = pick(v, at(&buf, x + dx, y + dy));
-                        }
-                        next[y as usize * bw + x as usize] = v;
-                    }
-                }
-            }
-            buf = next;
-        }
+        let buf = morph(buf, bw, bh, n, grow, 0);
         let mut out = MaskMap::new();
         for (i, &v) in buf.iter().enumerate() {
             if v > 0 {
@@ -245,6 +209,47 @@ impl Selection {
         }
         out
     }
+}
+
+/// Расширить (`grow`, наибольшее) или сузить (наименьшее) значения плотной карты `bw`×`bh` на
+/// `n` px, как SAI 2017 (выделение и «Обводка»): шаги по очереди квадратом 3×3 и крестом, первый —
+/// квадрат, поэтому углы срезаются под 45°. За краем карты — `outside`. Строки — в потоках.
+pub fn morph(mut buf: Vec<u16>, bw: usize, bh: usize, n: u32, grow: bool, outside: u16) -> Vec<u16> {
+    let pick = |a: u16, b: u16| if grow { a.max(b) } else { a.min(b) };
+    let at = |buf: &[u16], x: isize, y: isize| -> u16 {
+        if x < 0 || y < 0 || x >= bw as isize || y >= bh as isize {
+            outside
+        } else {
+            buf[y as usize * bw + x as usize]
+        }
+    };
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let rows = bh.div_ceil(threads).max(1);
+    // один проход: каждая строка результата по `f(x, y)`
+    let pass = |f: &(dyn Fn(isize, isize) -> u16 + Sync)| -> Vec<u16> {
+        let mut out = vec![0u16; bw * bh];
+        std::thread::scope(|scope| {
+            for (k, chunk) in out.chunks_mut(rows * bw).enumerate() {
+                scope.spawn(move || {
+                    for (i, o) in chunk.iter_mut().enumerate() {
+                        let idx = k * rows * bw + i;
+                        *o = f((idx % bw) as isize, (idx / bw) as isize);
+                    }
+                });
+            }
+        });
+        out
+    };
+    for step in 0..n {
+        buf = if step % 2 == 0 {
+            // квадрат: по строке, затем по столбцу
+            let row = pass(&|x, y| pick(pick(at(&buf, x - 1, y), at(&buf, x, y)), at(&buf, x + 1, y)));
+            pass(&|x, y| pick(pick(at(&row, x, y - 1), at(&row, x, y)), at(&row, x, y + 1)))
+        } else {
+            pass(&|x, y| [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().fold(at(&buf, x, y), |v, &(dx, dy)| pick(v, at(&buf, x + dx, y + dy))))
+        };
+    }
+    buf
 }
 
 /// Прямоугольник (координаты холста, края могут быть дробными — частичное покрытие).

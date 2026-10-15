@@ -1015,3 +1015,32 @@ fn binary_pen_paints_hard_pixels() {
     assert!(dark > 30, "закрашено {dark}");
     assert_eq!(gray, 0, "без сглаживания полутонов нет");
 }
+
+#[test]
+fn outline_matches_sai_shapes() {
+    // живая SAI 2017: залитый прямоугольник 78..=178 × 60..=140, обводка 25 px
+    let make = || {
+        let mut doc = Document::new(260, 200);
+        let red = paint_core::pixel::from_rgba8([180, 20, 170, 255]);
+        for x in 78..=178 {
+            for y in 60..=140 {
+                doc.layers[0].pixels.set(x, y, red);
+            }
+        }
+        doc
+    };
+    let painted = |doc: &Document, x: i32, y: i32| doc.layers[0].pixels.get(x, y)[1] == 0 && doc.layers[0].pixels.get(x, y)[2] == 0 && doc.layers[0].pixels.get(x, y)[3] > 0;
+    // снаружи: кольцо 53..=203 × 35..=165, верхний ряд 65..=191
+    let mut doc = make();
+    doc.outline(&[0], 25, 0, true, [200, 0, 0]);
+    let top: Vec<i32> = (0..260).filter(|&x| painted(&doc, x, 35)).collect();
+    assert_eq!((top[0], *top.last().unwrap()), (65, 191));
+    assert!(painted(&doc, 53, 100) && !painted(&doc, 52, 100) && painted(&doc, 203, 100));
+    assert!(!painted(&doc, 100, 100), "внутри прямоугольник прежний");
+    // по центру: наружу 12 (срез 6), внутрь 13
+    let mut doc = make();
+    doc.outline(&[0], 12, 13, true, [200, 0, 0]);
+    let top: Vec<i32> = (0..260).filter(|&x| painted(&doc, x, 48)).collect();
+    assert_eq!((top[0], *top.last().unwrap()), (72, 184));
+    assert!(painted(&doc, 90, 100) && !painted(&doc, 91, 100) && painted(&doc, 66, 100));
+}

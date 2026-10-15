@@ -187,6 +187,29 @@ struct FilterDialog {
     dirty: bool,
 }
 
+/// Окно «Обводка…» слоя (как в SAI 2017): ширина 1–25, внутри / по центру / снаружи.
+struct OutlineDialog {
+    path: Vec<usize>,
+    original: paint_core::tile::ColorMap,
+    width: u32,
+    /// 0 — внутри, 1 — по центру, 2 — снаружи.
+    position: u8,
+    canvas_edges: bool,
+    preview: bool,
+    dirty: bool,
+}
+
+impl OutlineDialog {
+    /// На сколько наружу и внутрь.
+    fn spread(&self) -> (u32, u32) {
+        match self.position {
+            0 => (0, self.width),
+            1 => (self.width / 2, self.width.div_ceil(2)),
+            _ => (self.width, 0),
+        }
+    }
+}
+
 /// Окно «Расширить/Сузить выделение…» (как в SAI 2017: 1–25 px, предпросмотр).
 struct GrowDialog {
     grow: bool,
@@ -754,6 +777,9 @@ struct PaintApp {
     lasso_polygon: bool,
     lasso_aa: bool,
     grow_dialog: Option<GrowDialog>,
+    outline_dialog: Option<OutlineDialog>,
+    /// Последние ширина и положение обводки (окно открывается с ними, как в SAI).
+    outline_last: (u32, u8, bool),
     gradient: Option<GradientEdit>,
     grad_opts: GradientOpts,
     transform_kind: TransformKind,
@@ -874,6 +900,8 @@ impl PaintApp {
             lasso_polygon: false,
             lasso_aa: true,
             grow_dialog: None,
+            outline_dialog: None,
+            outline_last: (1, 0, false),
             gradient: None,
             grad_opts: GradientOpts::default(),
             transform_kind: TransformKind::Free,
@@ -2953,6 +2981,14 @@ impl PaintApp {
                     self.invalidate(keys);
                     self.thumbs.clear();
                     self.dirty = true;
+                    ui.close_menu();
+                }
+                let can_outline = self.outline_dialog.is_none() && self.doc.layer(&self.selected).is_some_and(|l| l.children.is_none() && l.paintable());
+                if ui.add_enabled(can_outline, egui::Button::new(tr("Обводка…"))).clicked() {
+                    if let Some(l) = self.doc.layer(&self.selected) {
+                        let (width, position, canvas_edges) = self.outline_last;
+                        self.outline_dialog = Some(OutlineDialog { path: self.selected.clone(), original: l.pixels.clone(), width, position, canvas_edges, preview: true, dirty: true });
+                    }
                     ui.close_menu();
                 }
                 if ui.button(tr("Яркость в прозрачность")).clicked() {
@@ -5408,6 +5444,68 @@ impl PaintApp {
                 t.custom = (!name.is_empty() && name != tr(t.name)).then_some(name);
                 t.extra = extra.trim().to_string();
             }
+        }
+        let mut outline_finish = None;
+        if let Some(d) = self.outline_dialog.as_mut() {
+            let mut open = true;
+            egui::Window::new(tr("Обводка")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+                let before = (d.width, d.position, d.canvas_edges, d.preview);
+                ui.horizontal(|ui| {
+                    ui.label(tr("Ширина:"));
+                    ui.spacing_mut().slider_width = 220.0;
+                    ui.add(egui::Slider::new(&mut d.width, 1..=25).suffix(" px"));
+                });
+                ui.horizontal(|ui| {
+                    ui.label(tr("Положение:"));
+                    ui.radio_value(&mut d.position, 0, tr("Внутри"));
+                    ui.radio_value(&mut d.position, 1, tr("По центру"));
+                    ui.radio_value(&mut d.position, 2, tr("Снаружи"));
+                });
+                ui.checkbox(&mut d.canvas_edges, tr("Также по краям холста"));
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut d.preview, tr("Предпросмотр"));
+                    if ui.button("OK").clicked() {
+                        outline_finish = Some(true);
+                    }
+                    if ui.button(tr("Отмена")).clicked() {
+                        outline_finish = Some(false);
+                    }
+                });
+                if before != (d.width, d.position, d.canvas_edges, d.preview) {
+                    d.dirty = true;
+                }
+            });
+            if !open {
+                outline_finish = Some(false);
+            }
+        }
+        if let Some(apply) = outline_finish {
+            let d = self.outline_dialog.take().unwrap();
+            let keys = self.doc.set_layer_pixels(&d.path, d.original.clone());
+            self.invalidate(keys);
+            self.outline_last = (d.width, d.position, d.canvas_edges);
+            if apply {
+                let c = self.color();
+                let (o, i) = d.spread();
+                let keys = self.doc.outline(&d.path, o, i, d.canvas_edges, [c.r(), c.g(), c.b()]);
+                self.invalidate(keys);
+                self.dirty = true;
+                self.thumbs.clear();
+            }
+        } else if self.outline_dialog.as_ref().is_some_and(|d| d.dirty) {
+            let c = self.color();
+            let d = self.outline_dialog.as_mut().unwrap();
+            d.dirty = false;
+            let d = self.outline_dialog.as_ref().unwrap();
+            let mut pixels = d.original.clone();
+            if d.preview {
+                let (o, i) = d.spread();
+                let preserve = self.doc.layer(&d.path).is_some_and(|l| l.preserve_opacity);
+                pixels.tiles.extend(self.doc.outline_tiles(&d.original, preserve, o, i, d.canvas_edges, [c.r(), c.g(), c.b()]));
+            }
+            let path = d.path.clone();
+            let keys = self.doc.set_layer_pixels(&path, pixels);
+            self.invalidate(keys);
         }
         let mut grow_finish = None;
         if let Some(d) = self.grow_dialog.as_mut() {

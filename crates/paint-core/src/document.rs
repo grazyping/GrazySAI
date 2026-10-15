@@ -621,6 +621,57 @@ impl Document {
 
     /// Залить слой цветом `rgb` в пределах `area` (доля 0..=ONE) и выделения — одна запись истории.
     /// С «сохранять непрозрачность» меняется только цвет.
+    /// «Обводка» слоя, как в SAI 2017 (сверено с живой SAI, docs/31-gradient-selection.md):
+    /// основной цвет поверх слоя с долей «расширенная на `outside` непрозрачность минус суженная на
+    /// `inside`». Снаружи — (N, 0), внутри — (0, N), по центру — (⌊N/2⌋, ⌈N/2⌉). `canvas_edges` —
+    /// «Apply to Canvas Edges too»: за краем холста прозрачно, иначе непрозрачно (у края нет обводки).
+    pub fn outline(&mut self, path: &[usize], outside: u32, inside: u32, canvas_edges: bool, rgb: [u8; 3]) -> Vec<Key> {
+        let Some(layer) = self.layer(path) else { return Vec::new() };
+        if layer.children.is_some() || !layer.paintable() {
+            return Vec::new();
+        }
+        let tiles: TileBackup = self.outline_tiles(&layer.pixels, layer.preserve_opacity, outside, inside, canvas_edges, rgb).into_iter().map(|(k, t)| (k, Some(t))).collect();
+        let keys = tiles.iter().map(|(k, _)| *k).collect();
+        if !tiles.is_empty() {
+            self.perform(vec![Op::Tiles { path: path.to_vec(), tiles }]);
+        }
+        keys
+    }
+
+    /// Плитки слоя `src` после обводки (для предпросмотра и для `outline`).
+    pub fn outline_tiles(&self, src: &ColorMap, preserve: bool, outside: u32, inside: u32, canvas_edges: bool, rgb: [u8; 3]) -> Vec<(Key, Tile<Px>)> {
+        let Some((cx0, cy0, cx1, cy1)) = crate::selection::content_bounds(src) else { return Vec::new() };
+        let pad = outside as i32 + 1;
+        let (x0, y0) = ((cx0 - pad).max(0), (cy0 - pad).max(0));
+        let (x1, y1) = ((cx1 + pad).min(self.width as i32), (cy1 + pad).min(self.height as i32));
+        if x0 >= x1 || y0 >= y1 {
+            return Vec::new();
+        }
+        let (bw, bh) = ((x1 - x0) as usize, (y1 - y0) as usize);
+        let alpha: Vec<u16> = (0..bw * bh).map(|i| src.get(x0 + (i % bw) as i32, y0 + (i / bw) as i32)[3]).collect();
+        let grown = crate::selection::morph(alpha.clone(), bw, bh, outside, true, 0);
+        // за краем карты, но внутри холста — пустой запас (pad), так что `edge` действует только у края холста
+        let edge = if canvas_edges { 0 } else { ONE as u16 };
+        let shrunk = crate::selection::morph(alpha, bw, bh, inside, false, edge);
+        let mut tiles: std::collections::HashMap<Key, Tile<Px>> = std::collections::HashMap::new();
+        for (i, (&g, &s)) in grown.iter().zip(&shrunk).enumerate() {
+            let band = g.saturating_sub(s) as u32;
+            if band == 0 {
+                continue;
+            }
+            let (x, y) = (x0 + (i % bw) as i32, y0 + (i / bw) as i32);
+            let m = (band * self.selection.amount(x, y) + ONE / 2) / ONE;
+            if m == 0 {
+                continue;
+            }
+            let key = crate::tile::key_of(x, y);
+            let t = tiles.entry(key).or_insert_with(|| src.tiles.get(&key).cloned().unwrap_or_else(|| Tile::filled([0; 4])));
+            let j = crate::tile::index_of(x, y);
+            t.0[j] = blend_paint(t.0[j], rgb, m, preserve);
+        }
+        tiles.into_iter().collect()
+    }
+
     pub fn fill(&mut self, path: &[usize], area: &MaskMap, rgb: [u8; 3]) -> Vec<Key> {
         let Some(layer) = self.layer(path) else { return Vec::new() };
         if layer.children.is_some() || !layer.paintable() {

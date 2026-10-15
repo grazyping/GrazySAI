@@ -428,3 +428,12 @@ S-кривая = S-Curve Gradation
 Имя: = Tool Name:
 Вторая строка: = Additional Name:
 Имя — до 8 знаков, как в SAI; вторая строка видна под ним. = The name fits about 8 characters, as in SAI; the additional name is shown under it.
+
+# Обводка слоя (0.8.17)
+Обводка… = Outline…
+Обводка = Outline
+Положение: = Position:
+Внутри = Inside
+По центру = Center
+Снаружи = Outside
+Также по краям холста = Apply to Canvas Edges too

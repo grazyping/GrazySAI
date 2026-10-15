@@ -427,3 +427,12 @@ S-кривая = S-Kurve
 Имя: = Name:
 Вторая строка: = Zusatzname:
 Имя — до 8 знаков, как в SAI; вторая строка видна под ним. = Der Name fasst etwa 8 Zeichen wie in SAI; der Zusatzname steht darunter.
+
+# Обводка слоя (0.8.17)
+Обводка… = Kontur…
+Обводка = Kontur
+Положение: = Position:
+Внутри = Innen
+По центру = Mitte
+Снаружи = Außen
+Также по краям холста = Auch an den Leinwandrändern

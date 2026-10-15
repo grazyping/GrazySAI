@@ -427,3 +427,12 @@ S-кривая = Courbe en S
 Имя: = Nom :
 Вторая строка: = Nom secondaire :
 Имя — до 8 знаков, как в SAI; вторая строка видна под ним. = Le nom tient en 8 caractères environ, comme dans SAI ; le nom secondaire s'affiche dessous.
+
+# Обводка слоя (0.8.17)
+Обводка… = Contour…
+Обводка = Contour
+Положение: = Position :
+Внутри = Intérieur
+По центру = Centre
+Снаружи = Extérieur
+Также по краям холста = Appliquer aussi aux bords du canevas
