@@ -69,6 +69,11 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
         layer.opacity = li.opacity.min(100) as f32 / 100.0;
         layer.visible = li.visible;
         layer.selection_source = li.selection_source;
+        layer.paper = li.paper.as_ref().map(|(n, s, k, f)| paint_core::paper::Paper::new(n, *s, *k, *f));
+        if let Some(p) = layer.paper.as_ref().filter(|p| p.texture.is_none()) {
+            notes.insert(format!("текстура бумаги «{}» не найдена — укажите папку papertex из SAI (свойства слоя → «Текстура»)", p.name));
+        }
+        layer.extra = li.extra.clone();
         layer.clipping = li.clipping;
         layer.preserve_opacity = li.locks[0];
         layer.lock_paint = li.locks[1];

@@ -481,6 +481,9 @@ struct PaintApp {
     doc: Document,
     file: Option<PathBuf>,
     open_path: String,
+    /// Папка текстур бумаги (`papertex` из SAI) и найденные в ней имена.
+    paper_dir: String,
+    paper_names: Option<Vec<String>>,
     status: String,
     notes: Vec<String>,
     zoom: f32,
@@ -579,6 +582,8 @@ impl PaintApp {
                 .as_ref()
                 .map(|p| p.display().to_string())
                 .unwrap_or_default(),
+            paper_dir: String::new(),
+            paper_names: None,
             status: String::from("Новый холст 1200×900"),
             notes: Vec::new(),
             zoom: 1.0,
@@ -780,6 +785,10 @@ impl PaintApp {
                 self.open_path = p.to_string();
             }
         }
+        if let Some(p) = s.str("paper_dir") {
+            self.paper_dir = p.to_string();
+            self.set_paper_dir();
+        }
     }
 
     /// Раз в 3 минуты, если были правки, записать копию холста в фоне (`recovery.sai2`).
@@ -853,6 +862,7 @@ impl PaintApp {
             s.set(&format!("key.{id}"), v);
         }
         s.set("open_path", &self.open_path);
+        s.set("paper_dir", &self.paper_dir);
         s.save();
     }
 
@@ -2937,12 +2947,7 @@ impl PaintApp {
             });
         }
         if sai_ui::section(ui, "sec_paper", "Текстура") {
-            sai_ui::row(ui, "   Выбрать", lw + 10.0, false, |ui| {
-                egui::ComboBox::from_id_salt("paper")
-                    .selected_text("[ Нет ]")
-                    .width(100.0)
-                    .show_ui(ui, |_| {});
-            });
+            changed |= self.paper_panel(ui, lw);
         }
         let lw2 = 52.0;
         let w2 = ui.available_width() - lw2 - 8.0;
@@ -3089,6 +3094,84 @@ impl PaintApp {
             self.dirty = true;
             self.invalidate_all();
         }
+    }
+
+    /// Бумага выбранного слоя: текстура, масштаб, сила. Текстуры — из папки `papertex` SAI.
+    fn paper_panel(&mut self, ui: &mut egui::Ui, lw: f32) -> bool {
+        let mut changed = false;
+        if self.paper_names.is_none() {
+            self.paper_names = Some(paint_core::paper::names());
+        }
+        let names = self.paper_names.clone().unwrap_or_default();
+        if names.is_empty() {
+            ui.label("Папка с текстурами бумаги (papertex из SAI):");
+            ui.horizontal(|ui| {
+                ui.add(egui::TextEdit::singleline(&mut self.paper_dir).desired_width(150.0));
+                if ui.button("OK").clicked() {
+                    self.set_paper_dir();
+                    changed = true;
+                }
+            });
+        }
+        let path = self.selected.clone();
+        let Some(layer) = self.doc.layer_mut(&path) else { return changed };
+        let current = layer.paper.as_ref().map_or("[ Нет ]".to_string(), |p| p.name.clone());
+        sai_ui::row(ui, "   Выбрать", lw + 10.0, true, |ui| {
+            egui::ComboBox::from_id_salt("paper").selected_text(&current).width(100.0).height(400.0).show_ui(ui, |ui| {
+                if ui.selectable_label(layer.paper.is_none(), "[ Нет ]").clicked() {
+                    layer.paper = None;
+                    changed = true;
+                }
+                for n in &names {
+                    if ui.selectable_label(current == *n, n).clicked() {
+                        // по умолчанию как у SAI: сила 15 %, масштаб 100 %
+                        let (s, k, f) = layer.paper.as_ref().map_or((15, 100, 0), |p| (p.strength, p.scale, p.flag));
+                        layer.paper = Some(paint_core::paper::Paper::new(n, s, k, f));
+                        changed = true;
+                    }
+                }
+            });
+        });
+        if let Some(p) = layer.paper.as_mut() {
+            let w = ui.available_width() - lw - 18.0;
+            sai_ui::row(ui, "   Масштаб", lw + 10.0, true, |ui| {
+                let mut v = p.scale as f32;
+                if sai_ui::bar(ui, &mut v, 10.0, 500.0, format!("{}%", p.scale), w, true).changed() {
+                    p.scale = v.round().clamp(10.0, 500.0) as u16;
+                    changed = true;
+                }
+            });
+            sai_ui::row(ui, "   Сила", lw + 10.0, true, |ui| {
+                let mut v = p.strength as f32;
+                if sai_ui::bar(ui, &mut v, 0.0, 100.0, format!("{}", p.strength), w, true).changed() {
+                    p.strength = v.round().clamp(0.0, 100.0) as u16;
+                    changed = true;
+                }
+            });
+            if p.texture.is_none() {
+                ui.label(format!("Файл «{}.bmp» не найден", p.name));
+            }
+        }
+        changed
+    }
+
+    /// Применить папку текстур бумаги и заново найти текстуры у всех слоёв.
+    fn set_paper_dir(&mut self) {
+        let dir = self.paper_dir.trim();
+        paint_core::paper::set_folder((!dir.is_empty()).then(|| std::path::PathBuf::from(dir)));
+        self.paper_names = None;
+        fn walk(layers: &mut [paint_core::Layer]) {
+            for l in layers {
+                if let Some(p) = l.paper.as_mut() {
+                    p.texture = paint_core::paper::texture(&p.name);
+                }
+                if let Some(ch) = l.children.as_mut() {
+                    walk(ch);
+                }
+            }
+        }
+        walk(&mut self.doc.layers);
+        self.invalidate_all();
     }
 
     fn canvas(&mut self, ui: &mut egui::Ui) {

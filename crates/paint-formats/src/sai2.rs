@@ -40,6 +40,10 @@ pub struct LayerInfo {
     /// «Источник выбора» (байт 54, бит 7; по записи образца — вероятно).
     pub selection_source: bool,
     pub name: String,
+    /// Бумага слоя (`ptex`): имя текстуры, сила, масштаб, флаг.
+    pub paper: Option<(String, u16, u16, u16)>,
+    /// Прочие вложенные блоки (кроме `name` и `ptex`) — как в файле.
+    pub extra: Vec<([u8; 4], Vec<u8>)>,
     pub has_pixels: bool,
 }
 
@@ -78,6 +82,8 @@ fn parse_layer(d: &[u8], has_pixels: bool) -> io::Result<LayerInfo> {
     let [l, t, w, h] = block_rect.map(|b| b.clamp(-100_000, 100_000));
     let bounds = [l * 32, t * 32, (l + w) * 32, (t + h) * 32];
     let mut name = String::new();
+    let mut paper = None;
+    let mut extra = Vec::new();
     let mut o = 56;
     while o + 8 <= d.len() {
         let len = u32_at(d, o + 4)? as usize;
@@ -87,6 +93,15 @@ fn parse_layer(d: &[u8], has_pixels: bool) -> io::Result<LayerInfo> {
             let units: Vec<u16> =
                 body[2..].as_chunks::<2>().0.iter().take(n).map(|c| u16::from_le_bytes(*c)).collect();
             name = String::from_utf16_lossy(&units);
+        } else if &d[o..o + 4] == b"ptex" && body.len() >= 8 {
+            let v = |i: usize| u16::from_le_bytes([body[i], body[i + 1]]);
+            let n = v(6) as usize;
+            let units: Vec<u16> =
+                body[8..].as_chunks::<2>().0.iter().take(n).map(|c| u16::from_le_bytes(*c)).collect();
+            let tex = String::from_utf16_lossy(&units).trim_end_matches('\0').to_string();
+            paper = Some((tex, v(0), v(2), v(4)));
+        } else if len > 0 || &d[o..o + 4] != b"\0\0\0\0" {
+            extra.push((d[o..o + 4].try_into().unwrap(), body.to_vec()));
         }
         o += 8 + len;
     }
@@ -106,6 +121,8 @@ fn parse_layer(d: &[u8], has_pixels: bool) -> io::Result<LayerInfo> {
         visible: d[54] & 1 != 0,
         selection_source: d[54] & 0x80 != 0,
         name,
+        paper,
+        extra,
         has_pixels,
     })
 }

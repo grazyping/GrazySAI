@@ -92,6 +92,18 @@ fn every_layer_of_real_drawing_decodes() {
 
 use paint_formats::sai2_doc;
 
+/// Текстуры бумаги SAI (в проект не входят): `SOSAI_PAPERTEX` или папка разбора на машине автора.
+fn paper_dir() -> bool {
+    if std::env::var_os("SOSAI_PAPERTEX").is_none() {
+        let local = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../sai2-analysis/run2017/papertex");
+        if !local.is_dir() {
+            return false;
+        }
+        std::env::set_var("SOSAI_PAPERTEX", local);
+    }
+    true
+}
+
 /// Моё сведение слоёв должно совпадать со сведённой картинкой, которую сохранил сам образец.
 fn match_with_reference(name: &str) -> Option<(f64, f64)> {
     let p = sample(name)?;
@@ -119,9 +131,15 @@ fn probes_flatten_exactly_like_the_reference() {
 
 #[test]
 fn real_drawing_flattens_close_to_the_reference() {
+    let papers = paper_dir();
     let Some((exact, mean)) = match_with_reference("YCH JimTheDoggo1.sai2") else { return };
-    // Не учтены бумага слоёв и точное округление образца; порог — чтобы не стало хуже.
-    assert!(exact > 0.55 && mean < 1.5, "точно {exact:.3}, средняя разница {mean:.3}");
+    if papers {
+        // С бумагой слоёв: расхождения — только округление, почти все в одну ступень.
+        assert!(exact > 0.9 && mean < 0.1, "точно {exact:.3}, средняя разница {mean:.3}");
+    } else {
+        // Без текстур бумаги (папки `papertex` нет) 13 слоёв выходят без узора.
+        assert!(exact > 0.55 && mean < 1.5, "точно {exact:.3}, средняя разница {mean:.3}");
+    }
 }
 
 #[test]
@@ -240,3 +258,4 @@ fn normal_handles_match_the_file() {
     eprintln!("узлов {count}, наибольшее расхождение ручек {worst:.4} px");
     assert!(count > 100 && worst < 0.01, "узлов {count}, расхождение {worst}");
 }
+

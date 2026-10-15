@@ -286,6 +286,23 @@ fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4]) -> Vec<u8> {
     d.push(l.preserve_opacity as u8 | (l.lock_paint as u8) << 1 | (l.lock_move as u8) << 2 | (l.lock_all as u8) << 7);
     d.push(l.visible as u8 | (l.selection_source as u8) << 7);
     d.push((l.clipping as u8) | if l.children.is_some() { 0x40 } else { 0 });
+    // бумага (как у SAI — перед именем): сила, масштаб, флаг, число символов, имя UTF-16, дополнение до 4 байт
+    if let Some(p) = &l.paper {
+        let units: Vec<u16> = p.name.encode_utf16().take(255).collect();
+        let mut body = Vec::new();
+        for v in [p.strength, p.scale, p.flag, units.len() as u16] {
+            body.extend(v.to_le_bytes());
+        }
+        for u in units {
+            body.extend(u.to_le_bytes());
+        }
+        while !body.len().is_multiple_of(4) {
+            body.push(0);
+        }
+        d.extend(b"ptex");
+        d.extend((body.len() as u32).to_le_bytes());
+        d.extend(body);
+    }
     // имя: u16 число символов, UTF-16, дополнение до 4 байт
     let units: Vec<u16> = l.name.encode_utf16().take(255).collect();
     let mut name = (units.len() as u16).to_le_bytes().to_vec();
@@ -298,6 +315,11 @@ fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4]) -> Vec<u8> {
     d.extend(b"name");
     d.extend((name.len() as u32).to_le_bytes());
     d.extend(name);
+    for (tag, body) in &l.extra {
+        d.extend(tag);
+        d.extend((body.len() as u32).to_le_bytes());
+        d.extend(body);
+    }
     d.extend(0u32.to_le_bytes());
     d
 }

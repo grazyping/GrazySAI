@@ -916,6 +916,16 @@ fn layer_source(layer: &Layer, key: Key) -> Option<Buf> {
     }
 }
 
+/// Бумага слоя на его плитку.
+fn apply_paper(layer: &Layer, key: Key, buf: &mut [[f32; 4]]) {
+    let Some(paper) = &layer.paper else { return };
+    let Some(tex) = &paper.texture else { return };
+    if paper.strength > 0 {
+        let vals = crate::paper::sample(tex, paper.scale, key.0 * TILE, key.1 * TILE, TILE as usize, TILE as usize);
+        crate::paper::apply(buf, &vals, paper.strength);
+    }
+}
+
 /// Накладывает стопку слоёв (снизу вверх) на `backdrop` в пределах одной плитки.
 fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]]) {
     let mut i = 0;
@@ -948,8 +958,11 @@ fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]]) {
             continue;
         }
         let Some(mut src) = layer_source(base, key) else { continue };
+        // бумага — до прикреплённых слоёв (сверено со сведённой картинкой образца)
+        apply_paper(base, key, &mut src);
         for clip in clips.iter().filter(|c| c.visible && c.opacity > 0.0) {
-            let Some(top) = layer_source(clip, key) else { continue };
+            let Some(mut top) = layer_source(clip, key) else { continue };
+            apply_paper(clip, key, &mut top);
             for (b, t) in src.iter_mut().zip(top.iter()) {
                 if b[3] <= 0.0 || t[3] <= 0.0 {
                     continue;

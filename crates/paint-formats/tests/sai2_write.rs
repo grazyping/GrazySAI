@@ -99,3 +99,19 @@ fn vector_layers_survive_save() {
         std::fs::remove_file(out).ok();
     }
 }
+
+#[test]
+fn paper_and_unknown_layer_blocks_survive_save() {
+    let mut doc = Document::new(64, 64);
+    dab(&mut doc, &[0], 10.0, 20.0, 12.0, [200, 30, 40]);
+    doc.layers[0].paper = Some(paint_core::paper::Paper::new("Water Color 2", 30, 120, 1));
+    doc.layers[0].extra = vec![(*b"frng", vec![b'w', b'a', b't', b'r', 3, 0, 50, 0])];
+    let out = std::env::temp_dir().join(format!("sosai-paper-{}.sai2", std::process::id()));
+    paint_formats::sai2_write::save(&doc, &out).unwrap();
+    let info = paint_formats::sai2::read_info(&out).unwrap();
+    std::fs::remove_file(&out).ok();
+    let l = &info.layers[0];
+    assert_eq!(l.paper, Some(("Water Color 2".to_string(), 30, 120, 1)));
+    assert_eq!(l.extra, doc.layers[0].extra);
+}
+

@@ -39,6 +39,11 @@ pub struct Layer {
     pub children: Option<Vec<Layer>>,
     /// Папка «насквозь»: вложенные слои накладываются прямо на то, что под папкой.
     pub pass_through: bool,
+    /// Бумага слоя.
+    pub paper: Option<crate::paper::Paper>,
+    /// Прочие вложенные блоки описания слоя из `.sai2` (эффекты и т. п.) — записываются обратно
+    /// как были.
+    pub extra: Vec<([u8; 4], Vec<u8>)>,
 }
 
 impl Layer {
@@ -58,6 +63,8 @@ impl Layer {
             clipping: false,
             children: None,
             pass_through: false,
+            paper: None,
+            extra: Vec::new(),
         }
     }
 

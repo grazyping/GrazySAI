@@ -10,6 +10,7 @@ pub mod filters;
 pub mod io;
 pub mod layer;
 pub mod mix;
+pub mod paper;
 pub mod pixel;
 pub mod resample;
 pub mod selection;
