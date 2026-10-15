@@ -484,6 +484,11 @@ struct PaintApp {
     /// Папка текстур бумаги (`papertex` из SAI) и найденные в ней имена.
     paper_dir: String,
     paper_names: Option<Vec<String>>,
+    /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
+    layer_drag: Option<Vec<usize>>,
+    /// Виды панели цвета: круг, ползунки RGB, ползунки HSV.
+    color_views: [bool; 3],
+    layer_rects: Vec<(Vec<usize>, Rect, bool)>,
     status: String,
     notes: Vec<String>,
     zoom: f32,
@@ -584,6 +589,9 @@ impl PaintApp {
                 .unwrap_or_default(),
             paper_dir: String::new(),
             paper_names: None,
+            layer_drag: None,
+            color_views: [true, false, true],
+            layer_rects: Vec::new(),
             status: String::from("Новый холст 1200×900"),
             notes: Vec::new(),
             zoom: 1.0,
@@ -785,6 +793,9 @@ impl PaintApp {
                 self.open_path = p.to_string();
             }
         }
+        for (i, v) in self.color_views.iter_mut().enumerate() {
+            s.read_bool(&format!("color_view.{i}"), v);
+        }
         if let Some(p) = s.str("paper_dir") {
             self.paper_dir = p.to_string();
             self.set_paper_dir();
@@ -863,6 +874,9 @@ impl PaintApp {
         }
         s.set("open_path", &self.open_path);
         s.set("paper_dir", &self.paper_dir);
+        for (i, v) in self.color_views.iter().enumerate() {
+            s.set(&format!("color_view.{i}"), *v as u8);
+        }
         s.save();
     }
 
@@ -1056,6 +1070,17 @@ impl PaintApp {
                 self.queued.insert((tx, ty));
             }
         }
+    }
+
+    /// Пересчитать весь холст после смены свойств слоя (непрозрачность, режим, видимость…):
+    /// прежняя картинка остаётся на экране, пока плитки не пересчитаны, — без мигания.
+    fn refresh_all(&mut self) {
+        let (tw, th) = (
+            (self.doc.width as i32 + TILE - 1) / TILE,
+            (self.doc.height as i32 + TILE - 1) / TILE,
+        );
+        let keys: Vec<Key> = (0..th).flat_map(|ty| (0..tw).map(move |tx| (tx, ty))).collect();
+        self.invalidate(keys);
     }
 
     fn invalidate(&mut self, keys: impl IntoIterator<Item = Key>) {
@@ -2218,38 +2243,77 @@ impl PaintApp {
     }
 
     fn left_panel(&mut self, ui: &mut egui::Ui) {
-        // Переключатели вида панели цвета (рабочий пока только круг).
+        // Переключатели панели цвета, как у образца: круг, ползунки RGB, ползунки HSV — каждый
+        // показывается или прячется отдельно.
         ui.horizontal(|ui| {
-            sai_ui::icon_button(
-                ui,
-                Vec2::splat(18.0),
-                true,
-                true,
-                "Цветовой круг",
-                |p, r, _| {
-                    p.circle_stroke(
-                        r.center(),
-                        r.width() / 2.0,
-                        egui::Stroke::new(2.0_f32, Color32::from_rgb(200, 80, 160)),
-                    );
-                },
-            );
-            for tip in ["Ползунки RGB", "Ползунки HSV", "Смеситель", "Образцы цвета"]
+            let b = Vec2::splat(18.0);
+            if sai_ui::icon_button(ui, b, self.color_views[0], true, "Цветовой круг", |p, r, _| {
+                p.circle_stroke(r.center(), r.width() / 2.0, egui::Stroke::new(2.0_f32, Color32::from_rgb(200, 80, 160)));
+            })
+            .clicked()
             {
-                sai_ui::icon_button(ui, Vec2::splat(18.0), false, false, tip, |p, r, c| {
-                    for i in 0..3 {
-                        let y = r.top() + 2.0 + i as f32 * 4.0;
-                        p.line_segment(
-                            [Pos2::new(r.left(), y), Pos2::new(r.right(), y)],
-                            egui::Stroke::new(1.5_f32, c),
-                        );
+                self.color_views[0] = !self.color_views[0];
+            }
+            for (i, tip) in [(1, "Ползунки RGB"), (2, "Ползунки HSV")] {
+                if sai_ui::icon_button(ui, b, self.color_views[i], true, tip, |p, r, c| {
+                    for k in 0..3 {
+                        let y = r.top() + 2.0 + k as f32 * 4.0;
+                        p.line_segment([Pos2::new(r.left(), y), Pos2::new(r.right(), y)], egui::Stroke::new(1.5_f32, c));
+                    }
+                })
+                .clicked()
+                {
+                    self.color_views[i] = !self.color_views[i];
+                }
+            }
+            for tip in ["Смеситель — позже", "Образцы цвета — позже"] {
+                sai_ui::icon_button(ui, b, false, false, tip, |p, r, c| {
+                    for k in 0..3 {
+                        let y = r.top() + 2.0 + k as f32 * 4.0;
+                        p.line_segment([Pos2::new(r.left(), y), Pos2::new(r.right(), y)], egui::Stroke::new(1.5_f32, c));
                     }
                 });
             }
         });
-        ui.vertical_centered(|ui| {
-            sai_ui::color_wheel(ui, &mut self.hsv, 178.0);
-        });
+        if self.color_views[0] {
+            ui.vertical_centered(|ui| {
+                sai_ui::color_wheel(ui, &mut self.hsv, 178.0);
+            });
+        }
+        if self.color_views[1] {
+            let c = sai_ui::hsv_to_rgb(self.hsv[0], self.hsv[1], self.hsv[2]);
+            let mut rgb = [c.r() as f32, c.g() as f32, c.b() as f32];
+            let mut moved = false;
+            for (i, name) in ["R", "G", "B"].into_iter().enumerate() {
+                let base = rgb;
+                moved |= sai_ui::channel_slider(ui, name, &mut rgb[i], 255.0, |t| {
+                    let mut v = base.map(|x| x as u8);
+                    v[i] = (t * 255.0).round() as u8;
+                    Color32::from_rgb(v[0], v[1], v[2])
+                });
+            }
+            if moved {
+                let hsv = sai_ui::rgb_to_hsv(Color32::from_rgb(rgb[0] as u8, rgb[1] as u8, rgb[2] as u8));
+                // у серого тон не определён — прежний тон оставить
+                let hue = if hsv[1] == 0.0 { self.hsv[0] } else { hsv[0] };
+                self.hsv = [hue, hsv[1], hsv[2]];
+            }
+        }
+        if self.color_views[2] {
+            let hsv = self.hsv;
+            let mut h = (hsv[0] * 360.0).round();
+            let mut sat = (hsv[1] * 255.0).round();
+            let mut val = (hsv[2] * 255.0).round();
+            if sai_ui::channel_slider(ui, "H", &mut h, 359.0, |t| sai_ui::hsv_to_rgb(t * 359.0 / 360.0, 1.0, 1.0)) {
+                self.hsv[0] = h / 360.0;
+            }
+            if sai_ui::channel_slider(ui, "S", &mut sat, 255.0, |t| sai_ui::hsv_to_rgb(hsv[0], t, hsv[2])) {
+                self.hsv[1] = sat / 255.0;
+            }
+            if sai_ui::channel_slider(ui, "V", &mut val, 255.0, |t| sai_ui::hsv_to_rgb(hsv[0], hsv[1], t)) {
+                self.hsv[2] = val / 255.0;
+            }
+        }
         ui.add_space(4.0);
         // Общие инструменты и два цвета.
         ui.horizontal(|ui| {
@@ -2703,7 +2767,8 @@ impl PaintApp {
             let fid = ui.make_persistent_id(("folder", path.clone()));
             let mut open = ui.data_mut(|d| *d.get_persisted_mut_or(fid, false));
             let (rect, response) =
-                ui.allocate_exact_size(Vec2::new(ui.available_width(), 42.0), egui::Sense::click());
+                ui.allocate_exact_size(Vec2::new(ui.available_width(), 42.0), egui::Sense::click_and_drag());
+            self.layer_rects.push((path.clone(), rect, is_folder));
             let p = ui.painter();
             p.rect_filled(
                 rect,
@@ -2821,6 +2886,12 @@ impl PaintApp {
                         self.finish_filter(true);
                     }
                     self.selected = path.clone();
+                }
+            }
+            if response.drag_started() {
+                let at = response.interact_pointer_pos().unwrap_or_default();
+                if !eye.contains(at) {
+                    self.layer_drag = Some(path.clone());
                 }
             }
             if response.double_clicked() && is_folder {
@@ -3082,12 +3153,62 @@ impl PaintApp {
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing.y = 1.0;
                         let mut path = Vec::new();
+                        self.layer_rects.clear();
                         self.layer_rows(ui, &mut path, 0, &mut changed);
+                        changed |= self.layer_drop(ui);
                     });
             });
         if changed {
             self.dirty = true;
-            self.invalidate_all();
+            self.refresh_all();
+        }
+    }
+
+    /// Куда упадёт перетаскиваемый слой: стопка и место в ней (как в `move_layer_to`) и линия-
+    /// подсказка. Верх строки — над слоем, низ — под ним, середина папки — внутрь папки (наверх).
+    fn layer_drop_target(&self, at: Pos2) -> Option<(Vec<usize>, usize, Rect)> {
+        let (path, rect, folder) = self.layer_rects.iter().find(|(_, r, _)| r.y_range().contains(at.y))?;
+        let (last, parent) = path.split_last()?;
+        let t = (at.y - rect.top()) / rect.height();
+        let line = |y: f32| Rect::from_min_max(Pos2::new(rect.left(), y - 1.0), Pos2::new(rect.right(), y + 1.0));
+        if *folder && (0.25..0.75).contains(&t) {
+            let n = self.doc.layer(path)?.children.as_ref()?.len();
+            return Some((path.clone(), n, rect.shrink(1.0)));
+        }
+        if t < 0.5 {
+            Some((parent.to_vec(), last + 1, line(rect.top())))
+        } else {
+            Some((parent.to_vec(), *last, line(rect.bottom())))
+        }
+    }
+
+    /// Перетаскивание слоя в списке: подсказка во время протяжки, перенос при отпускании.
+    fn layer_drop(&mut self, ui: &mut egui::Ui) -> bool {
+        let Some(from) = self.layer_drag.clone() else { return false };
+        let (pos, released) = ui.input(|i| (i.pointer.interact_pos(), !i.pointer.primary_down()));
+        let target = pos.and_then(|p| self.layer_drop_target(p));
+        if !released {
+            if let Some((_, _, mark)) = &target {
+                ui.painter().rect_filled(*mark, 0.0, sai_ui::SELECT_EDGE.gamma_multiply(0.6));
+            }
+            ui.ctx().request_repaint();
+            return false;
+        }
+        self.layer_drag = None;
+        let Some((parent, index, _)) = target else { return false };
+        if self.transform.is_some() {
+            self.finish_transform(true);
+        }
+        if self.filter.is_some() {
+            self.finish_filter(true);
+        }
+        match self.doc.move_layer_to(&from, &parent, index) {
+            Some((path, _)) => {
+                self.selected = path;
+                self.thumbs.clear();
+                true
+            }
+            None => false,
         }
     }
 

@@ -740,3 +740,43 @@ fn fringe_ignores_canvas_border() {
     let img = doc.flatten();
     assert!(img.as_chunks::<4>().0.iter().all(|p| p[..3] == [130, 4, 4]));
 }
+
+#[test]
+fn layers_move_anywhere_and_undo() {
+    let mut doc = paint_core::Document::new(64, 64);
+    let names = |d: &paint_core::Document| -> Vec<String> {
+        fn walk(ls: &[paint_core::Layer], out: &mut Vec<String>) {
+            for l in ls {
+                out.push(l.name.clone());
+                if let Some(ch) = &l.children {
+                    out.push("[".into());
+                    walk(ch, out);
+                    out.push("]".into());
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(&d.layers, &mut out);
+        out
+    };
+    doc.layers[0].name = "A".into();
+    for n in ["B", "C"] {
+        doc.layers.push(paint_core::Layer::new(n));
+    }
+    let mut f = paint_core::Layer::new("F");
+    f.children = Some(vec![paint_core::Layer::new("x")]);
+    doc.layers.push(f);
+    // A B C F[x]: A — на самый верх
+    let (p, _) = doc.move_layer_to(&[0], &[], 4).unwrap();
+    assert_eq!(p, vec![3]);
+    assert_eq!(names(&doc).join(" "), "B C F [ x ] A");
+    // B — в папку F поверх x (F после изъятия B становится вторым)
+    let (p, _) = doc.move_layer_to(&[0], &[2], 1).unwrap();
+    assert_eq!(p, vec![1, 1]);
+    assert_eq!(names(&doc).join(" "), "C F [ x B ] A");
+    // папку в саму себя нельзя
+    assert!(doc.move_layer_to(&[1], &[1], 0).is_none());
+    doc.undo();
+    doc.undo();
+    assert_eq!(names(&doc).join(" "), "A B C F [ x ]");
+}

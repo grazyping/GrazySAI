@@ -750,6 +750,33 @@ impl Document {
         Some((dst, keys))
     }
 
+    /// Переносит слой в стопку `parent` на место `index` (номер считается до переноса, как
+    /// видно в списке; +1 — выше), в том числе в другую папку (с отменой). Возвращает новый путь.
+    pub fn move_layer_to(&mut self, from: &[usize], parent: &[usize], index: usize) -> Option<(Vec<usize>, Vec<Key>)> {
+        let (last, from_parent) = from.split_last()?;
+        if parent.starts_with(from) {
+            return None; // папку в саму себя
+        }
+        let len = if parent.is_empty() { self.layers.len() } else { self.layer(parent)?.children.as_ref()?.len() };
+        if index > len {
+            return None;
+        }
+        // после изъятия слоя номера за ним в той же стопке сдвигаются на один
+        let mut dst = parent.to_vec();
+        let n = from_parent.len();
+        if dst.len() > n && dst.starts_with(from_parent) && dst[n] > *last {
+            dst[n] -= 1;
+        }
+        let at = if parent == from_parent && index > *last { index - 1 } else { index };
+        dst.push(at);
+        if dst == from {
+            return None;
+        }
+        let layer = self.layer(from)?.clone();
+        let keys = self.perform(vec![Op::Remove { path: from.to_vec() }, Op::Insert { path: dst.clone(), layer: Box::new(layer) }]);
+        Some((dst, keys))
+    }
+
     /// Сливает обычный слой с нижним обычным слоем той же стопки (с отменой): нижний получает
     /// результат наложения верхнего с его режимом и непрозрачностью, верхний убирается.
     /// Возвращает путь нижнего слоя.

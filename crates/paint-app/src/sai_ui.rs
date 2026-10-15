@@ -800,15 +800,21 @@ pub fn color_wheel(ui: &mut Ui, hsv: &mut [f32; 3], size: f32) -> bool {
     p.add(Shape::mesh(mesh));
     p.circle_stroke(ctr, outer, Stroke::new(1.0_f32, Color32::from_gray(150)));
     p.circle_stroke(ctr, inner, Stroke::new(1.0_f32, Color32::from_gray(150)));
-    // квадрат: белый — цвет тона — чёрный
+    // квадрат: насыщенность вправо, яркость вверх — сеткой, чтобы цвета внутри были точными
     let mut sq = egui::Mesh::default();
-    let hue = hsv_to_rgb(hsv[0], 1.0, 1.0);
-    sq.colored_vertex(square.left_top(), Color32::WHITE);
-    sq.colored_vertex(square.right_top(), hue);
-    sq.colored_vertex(square.right_bottom(), Color32::BLACK);
-    sq.colored_vertex(square.left_bottom(), Color32::BLACK);
-    sq.add_triangle(0, 1, 2);
-    sq.add_triangle(0, 2, 3);
+    let n = 16u32;
+    for j in 0..=n {
+        for i in 0..=n {
+            let (s, v) = (i as f32 / n as f32, 1.0 - j as f32 / n as f32);
+            let pos = square.min + Vec2::new(s * square.width(), (1.0 - v) * square.height());
+            sq.colored_vertex(pos, hsv_to_rgb(hsv[0], s, v));
+            if i > 0 && j > 0 {
+                let k = j * (n + 1) + i;
+                sq.add_triangle(k - n - 2, k - n - 1, k);
+                sq.add_triangle(k - n - 2, k, k - 1);
+            }
+        }
+    }
     p.add(Shape::mesh(sq));
     p.rect_stroke(square, 0.0, Stroke::new(1.0_f32, Color32::from_gray(120)));
     // метки
@@ -822,6 +828,57 @@ pub fn color_wheel(ui: &mut Ui, hsv: &mut [f32; 3], size: f32) -> bool {
     );
     p.circle_stroke(sv, 4.0, Stroke::new(2.0_f32, Color32::from_gray(40)));
     p.circle_stroke(sv, 4.0, Stroke::new(1.0_f32, Color32::WHITE));
+    changed
+}
+
+/// Ползунок одного канала цвета, как у образца: подпись, полоса с переходом цвета, метка,
+/// число справа. `color(t)` — цвет полосы в доле `t` (0..1). Значение — 0..=`max`.
+pub fn channel_slider(ui: &mut Ui, label: &str, value: &mut f32, max: f32, color: impl Fn(f32) -> Color32) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let (lr, _) = ui.allocate_exact_size(Vec2::new(12.0, 14.0), Sense::hover());
+        ui.painter().text(lr.left_center(), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(11.0), INK);
+        let w = (ui.available_width() - 34.0).max(40.0);
+        let (rect, response) = ui.allocate_exact_size(Vec2::new(w, 12.0), Sense::click_and_drag());
+        if let Some(pos) = response.interact_pointer_pos() {
+            if response.is_pointer_button_down_on() || response.clicked() {
+                let new = ((pos.x - rect.left()) / rect.width()).clamp(0.0, 1.0) * max;
+                if (new - *value).abs() > f32::EPSILON {
+                    *value = new.round();
+                    changed = true;
+                }
+            }
+        }
+        if response.hovered() {
+            let scroll = ui.input(|i| i.raw_scroll_delta.y);
+            if scroll != 0.0 {
+                *value = (*value + scroll.signum()).clamp(0.0, max);
+                changed = true;
+            }
+        }
+        let p = ui.painter();
+        let mut mesh = egui::Mesh::default();
+        let n = 24u32;
+        for i in 0..=n {
+            let t = i as f32 / n as f32;
+            let x = rect.left() + t * rect.width();
+            mesh.colored_vertex(Pos2::new(x, rect.top()), color(t));
+            mesh.colored_vertex(Pos2::new(x, rect.bottom()), color(t));
+            if i > 0 {
+                let b = i * 2;
+                mesh.add_triangle(b - 2, b - 1, b);
+                mesh.add_triangle(b - 1, b + 1, b);
+            }
+        }
+        p.add(Shape::mesh(mesh));
+        p.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, BORDER));
+        let x = rect.left() + (*value / max).clamp(0.0, 1.0) * rect.width();
+        p.line_segment([Pos2::new(x, rect.top() - 2.0), Pos2::new(x, rect.bottom() + 2.0)], Stroke::new(3.0_f32, Color32::WHITE));
+        p.line_segment([Pos2::new(x, rect.top() - 2.0), Pos2::new(x, rect.bottom() + 2.0)], Stroke::new(1.0_f32, INK));
+        let (nr, _) = ui.allocate_exact_size(Vec2::new(26.0, 14.0), Sense::hover());
+        ui.painter().text(nr.right_center(), egui::Align2::RIGHT_CENTER, format!("{}", value.round() as i32), egui::FontId::proportional(11.0), INK);
+    });
     changed
 }
 
