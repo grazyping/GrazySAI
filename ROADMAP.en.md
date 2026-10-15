@@ -105,7 +105,34 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] The mask moves and transforms with its layer; Merge Down for a layer with a mask
 - [x] Color mixer and swatches in the color panel — as in SAI 2017 (checked against the running program)
 - [x] Large Water brush: blur over a reduced copy of the layer, as in SAI — 350 px: 7.4 → 2.0 s per 1000 px of line (`docs/23-performance.md`)
+- [ ] Perspective rulers: display and drawing along them (reference: Krita's perspective and vanishing point assistants)
 
 ### 1.0 — finished
 - [ ] `.sai2` read and written without loss for every kind of layer
 - [x] Undo history on disk (for very large canvases): beyond 1 GB, steps go to temporary files and all 100 steps are kept
+- [ ] Gradient: linear and radial, main colour → background or transparent
+- [ ] Polygonal lasso
+- [ ] Grow and shrink the selection by a given number of pixels
+- [ ] Perspective transform
+- [ ] Several canvases in tabs
+- [ ] Layer outline (inside, centre, outside) and binary pen
+- [ ] PSD: opening 16-bit files and layer masks
+
+### Beyond SAI — ideas from Krita
+
+They do not hurt compatibility: in `.sai2` everything lands as plain pixels, the rest goes to the program settings. The window keeps SAI's look: new things live in menus and windows, not on the panels. No Krita code (GPL) is copied — only ideas and formulas, checked against SAI or Krita.
+
+- [ ] Mirror painting (symmetry)
+- [ ] Fill: closing gaps in line art and growing the edge under the line
+- [ ] Recent colours; GIMP (`.gpl`) and Krita (`.kpl`) palettes
+- [ ] History window: list of steps, jump back with a click
+- [ ] Pen pressure curve in the settings
+- [ ] PSD: layer masks and 16 bits on export; “Keep the exact look” for SAI-only modes
+- [ ] OpenRaster (`.ora`): open and save with layers
+- [ ] “Save incremental” (picture_002.sai2)
+- [ ] History memory and recovery copy interval in a settings window
+- [ ] Wrap-around mode (the canvas repeats at its edges) and a pixel grid at high zoom
+- [ ] Filters: levels, curves, sharpen, unsharp mask, noise, median
+- [ ] Colouring by line art (like Krita's colorize mask); the result is plain pixels
+- [ ] Reference images over the canvas
+- [ ] Pop-up palette on right click (off by default)
