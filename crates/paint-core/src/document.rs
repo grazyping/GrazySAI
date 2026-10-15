@@ -28,6 +28,32 @@ enum Op {
 /// порядке.
 struct HistoryEntry(Vec<Op>);
 
+/// Шагов отмены не больше этого — как в SAI (100).
+pub const HISTORY_STEPS: usize = 100;
+/// И не больше этой памяти на историю; лишние старые шаги отбрасываются.
+pub const HISTORY_BYTES: usize = 2 << 30;
+
+impl HistoryEntry {
+    /// Сколько памяти занимает шаг (плитки и слои — по их пикселям).
+    fn bytes(&self) -> usize {
+        fn layer_bytes(l: &Layer) -> usize {
+            l.pixels.tiles.len() * TILE_LEN * 8 + l.children.as_ref().map_or(0, |c| c.iter().map(layer_bytes).sum())
+        }
+        self.0
+            .iter()
+            .map(|op| match op {
+                Op::Tiles { tiles, .. } => tiles.iter().filter(|(_, t)| t.is_some()).count() * TILE_LEN * 8,
+                Op::Insert { layer, .. } => layer_bytes(layer),
+                Op::Canvas { layers, selection, .. } => layers.iter().map(layer_bytes).sum::<usize>() + selection.tiles.len() * TILE_LEN * 2,
+                Op::Selection { mask } => mask.tiles.len() * TILE_LEN * 2,
+                Op::Vector { vector, .. } => vector.as_ref().map_or(0, |v| v.raw.len()),
+                Op::Remove { .. } => 0,
+            })
+            .sum::<usize>()
+            + 64
+    }
+}
+
 /// Штрих, который ещё рисуется: слой уже показывает его, но отмена пока не записана.
 pub struct LiveStroke {
     pub path: Vec<usize>,
@@ -173,6 +199,19 @@ impl Document {
     fn push(&mut self, ops: Vec<Op>) {
         self.undo.push(HistoryEntry(ops));
         self.redo.clear();
+        // как в SAI: не больше 100 шагов; и общий предел памяти
+        while self.undo.len() > HISTORY_STEPS {
+            self.undo.remove(0);
+        }
+        let mut total: usize = self.undo.iter().map(HistoryEntry::bytes).sum();
+        while total > HISTORY_BYTES && self.undo.len() > 1 {
+            total -= self.undo.remove(0).bytes();
+        }
+    }
+
+    /// Сколько шагов отмены сейчас доступно.
+    pub fn undo_steps(&self) -> usize {
+        self.undo.len()
     }
 
     /// Стопка, в которой лежит слой `path`, и его место в ней.

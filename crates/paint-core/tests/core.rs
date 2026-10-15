@@ -684,3 +684,18 @@ fn vector_layers_are_protected_until_rasterized() {
     doc.undo();
     assert!(doc.layers[0].vector.is_some(), "отмена возвращает кривые");
 }
+
+#[test]
+fn history_keeps_at_most_100_steps_like_sai() {
+    let mut doc = Document::new(16, 16);
+    let all = paint_core::selection::Selection::all(16, 16);
+    for i in 0..130u8 {
+        doc.fill(&[0], &all, [i, 0, 0]);
+    }
+    assert_eq!(doc.undo_steps(), paint_core::document::HISTORY_STEPS);
+    for _ in 0..100 {
+        assert!(doc.undo().is_some());
+    }
+    assert!(doc.undo().is_none(), "старше 100 шагов отменить нельзя");
+    assert_eq!(pixel(&doc, 3, 3), [29, 0, 0, 255], "остался 30-й шаг");
+}
