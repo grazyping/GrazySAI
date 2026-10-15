@@ -457,3 +457,20 @@ S-кривая = S-Kurve
 В буфере обмена нет картинки = Kein Bild in der Zwischenablage
 Вставлено {0}×{1} = {0}×{1} eingefügt
 Сначала сохраните холст: новый холст заменит текущий = Erst die Leinwand speichern: die neue ersetzt die aktuelle
+
+# Недавние файлы (0.8.20)
+Недавние = Zuletzt verwendet
+Файла больше нет: {0} = Die Datei gibt es nicht mehr: {0}
+
+# Холст: обрезка и фон (0.8.20)
+Обрезать по выделению = Leinwand auf Auswahl zuschneiden
+Фон холста = Hintergrund
+Цвет фона холста… = Hintergrundfarbe der Leinwand…
+Цвет фона холста = Hintergrundfarbe der Leinwand
+Прозрачный (цвет) = Transparent (Farbe)
+Прозрачный (чёрный) = Transparent (Schwarz)
+Прозрачный (белый) = Transparent (Weiß)
+Прозрачный (тёмная шашка) = Transparent (dunkles Schachbrett)
+Прозрачный (светлая шашка) = Transparent (helles Schachbrett)
+Чёрный = Schwarz
+Белый = Weiß

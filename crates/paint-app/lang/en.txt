@@ -458,3 +458,20 @@ S-кривая = S-Curve Gradation
 В буфере обмена нет картинки = No picture in the clipboard
 Вставлено {0}×{1} = Pasted {0}×{1}
 Сначала сохраните холст: новый холст заменит текущий = Save the canvas first: a new canvas replaces the current one
+
+# Недавние файлы (0.8.20)
+Недавние = Recent
+Файла больше нет: {0} = The file is gone: {0}
+
+# Холст: обрезка и фон (0.8.20)
+Обрезать по выделению = Trim Canvas by Selection
+Фон холста = Background
+Цвет фона холста… = Canvas Background Color…
+Цвет фона холста = Canvas Background Color
+Прозрачный (цвет) = Transparent (Color)
+Прозрачный (чёрный) = Transparent (Black)
+Прозрачный (белый) = Transparent (White)
+Прозрачный (тёмная шашка) = Transparent (Dark Checker)
+Прозрачный (светлая шашка) = Transparent (Bright Checker)
+Чёрный = Black
+Белый = White

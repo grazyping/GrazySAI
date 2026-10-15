@@ -79,8 +79,17 @@ pub struct Document {
     pub height: u32,
     /// Слои снизу вверх.
     pub layers: Vec<Layer>,
-    /// Цвет фона холста; `None` — прозрачный.
+    /// Цвет фона холста; `None` — прозрачный (следует из `bg_code`, см. `set_background`).
     pub background: Option<[u8; 3]>,
+    /// Фон холста, как байт 0x11 заголовка `.sai2` (поле холста +0x249 в SAI 2017): младшие
+    /// 4 бита — 0 прозрачный, 1 непрозрачный; старшие — вид. Прозрачный показывается: 0 — светлой
+    /// шашкой, 1 — тёмной, 2 — белым, 3 — чёрным, 4 — цветом `bg_color`; непрозрачный: 0 — белый,
+    /// 1 — чёрный, 2 — цвет `bg_color` (docs/03-sai2-format.md).
+    pub bg_code: u8,
+    /// Цвет «Canvas Background Color» (смещение 0x38 заголовка).
+    pub bg_color: [u8; 3],
+    /// «Layer Effect Color» (0x3C заголовка): `norm`, `vivd`, `deep`, `mult`, `ver1` — хранится как был.
+    pub effect_color: [u8; 4],
     /// Выделение; пустое — рисовать можно везде.
     pub selection: Selection,
     undo: Vec<HistoryEntry>,
@@ -94,6 +103,9 @@ impl Document {
             height,
             layers: vec![Layer::new("Слой 1")],
             background: Some([255, 255, 255]),
+            bg_code: 0x01,
+            bg_color: [0x80, 0x80, 0x80],
+            effect_color: *b"norm",
             selection: Selection::default(),
             undo: Vec::new(),
             redo: Vec::new(),
@@ -107,6 +119,9 @@ impl Document {
             height: self.height,
             layers: self.layers.clone(),
             background: self.background,
+            bg_code: self.bg_code,
+            bg_color: self.bg_color,
+            effect_color: self.effect_color,
             selection: self.selection.clone(),
             undo: Vec::new(),
             redo: Vec::new(),
@@ -547,6 +562,23 @@ impl Document {
     /// Новый размер холста; рисунок не масштабируется, а сдвигается по привязке.
     pub fn resize_canvas(&mut self, width: u32, height: u32, anchor: (u8, u8)) -> Vec<Key> {
         let (dx, dy) = crate::canvas_ops::anchor_offset(self.width, self.height, width, height, anchor);
+        self.reframe_canvas(width, height, dx, dy)
+    }
+
+    /// «Обрезать по выделению» (Trim Canvas by Selection в SAI 2017): холст — прямоугольник
+    /// выделения. Без выделения ничего не делает.
+    pub fn trim_to_selection(&mut self) -> Vec<Key> {
+        let Some((x0, y0, x1, y1)) = self.selection.bounds() else { return Vec::new() };
+        let (x0, y0) = (x0.max(0), y0.max(0));
+        let (x1, y1) = (x1.min(self.width as i32), y1.min(self.height as i32));
+        if x0 >= x1 || y0 >= y1 {
+            return Vec::new();
+        }
+        self.reframe_canvas((x1 - x0) as u32, (y1 - y0) as u32, -x0, -y0)
+    }
+
+    /// Новый размер холста, рисунок сдвигается на (dx, dy); вышедшее за холст отбрасывается.
+    pub fn reframe_canvas(&mut self, width: u32, height: u32, dx: i32, dy: i32) -> Vec<Key> {
         let mut layers = self.layers.clone();
         crate::canvas_ops::remap_layers(&mut layers, &|x, y| (x + dx, y + dy));
         // всё, что вышло за новый холст, отбрасывается
@@ -1106,6 +1138,36 @@ impl Document {
         (self.width as i32, self.height as i32)
     }
 
+    /// Задать фон холста кодом SAI (`bg_code`) и цветом; неизвестный код — белый непрозрачный.
+    pub fn set_background(&mut self, code: u8, color: [u8; 3]) {
+        let (opaque, kind) = (code & 0xf != 0, code >> 4);
+        let ok = if opaque { kind <= 2 } else { kind <= 4 };
+        self.bg_code = if ok { code } else { 0x01 };
+        self.bg_color = color;
+        self.background = match (self.bg_code & 0xf != 0, self.bg_code >> 4) {
+            (false, _) => None,
+            (true, 1) => Some([0, 0, 0]),
+            (true, 2) => Some(color),
+            _ => Some([255, 255, 255]),
+        };
+    }
+
+    /// Чем показывается прозрачный холст в точке (x, y), как в SAI: шашка клетками 16 px или цвет.
+    fn display_bg(&self, x: i32, y: i32) -> [f32; 4] {
+        let g = |v: f32| [v, v, v, 1.0];
+        match self.bg_code >> 4 {
+            k @ (0 | 1) => {
+                let odd = ((x >> 4) + (y >> 4)) & 1 == 1;
+                // светлая: 0x4000 и 0x3800 из 0x4000; тёмная: 0x2000 и 0x1800
+                let (a, b) = if k == 0 { (1.0, 0.875) } else { (0.5, 0.375) };
+                g(if odd { b } else { a })
+            }
+            2 => g(1.0),
+            3 => g(0.0),
+            _ => [self.bg_color[0] as f32 / 255.0, self.bg_color[1] as f32 / 255.0, self.bg_color[2] as f32 / 255.0, 1.0],
+        }
+    }
+
     fn background_f32(&self) -> [f32; 4] {
         match self.background {
             Some(c) => [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, 1.0],
@@ -1116,6 +1178,12 @@ impl Document {
     /// Сведённая плитка для показа: RGBA по 8 бит, 64×64.
     pub fn render_tile(&self, key: Key) -> Vec<u8> {
         let mut buf = vec![self.background_f32(); TILE_LEN];
+        if self.background.is_none() {
+            // прозрачный холст на экране — шашкой или цветом, как выбрано в «Фоне холста»
+            for (i, b) in buf.iter_mut().enumerate() {
+                *b = self.display_bg(key.0 * TILE + i as i32 % TILE, key.1 * TILE + i as i32 / TILE);
+            }
+        }
         render_group(&self.layers, key, &mut buf, self.size());
         let mut out = vec![0u8; TILE_LEN * 4];
         for (px, o) in buf.iter().zip(out.as_chunks_mut::<4>().0) {

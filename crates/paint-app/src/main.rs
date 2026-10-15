@@ -784,6 +784,10 @@ struct PaintApp {
     gradient: Option<GradientEdit>,
     grad_opts: GradientOpts,
     transform_kind: TransformKind,
+    /// Окно «Цвет фона холста»: выбираемый цвет.
+    bg_color_edit: Option<[u8; 3]>,
+    /// Недавние файлы, сверху — последний.
+    recent: Vec<PathBuf>,
     /// Системный буфер обмена и клавиша «Вставить».
     clip: clip::Clip,
     /// Где лежало последнее скопированное у нас (x, y, ширина, высота) — вставка на то же место.
@@ -914,6 +918,8 @@ impl PaintApp {
             transform_kind: TransformKind::Free,
             tool_props: None,
             clip: clip::Clip::new(),
+            recent: Vec::new(),
+            bg_color_edit: None,
             clip_own: None,
             layer_props: None,
             transform_perspective: 0,
@@ -1153,6 +1159,7 @@ impl PaintApp {
         if let Some(t) = s.f32("wand_tolerance") {
             self.wand_tolerance = t.clamp(0.0, 255.0) as u8;
         }
+        self.recent = (0..10).filter_map(|i| s.str(&format!("recent.{i}")).filter(|v| !v.is_empty()).map(PathBuf::from)).collect();
         if let Some(p) = s.str("open_path") {
             if self.open_path.is_empty() {
                 self.open_path = p.to_string();
@@ -1276,6 +1283,9 @@ impl PaintApp {
             s.set(&format!("key.{id}"), v);
         }
         s.set("open_path", &self.open_path);
+        for i in 0..10 {
+            s.set(&format!("recent.{i}"), self.recent.get(i).map_or(String::new(), |p| p.display().to_string()));
+        }
         s.set("paper_dir", &self.paper_dir);
         for (i, v) in self.color_views.iter().enumerate() {
             s.set(&format!("color_view.{i}"), *v as u8);
@@ -1716,6 +1726,7 @@ impl PaintApp {
                         "Открыт {0} — {1}×{2}, слоёв {3}, за {4} с",
                         &[&path.display(), &self.doc.width, &self.doc.height, &self.doc.layers.len(), &format!("{:.1}", started.elapsed().as_secs_f32())],
                     );
+                    self.remember_recent(&path);
                     self.file = Some(path);
                     self.selected = first_raster(&self.doc.layers).unwrap_or_default();
                     self.live = None;
@@ -1739,15 +1750,24 @@ impl PaintApp {
                     "Открыт {0} — {1}×{2}, слоёв {3}, за {4} с",
                     &[&path.display(), &self.doc.width, &self.doc.height, &loaded.info.layers.len(), &format!("{:.1}", started.elapsed().as_secs_f32())],
                 );
+                self.remember_recent(&path);
                 self.file = Some(path);
                 self.selected = first_raster(&self.doc.layers).unwrap_or_default();
                 self.live = None;
                 self.fit_pending = true;
                 self.ruler.placed = false;
+                self.dirty = false;
                 self.invalidate_all();
             }
             Err(e) => self.status = trf("Не удалось открыть {0}: {1}", &[&path.display(), &e]),
         }
+    }
+
+    /// Запомнить файл в «Недавних» (как «Recent» в SAI): сверху, без повторов, до 10.
+    fn remember_recent(&mut self, path: &std::path::Path) {
+        self.recent.retain(|p| p != path);
+        self.recent.insert(0, path.to_path_buf());
+        self.recent.truncate(10);
     }
 
     fn new_canvas(&mut self, w: u32, h: u32) {
@@ -1845,6 +1865,7 @@ impl PaintApp {
         match paint_formats::sai2_write::save(&self.doc, &path) {
             Ok(()) => {
                 self.status = trf("Сохранено: {0} (за {1} с)", &[&path.display(), &format!("{:.1}", started.elapsed().as_secs_f32())]);
+                self.remember_recent(&path);
                 self.file = Some(path);
                 self.dirty = false;
                 self.had_vectors = false;
@@ -2951,6 +2972,26 @@ impl PaintApp {
                         ui.close_menu();
                     }
                 });
+                let mut pick = None;
+                ui.add_enabled_ui(!self.recent.is_empty(), |ui| {
+                    ui.menu_button(tr("Недавние"), |ui| {
+                        for p in &self.recent {
+                            let name = p.file_name().map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned());
+                            if ui.button(name).on_hover_text(p.display().to_string()).clicked() {
+                                pick = Some(p.clone());
+                                ui.close_menu();
+                            }
+                        }
+                    });
+                });
+                if let Some(p) = pick {
+                    if p.exists() {
+                        self.open(p);
+                    } else {
+                        self.status = trf("Файла больше нет: {0}", &[&p.display()]);
+                        self.recent.retain(|r| *r != p);
+                    }
+                }
                 ui.separator();
                 if ui.add(menu_item("Холст из буфера обмена", "Ctrl+B")).clicked() {
                     self.canvas_from_clipboard();
@@ -3030,6 +3071,38 @@ impl PaintApp {
                         ui.close_menu();
                     }
                 }
+                if ui.add_enabled(!self.doc.selection.is_empty(), egui::Button::new(tr("Обрезать по выделению"))).clicked() {
+                    self.canvas_op(|d| d.trim_to_selection());
+                    self.sel_dirty = true;
+                    ui.close_menu();
+                }
+                ui.separator();
+                ui.menu_button(tr("Фон холста"), |ui| {
+                    if ui.button(tr("Цвет фона холста…")).clicked() {
+                        self.bg_color_edit = Some(self.doc.bg_color);
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    // как в SAI 2017: код фона — байт 0x11 заголовка .sai2
+                    for (code, name) in [
+                        (0x40, tr("Прозрачный (цвет)")),
+                        (0x30, tr("Прозрачный (чёрный)")),
+                        (0x20, tr("Прозрачный (белый)")),
+                        (0x10, tr("Прозрачный (тёмная шашка)")),
+                        (0x00, tr("Прозрачный (светлая шашка)")),
+                        (0x21, tr("Цвет")),
+                        (0x11, tr("Чёрный")),
+                        (0x01, tr("Белый")),
+                    ] {
+                        if ui.radio(self.doc.bg_code == code, name).clicked() {
+                            let color = self.doc.bg_color;
+                            self.doc.set_background(code, color);
+                            self.invalidate_all();
+                            self.dirty = true;
+                            ui.close_menu();
+                        }
+                    }
+                });
             });
             ui.menu_button(keys::hint(tr("Слой(L)")), |ui| {
                 if ui.button(tr("Новый слой")).clicked() {
@@ -5562,6 +5635,36 @@ impl PaintApp {
         self.update_gradient();
         if self.sel_poly.is_some() && !(self.tool == Tool::Lasso && self.lasso_polygon) {
             self.sel_poly = None;
+        }
+        let mut bg_done = None;
+        if let Some(c) = self.bg_color_edit.as_mut() {
+            let mut open = true;
+            egui::Window::new(tr("Цвет фона холста")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+                let mut col = Color32::from_rgb(c[0], c[1], c[2]);
+                if egui::color_picker::color_picker_color32(ui, &mut col, egui::color_picker::Alpha::Opaque) {
+                    *c = [col.r(), col.g(), col.b()];
+                }
+                ui.horizontal(|ui| {
+                    if ui.button("OK").clicked() {
+                        bg_done = Some(true);
+                    }
+                    if ui.button(tr("Отмена")).clicked() {
+                        bg_done = Some(false);
+                    }
+                });
+            });
+            if !open {
+                bg_done = Some(false);
+            }
+        }
+        if let Some(ok) = bg_done {
+            let c = self.bg_color_edit.take().unwrap();
+            if ok && c != self.doc.bg_color {
+                let code = self.doc.bg_code;
+                self.doc.set_background(code, c);
+                self.invalidate_all();
+                self.dirty = true;
+            }
         }
         let mut lp_done = None;
         if let Some((_, name)) = self.layer_props.as_mut() {

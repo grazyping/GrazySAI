@@ -119,3 +119,22 @@ fn paper_effect_and_unknown_layer_blocks_survive_save() {
     std::fs::remove_file(&out).ok();
 }
 
+
+/// Фон холста (байт 0x11, цвет 0x38) и «Layer Effect Color» (0x3C) — как у SAI 2017.
+#[test]
+fn canvas_background_survives_save() {
+    let dir = std::env::temp_dir().join(format!("sosai-bg-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for (code, color) in [(0x01, [0x80, 0x80, 0x80]), (0x10, [1, 2, 3]), (0x21, [200, 100, 50]), (0x40, [9, 9, 9])] {
+        let mut doc = Document::new(64, 48);
+        doc.set_background(code, color);
+        doc.effect_color = *b"deep";
+        let path = dir.join(format!("bg{code}.sai2"));
+        paint_formats::sai2_write::save(&doc, &path).unwrap();
+        let head = std::fs::read(&path).unwrap();
+        assert_eq!((head[0x11], &head[0x38..0x3b], &head[0x3c..0x40]), (code, &color[..], &b"deep"[..]));
+        let back = paint_formats::sai2_doc::load(&path).unwrap().document;
+        assert_eq!((back.bg_code, back.bg_color, back.background), (code, color, doc.background));
+    }
+    std::fs::remove_dir_all(dir).ok();
+}

@@ -457,3 +457,20 @@ S-кривая = Curva en S
 В буфере обмена нет картинки = No hay imagen en el portapapeles
 Вставлено {0}×{1} = Pegado {0}×{1}
 Сначала сохраните холст: новый холст заменит текущий = Guarde primero: el nuevo lienzo reemplaza al actual
+
+# Недавние файлы (0.8.20)
+Недавние = Recientes
+Файла больше нет: {0} = El archivo ya no existe: {0}
+
+# Холст: обрезка и фон (0.8.20)
+Обрезать по выделению = Recortar lienzo por la selección
+Фон холста = Fondo
+Цвет фона холста… = Color de fondo del lienzo…
+Цвет фона холста = Color de fondo del lienzo
+Прозрачный (цвет) = Transparente (color)
+Прозрачный (чёрный) = Transparente (negro)
+Прозрачный (белый) = Transparente (blanco)
+Прозрачный (тёмная шашка) = Transparente (cuadros oscuros)
+Прозрачный (светлая шашка) = Transparente (cuadros claros)
+Чёрный = Negro
+Белый = Blanco

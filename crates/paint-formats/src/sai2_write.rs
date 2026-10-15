@@ -459,15 +459,17 @@ pub fn save(doc: &Document, path: &Path) -> io::Result<()> {
     }
     let mut out = Vec::new();
     out.extend(crate::sai2::MAGIC);
-    out.extend(0u32.to_le_bytes());
+    // признаки холста: байт 1 — фон (как поле +0x249 SAI 2017)
+    out.extend([0, doc.bg_code, 0, 0]);
     out.extend((w as u32).to_le_bytes());
     out.extend((h as u32).to_le_bytes());
     out.extend(((96.0f64 / 2.54 * 65536.0).round() as u32).to_le_bytes());
     out.extend((blocks.len() as u32).to_le_bytes());
     out.extend(ids.first().copied().unwrap_or(0).to_le_bytes());
     out.extend([0u8; 16]);
-    out.extend([0x80, 0x80, 0x80, 0xFF]);
-    out.extend(b"norm");
+    out.extend(doc.bg_color);
+    out.push(0xFF);
+    out.extend(doc.effect_color);
     let mut offset = (64 + blocks.len() * 16) as u64;
     let mut toc = Vec::new();
     let mut data = Vec::new();

@@ -457,3 +457,20 @@ S-кривая = Curva em S
 В буфере обмена нет картинки = Não há imagem na área de transferência
 Вставлено {0}×{1} = Colado {0}×{1}
 Сначала сохраните холст: новый холст заменит текущий = Salve primeiro: a nova tela substitui a atual
+
+# Недавние файлы (0.8.20)
+Недавние = Recentes
+Файла больше нет: {0} = O arquivo não existe mais: {0}
+
+# Холст: обрезка и фон (0.8.20)
+Обрезать по выделению = Recortar tela pela seleção
+Фон холста = Fundo
+Цвет фона холста… = Cor de fundo da tela…
+Цвет фона холста = Cor de fundo da tela
+Прозрачный (цвет) = Transparente (cor)
+Прозрачный (чёрный) = Transparente (preto)
+Прозрачный (белый) = Transparente (branco)
+Прозрачный (тёмная шашка) = Transparente (xadrez escuro)
+Прозрачный (светлая шашка) = Transparente (xadrez claro)
+Чёрный = Preto
+Белый = Branco

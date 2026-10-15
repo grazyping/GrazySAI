@@ -56,6 +56,10 @@ pub struct Sai2Info {
     pub height: u32,
     /// Разрешение печати, точек на дюйм.
     pub dpi: f64,
+    /// Фон холста (байт 0x11), его цвет (0x38) и «Layer Effect Color» (0x3C).
+    pub bg_code: u8,
+    pub bg_color: [u8; 3],
+    pub effect_color: [u8; 4],
     pub entries: Vec<Entry>,
     /// В порядке оглавления файла.
     pub layers: Vec<LayerInfo>,
@@ -186,6 +190,9 @@ pub fn read_info(path: &Path) -> io::Result<Sai2Info> {
         width: u32_at(&head, 0x14)?,
         height: u32_at(&head, 0x18)?,
         dpi: u32_at(&head, 0x1c)? as f64 / 65536.0 * 2.54,
+        bg_code: head.get(0x11).copied().unwrap_or(1),
+        bg_color: head.get(0x38..0x3b).and_then(|c| c.try_into().ok()).unwrap_or([0x80; 3]),
+        effect_color: head.get(0x3c..0x40).and_then(|c| c.try_into().ok()).unwrap_or(*b"norm"),
         entries,
         layers,
     })

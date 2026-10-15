@@ -245,6 +245,10 @@ Normal layers only (not folders).
   - H — flip the view.
 
   View rotation and flip change only the display, not the image.
+- “Canvas → Trim Canvas by Selection” makes the canvas the selection rectangle.
+- “Canvas → Background”, as in SAI: transparent (shown as a bright or dark checker, white, black
+  or your color) or opaque white, black or your color; “Canvas Background Color…”. The background
+  is saved in `.sai2` the same way SAI does.
 
 ## Ruler
 
@@ -292,6 +296,8 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 | `.sai2` | Yes (Ctrl+O) | Ctrl+S, Shift+Ctrl+S (in the same format as SAI 2) |
 | `.psd` | Yes (RGB and grayscale, 8 and 16 bit, layer masks) | “File → Export → PSD”: with layers, folders, modes |
 | `.png`, `.jpg` | Yes, as one layer | “File → Export → PNG / JPEG” (flattened image) |
+
+“File → Recent” lists the last 10 files opened or saved.
 
 “Open”, “Save As” and “Export” show the system window: File Explorer on Windows, the desktop's
 own dialog on Linux (KDE, GNOME). Without one, a simple window with the file path appears.

@@ -457,3 +457,20 @@ S-кривая = Courbe en S
 В буфере обмена нет картинки = Pas d'image dans le presse-papiers
 Вставлено {0}×{1} = {0}×{1} collé
 Сначала сохраните холст: новый холст заменит текущий = Enregistrez d'abord : le nouveau canevas remplace l'actuel
+
+# Недавние файлы (0.8.20)
+Недавние = Récents
+Файла больше нет: {0} = Le fichier n'existe plus : {0}
+
+# Холст: обрезка и фон (0.8.20)
+Обрезать по выделению = Rogner le canevas selon la sélection
+Фон холста = Arrière-plan
+Цвет фона холста… = Couleur d'arrière-plan…
+Цвет фона холста = Couleur d'arrière-plan
+Прозрачный (цвет) = Transparent (couleur)
+Прозрачный (чёрный) = Transparent (noir)
+Прозрачный (белый) = Transparent (blanc)
+Прозрачный (тёмная шашка) = Transparent (damier sombre)
+Прозрачный (светлая шашка) = Transparent (damier clair)
+Чёрный = Noir
+Белый = Blanc
