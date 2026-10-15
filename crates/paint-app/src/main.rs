@@ -4,6 +4,7 @@
 
 mod pen;
 mod sai_ui;
+mod keys;
 mod settings;
 mod virtual_pen;
 
@@ -548,6 +549,10 @@ struct PaintApp {
     /// способ пересэмплирования, привязка.
     canvas_dialog: Option<CanvasDialog>,
     filter: Option<FilterDialog>,
+    /// Свои клавиши, окно «Клавиши» и действие, которому сейчас назначают клавишу.
+    keymap: keys::Keymap,
+    show_keys: bool,
+    key_capture: Option<keys::Action>,
     /// Восстановление после сбоя: когда последний раз писали копию; копия пишется сейчас;
     /// найдена копия прошлого запуска (путь копии и исходного файла).
     recovery_at: Instant,
@@ -624,6 +629,9 @@ impl PaintApp {
             shape_drag: None,
             canvas_dialog: None,
             filter: None,
+            keymap: keys::defaults(),
+            show_keys: false,
+            key_capture: None,
             recovery_at: Instant::now(),
             recovery_busy: Default::default(),
             recovery_dirty: false,
@@ -759,6 +767,11 @@ impl PaintApp {
                 self.stabilizer = v;
             }
         }
+        for (a, id, _, _) in keys::ALL {
+            if let Some(v) = s.str(&format!("key.{id}")) {
+                self.keymap.insert(a, if v == "none" { None } else { keys::Binding::parse(v) });
+            }
+        }
         if let Some(t) = s.f32("wand_tolerance") {
             self.wand_tolerance = t.clamp(0.0, 255.0) as u8;
         }
@@ -835,6 +848,10 @@ impl PaintApp {
         s.set("back.b", self.back.b());
         s.set("stabilizer", self.stabilizer.label());
         s.set("wand_tolerance", self.wand_tolerance);
+        for (a, id, _, _) in keys::ALL {
+            let v = self.keymap.get(&a).copied().flatten().map_or_else(|| "none".to_string(), |b| b.text());
+            s.set(&format!("key.{id}"), v);
+        }
         s.set("open_path", &self.open_path);
         s.save();
     }
@@ -2052,6 +2069,10 @@ impl PaintApp {
                 ui.add_enabled(false, egui::Button::new("Панели — позже"));
             });
             ui.menu_button("Помощь(H)", |ui| {
+                if ui.button("Клавиши…").clicked() {
+                    self.show_keys = true;
+                    ui.close_menu();
+                }
                 if ui.button("О программе").clicked() {
                     self.show_about = true;
                     ui.close_menu();
@@ -3471,6 +3492,44 @@ impl PaintApp {
 
 impl PaintApp {
     fn dialogs(&mut self, ctx: &egui::Context) {
+        if self.show_keys {
+            let mut open = true;
+            let mut reset = false;
+            egui::Window::new("Клавиши").open(&mut open).resizable(true).default_height(480.0).show(ctx, |ui| {
+                ui.label("Нажмите на клавишу действия, затем новое сочетание (Esc — отмена).");
+                egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+                    egui::Grid::new("keys").num_columns(2).striped(true).show(ui, |ui| {
+                        for (a, _, name, _) in keys::ALL {
+                            ui.label(name);
+                            let text = if self.key_capture == Some(a) {
+                                "нажмите сочетание…".to_string()
+                            } else {
+                                self.keymap.get(&a).copied().flatten().map_or_else(|| "—".to_string(), |b| b.text())
+                            };
+                            ui.horizontal(|ui| {
+                                if ui.button(text).clicked() {
+                                    self.key_capture = Some(a);
+                                }
+                                if ui.small_button("✕").on_hover_text("Убрать клавишу").clicked() {
+                                    self.keymap.insert(a, None);
+                                }
+                            });
+                            ui.end_row();
+                        }
+                    });
+                });
+                if ui.button("Как в SAI (по умолчанию)").clicked() {
+                    reset = true;
+                }
+            });
+            if reset {
+                self.keymap = keys::defaults();
+            }
+            if !open {
+                self.show_keys = false;
+                self.key_capture = None;
+            }
+        }
         let mut answer = None;
         if let Some((_, original)) = &self.recovery_found {
             egui::Window::new("Восстановление работы").collapsible(false).resizable(false).show(ctx, |ui| {
@@ -3934,68 +3993,52 @@ impl eframe::App for PaintApp {
             self.open_path = path.display().to_string();
             self.open(path);
         }
-        let (undo, redo) = ctx.input(|i| {
-            let z = i.key_pressed(egui::Key::Z) && i.modifiers.command;
-            (
-                z && !i.modifiers.shift,
-                (z && i.modifiers.shift) || (i.key_pressed(egui::Key::Y) && i.modifiers.command),
-            )
-        });
-        if undo {
-            self.undo();
+        'shortcuts: {
+        // назначение клавиши в окне «Клавиши»: следующее нажатие с модификаторами
+        if let Some(action) = self.key_capture {
+            let got = ctx.input(|i| {
+                i.events.iter().find_map(|e| match e {
+                    egui::Event::Key { key, pressed: true, modifiers, .. } if *key != egui::Key::Escape => {
+                        Some(keys::Binding { key: *key, ctrl: modifiers.command, shift: modifiers.shift, alt: modifiers.alt })
+                    }
+                    _ => None,
+                })
+            });
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.key_capture = None;
+            } else if let Some(b) = got {
+                // клавиша снимается с другого действия
+                for v in self.keymap.values_mut() {
+                    if *v == Some(b) {
+                        *v = None;
+                    }
+                }
+                self.keymap.insert(action, Some(b));
+                self.key_capture = None;
+            }
+            break 'shortcuts;
         }
-        if redo {
-            self.redo();
+        let km = self.keymap.clone();
+        let hit = |a: keys::Action| ctx.input(|i| km.get(&a).copied().flatten().is_some_and(|b| b.pressed(i)));
+        use keys::Action as A;
+        let typing = ctx.wants_keyboard_input();
+        // запасные сочетания: Shift+Ctrl+Z — повтор, Ctrl+Plus — приблизить
+        let redo_alt = ctx.input(|i| i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::Z));
+        let zoom_alt = ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Plus));
+        if !typing {
+            if hit(A::Undo) {
+                self.undo();
+            }
+            if hit(A::Redo) || redo_alt {
+                self.redo();
+            }
+            if hit(A::Save) {
+                self.save();
+            }
+            if hit(A::SaveAs) {
+                self.ask_save_as();
+            }
         }
-
-        // клавиши образца: [ и ] — размер кисти, Ctrl+Plus/Minus — масштаб
-        let (smaller, bigger, zin, zout) = ctx.input(|i| {
-            (
-                i.key_pressed(egui::Key::OpenBracket),
-                i.key_pressed(egui::Key::CloseBracket),
-                i.modifiers.command
-                    && (i.key_pressed(egui::Key::Plus) || i.key_pressed(egui::Key::Equals)),
-                i.modifiers.command && i.key_pressed(egui::Key::Minus),
-            )
-        });
-        let (key_save, key_save_as) = ctx.input(|i| {
-            let s = i.modifiers.command && i.key_pressed(egui::Key::S);
-            (s && !i.modifiers.shift, s && i.modifiers.shift)
-        });
-        if key_save {
-            self.save();
-        }
-        if key_save_as {
-            self.ask_save_as();
-        }
-        let key_fill = ctx.input(|i| i.modifiers.alt && !i.modifiers.command && i.key_pressed(egui::Key::Delete));
-        if key_fill && !ctx.wants_keyboard_input() && self.live.is_none() {
-            self.fill_selection();
-        }
-        let (key_clear, key_merge, key_transfer) = ctx.input(|i| {
-            (
-                i.key_pressed(egui::Key::Delete) && !i.modifiers.alt,
-                i.modifiers.command && i.key_pressed(egui::Key::E),
-                !i.modifiers.any() && i.key_pressed(egui::Key::F),
-            )
-        });
-        let keys = ctx.input(|i| {
-            let plain = !i.modifiers.any();
-            let cmd = i.modifiers.command && !i.modifiers.shift && !i.modifiers.alt;
-            [
-                cmd && i.key_pressed(egui::Key::A),
-                cmd && i.key_pressed(egui::Key::D),
-                cmd && i.key_pressed(egui::Key::H),
-                plain && i.key_pressed(egui::Key::M),
-                plain && i.key_pressed(egui::Key::L),
-                plain && i.key_pressed(egui::Key::W),
-                plain && i.key_pressed(egui::Key::N),
-                plain && i.key_pressed(egui::Key::B),
-                plain && i.key_pressed(egui::Key::V),
-                plain && i.key_pressed(egui::Key::C),
-                plain && i.key_pressed(egui::Key::E),
-            ]
-        });
         let nudge = ctx.input(|i| {
             if !i.modifiers.alt || i.modifiers.command {
                 return (0, 0);
@@ -4016,46 +4059,32 @@ impl eframe::App for PaintApp {
             }
             d
         });
-        let key_x = ctx.input(|i| !i.modifiers.any() && i.key_pressed(egui::Key::X));
-        if key_x && !ctx.wants_keyboard_input() && self.live.is_none() {
-            self.swap_colors();
-        }
-        let view_keys = ctx.input(|i| {
-            let sh = i.modifiers.shift && !i.modifiers.command && !i.modifiers.alt;
-            (
-                !i.modifiers.any() && i.key_pressed(egui::Key::H),
-                sh && i.key_pressed(egui::Key::PageUp),
-                sh && i.key_pressed(egui::Key::PageDown),
-                sh && i.key_pressed(egui::Key::Home),
-            )
-        });
-        if !ctx.wants_keyboard_input() {
-            let (flip, ccw, cw, reset) = view_keys;
-            if flip {
+        if !typing {
+            if hit(A::FlipView) {
                 self.view_flip = !self.view_flip;
             }
-            if ccw {
+            if hit(A::RotateCcw) {
                 self.rotate_view(-15.0);
             }
-            if cw {
+            if hit(A::RotateCw) {
                 self.rotate_view(15.0);
             }
-            if reset {
+            if hit(A::ResetRotation) {
                 self.rotate_view(0.0);
             }
         }
-        let key_u = ctx.input(|i| i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::U));
-        if key_u && !ctx.wants_keyboard_input() && self.live.is_none() {
-            self.open_filter(FilterKind::HueSaturation);
-        }
-        let (key_t, key_enter, key_esc) = ctx.input(|i| {
-            (
-                i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::T),
-                i.key_pressed(egui::Key::Enter),
-                i.key_pressed(egui::Key::Escape),
-            )
-        });
-        if !ctx.wants_keyboard_input() && self.live.is_none() {
+        let (key_enter, key_esc) = ctx.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
+        if !typing && self.live.is_none() {
+            if hit(A::SwapColors) {
+                self.swap_colors();
+            }
+            if hit(A::HueSaturation) {
+                self.open_filter(FilterKind::HueSaturation);
+            }
+            if hit(A::Fill) {
+                self.fill_selection();
+            }
+            let key_t = hit(A::Transform);
             if self.transform.is_some() {
                 if key_enter || key_t {
                     self.finish_transform(true);
@@ -4065,79 +4094,67 @@ impl eframe::App for PaintApp {
             } else if key_t && self.move_drag.is_none() {
                 self.begin_transform();
             }
+            if nudge != (0, 0) && self.move_drag.is_none() {
+                self.nudge(nudge.0, nudge.1);
+            }
         }
-        if nudge != (0, 0) && !ctx.wants_keyboard_input() && self.live.is_none() && self.move_drag.is_none() {
-            self.nudge(nudge.0, nudge.1);
-        }
-        if !ctx.wants_keyboard_input() && self.live.is_none() && self.sel_drag.is_none() {
-            let [all, none, hide, m, l, w, n, bkey, v, c, e] = keys;
-            if all {
+        if !typing && self.live.is_none() && self.sel_drag.is_none() {
+            if hit(A::SelectAll) {
                 self.select_all();
             }
-            if none {
+            if hit(A::Deselect) {
                 self.deselect();
             }
-            if hide {
+            if hit(A::HideSelection) {
                 self.show_selection = !self.show_selection;
             }
-            for (k, t) in [(m, Tool::Marquee), (l, Tool::Lasso), (w, Tool::Wand)] {
-                if k {
+            for (a, t) in [(A::Marquee, Tool::Marquee), (A::Lasso, Tool::Lasso), (A::Wand, Tool::Wand)] {
+                if hit(a) {
                     self.tool = t;
                 }
             }
-            // клавиши кистей SAI: N — карандаш, B — аэрограф, V — кисть, C — акварель, E — ластик;
-            // на слое контура: N — перо, E — ластик контура, I — узлы, P — нажим
+            // на слое контура карандаш и ластик — перо и ластик контура; узлы и нажим — свои
             let liwk = self.doc.layer(&self.selected).is_some_and(|l| l.vector.as_ref().is_some_and(|v| &v.kind == b"liwk"));
-            let (key_i, key_p) = ctx.input(|i| (!i.modifiers.any() && i.key_pressed(egui::Key::I), !i.modifiers.any() && i.key_pressed(egui::Key::P)));
             if liwk {
-                for (k, t) in [(n, LineTool::Pen), (e, LineTool::Eraser), (key_i, LineTool::Edit), (key_p, LineTool::Pressure)] {
-                    if k {
+                for (a, t) in [(A::Pencil, LineTool::Pen), (A::Eraser, LineTool::Eraser), (A::LineEdit, LineTool::Edit), (A::LinePressure, LineTool::Pressure)] {
+                    if hit(a) {
                         self.line_tool = t;
                         self.tool = Tool::Brush;
                     }
                 }
             }
-            for (k, i) in [(n, 0), (bkey, 1), (v, 2), (c, 3), (e, ERASER)] {
-                if k && !(liwk && (i == 0 || i == ERASER)) {
+            for (a, i) in [(A::Pencil, 0), (A::AirBrush, 1), (A::Brush, 2), (A::Water, 3), (A::Eraser, ERASER)] {
+                if hit(a) && !(liwk && (i == 0 || i == ERASER)) {
                     self.brush = i;
                     self.tool = Tool::Brush;
                 }
             }
-        }
-        if !ctx.wants_keyboard_input() && self.live.is_none() {
-            if key_clear {
+            if hit(A::Clear) {
                 self.layer_action(LayerAction::Clear);
             }
-            if key_merge {
+            if hit(A::Merge) {
                 self.layer_action(LayerAction::Merge);
             }
-            if key_transfer {
+            if hit(A::Transfer) {
                 self.layer_action(LayerAction::Transfer);
             }
         }
-        if !ctx.wants_keyboard_input() {
+        if !typing {
+            let (bigger, smaller) = (hit(A::SizeUp), hit(A::SizeDown));
             let size = &mut self.brushes[self.brush].params.size;
             if bigger {
-                *size = SIZES
-                    .iter()
-                    .copied()
-                    .find(|s| *s > *size + 0.01)
-                    .unwrap_or(*size);
+                *size = SIZES.iter().copied().find(|s| *s > *size + 0.01).unwrap_or(*size);
             }
             if smaller {
-                *size = SIZES
-                    .iter()
-                    .rev()
-                    .copied()
-                    .find(|s| *s < *size - 0.01)
-                    .unwrap_or(*size);
+                *size = SIZES.iter().rev().copied().find(|s| *s < *size - 0.01).unwrap_or(*size);
             }
-            if zin {
+            if hit(A::ZoomIn) || zoom_alt {
                 self.set_zoom(self.zoom * 1.25);
             }
-            if zout {
+            if hit(A::ZoomOut) {
                 self.set_zoom(self.zoom / 1.25);
             }
+        }
         }
 
         if let Some(secs) = std::env::var("PAINT_EXIT_AFTER").ok().and_then(|v| v.parse::<f32>().ok()) {
