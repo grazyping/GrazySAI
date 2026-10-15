@@ -13,28 +13,34 @@ use crate::dab::{step_factor, Dab, DabInput};
 #[derive(Clone)]
 enum Shape {
     Sai(Dab, f32),
+    /// Двоичное перо: круг радиуса `r` без сглаживания (точка закрашена, если её центр в круге),
+    /// непрозрачность `o`.
+    Binary(f32, f32),
 }
 
 impl Shape {
     fn opacity(&self) -> f32 {
         match self {
-            Shape::Sai(_, o) => *o,
+            Shape::Sai(_, o) | Shape::Binary(_, o) => *o,
         }
     }
     fn outer(&self) -> f32 {
         match self {
             Shape::Sai(d, _) => d.outer(),
+            Shape::Binary(r, _) => *r,
         }
     }
     /// Форма для маски штриха у самой жёсткой ступени от 20 px.
     fn mask(&self) -> Option<(f32, f32, f32)> {
         match self {
             Shape::Sai(d, _) => d.mask,
+            Shape::Binary(..) => None,
         }
     }
     fn coverage(&self, dist: f32) -> f32 {
         match self {
             Shape::Sai(d, _) => d.coverage(dist),
+            Shape::Binary(r, _) => (dist <= *r) as u8 as f32,
         }
     }
     /// Квадрат радиуса, внутри которого покрытие постоянно (`coverage(0)`): там не нужны ни
@@ -42,6 +48,7 @@ impl Shape {
     fn flat_r2(&self) -> f32 {
         let r = match self {
             Shape::Sai(d, _) => d.inner_radius(),
+            Shape::Binary(r, _) => *r,
         };
         // чуть меньше, чтобы округление квадрата не задело край
         let r = (r - 1e-3).max(0.0);
@@ -457,9 +464,13 @@ impl Stroke {
         if density <= 0.0 {
             return;
         }
-        let d = self.sai_dab(p.pressure);
-        let o = d.opacity(self.step_at(p.pressure));
-        let shape = Shape::Sai(d, o);
+        let shape = if self.params.binary {
+            Shape::Binary((diameter / 2.0).max(0.5), 1.0)
+        } else {
+            let d = self.sai_dab(p.pressure);
+            let o = d.opacity(self.step_at(p.pressure));
+            Shape::Sai(d, o)
+        };
         // маска штриха — сразу: у образца её строят по окну отпечатков вокруг пачки, включая
         // следующие, так что все известные отпечатки уже в ней
         add_to_hard_mask(&mut self.hard_mask, p.x, p.y, &shape);

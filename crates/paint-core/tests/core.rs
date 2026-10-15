@@ -1000,3 +1000,18 @@ fn free_deform_blends_bilinear_and_perspective_like_sai() {
     let (x, y) = id.apply(3.0, 7.0);
     assert!((x - 3.0).abs() < 1e-9 && (y - 7.0).abs() < 1e-9);
 }
+
+#[test]
+fn binary_pen_paints_hard_pixels() {
+    let mut doc = Document::new(60, 30);
+    let mut s = Stroke::new(BrushParams { binary: true, size: 1.0, ..Default::default() });
+    for i in 0..=40 {
+        s.add_point(InputPoint { x: 5.0 + i as f32, y: 5.0 + i as f32 * 0.4, pressure: 1.0 });
+    }
+    doc.commit_stroke(0, &s, [0, 0, 0]);
+    let px: Vec<[u8; 4]> = (0..60).flat_map(|x| (0..30).map(move |y| (x, y))).map(|(x, y)| pixel(&doc, x, y)).collect();
+    let dark = px.iter().filter(|p| p[0] == 0).count();
+    let gray = px.iter().filter(|p| p[0] != 0 && p[0] != 255).count();
+    assert!(dark > 30, "закрашено {dark}");
+    assert_eq!(gray, 0, "без сглаживания полутонов нет");
+}

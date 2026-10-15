@@ -412,3 +412,19 @@ S-кривая = S-Curve Gradation
 Деформация = Deform
 Поворот = Rotate
 Перспектива = Perspective
+
+# Свои инструменты в сетке (0.8.16)
+Карандаш = Pencil
+Двоичное перо = Binary Pen
+Заливка = Bucket
+Перо выделения = SelPen
+Ластик выделения = SelErs
+Двоичн. = Binary
+Правый щелчок — новый инструмент = Right-click for a new tool
+Копия = Duplicate
+Удалить = Delete
+Свойства… = Property…
+Свойства инструмента = Custom Tool Property
+Имя: = Tool Name:
+Вторая строка: = Additional Name:
+Имя — до 8 знаков, как в SAI; вторая строка видна под ним. = The name fits about 8 characters, as in SAI; the additional name is shown under it.

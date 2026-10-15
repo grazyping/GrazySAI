@@ -411,3 +411,19 @@ S-кривая = Courbe en S
 Деформация = Déformer
 Поворот = Rotation
 Перспектива = Perspective
+
+# Свои инструменты в сетке (0.8.16)
+Карандаш = Crayon
+Двоичное перо = Stylo binaire
+Заливка = Remplissage
+Перо выделения = Stylo de sélection
+Ластик выделения = Gomme de sélection
+Двоичн. = Binaire
+Правый щелчок — новый инструмент = Clic droit pour un nouvel outil
+Копия = Dupliquer
+Удалить = Supprimer
+Свойства… = Propriétés…
+Свойства инструмента = Propriétés de l'outil
+Имя: = Nom :
+Вторая строка: = Nom secondaire :
+Имя — до 8 знаков, как в SAI; вторая строка видна под ним. = Le nom tient en 8 caractères environ, comme dans SAI ; le nom secondaire s'affiche dessous.

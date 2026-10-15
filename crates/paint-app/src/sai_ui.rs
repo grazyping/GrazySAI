@@ -702,6 +702,14 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
                 Stroke::new(1.0_f32, c),
             ));
         }
+        "binary" => {
+            // перо и ступенька из точек — линия без сглаживания
+            glyph(p, Rect::from_min_size(r.min + r.size() * 0.3, r.size() * 0.7), c, "pen");
+            for i in 0..4 {
+                let q = r.min + Vec2::new(1.0 + i as f32 * 2.0, r.height() * 0.55 - i as f32 * 2.0);
+                p.rect_filled(Rect::from_min_size(q, Vec2::splat(2.0)), 0.0, c);
+            }
+        }
         "gradient" => {
             let q = r.shrink(2.0);
             let n = 8;

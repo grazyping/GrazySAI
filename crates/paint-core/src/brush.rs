@@ -31,6 +31,9 @@ pub struct BrushParams {
     pub amplify: f32,
     /// Смешивание с холстом (Кисть, Акварель, Маркер); `None` — краска не смешивается.
     pub mix: Option<crate::mix::MixParams>,
+    /// Двоичное перо: отпечатки без сглаживания, плотность ровная (как Binary Pen в SAI;
+    /// точное правило линий SAI не повторено, docs/31-gradient-selection.md).
+    pub binary: bool,
 }
 
 impl Default for BrushParams {
@@ -50,6 +53,7 @@ impl Default for BrushParams {
             ver1_density: false,
             amplify: 0.0,
             mix: None,
+            binary: false,
         }
     }
 }

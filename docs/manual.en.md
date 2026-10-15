@@ -65,7 +65,13 @@ Shortcut keys in menu items and tooltips can be hidden: “Window → Show short
 ### Brushes
 
 In the grid: **Pencil**, **AirBrush**, **Brush**, **Water**, **Marker**, **Eraser**,
-**SelPen** (selection pen), **SelErs** (selection eraser). Defaults match a new tool in SAI.
+**SelPen** (selection pen), **SelErs** (selection eraser), **Gradation**. Defaults match a new
+tool in SAI.
+
+As in SAI, the grid can be changed: right-click an empty cell for a new tool of the kind you need
+(including the **Binary Pen** — lines without anti-aliasing — and the **Bucket**); right-click a
+tool for “Duplicate”, “Delete” and “Property…” (its own name and a second line under it). The grid
+is kept between runs.
 
 | Setting | What it does |
 |---|---|

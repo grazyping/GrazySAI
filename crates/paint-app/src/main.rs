@@ -437,12 +437,150 @@ struct SelDrag {
 
 /// Инструмент рисования в сетке «кистей слоя», как у образца: имя, значок, свои параметры.
 struct BrushTool {
+    kind: ToolKind,
     name: &'static str,
     icon: &'static str,
     params: BrushParams,
     /// Пока не сделан — показан неактивным.
     enabled: bool,
     grain: GrainSettings,
+    /// Имя, данное в «Свойствах» (как «Tool Name» в SAI); `None` — имя вида.
+    custom: Option<String>,
+    /// Вторая строка в ячейке («Additional Name» в SAI).
+    extra: String,
+}
+
+/// Вид инструмента сетки — как в меню SAI 2017 по правому щелчку на пустой ячейке.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ToolKind {
+    Pencil,
+    AirBrush,
+    Brush,
+    Water,
+    Eraser,
+    Marker,
+    Binary,
+    Bucket,
+    Gradient,
+    SelPen,
+    SelErs,
+}
+
+impl ToolKind {
+    /// В порядке меню SAI.
+    const ALL: [ToolKind; 11] = [
+        ToolKind::Pencil,
+        ToolKind::AirBrush,
+        ToolKind::Brush,
+        ToolKind::Water,
+        ToolKind::Eraser,
+        ToolKind::Marker,
+        ToolKind::Binary,
+        ToolKind::Bucket,
+        ToolKind::Gradient,
+        ToolKind::SelPen,
+        ToolKind::SelErs,
+    ];
+
+    fn key(self) -> &'static str {
+        match self {
+            ToolKind::Pencil => "pencil",
+            ToolKind::AirBrush => "airbrush",
+            ToolKind::Brush => "brush",
+            ToolKind::Water => "water",
+            ToolKind::Eraser => "eraser",
+            ToolKind::Marker => "marker",
+            ToolKind::Binary => "binary",
+            ToolKind::Bucket => "bucket",
+            ToolKind::Gradient => "gradient",
+            ToolKind::SelPen => "selpen",
+            ToolKind::SelErs => "selers",
+        }
+    }
+
+    fn from_key(k: &str) -> Option<ToolKind> {
+        ToolKind::ALL.into_iter().find(|t| t.key() == k)
+    }
+
+    /// Полное имя вида (для меню).
+    fn label(self) -> &'static str {
+        match self {
+            ToolKind::Pencil => "Карандаш",
+            ToolKind::AirBrush => "Аэрограф",
+            ToolKind::Brush => "Кисть",
+            ToolKind::Water => "Акварель",
+            ToolKind::Eraser => "Ластик",
+            ToolKind::Marker => "Маркер",
+            ToolKind::Binary => "Двоичное перо",
+            ToolKind::Bucket => "Заливка",
+            ToolKind::Gradient => "Градиент",
+            ToolKind::SelPen => "Перо выделения",
+            ToolKind::SelErs => "Ластик выделения",
+        }
+    }
+
+    /// Новый инструмент этого вида со значениями по умолчанию, как у нового инструмента в SAI.
+    fn new_tool(self) -> BrushTool {
+        let b = |size: f32, hardness: f32, density: f32| BrushParams {
+            size,
+            hardness,
+            density,
+            ..Default::default()
+        };
+        // Значения по умолчанию — как у нового инструмента в SAI: 50 px, мин. размер 50 %,
+        // нажим на размер и на плотность (Аэрограф — самая мягкая ступень, остальные — самая жёсткая).
+        let (name, icon, params) = match self {
+            ToolKind::Pencil => ("Каранд.", "pen", b(3.0, 1.0, 1.0)),
+            ToolKind::AirBrush => ("Аэрогр.", "airbrush", BrushParams { min_size: 0.5, density_by_pressure: true, ..b(50.0, 0.0, 1.0) }),
+            ToolKind::Brush => (
+                "Кисть",
+                "brush",
+                BrushParams { min_size: 0.5, density_by_pressure: true, mix: Some(MixParams::new(0.0, 0.0, 0.5)), ..b(50.0, 1.0, 1.0) },
+            ),
+            ToolKind::Water => (
+                "Акварель",
+                "water",
+                BrushParams {
+                    min_size: 0.5,
+                    density_by_pressure: true,
+                    ver1_density: true,
+                    amplify: 0.5,
+                    mix: Some(MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }),
+                    ..b(50.0, 1.0, 1.0)
+                },
+            ),
+            // у Маркера в SAI нет порога размытия
+            ToolKind::Marker => (
+                "Маркер",
+                "marker",
+                BrushParams {
+                    min_size: 0.5,
+                    density_by_pressure: true,
+                    ver1_density: true,
+                    amplify: 0.5,
+                    mix: Some(MixParams { blur_pressure: 0.0, marker: true, ..MixParams::new(0.0, 0.0, 0.5) }),
+                    ..b(50.0, 1.0, 1.0)
+                },
+            ),
+            ToolKind::Eraser => ("Ластик", "eraser", BrushParams { erase: true, size_by_pressure: false, ..b(30.0, 0.75, 1.0) }),
+            // Binary Pen в SAI 2017: 1 px, мин. размер 0 %, «Opacity» 255
+            ToolKind::Binary => ("Двоичн.", "binary", BrushParams { binary: true, ..b(1.0, 1.0, 1.0) }),
+            ToolKind::Bucket => ("Заливка", "bucket", b(10.0, 1.0, 1.0)),
+            // В SAI градиент ставится в свободную ячейку сетки («Gradation»)
+            ToolKind::Gradient => ("Градиент", "gradient", b(10.0, 1.0, 1.0)),
+            // кисти выделения в SAI по умолчанию не реагируют на нажим
+            ToolKind::SelPen => ("Выд.К.", "selpen", BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
+            ToolKind::SelErs => ("Выд.Л.", "selers", BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
+        };
+        BrushTool { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new() }
+    }
+}
+
+impl BrushTool {
+    /// Имя в ячейке: своё или имя вида на языке интерфейса.
+    fn title(&self) -> String {
+        self.custom.clone().unwrap_or_else(|| tr(self.name).to_string())
+    }
 }
 
 /// Текстура кисти: нет, бумага слоя или файл из `brushtex`.
@@ -480,106 +618,19 @@ impl Default for GrainSettings {
     }
 }
 
+/// Сетка по умолчанию — как у нового SAI 2017, плюс градиент.
 fn brush_tools() -> Vec<BrushTool> {
-    let b = |size: f32, hardness: f32, density: f32| BrushParams {
-        size,
-        hardness,
-        density,
-        ..Default::default()
-    };
-    vec![
-        BrushTool {
-            name: "Каранд.",
-            icon: "pen",
-            params: b(3.0, 1.0, 1.0),
-            enabled: true,
-            grain: GrainSettings::default(),
-        },
-        // Значения по умолчанию — как у нового инструмента в SAI: 50 px, мин. размер 50 %,
-        // нажим на размер и на плотность (Аэрограф — самая мягкая ступень, остальные — самая жёсткая).
-        BrushTool {
-            name: "Аэрогр.",
-            icon: "airbrush",
-            params: BrushParams { min_size: 0.5, density_by_pressure: true, ..b(50.0, 0.0, 1.0) },
-            enabled: true,
-            grain: GrainSettings::default(),
-        },
-        BrushTool {
-            name: "Кисть",
-            icon: "brush",
-            params: BrushParams {
-                min_size: 0.5,
-                density_by_pressure: true,
-                mix: Some(MixParams::new(0.0, 0.0, 0.5)),
-                ..b(50.0, 1.0, 1.0)
-            },
-            enabled: true,
-            grain: GrainSettings::default(),
-        },
-        BrushTool {
-            name: "Акварель",
-            icon: "water",
-            params: BrushParams {
-                min_size: 0.5,
-                density_by_pressure: true,
-                ver1_density: true,
-                amplify: 0.5,
-                mix: Some(MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }),
-                ..b(50.0, 1.0, 1.0)
-            },
-            enabled: true,
-            grain: GrainSettings::default(),
-        },
-        BrushTool {
-            name: "Маркер",
-            icon: "marker",
-            // у Маркера в SAI нет порога размытия
-            params: BrushParams {
-                min_size: 0.5,
-                density_by_pressure: true,
-                ver1_density: true,
-                amplify: 0.5,
-                mix: Some(MixParams { blur_pressure: 0.0, marker: true, ..MixParams::new(0.0, 0.0, 0.5) }),
-                ..b(50.0, 1.0, 1.0)
-            },
-            enabled: true,
-            grain: GrainSettings::default(),
-        },
-        BrushTool {
-            name: "Ластик",
-            icon: "eraser",
-            params: BrushParams {
-                erase: true,
-                size_by_pressure: false,
-                ..b(30.0, 0.75, 1.0)
-            },
-            enabled: true,
-            grain: GrainSettings::default(),
-        },
-        BrushTool {
-            name: "Выд.К.",
-            icon: "selpen",
-            // кисти выделения в SAI по умолчанию не реагируют на нажим
-            params: BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) },
-            enabled: true,
-            grain: GrainSettings::default(),
-        },
-        BrushTool {
-            name: "Выд.Л.",
-            icon: "selers",
-            params: BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) },
-            enabled: true,
-            grain: GrainSettings::default(),
-        },
-        // В SAI градиент ставится в свободную ячейку сетки («Gradation»)
-        BrushTool {
-            name: "Градиент",
-            icon: "gradient",
-            params: b(10.0, 1.0, 1.0),
-            enabled: true,
-            grain: GrainSettings::default(),
-        },
-    ]
+    use ToolKind::*;
+    [Pencil, AirBrush, Brush, Water, Marker, Eraser, SelPen, SelErs, Gradient].map(ToolKind::new_tool).into()
+}
+
+/// Действие с ячейкой сетки инструментов (меню по правому щелчку).
+#[derive(Clone, Copy, PartialEq)]
+enum GridAction {
+    Add(ToolKind),
+    Duplicate,
+    Delete,
+    Property,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -596,13 +647,6 @@ enum LayerAction {
 /// Число ячеек образцов цвета.
 const SWATCHES: usize = 104;
 
-/// Номер ластика в сетке — им рисует обратный конец пера.
-const ERASER: usize = 5;
-/// Перо и ластик выделения в сетке.
-const SEL_PEN: usize = 6;
-const SEL_ERASER: usize = 7;
-/// Градиент в сетке.
-const GRADIENT: usize = 8;
 
 /// Масштабы в списке быстрой панели, %.
 const ZOOMS: [f32; 14] = [
@@ -713,6 +757,8 @@ struct PaintApp {
     gradient: Option<GradientEdit>,
     grad_opts: GradientOpts,
     transform_kind: TransformKind,
+    /// Окно «Свойства» инструмента сетки: номер, имя, вторая строка.
+    tool_props: Option<(usize, String, String)>,
     /// Ползунок «Перспектива» трансформации, 0–100.
     transform_perspective: u8,
     move_drag: Option<MoveDrag>,
@@ -786,7 +832,7 @@ impl PaintApp {
             tool: Tool::Brush,
             brushes: brush_tools(),
             // PAINT_BRUSH — номер кисти в сетке при запуске (для проверок виртуальным пером)
-            brush: std::env::var("PAINT_BRUSH").ok().and_then(|v| v.parse().ok()).filter(|&i: &usize| i != ERASER && i <= SEL_ERASER).unwrap_or(0),
+            brush: std::env::var("PAINT_BRUSH").ok().and_then(|v| v.parse().ok()).filter(|&i: &usize| i != 5 && i < 8).unwrap_or(0),
             hsv: [0.0, 0.0, 0.08],
             back: Color32::WHITE,
             stabilizer: paint_core::stabilizer::Level::Plain(3),
@@ -831,6 +877,7 @@ impl PaintApp {
             gradient: None,
             grad_opts: GradientOpts::default(),
             transform_kind: TransformKind::Free,
+            tool_props: None,
             transform_perspective: 0,
             move_drag: None,
             transform: None,
@@ -975,6 +1022,20 @@ impl PaintApp {
     /// Настройки прошлого запуска: кисти, цвета, сглаживание, допуск палочки.
     fn load_settings(&mut self) {
         let s = settings::Settings::load();
+        // свой список инструментов сетки (без него — сетка по умолчанию)
+        if let Some(n) = s.f32("tools.count").map(|v| v as usize).filter(|&n| n > 0 && n < 1000) {
+            let tools: Vec<BrushTool> = (0..n)
+                .filter_map(|i| {
+                    let mut t = ToolKind::from_key(s.str(&format!("tool.{i}.kind"))?)?.new_tool();
+                    t.custom = s.str(&format!("tool.{i}.name")).filter(|v| !v.is_empty()).map(str::to_string);
+                    t.extra = s.str(&format!("tool.{i}.extra")).unwrap_or("").to_string();
+                    Some(t)
+                })
+                .collect();
+            if tools.len() == n {
+                self.brushes = tools;
+            }
+        }
         for (i, b) in self.brushes.iter_mut().enumerate() {
             let p = &mut b.params;
             let k = |name: &str| format!("brush.{i}.{name}");
@@ -1115,6 +1176,12 @@ impl PaintApp {
 
     fn save_settings(&self) {
         let mut s = settings::Settings::load();
+        s.set("tools.count", self.brushes.len());
+        for (i, b) in self.brushes.iter().enumerate() {
+            s.set(&format!("tool.{i}.kind"), b.kind.key());
+            s.set(&format!("tool.{i}.name"), b.custom.as_deref().unwrap_or(""));
+            s.set(&format!("tool.{i}.extra"), &b.extra);
+        }
         for (i, b) in self.brushes.iter().enumerate() {
             let p = &b.params;
             let k = |name: &str| format!("brush.{i}.{name}");
@@ -1191,6 +1258,52 @@ impl PaintApp {
     }
 
     /// Форма и текстура инструмента `tool` для нового штриха (файлы ищутся в папке SAI).
+    /// Правый щелчок по сетке инструментов: добавить, копия, удалить, свойства.
+    fn grid_action(&mut self, i: usize, act: GridAction) {
+        match act {
+            GridAction::Add(k) => {
+                self.brushes.push(k.new_tool());
+                self.brush = self.brushes.len() - 1;
+                self.tool = Tool::Brush;
+            }
+            GridAction::Duplicate => {
+                let src = &self.brushes[i];
+                let copy = BrushTool { params: src.params, grain: src.grain.clone(), custom: src.custom.clone(), extra: src.extra.clone(), ..src.kind.new_tool() };
+                self.brushes.insert(i + 1, copy);
+                if self.brush > i {
+                    self.brush += 1;
+                }
+            }
+            GridAction::Delete => {
+                if self.brushes.len() > 1 {
+                    self.brushes.remove(i);
+                    if self.brush > i || self.brush >= self.brushes.len() {
+                        self.brush = self.brush.saturating_sub(1);
+                    }
+                }
+            }
+            GridAction::Property => {
+                let t = &self.brushes[i];
+                self.tool_props = Some((i, t.title(), t.extra.clone()));
+            }
+        }
+    }
+
+    /// Вид текущего инструмента сетки.
+    fn kind(&self) -> ToolKind {
+        self.brushes[self.brush].kind
+    }
+
+    /// Ластик для обратного конца пера: первый ластик сетки (без него — текущий инструмент).
+    fn eraser_index(&self) -> usize {
+        self.brushes.iter().position(|b| b.kind == ToolKind::Eraser).unwrap_or(self.brush)
+    }
+
+    /// Перо или ластик выделения.
+    fn sel_tool(&self) -> bool {
+        matches!(self.kind(), ToolKind::SelPen | ToolKind::SelErs)
+    }
+
     fn grain_for(&self, tool: usize) -> Option<paint_core::stroke::Grain> {
         let g = &self.brushes[tool].grain;
         let blot = g
@@ -1835,7 +1948,7 @@ impl PaintApp {
             return;
         }
         let p = self.snap_to_ruler(p);
-        if liwk && !eraser_end && self.brush != SEL_PEN && self.brush != SEL_ERASER && self.filter.is_none() {
+        if liwk && !eraser_end && !self.sel_tool() && self.filter.is_none() {
             // перо слоя контура: точки копятся, по отрыву становятся кривой
             self.smoother = Stabilizer::with_level(self.stabilizer);
             let q = self.smoother.push(p);
@@ -1846,30 +1959,30 @@ impl PaintApp {
             self.status = String::from(tr("Сначала закройте окно фильтра (OK или «Отмена»)"));
             return;
         }
-        if self.mask_edit && self.brush != SEL_PEN && self.brush != SEL_ERASER {
+        if self.mask_edit && !self.sel_tool() {
             // кисть рисует в маске: тёмный цвет скрывает слой, светлый и ластик — показывают
             let Some(orig) = self.doc.layer(&self.selected).and_then(|l| l.mask.clone()) else {
                 self.mask_edit = false;
                 self.status = String::from(tr("У слоя нет маски"));
                 return;
             };
-            let mut params = if eraser_end { self.brushes[ERASER].params } else { self.brushes[self.brush].params };
+            let mut params = if eraser_end { self.brushes[self.eraser_index()].params } else { self.brushes[self.brush].params };
             params.mix = None;
-            let erase = eraser_end || self.brush == ERASER;
+            let erase = eraser_end || self.kind() == ToolKind::Eraser;
             let c = self.color();
             let lum = (c.r() as u32 * 77 + c.g() as u32 * 150 + c.b() as u32 * 29) >> 8;
             let target = if erase { 0 } else { ((255 - lum.min(255)) * 0x4000 / 255) as u16 };
             self.smoother = Stabilizer::with_level(self.stabilizer);
             self.stroke_by_touch = self.touch_down;
             let mut st = Stroke::new(params);
-            st.set_grain(self.grain_for(if eraser_end { ERASER } else { self.brush }));
+            st.set_grain(self.grain_for(if eraser_end { self.eraser_index() } else { self.brush }));
             st.add_point(self.smoother.push(p));
             let keys = self.doc.mask_stroke_preview(&self.selected.clone(), &orig.hide, &st.mask, target);
             self.invalidate(keys);
             self.mask_stroke = Some((st, orig, target));
             return;
         }
-        if !eraser_end && (self.brush == SEL_PEN || self.brush == SEL_ERASER) {
+        if !eraser_end && self.sel_tool() {
             // перо и ластик выделения рисуют не в слой, а в выделение
             self.smoother = Stabilizer::with_level(self.stabilizer);
             let mut s = Stroke::new(self.brushes[self.brush].params);
@@ -1892,7 +2005,7 @@ impl PaintApp {
             return;
         }
         let params = if eraser_end {
-            self.brushes[ERASER].params
+            self.brushes[self.eraser_index()].params
         } else {
             self.brushes[self.brush].params
         };
@@ -1900,7 +2013,7 @@ impl PaintApp {
         self.smoother = Stabilizer::with_level(self.stabilizer);
         let c = self.color();
         let mut stroke = Stroke::new(params);
-        stroke.set_grain(self.grain_for(if eraser_end { ERASER } else { self.brush }));
+        stroke.set_grain(self.grain_for(if eraser_end { self.eraser_index() } else { self.brush }));
         let mut live = LiveStroke::new(self.selected.clone(), stroke, [c.r(), c.g(), c.b()]);
         live.stroke.add_point(self.smoother.push(p));
         let keys = self.doc.live_update(&mut live);
@@ -1988,7 +2101,7 @@ impl PaintApp {
             for q in self.smoother.finish() {
                 s.add_point(q);
             }
-            let mode = if self.brush == SEL_ERASER { Combine::Subtract } else { Combine::Add };
+            let mode = if self.kind() == ToolKind::SelErs { Combine::Subtract } else { Combine::Add };
             self.apply_selection(&s.mask, mode);
             return;
         }
@@ -3371,54 +3484,63 @@ impl PaintApp {
             }
         });
         ui.add_space(2.0);
-        // Кисти слоя: 4 в ряд, имя сверху, значок снизу справа.
+        // Кисти слоя: 4 в ряд, имя сверху, значок снизу справа. Как в SAI: правый щелчок по пустой
+        // ячейке — новый инструмент выбранного вида, по инструменту — копия, удаление, свойства.
+        let mut grid_action: Option<(usize, GridAction)> = None;
         egui::Frame::none()
             .stroke(egui::Stroke::new(1.0_f32, sai_ui::BORDER))
             .fill(Color32::WHITE)
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 let w = (ui.available_width() / 4.0).floor();
-                for row in 0..self.brushes.len().div_ceil(4) {
-                    ui.horizontal(|ui| {
-                        for i in row * 4..(row * 4 + 4).min(self.brushes.len()) {
-                            let (name, icon, enabled) = (
-                                self.brushes[i].name,
-                                self.brushes[i].icon,
-                                self.brushes[i].enabled,
-                            );
-                            let selected = self.tool == Tool::Brush && self.brush == i;
-                            let tip = if enabled {
-                                tr(name).to_string()
-                            } else {
-                                trf("{0} — позже", &[&tr(name)])
-                            };
-                            let r = sai_ui::icon_button(
-                                ui,
-                                Vec2::new(w, 36.0),
-                                selected,
-                                enabled,
-                                &tip,
-                                |p, r, c| {
-                                    sai_ui::fit_text(p, r.left_top(), egui::Align2::LEFT_TOP, tr(name), r.width(), 10.0, c);
-                                    sai_ui::glyph(
-                                        p,
-                                        Rect::from_min_size(
-                                            r.right_bottom() - Vec2::splat(16.0),
-                                            Vec2::splat(16.0),
-                                        ),
-                                        c,
-                                        icon,
-                                    );
-                                },
-                            );
-                            if r.clicked() {
-                                self.tool = Tool::Brush;
-                                self.brush = i;
+                // пустые ячейки — до конца ряда, а если ряд полон — ещё ряд
+                let cells = (self.brushes.len() / 4 + 1) * 4;
+                egui::ScrollArea::vertical().max_height(36.0 * 3.0).auto_shrink([false, true]).show(ui, |ui| {
+                    for row in 0..cells / 4 {
+                        ui.horizontal(|ui| {
+                            for i in row * 4..row * 4 + 4 {
+                                let Some(tool) = self.brushes.get(i) else {
+                                    let r = sai_ui::icon_button(ui, Vec2::new(w, 36.0), false, true, tr("Правый щелчок — новый инструмент"), |_, _, _| {});
+                                    r.context_menu(|ui| {
+                                        for k in ToolKind::ALL {
+                                            if ui.button(tr(k.label())).clicked() {
+                                                grid_action = Some((i, GridAction::Add(k)));
+                                                ui.close_menu();
+                                            }
+                                        }
+                                    });
+                                    continue;
+                                };
+                                let (title, extra, icon, enabled) = (tool.title(), tool.extra.clone(), tool.icon, tool.enabled);
+                                let selected = self.tool == Tool::Brush && self.brush == i;
+                                let tip = if enabled { title.clone() } else { trf("{0} — позже", &[&title]) };
+                                let r = sai_ui::icon_button(ui, Vec2::new(w, 36.0), selected, enabled, &tip, |p, r, c| {
+                                    sai_ui::fit_text(p, r.left_top(), egui::Align2::LEFT_TOP, &title, r.width(), 10.0, c);
+                                    if !extra.is_empty() {
+                                        sai_ui::fit_text(p, r.left_top() + Vec2::new(0.0, 11.0), egui::Align2::LEFT_TOP, &extra, r.width() - 16.0, 9.0, c);
+                                    }
+                                    sai_ui::glyph(p, Rect::from_min_size(r.right_bottom() - Vec2::splat(16.0), Vec2::splat(16.0)), c, icon);
+                                });
+                                if r.clicked() {
+                                    self.tool = Tool::Brush;
+                                    self.brush = i;
+                                }
+                                r.context_menu(|ui| {
+                                    for (act, name) in [(GridAction::Duplicate, tr("Копия")), (GridAction::Delete, tr("Удалить")), (GridAction::Property, tr("Свойства…"))] {
+                                        if ui.button(name).clicked() {
+                                            grid_action = Some((i, act));
+                                            ui.close_menu();
+                                        }
+                                    }
+                                });
                             }
-                        }
-                    });
-                }
+                        });
+                    }
+                });
             });
+        if let Some((i, act)) = grid_action {
+            self.grid_action(i, act);
+        }
         ui.add_space(4.0);
         let lw = sai_ui::label_w(
             ui,
@@ -3533,8 +3655,19 @@ impl PaintApp {
             ui.checkbox(&mut self.lasso_aa, tr("Сглаживание края"));
             ui.add_space(4.0);
         }
-        if self.tool == Tool::Brush && self.brush == GRADIENT {
+        if self.tool == Tool::Brush && self.kind() == ToolKind::Gradient {
             self.gradient_panel(ui);
+            return;
+        }
+        if self.tool == Tool::Brush && self.kind() == ToolKind::Bucket {
+            let tol = &mut self.wand_tolerance;
+            sai_ui::row(ui, tr("Допуск"), lw, true, |ui| {
+                let mut v = *tol as f32;
+                let text = format!("{}", *tol);
+                if sai_ui::bar(ui, &mut v, 0.0, 255.0, text, w, true).changed() {
+                    *tol = v.round().clamp(0.0, 255.0) as u8;
+                }
+            });
             return;
         }
         if self.grain_names.is_none() {
@@ -4848,7 +4981,15 @@ impl PaintApp {
                     self.fill_at(c.x, c.y);
                 }
             }
-        } else if self.tool == Tool::Brush && self.brush == GRADIENT && !ui.input(|i| i.modifiers.alt) {
+        } else if self.tool == Tool::Brush && self.kind() == ToolKind::Bucket && !ui.input(|i| i.modifiers.alt) {
+            // «Заливка» из сетки (Bucket в SAI) — как ведро
+            if pressed && response.hovered() {
+                if let Some(pos) = pointer {
+                    let c = to_canvas(pos, self.zoom, self.offset);
+                    self.fill_at(c.x, c.y);
+                }
+            }
+        } else if self.tool == Tool::Brush && self.kind() == ToolKind::Gradient && !ui.input(|i| i.modifiers.alt) {
             if pressed && response.hovered() {
                 if let Some(pos) = pointer {
                     self.gradient_press(to_canvas(pos, self.zoom, self.offset));
@@ -5082,7 +5223,7 @@ impl PaintApp {
         // Мазок пера или ластика выделения — полупрозрачная полоса по пути.
         if let Some((s, path)) = &self.sel_stroke {
             let width = (s.params.size * self.zoom).max(1.0);
-            let color = if self.brush == SEL_ERASER { Color32::from_rgba_unmultiplied(220, 60, 60, 110) } else { Color32::from_rgba_unmultiplied(60, 110, 230, 110) };
+            let color = if self.kind() == ToolKind::SelErs { Color32::from_rgba_unmultiplied(220, 60, 60, 110) } else { Color32::from_rgba_unmultiplied(60, 110, 230, 110) };
             let pts: Vec<Pos2> = path.iter().map(|p| to_screen(p.x, p.y)).collect();
             if pts.len() == 1 {
                 painter.circle_filled(pts[0], width / 2.0, color);
@@ -5227,12 +5368,46 @@ impl PaintApp {
             }
         }
         // градиент применяется, если сменили инструмент или слой; лассо без инструмента — отменяется
-        if self.gradient.as_ref().is_some_and(|e| self.tool != Tool::Brush || self.brush != GRADIENT || e.path != self.selected) {
+        if self.gradient.as_ref().is_some_and(|e| self.tool != Tool::Brush || self.kind() != ToolKind::Gradient || e.path != self.selected) {
             self.finish_gradient(true);
         }
         self.update_gradient();
         if self.sel_poly.is_some() && !(self.tool == Tool::Lasso && self.lasso_polygon) {
             self.sel_poly = None;
+        }
+        let mut props_done = None;
+        if let Some((_, name, extra)) = self.tool_props.as_mut() {
+            let mut open = true;
+            egui::Window::new(tr("Свойства инструмента")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+                egui::Grid::new("toolprops").num_columns(2).show(ui, |ui| {
+                    ui.label(tr("Имя:"));
+                    ui.add(egui::TextEdit::singleline(name).char_limit(16).desired_width(140.0));
+                    ui.end_row();
+                    ui.label(tr("Вторая строка:"));
+                    ui.add(egui::TextEdit::singleline(extra).char_limit(16).desired_width(140.0));
+                    ui.end_row();
+                });
+                ui.label(egui::RichText::new(tr("Имя — до 8 знаков, как в SAI; вторая строка видна под ним.")).small().weak());
+                ui.horizontal(|ui| {
+                    if ui.button("OK").clicked() {
+                        props_done = Some(true);
+                    }
+                    if ui.button(tr("Отмена")).clicked() {
+                        props_done = Some(false);
+                    }
+                });
+            });
+            if !open {
+                props_done = Some(false);
+            }
+        }
+        if let Some(ok) = props_done {
+            let (i, name, extra) = self.tool_props.take().unwrap();
+            if let (true, Some(t)) = (ok, self.brushes.get_mut(i)) {
+                let name = name.trim().to_string();
+                t.custom = (!name.is_empty() && name != tr(t.name)).then_some(name);
+                t.extra = extra.trim().to_string();
+            }
         }
         let mut grow_finish = None;
         if let Some(d) = self.grow_dialog.as_mut() {
@@ -5891,8 +6066,9 @@ impl eframe::App for PaintApp {
                     }
                 }
             }
-            for (a, i) in [(A::Pencil, 0), (A::AirBrush, 1), (A::Brush, 2), (A::Water, 3), (A::Eraser, ERASER)] {
-                if hit(a) && !(liwk && (i == 0 || i == ERASER)) {
+            for (a, k) in [(A::Pencil, ToolKind::Pencil), (A::AirBrush, ToolKind::AirBrush), (A::Brush, ToolKind::Brush), (A::Water, ToolKind::Water), (A::Eraser, ToolKind::Eraser)] {
+                let i = self.brushes.iter().position(|b| b.kind == k);
+                if let Some(i) = i.filter(|_| hit(a) && !(liwk && matches!(k, ToolKind::Pencil | ToolKind::Eraser))) {
                     self.brush = i;
                     self.tool = Tool::Brush;
                 }
