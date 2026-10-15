@@ -273,6 +273,8 @@ pub struct Stroke {
     pub params: BrushParams,
     pub mask: MaskMap,
     last: Option<InputPoint>,
+    /// Двоичное перо: последняя поставленная точка (в координатах «−0,5»), как поле +0x1c0 SAI.
+    bin_prev: Option<(f64, f64)>,
     /// Путь, пройденный после последнего отпечатка.
     carry: f32,
     pub dab_count: usize,
@@ -300,6 +302,7 @@ impl Stroke {
             params,
             mask: MaskMap::new(),
             last: None,
+            bin_prev: None,
             carry: 0.0,
             dab_count: 0,
             touched: HashSet::new(),
@@ -418,6 +421,10 @@ impl Stroke {
     /// Шаг, по которому считается непрозрачность отпечатка.
     fn step_at(&self, pressure: f32) -> f32 {
         let d = self.params.diameter_at(pressure);
+        if self.params.binary {
+            // точки двоичного пера ставятся на пересечения с сеткой — путь проходится мелко
+            return 0.25;
+        }
         if self.params.spacing > 0.0 {
             return (self.params.spacing * d.max(1.0)).max(0.05);
         }
@@ -458,18 +465,53 @@ impl Stroke {
         self.last = Some(p);
     }
 
+    /// Двоичное перо SAI 2017 (`FUN_1400e3690`): от прошлой точки к текущей берутся пересечения
+    /// с ближайшими линиями сетки x = round(x) и y = round(y); ставится то, что ближе к текущей
+    /// точке (если пересечение одно — только не дальше 1 px). Отпечаток — в целом пикселе:
+    /// размер округляется, у нечётного центр в середине пикселя.
+    fn binary_point(&mut self, x: f64, y: f64, diameter: f32) -> Option<(f32, f32, f32)> {
+        // cvtsd2si: к ближайшему, половины — к чётному
+        let rnd = |v: f64| v.round_ties_even();
+        let (x, y) = (x - 0.5, y - 0.5);
+        let at = match self.bin_prev {
+            None => (x, y),
+            Some((px, py)) => {
+                let (dx, dy) = (x - px, y - py);
+                let a = (dx != 0.0).then(|| (rnd(x), dy / dx * (rnd(x) - px) + py));
+                let b = (dy != 0.0).then(|| (dx / dy * (rnd(y) - py) + px, rnd(y)));
+                let d = |q: (f64, f64)| (q.0 - x).hypot(q.1 - y);
+                match (a, b) {
+                    (Some(a), Some(b)) => {
+                        if d(b) < d(a) {
+                            b
+                        } else {
+                            a
+                        }
+                    }
+                    (Some(q), None) | (None, Some(q)) if d(q) <= 1.000001 => q,
+                    _ => return None,
+                }
+            }
+        };
+        self.bin_prev = Some(at);
+        let size = (diameter as f64).round_ties_even().max(1.0);
+        let half = if size as i64 % 2 == 1 { 0.5 } else { 0.0 };
+        Some(((rnd(at.0) + half) as f32, (rnd(at.1) + half) as f32, (size / 2.0) as f32))
+    }
+
     fn dab(&mut self, p: InputPoint) {
         let diameter = self.params.diameter_at(p.pressure);
         let density = self.params.density_at(p.pressure);
         if density <= 0.0 {
             return;
         }
-        let shape = if self.params.binary {
-            Shape::Binary((diameter / 2.0).max(0.5), 1.0)
+        let (p, shape) = if self.params.binary {
+            let Some((cx, cy, r)) = self.binary_point(p.x as f64, p.y as f64, diameter) else { return };
+            (InputPoint { x: cx, y: cy, ..p }, Shape::Binary(r, 1.0))
         } else {
             let d = self.sai_dab(p.pressure);
             let o = d.opacity(self.step_at(p.pressure));
-            Shape::Sai(d, o)
+            (p, Shape::Sai(d, o))
         };
         // маска штриха — сразу: у образца её строят по окну отпечатков вокруг пачки, включая
         // следующие, так что все известные отпечатки уже в ней

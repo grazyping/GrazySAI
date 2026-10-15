@@ -363,8 +363,9 @@ restores all defaults. Assignments are saved in the settings. The defaults are b
 ## How it still differs from SAI
 
 The full list is in [ROADMAP.en.md](../ROADMAP.en.md). The main points:
-- No bristle brush form, custom tools in the grid, perspective transform or several canvases in
-  tabs yet; perspective rulers are saved but not shown.
+- No bristle brush form, several views of one canvas, HSL and V-HSV slider modes yet; perspective
+  rulers are saved but not shown; the thumbnail for SAI's file browser is not written; the binary
+  pen does not follow SAI's exact stair rule.
 
 ## If something is wrong
 

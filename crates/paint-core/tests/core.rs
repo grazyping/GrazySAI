@@ -1069,3 +1069,18 @@ fn rotate_layer_and_merge_visible_like_sai() {
     assert_eq!((names, i), (vec!["скрытый", "слитый"], 1));
     assert_eq!(doc.layers[1].pixels.get(15, 25)[3], paint_core::pixel::ONE as u16);
 }
+
+#[test]
+fn binary_pen_steps_like_sai() {
+    // живая SAI 2017, двоичное перо 1 px, наклон 0,2: в каждом ряду ровно 5 точек, ряды не
+    // перекрываются (правило точек — FUN_1400e3690)
+    let mut s = Stroke::new(BrushParams { binary: true, size: 1.0, size_by_pressure: false, ..Default::default() });
+    for i in 0..=100 {
+        s.add_point(InputPoint { x: 10.3 + i as f32 * 0.5, y: 10.2 + i as f32 * 0.1, pressure: 1.0 });
+    }
+    let rows: Vec<Vec<i32>> = (11..19).map(|y| (0..80).filter(|&x| s.mask.get(x, y) > 0).collect()).collect();
+    for w in rows.windows(2) {
+        assert_eq!(w[0].len(), 5, "{rows:?}");
+        assert_eq!(w[1][0], w[0].last().unwrap() + 1, "{rows:?}");
+    }
+}
