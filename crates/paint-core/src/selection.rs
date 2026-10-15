@@ -126,19 +126,62 @@ impl Selection {
     /// Расширить (`grow`) или сузить выделение на 1 px: наибольшее или наименьшее значение
     /// среди точки и её восьми соседей.
     pub fn grow(&mut self, grow: bool) {
+        self.grow_by(1, grow);
+    }
+
+    /// Расширить или сузить на `n` px, как «Dilate/Erode Selection» SAI 2017 (1–25 px): шаги по
+    /// очереди квадратом 3×3 и крестом (первый — квадрат), поэтому углы срезаются под 45°
+    /// (сверено с живой SAI: прямоугольник +25 px — срез по 12 px).
+    pub fn grow_by(&mut self, n: u32, grow: bool) {
         let Some((x0, y0, x1, y1)) = self.bounds() else { return };
+        let pad = if grow { n as i32 } else { 0 };
+        let (ox, oy) = (x0 - pad, y0 - pad);
+        let (bw, bh) = ((x1 - x0 + 2 * pad) as usize, (y1 - y0 + 2 * pad) as usize);
+        let mut buf = vec![0u16; bw * bh];
+        for (i, v) in buf.iter_mut().enumerate() {
+            *v = self.mask.get(ox + (i % bw) as i32, oy + (i / bw) as i32);
+        }
+        let pick = |a: u16, b: u16| if grow { a.max(b) } else { a.min(b) };
+        let at = |buf: &[u16], x: isize, y: isize| -> u16 {
+            if x < 0 || y < 0 || x >= bw as isize || y >= bh as isize {
+                0
+            } else {
+                buf[y as usize * bw + x as usize]
+            }
+        };
+        for step in 0..n {
+            let mut next = vec![0u16; bw * bh];
+            if step % 2 == 0 {
+                // квадрат: по строке, затем по столбцу
+                let mut row = vec![0u16; bw * bh];
+                for y in 0..bh as isize {
+                    for x in 0..bw as isize {
+                        let v = pick(pick(at(&buf, x - 1, y), at(&buf, x, y)), at(&buf, x + 1, y));
+                        row[y as usize * bw + x as usize] = v;
+                    }
+                }
+                for y in 0..bh as isize {
+                    for x in 0..bw as isize {
+                        next[y as usize * bw + x as usize] = pick(pick(at(&row, x, y - 1), at(&row, x, y)), at(&row, x, y + 1));
+                    }
+                }
+            } else {
+                for y in 0..bh as isize {
+                    for x in 0..bw as isize {
+                        let mut v = at(&buf, x, y);
+                        for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                            v = pick(v, at(&buf, x + dx, y + dy));
+                        }
+                        next[y as usize * bw + x as usize] = v;
+                    }
+                }
+            }
+            buf = next;
+        }
         let mut out = MaskMap::new();
-        let (a, b) = if grow { (1, 1) } else { (0, 0) };
-        for y in y0 - a..y1 + b {
-            for x in x0 - a..x1 + b {
-                let mut v = self.mask.get(x, y);
-                for (dx, dy) in [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)] {
-                    let n = self.mask.get(x + dx, y + dy);
-                    v = if grow { v.max(n) } else { v.min(n) };
-                }
-                if v > 0 {
-                    out.set(x, y, v);
-                }
+        for (i, &v) in buf.iter().enumerate() {
+            if v > 0 {
+                out.set(ox + (i % bw) as i32, oy + (i / bw) as i32, v);
             }
         }
         self.mask = out;
@@ -223,6 +266,20 @@ pub fn polygon(points: &[Pt]) -> MaskMap {
         }
     }
     out
+}
+
+/// Многоугольник лассо: со сглаженным краем или без (тогда точка выделена, если покрыта больше
+/// чем наполовину) — галочка «Сглаживание» инструмента, как в SAI.
+pub fn polygon_aa(points: &[Pt], aa: bool) -> MaskMap {
+    let mut m = polygon(points);
+    if !aa {
+        for t in m.tiles.values_mut() {
+            for v in t.0.iter_mut() {
+                *v = if *v as u32 * 2 > ONE { ONE as u16 } else { 0 };
+            }
+        }
+    }
+    m
 }
 
 /// Волшебная палочка: связная (по 4 соседям) область, где цвет отличается от цвета в точке
@@ -493,6 +550,19 @@ mod tests {
         s.grow(false);
         s.grow(false);
         assert_eq!(s.bounds(), Some((6, 6, 9, 9)));
+    }
+
+    #[test]
+    fn grow_by_cuts_corners_like_sai() {
+        // SAI 2017: прямоугольник +25 px — стороны сдвигаются на 25, углы срезаны по 12 px
+        let mut s = Selection::default();
+        s.combine(&rect(100.0, 100.0, 200.0, 180.0), Combine::Replace);
+        s.grow_by(25, true);
+        assert_eq!(s.bounds(), Some((75, 75, 225, 205)));
+        let top: Vec<i32> = (0..300).filter(|&x| s.amount(x, 75) > 0).collect();
+        assert_eq!((top[0], *top.last().unwrap()), (75 + 12, 224 - 12));
+        s.grow_by(25, false);
+        assert_eq!(s.bounds(), Some((100, 100, 200, 180)));
     }
 
     #[test]

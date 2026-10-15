@@ -702,6 +702,17 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
                 Stroke::new(1.0_f32, c),
             ));
         }
+        "gradient" => {
+            let q = r.shrink(2.0);
+            let n = 8;
+            for i in 0..n {
+                let x0 = q.left() + q.width() * i as f32 / n as f32;
+                let x1 = q.left() + q.width() * (i + 1) as f32 / n as f32;
+                let g = (30 + 220 * i / (n - 1)) as u8;
+                p.rect_filled(Rect::from_x_y_ranges(x0..=x1, q.y_range()), 0.0, Color32::from_gray(g));
+            }
+            p.rect_stroke(q, 0.0, Stroke::new(1.0_f32, c));
+        }
         "selpen" | "selers" => {
             glyph(p, Rect::from_min_size(r.min, r.size() * 0.6), c, "select");
             glyph(

@@ -386,3 +386,23 @@ SOsai на GitHub = SOsai on GitHub
 Жирный = Bold
 Курсив = Italic
 Цвет — основной цвет панели. = Color is the main color of the panel.
+
+# Градиент, лассо, расширение выделения (0.8.13)
+Градиент = Gradation
+Градиент рисуется на видимом обычном слое без запрета рисования = The gradient is drawn on a visible normal layer that is not locked for drawing
+Режим выделения: = Selection Mode:
+Свободно = Freeform
+Многоугольник = Polygonal
+Щелчки ставят вершины; Enter или двойной щелчок — закрыть, Esc — отменить = Clicks place corners; Enter or double-click closes, Esc cancels
+Прямой = Straight
+Круг = Circle
+Основной → фоновый = FG Color to BG Color
+Основной → прозрачность = FG Color to Transparency
+Обратный = Reverse
+S-кривая = S-Curve Gradation
+Протяните по холсту; концы можно двигать до «Применить». = Drag across the canvas; the ends can be moved until you apply.
+Расширить выделение… = Dilate Selection…
+Сузить выделение… = Erode Selection…
+Расширить выделение = Dilate Selection
+Сузить выделение = Erode Selection
+Сглаживание края = Anti-Aliasing

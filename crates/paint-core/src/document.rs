@@ -801,6 +801,15 @@ impl Document {
         }
     }
 
+    /// Расширить или сузить выделение на `n` px (как в SAI: углы срезаются под 45°).
+    pub fn grow_selection_by(&mut self, n: u32, grow: bool) {
+        let mut next = self.selection.clone();
+        next.grow_by(n, grow);
+        if next != self.selection {
+            self.perform(vec![Op::Selection { mask: next.mask }]);
+        }
+    }
+
     pub fn invert_selection(&mut self) {
         let mut next = self.selection.clone();
         next.invert(self.width, self.height);
@@ -1204,7 +1213,7 @@ fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]], size: (i3
 
 /// Пиксель после наложения краски `rgb` с долей `m` (0..=ONE): «поверх»; при сохранении
 /// непрозрачности — только цвет, альфа прежняя.
-fn blend_paint(px: Px, rgb: [u8; 3], m: u32, preserve: bool) -> Px {
+pub(crate) fn blend_paint(px: Px, rgb: [u8; 3], m: u32, preserve: bool) -> Px {
     let color = rgb.map(|c| (c as u32 * ONE + 127) / 255);
     let inv = ONE - m;
     let mut out = px;

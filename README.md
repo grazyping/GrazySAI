@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md)
 
-A painting program in Rust modelled on PaintTool SAI 2 — a personal project. Version 0.8.12.
+A painting program in Rust modelled on PaintTool SAI 2 — a personal project. Version 0.8.13.
 How to use it is in the [manual](docs/manual.en.md); what is done and what comes next is in
 [ROADMAP.en.md](ROADMAP.en.md) and on the [Milestones](https://github.com/grazyping/SOsai/milestones)
 tab; ready builds are under Releases. Linux and Windows, tablet pen (XPPen Artist 24 Pro),
@@ -31,6 +31,7 @@ opens `.sai2` files.
 - Brush forms (blots) and textures, layer paper as a brush texture — as in SAI 2017
   (`docs/29-brush-form-texture.md`).
 - Text layers: drawn with the system font and saved byte for byte (`docs/30-text-layers.md`).
+- Gradation tool, polygonal lasso, dilate and erode the selection by 1–25 px — checked against the live SAI (`docs/31-gradient-selection.md`).
 - Rulers: straight line and ellipse, as in SAI 2017 (`docs/27-rulers.md`).
 - Five resampling methods, as in SAI (`docs/12-resampling.md`).
 - Window laid out like SAI 2 (`docs/04-ui-layout.md`, `docs/ref/paint-rs-ui.png`).

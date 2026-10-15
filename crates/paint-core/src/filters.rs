@@ -310,3 +310,123 @@ mod hue_tests {
         }
     }
 }
+
+/// Градиент, как инструмент «Градиент» SAI 2017 (сверено с живой SAI, docs/31-gradient-selection.md):
+/// доля `t` растёт линейно от начальной точки к конечной (по проекции на отрезок или, для круга,
+/// по расстоянию от начальной), за концами — 0 и 1; «S-кривая» — `3t² − 2t³`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Gradient {
+    pub from: [f64; 2],
+    pub to: [f64; 2],
+    pub circle: bool,
+    pub fg: [u8; 3],
+    /// Конечный цвет; `None` — к прозрачности.
+    pub bg: Option<[u8; 3]>,
+    pub reverse: bool,
+    pub s_curve: bool,
+}
+
+impl Gradient {
+    /// Доля конечного цвета в центре пикселя (x, y).
+    pub fn t(&self, x: i32, y: i32) -> f64 {
+        let (px, py) = (x as f64 + 0.5 - self.from[0], y as f64 + 0.5 - self.from[1]);
+        let (dx, dy) = (self.to[0] - self.from[0], self.to[1] - self.from[1]);
+        let len2 = dx * dx + dy * dy;
+        let mut t = if len2 < 1e-9 {
+            1.0
+        } else if self.circle {
+            ((px * px + py * py) / len2).sqrt()
+        } else {
+            (px * dx + py * dy) / len2
+        }
+        .clamp(0.0, 1.0);
+        if self.reverse {
+            t = 1.0 - t;
+        }
+        if self.s_curve {
+            t = t * t * (3.0 - 2.0 * t);
+        }
+        t
+    }
+
+    /// Цвет и непрозрачность (0..=ONE) в точке.
+    fn paint(&self, x: i32, y: i32) -> ([u8; 3], u32) {
+        let t = self.t(x, y);
+        match self.bg {
+            Some(bg) => {
+                let c = [0, 1, 2].map(|i| (self.fg[i] as f64 + (bg[i] as f64 - self.fg[i] as f64) * t).round() as u8);
+                (c, ONE)
+            }
+            None => (self.fg, ((1.0 - t) * ONE as f64).round() as u32),
+        }
+    }
+}
+
+/// Слой `src` с градиентом поверх (по всему холсту `w`×`h`, с долей выделения `sel`);
+/// `preserve` — сохранять непрозрачность слоя.
+pub fn gradient(src: &ColorMap, w: u32, h: u32, g: &Gradient, sel: &(dyn Fn(i32, i32) -> u32 + Sync), preserve: bool) -> ColorMap {
+    use crate::tile::Tile;
+    let keys: Vec<(i32, i32)> = (0..h.div_ceil(TILE as u32) as i32).flat_map(|ty| (0..w.div_ceil(TILE as u32) as i32).map(move |tx| (tx, ty))).collect();
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let per = keys.len().div_ceil(threads).max(1);
+    let tiles: Vec<((i32, i32), Tile<Px>)> = std::thread::scope(|scope| {
+        let jobs: Vec<_> = keys
+            .chunks(per)
+            .map(|chunk| {
+                scope.spawn(move || {
+                    let mut out = Vec::new();
+                    for &(tx, ty) in chunk {
+                        let mut t = src.tiles.get(&(tx, ty)).cloned().unwrap_or_else(|| Tile::filled([0; 4]));
+                        let mut any = false;
+                        for (i, px) in t.0.iter_mut().enumerate() {
+                            let (x, y) = (tx * TILE + i as i32 % TILE, ty * TILE + i as i32 / TILE);
+                            if x >= w as i32 || y >= h as i32 {
+                                continue;
+                            }
+                            let s = sel(x, y);
+                            if s == 0 {
+                                continue;
+                            }
+                            let (c, a) = g.paint(x, y);
+                            let m = (a * s.min(ONE) + ONE / 2) / ONE;
+                            if m > 0 {
+                                *px = crate::document::blend_paint(*px, c, m, preserve);
+                                any = true;
+                            }
+                        }
+                        if any {
+                            out.push(((tx, ty), t));
+                        }
+                    }
+                    out
+                })
+            })
+            .collect();
+        jobs.into_iter().flat_map(|j| j.join().unwrap()).collect()
+    });
+    let mut out = src.clone();
+    out.tiles.extend(tiles);
+    out
+}
+
+#[cfg(test)]
+mod gradient_tests {
+    use super::*;
+
+    fn g() -> Gradient {
+        Gradient { from: [0.0, 0.0], to: [800.0, 0.0], circle: false, fg: [180, 25, 177], bg: Some([255, 255, 255]), reverse: false, s_curve: false }
+    }
+
+    #[test]
+    fn linear_and_s_curve_match_sai() {
+        // живая SAI 2017, протяжка 800 px, основной 25 → фоновый 255 по зелёному каналу
+        let green = |g: &Gradient, x: i32| g.paint(x, 0).0[1];
+        assert_eq!(green(&g(), 400), 140);
+        assert_eq!(green(&g(), 10), 28);
+        let s = Gradient { s_curve: true, ..g() };
+        assert_eq!((green(&s, 120), green(&s, 200), green(&s, 400)), (39, 61, 140));
+        let c = Gradient { circle: true, ..g() };
+        assert_eq!(green(&c, 60), 42);
+        assert!((Gradient { bg: None, ..g() }.paint(400, 0).1 as i32 - ONE as i32 / 2).abs() < 30);
+    }
+}

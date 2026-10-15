@@ -385,3 +385,23 @@ SOsai на GitHub = SOsai sur GitHub
 Жирный = Gras
 Курсив = Italique
 Цвет — основной цвет панели. = La couleur est la couleur principale du panneau.
+
+# Градиент, лассо, расширение выделения (0.8.13)
+Градиент = Dégradé
+Градиент рисуется на видимом обычном слое без запрета рисования = Le dégradé se dessine sur un calque normal visible, non verrouillé en dessin
+Режим выделения: = Mode de sélection :
+Свободно = Main levée
+Многоугольник = Polygone
+Щелчки ставят вершины; Enter или двойной щелчок — закрыть, Esc — отменить = Les clics posent les sommets ; Entrée ou double-clic ferme, Échap annule
+Прямой = Linéaire
+Круг = Cercle
+Основной → фоновый = Premier plan → arrière-plan
+Основной → прозрачность = Premier plan → transparence
+Обратный = Inverser
+S-кривая = Courbe en S
+Протяните по холсту; концы можно двигать до «Применить». = Glissez sur le canevas ; les extrémités restent déplaçables jusqu'à l'application.
+Расширить выделение… = Dilater la sélection…
+Сузить выделение… = Éroder la sélection…
+Расширить выделение = Dilater la sélection
+Сузить выделение = Éroder la sélection
+Сглаживание края = Anticrénelage

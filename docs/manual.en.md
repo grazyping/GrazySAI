@@ -121,6 +121,17 @@ Water also blurs the layer under the stroke.
   as for the magic wand.
 - **Alt+Delete** fills the selection (without a selection — the whole layer).
 
+### Gradation
+
+The “Gradation” cell in the brush grid (as in SAI). Drag across the canvas — the color changes
+evenly from start to end; the ends can be moved and the settings changed until you press
+“Apply” (Enter); Esc cancels.
+
+- “Form”: “Straight” or “Circle” (from the start outwards).
+- “Color”: “FG Color to BG Color” or “FG Color to Transparency”.
+- “Reverse” swaps the ends, “S-Curve Gradation” makes it smoother near the ends.
+- With a selection the gradient lands only inside it; the transparency lock keeps the opacity.
+
 ## Layers
 
 - Buttons and the “Layer” menu: new layer, new folder, new linework layer, new shape layer,
@@ -178,13 +189,14 @@ Normal layers only (not folders).
 | Tool | How |
 |---|---|
 | Rectangle (M) | Drag; a click without dragging deselects |
-| Lasso (L) | Draw around |
+| Lasso (L) | Draw around. With “Polygonal” in the tool settings, clicks place corners, Enter or a double-click closes, Esc cancels; “Anti-Aliasing” gives a soft or stepped edge |
 | Magic Wand (W) | Click; tolerance is in the panel |
 | SelPen and SelErs | Paint the selection with a brush |
 
 - Shift — add to the selection, Alt — subtract, Shift+Alt — keep the intersection.
 - Ctrl+A — select all, Ctrl+D — deselect, Ctrl+H — hide or show the outline.
-- The “Selection” menu has invert, expand and shrink by 1 px.
+- The “Selection” menu has invert; “Dilate Selection…” and “Erode Selection…” by 1–25 px with a
+  preview (corners are cut at 45°, as in SAI); dilate and erode by 1 px.
 - Brushes, fill, filters and Delete act only inside the selection.
 
 ## Move and transform
@@ -265,7 +277,7 @@ own dialog on Linux (KDE, GNOME). Without one, a simple window with the file pat
 Text layers from `.sai2` are shown with the font chosen in SAI (if it is installed) and saved as
 they were. The Text tool (“T” button): click the canvas for new text, click with a text layer
 selected to edit it; the window has the text, font and size, the color is the main color. Bold,
-italic and vertical text are not supported yet. Brushes don't paint on text — rasterize it first
+italic and vertical, as in SAI, are there too. Brushes don't paint on text — rasterize it first
 (“Layer → Rasterize Layer”). Perspective
 rulers from newer SAI versions are not shown but are saved too.
 
@@ -310,7 +322,8 @@ restores all defaults. Assignments are saved in the settings. The defaults are b
 ## How it still differs from SAI
 
 The full list is in [ROADMAP.en.md](../ROADMAP.en.md). The main points:
-- No brush shapes and textures, text or perspective rulers yet.
+- No bristle brush form, custom tools in the grid, perspective transform or several canvases in
+  tabs yet; perspective rulers are saved but not shown.
 
 ## If something is wrong
 

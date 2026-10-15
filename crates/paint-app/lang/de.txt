@@ -385,3 +385,23 @@ SOsai на GitHub = SOsai auf GitHub
 Жирный = Fett
 Курсив = Kursiv
 Цвет — основной цвет панели. = Farbe ist die Hauptfarbe des Panels.
+
+# Градиент, лассо, расширение выделения (0.8.13)
+Градиент = Verlauf
+Градиент рисуется на видимом обычном слое без запрета рисования = Der Verlauf wird auf einer sichtbaren normalen Ebene ohne Malsperre gezeichnet
+Режим выделения: = Auswahlmodus:
+Свободно = Freihand
+Многоугольник = Polygon
+Щелчки ставят вершины; Enter или двойной щелчок — закрыть, Esc — отменить = Klicks setzen Ecken; Enter oder Doppelklick schließt, Esc bricht ab
+Прямой = Linear
+Круг = Kreis
+Основной → фоновый = Vordergrund → Hintergrund
+Основной → прозрачность = Vordergrund → Transparenz
+Обратный = Umkehren
+S-кривая = S-Kurve
+Протяните по холсту; концы можно двигать до «Применить». = Über die Leinwand ziehen; die Enden lassen sich bis zum Anwenden verschieben.
+Расширить выделение… = Auswahl erweitern…
+Сузить выделение… = Auswahl verkleinern…
+Расширить выделение = Auswahl erweitern
+Сузить выделение = Auswahl verkleinern
+Сглаживание края = Kantenglättung

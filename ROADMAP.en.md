@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.12)
+### 0.8 — linework and shapes (current version 0.8.13)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -100,7 +100,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [ ] Water with Amplify Density
 - [x] The hardest edge step by SAI's code: its own renderer and a stroke mask from 20 px — lines match live SAI to 0.0–0.3 levels (`docs/13-thin-brushes.md`)
 - [x] Text layers and perspective rulers (reading and writing): text is drawn with the system font, both are saved byte for byte (`docs/30-text-layers.md`)
-- [x] Text tool: creating and editing text (font, size, color, several lines); bold, italic and vertical text — once there is a sample
+- [x] Text tool: creating and editing text (font, size, color, several lines); bold, italic and vertical text — from the user's sample, look checked against SAI under Wine; font list as in SAI (GDI)
 - [x] Rulers: straight line and ellipse, as in SAI 2017 — compared with live SAI (`docs/27-rulers.md`)
 - [x] The mask moves and transforms with its layer; Merge Down for a layer with a mask
 - [x] Color mixer and swatches in the color panel — as in SAI 2017 (checked against the running program)
@@ -110,17 +110,18 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 ### 1.0 — finished
 - [ ] `.sai2` read and written without loss for every kind of layer
 - [x] Undo history on disk (for very large canvases): beyond 1 GB, steps go to temporary files and all 100 steps are kept
-- [ ] Gradient: linear and radial, main colour → background or transparent
-- [ ] Polygonal lasso
-- [ ] Grow and shrink the selection by a given number of pixels
+- [x] Gradient: linear and radial, main colour → background or transparent, S-curve — checked against the live SAI (`docs/31-gradient-selection.md`)
+- [x] Polygonal lasso and anti-aliasing switch
+- [x] Dilate and erode the selection by 1–25 px with a preview, corners as in SAI
 - [ ] Perspective transform
 - [ ] Several canvases in tabs
 - [ ] Layer outline (inside, centre, outside) and binary pen
 - [ ] PSD: opening 16-bit files and layer masks
+- [ ] Custom tools in the grid: right-click an empty cell to add a tool of the needed kind, as in SAI
 
-### Beyond SAI — ideas from Krita
+### Beyond SAI — ideas from Krita (after 1.0)
 
-They do not hurt compatibility: in `.sai2` everything lands as plain pixels, the rest goes to the program settings. The window keeps SAI's look: new things live in menus and windows, not on the panels. No Krita code (GPL) is copied — only ideas and formulas, checked against SAI or Krita.
+Everything SAI has comes first; these come later. They do not hurt compatibility: in `.sai2` everything lands as plain pixels, the rest goes to the program settings. The window keeps SAI's look: new things live in menus and windows, not on the panels. No Krita code (GPL) is copied — only ideas and formulas, checked against SAI or Krita.
 
 - [ ] Mirror painting (symmetry)
 - [ ] Fill: closing gaps in line art and growing the edge under the line

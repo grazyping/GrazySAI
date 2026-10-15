@@ -187,6 +187,34 @@ struct FilterDialog {
     dirty: bool,
 }
 
+/// Окно «Расширить/Сузить выделение…» (как в SAI 2017: 1–25 px, предпросмотр).
+struct GrowDialog {
+    grow: bool,
+    n: u32,
+    preview: bool,
+    original: paint_core::selection::Selection,
+    dirty: bool,
+}
+
+/// Настройки инструмента «Градиент» (как в SAI 2017).
+#[derive(Clone, Copy, PartialEq, Default)]
+struct GradientOpts {
+    circle: bool,
+    to_transparent: bool,
+    reverse: bool,
+    s_curve: bool,
+}
+
+/// Градиент до OK: концы можно двигать, настройки — менять (как в SAI).
+struct GradientEdit {
+    path: Vec<usize>,
+    original: paint_core::tile::ColorMap,
+    g: paint_core::filters::Gradient,
+    /// Какой конец тянут: 0 — начало, 1 — конец.
+    drag: Option<u8>,
+    dirty: bool,
+}
+
 /// Диалог изменения холста.
 struct CanvasDialog {
     resample: bool,
@@ -532,6 +560,14 @@ fn brush_tools() -> Vec<BrushTool> {
             enabled: true,
             grain: GrainSettings::default(),
         },
+        // В SAI градиент ставится в свободную ячейку сетки («Gradation»)
+        BrushTool {
+            name: "Градиент",
+            icon: "gradient",
+            params: b(10.0, 1.0, 1.0),
+            enabled: true,
+            grain: GrainSettings::default(),
+        },
     ]
 }
 
@@ -554,6 +590,8 @@ const ERASER: usize = 5;
 /// Перо и ластик выделения в сетке.
 const SEL_PEN: usize = 6;
 const SEL_ERASER: usize = 7;
+/// Градиент в сетке.
+const GRADIENT: usize = 8;
 
 /// Масштабы в списке быстрой панели, %.
 const ZOOMS: [f32; 14] = [
@@ -655,6 +693,14 @@ struct PaintApp {
     /// Для `PAINT_TIMING`: когда начали показ холста целиком (после открытия или нового холста).
     timing: Option<Instant>,
     sel_drag: Option<SelDrag>,
+    /// Многоугольное лассо: вершины, пока многоугольник не закрыт (Enter, двойной щелчок).
+    sel_poly: Option<SelDrag>,
+    /// Лассо: многоугольником и со сглаженным краем (настройки инструмента, как в SAI).
+    lasso_polygon: bool,
+    lasso_aa: bool,
+    grow_dialog: Option<GrowDialog>,
+    gradient: Option<GradientEdit>,
+    grad_opts: GradientOpts,
     move_drag: Option<MoveDrag>,
     transform: Option<Transform>,
     /// Мазок пера или ластика выделения и его путь на холсте (для показа во время мазка).
@@ -764,6 +810,12 @@ impl PaintApp {
             started: Instant::now(),
             timing: None,
             sel_drag: None,
+            sel_poly: None,
+            lasso_polygon: false,
+            lasso_aa: true,
+            grow_dialog: None,
+            gradient: None,
+            grad_opts: GradientOpts::default(),
             move_drag: None,
             transform: None,
             sel_stroke: None,
@@ -974,6 +1026,12 @@ impl PaintApp {
         if let Some(v) = s.bool("key_hints") {
             keys::set_hints(v);
         }
+        s.read_bool("lasso_polygon", &mut self.lasso_polygon);
+        s.read_bool("lasso_aa", &mut self.lasso_aa);
+        s.read_bool("gradient_circle", &mut self.grad_opts.circle);
+        s.read_bool("gradient_transparent", &mut self.grad_opts.to_transparent);
+        s.read_bool("gradient_reverse", &mut self.grad_opts.reverse);
+        s.read_bool("gradient_s_curve", &mut self.grad_opts.s_curve);
         if let Some(t) = s.f32("wand_tolerance") {
             self.wand_tolerance = t.clamp(0.0, 255.0) as u8;
         }
@@ -1081,6 +1139,12 @@ impl PaintApp {
         s.set("back.b", self.back.b());
         s.set("stabilizer", self.stabilizer.label());
         s.set("wand_tolerance", self.wand_tolerance);
+        s.set("lasso_polygon", self.lasso_polygon);
+        s.set("lasso_aa", self.lasso_aa);
+        s.set("gradient_circle", self.grad_opts.circle);
+        s.set("gradient_transparent", self.grad_opts.to_transparent);
+        s.set("gradient_reverse", self.grad_opts.reverse);
+        s.set("gradient_s_curve", self.grad_opts.s_curve);
         s.set("check_updates", self.check_updates as u8);
         for (a, id, _, _) in keys::ALL {
             let v = self.keymap.get(&a).copied().flatten().map_or_else(|| "none".to_string(), |b| b.text());
@@ -2052,6 +2116,10 @@ impl PaintApp {
     }
 
     fn undo(&mut self) {
+        if self.gradient.is_some() {
+            self.finish_gradient(false);
+            return;
+        }
         if self.filter.is_some() {
             self.finish_filter(false);
             return;
@@ -2296,6 +2364,104 @@ impl PaintApp {
             self.dirty = true;
             self.thumbs.clear();
         }
+    }
+
+    /// Градиент с текущими настройками и цветами.
+    fn make_gradient(&self, from: [f64; 2], to: [f64; 2]) -> paint_core::filters::Gradient {
+        let (f, b) = (self.color(), self.back);
+        let o = self.grad_opts;
+        paint_core::filters::Gradient {
+            from,
+            to,
+            circle: o.circle,
+            fg: [f.r(), f.g(), f.b()],
+            bg: (!o.to_transparent).then_some([b.r(), b.g(), b.b()]),
+            reverse: o.reverse,
+            s_curve: o.s_curve,
+        }
+    }
+
+    /// Нажатие инструментом «Градиент»: у конца — тянуть его, иначе — новый градиент.
+    fn gradient_press(&mut self, c: Vec2) {
+        let p = [c.x as f64, c.y as f64];
+        let tol = 8.0 / self.zoom as f64;
+        if let Some(e) = self.gradient.as_mut() {
+            let near = |q: [f64; 2]| (q[0] - p[0]).hypot(q[1] - p[1]) < tol;
+            e.drag = Some(if near(e.g.to) {
+                1
+            } else if near(e.g.from) {
+                0
+            } else {
+                e.g.from = p;
+                e.g.to = p;
+                e.dirty = true;
+                1
+            });
+            return;
+        }
+        if !self.can_paint() {
+            self.status = String::from(tr("Градиент рисуется на видимом обычном слое без запрета рисования"));
+            return;
+        }
+        let Some(layer) = self.doc.layer(&self.selected) else { return };
+        self.gradient = Some(GradientEdit {
+            path: self.selected.clone(),
+            original: layer.pixels.clone(),
+            g: self.make_gradient(p, p),
+            drag: Some(1),
+            dirty: true,
+        });
+    }
+
+    /// Слой с градиентом (пока концы совпадают — без градиента).
+    fn gradient_result(&self, e: &GradientEdit) -> paint_core::tile::ColorMap {
+        if e.g.from == e.g.to {
+            return e.original.clone();
+        }
+        let sel = &self.doc.selection;
+        let preserve = self.doc.layer(&e.path).is_some_and(|l| l.preserve_opacity);
+        paint_core::filters::gradient(&e.original, self.doc.width, self.doc.height, &e.g, &|x, y| sel.amount(x, y), preserve)
+    }
+
+    /// Обновить предпросмотр градиента (настройки и цвета могли поменяться).
+    fn update_gradient(&mut self) {
+        let Some(e) = self.gradient.as_ref() else { return };
+        let g = self.make_gradient(e.g.from, e.g.to);
+        let e = self.gradient.as_mut().unwrap();
+        if g != e.g {
+            e.g = g;
+            e.dirty = true;
+        }
+        if !e.dirty {
+            return;
+        }
+        e.dirty = false;
+        let e = self.gradient.as_ref().unwrap();
+        let (path, pixels) = (e.path.clone(), self.gradient_result(e));
+        let keys = self.doc.set_layer_pixels(&path, pixels);
+        self.invalidate(keys);
+    }
+
+    fn finish_gradient(&mut self, apply: bool) {
+        let Some(e) = self.gradient.take() else { return };
+        let apply = apply && e.g.from != e.g.to;
+        let pixels = if apply { self.gradient_result(&e) } else { e.original.clone() };
+        let keys = self.doc.set_layer_pixels(&e.path, pixels);
+        self.invalidate(keys);
+        if apply {
+            let sel = self.doc.selection.clone();
+            self.doc.move_commit(&e.path, e.original, None, sel);
+            self.dirty = true;
+            self.thumbs.clear();
+        }
+    }
+
+    /// Закрыть многоугольное лассо и выделить.
+    fn close_polygon(&mut self) {
+        let Some(d) = self.sel_poly.take() else { return };
+        let pts: Vec<[f64; 2]> = d.points.iter().map(|p| [p.x as f64, p.y as f64]).collect();
+        let area = paint_core::selection::polygon_aa(&pts, self.lasso_aa);
+        self.apply_selection(&area, d.mode);
     }
 
     /// Сдвиг клавишами (Alt+стрелки).
@@ -2687,6 +2853,12 @@ impl PaintApp {
                     ui.close_menu();
                 }
                 ui.separator();
+                for (grow, name) in [(true, tr("Расширить выделение…")), (false, tr("Сузить выделение…"))] {
+                    if ui.add_enabled(has && self.grow_dialog.is_none(), egui::Button::new(name)).clicked() {
+                        self.grow_dialog = Some(GrowDialog { grow, n: 1, preview: true, original: self.doc.selection.clone(), dirty: true });
+                        ui.close_menu();
+                    }
+                }
                 if ui.add_enabled(has, egui::Button::new(tr("Расширить на 1 px"))).clicked() {
                     self.doc.grow_selection(true);
                     self.sel_dirty = true;
@@ -3316,6 +3488,18 @@ impl PaintApp {
             });
             ui.add_space(4.0);
         }
+        if self.tool == Tool::Lasso {
+            ui.label(tr("Режим выделения:"));
+            ui.radio_value(&mut self.lasso_polygon, false, tr("Свободно"));
+            ui.radio_value(&mut self.lasso_polygon, true, tr("Многоугольник"))
+                .on_hover_text(tr("Щелчки ставят вершины; Enter или двойной щелчок — закрыть, Esc — отменить"));
+            ui.checkbox(&mut self.lasso_aa, tr("Сглаживание края"));
+            ui.add_space(4.0);
+        }
+        if self.tool == Tool::Brush && self.brush == GRADIENT {
+            self.gradient_panel(ui);
+            return;
+        }
         if self.grain_names.is_none() {
             use paint_core::paper::names_of;
             self.grain_names = Some((names_of("blotmap"), names_of("brushtex")));
@@ -3579,6 +3763,34 @@ impl PaintApp {
         }
         if set_dir {
             self.set_paper_dir();
+        }
+    }
+
+    /// Настройки градиента, как в SAI 2017: форма, цвета, «Обратный», «S-кривая», OK и «Отмена».
+    fn gradient_panel(&mut self, ui: &mut egui::Ui) {
+        let o = &mut self.grad_opts;
+        ui.label(tr("Форма"));
+        ui.radio_value(&mut o.circle, false, tr("Прямой"));
+        ui.radio_value(&mut o.circle, true, tr("Круг"));
+        ui.add_space(4.0);
+        ui.label(tr("Цвет"));
+        ui.radio_value(&mut o.to_transparent, false, tr("Основной → фоновый"));
+        ui.radio_value(&mut o.to_transparent, true, tr("Основной → прозрачность"));
+        ui.add_space(4.0);
+        ui.checkbox(&mut o.reverse, tr("Обратный"));
+        ui.checkbox(&mut o.s_curve, tr("S-кривая"));
+        ui.add_space(4.0);
+        let editing = self.gradient.is_some();
+        ui.horizontal(|ui| {
+            if ui.add_enabled(editing, egui::Button::new(keys::hint(tr("Применить (Enter)")))).clicked() {
+                self.finish_gradient(true);
+            }
+            if ui.add_enabled(editing, egui::Button::new(keys::hint(tr("Отмена (Esc)")))).clicked() {
+                self.finish_gradient(false);
+            }
+        });
+        if !editing {
+            ui.label(egui::RichText::new(tr("Протяните по холсту; концы можно двигать до «Применить».")).small().weak());
         }
     }
 
@@ -4593,6 +4805,28 @@ impl PaintApp {
                     self.fill_at(c.x, c.y);
                 }
             }
+        } else if self.tool == Tool::Brush && self.brush == GRADIENT && !ui.input(|i| i.modifiers.alt) {
+            if pressed && response.hovered() {
+                if let Some(pos) = pointer {
+                    self.gradient_press(to_canvas(pos, self.zoom, self.offset));
+                }
+            } else if let (Some(e), Some(pos)) = (self.gradient.as_mut(), moves.last()) {
+                if let Some(h) = e.drag {
+                    let c = to_canvas(*pos, self.zoom, self.offset);
+                    let p = [c.x as f64, c.y as f64];
+                    if h == 0 {
+                        e.g.from = p;
+                    } else {
+                        e.g.to = p;
+                    }
+                    e.dirty = true;
+                }
+            }
+            if released {
+                if let Some(e) = self.gradient.as_mut() {
+                    e.drag = None;
+                }
+            }
         } else if self.tool == Tool::Text {
             if pressed && response.hovered() && self.text_edit.is_none() {
                 if let Some(pos) = pointer {
@@ -4602,13 +4836,28 @@ impl PaintApp {
             }
         } else if matches!(self.tool, Tool::Marquee | Tool::Lasso | Tool::Wand) {
             // Выделение: Shift — добавить, Alt — вычесть, Shift+Alt — пересечь.
+            let poly = self.tool == Tool::Lasso && self.lasso_polygon;
+            // двойной щелчок закрывает многоугольник; его нажатие новую вершину не ставит
+            let closed = poly && response.double_clicked();
+            if closed {
+                self.close_polygon();
+            }
             let mods = ui.input(|i| i.modifiers);
             let mode = Combine::from_modifiers(mods.shift, mods.alt);
-            if pressed && response.hovered() {
+            if pressed && !closed && response.hovered() {
                 if let Some(pos) = pointer {
                     let c = to_canvas(pos, self.zoom, self.offset);
                     if self.tool == Tool::Wand {
                         self.wand_at(c.x, c.y, mode);
+                    } else if poly {
+                        match self.sel_poly.as_mut() {
+                            Some(d) => {
+                                if d.points.last() != Some(&c) {
+                                    d.points.push(c);
+                                }
+                            }
+                            None => self.sel_poly = Some(SelDrag { points: vec![c], mode }),
+                        }
                     } else {
                         self.sel_drag = Some(SelDrag { points: vec![c, c], mode });
                     }
@@ -4627,7 +4876,7 @@ impl PaintApp {
                 if let Some(d) = self.sel_drag.take() {
                     let area = if self.tool == Tool::Lasso {
                         let pts: Vec<[f64; 2]> = d.points.iter().map(|p| [p.x as f64, p.y as f64]).collect();
-                        paint_core::selection::polygon(&pts)
+                        paint_core::selection::polygon_aa(&pts, self.lasso_aa)
                     } else {
                         // прямоугольник — по целым пикселям; щелчок без протяжки снимает выделение
                         let (a, b) = (d.points[0], d.points[1]);
@@ -4767,6 +5016,25 @@ impl PaintApp {
             };
             painter.add(egui::Shape::line(pts.clone(), egui::Stroke::new(1.0_f32, Color32::WHITE)));
             painter.extend(egui::Shape::dashed_line(&pts, egui::Stroke::new(1.0_f32, Color32::BLACK), 4.0, 4.0));
+        }
+        // Многоугольное лассо: вершины и линия к курсору.
+        if let Some(d) = &self.sel_poly {
+            let mut pts: Vec<Pos2> = d.points.iter().map(|p| to_screen(p.x, p.y)).collect();
+            if let Some(h) = ui.input(|i| i.pointer.hover_pos()) {
+                pts.push(h);
+            }
+            painter.add(egui::Shape::line(pts.clone(), egui::Stroke::new(1.0_f32, Color32::WHITE)));
+            painter.extend(egui::Shape::dashed_line(&pts, egui::Stroke::new(1.0_f32, Color32::BLACK), 4.0, 4.0));
+        }
+        // Градиент до OK: линия от начала к концу и кружок на конце (как в SAI).
+        if let Some(e) = &self.gradient {
+            let a = to_screen(e.g.from[0] as f32, e.g.from[1] as f32);
+            let b = to_screen(e.g.to[0] as f32, e.g.to[1] as f32);
+            for (w, c) in [(3.0_f32, Color32::WHITE), (1.0, Color32::from_gray(90))] {
+                painter.line_segment([a, b], egui::Stroke::new(w, c));
+                painter.circle_stroke(b, 5.0, egui::Stroke::new(w, c));
+                painter.circle_stroke(a, 2.5, egui::Stroke::new(w, c));
+            }
         }
         // Мазок пера или ластика выделения — полупрозрачная полоса по пути.
         if let Some((s, path)) = &self.sel_stroke {
@@ -4914,6 +5182,61 @@ impl PaintApp {
                     let _ = std::fs::remove_file(info);
                 }
             }
+        }
+        // градиент применяется, если сменили инструмент или слой; лассо без инструмента — отменяется
+        if self.gradient.as_ref().is_some_and(|e| self.tool != Tool::Brush || self.brush != GRADIENT || e.path != self.selected) {
+            self.finish_gradient(true);
+        }
+        self.update_gradient();
+        if self.sel_poly.is_some() && !(self.tool == Tool::Lasso && self.lasso_polygon) {
+            self.sel_poly = None;
+        }
+        let mut grow_finish = None;
+        if let Some(d) = self.grow_dialog.as_mut() {
+            let mut open = true;
+            egui::Window::new(if d.grow { tr("Расширить выделение") } else { tr("Сузить выделение") })
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    let before = (d.n, d.preview);
+                    ui.horizontal(|ui| {
+                        ui.label(tr("Ширина:"));
+                        ui.spacing_mut().slider_width = 220.0;
+                        ui.add(egui::Slider::new(&mut d.n, 1..=25).suffix(" px"));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut d.preview, tr("Предпросмотр"));
+                        if ui.button("OK").clicked() {
+                            grow_finish = Some(true);
+                        }
+                        if ui.button(tr("Отмена")).clicked() {
+                            grow_finish = Some(false);
+                        }
+                    });
+                    if before != (d.n, d.preview) {
+                        d.dirty = true;
+                    }
+                });
+            if !open {
+                grow_finish = Some(false);
+            }
+        }
+        if let Some(apply) = grow_finish {
+            let d = self.grow_dialog.take().unwrap();
+            self.doc.selection = d.original;
+            if apply {
+                self.doc.grow_selection_by(d.n, d.grow);
+            }
+            self.sel_dirty = true;
+        } else if let Some(d) = self.grow_dialog.as_mut().filter(|d| d.dirty) {
+            d.dirty = false;
+            let mut s = d.original.clone();
+            if d.preview {
+                s.grow_by(d.n, d.grow);
+            }
+            self.doc.selection = s;
+            self.sel_dirty = true;
         }
         let mut finish = None;
         if let Some(f) = self.filter.as_mut() {
@@ -5471,6 +5794,20 @@ impl eframe::App for PaintApp {
             }
             if hit(A::Fill) {
                 self.fill_selection();
+            }
+            if self.gradient.is_some() {
+                if key_enter {
+                    self.finish_gradient(true);
+                } else if key_esc {
+                    self.finish_gradient(false);
+                }
+            }
+            if self.sel_poly.is_some() {
+                if key_enter {
+                    self.close_polygon();
+                } else if key_esc {
+                    self.sel_poly = None;
+                }
             }
             let key_t = hit(A::Transform);
             if self.transform.is_some() {
