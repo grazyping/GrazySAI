@@ -405,3 +405,9 @@ S-кривая = Curva em S
 Расширить выделение = Expandir seleção
 Сузить выделение = Contrair seleção
 Сглаживание края = Suavização de borda
+
+# Трансформация: режимы и перспектива (0.8.15)
+Изменить размер = Redimensionar
+Деформация = Deformar
+Поворот = Girar
+Перспектива = Perspectiva

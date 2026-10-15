@@ -224,6 +224,20 @@ struct CanvasDialog {
     anchor: (u8, u8),
 }
 
+/// Режим трансформации, как в панели SAI 2017: Freeform, Resize, Deform, Rotate.
+#[derive(Clone, Copy, PartialEq, Default)]
+enum TransformKind {
+    /// Всё: стороны и углы — размер, снаружи — поворот, Ctrl + угол — деформация.
+    #[default]
+    Free,
+    /// Только размер и сдвиг.
+    Resize,
+    /// Углы двигаются по отдельности без Ctrl.
+    Deform,
+    /// Только поворот и сдвиг.
+    Rotate,
+}
+
 /// За какую часть рамки трансформации тянут.
 #[derive(Clone, Copy, PartialEq)]
 enum Handle {
@@ -253,6 +267,8 @@ struct Transform {
     /// Свободная деформация: углы рамки на холсте (левый верхний, правый верхний, правый нижний,
     /// левый нижний); `None` — обычная рамка.
     quad: Option<[Vec2; 4]>,
+    /// Доля перспективы свободной деформации, 0..=1 (0 — билинейно, как SAI по умолчанию).
+    perspective: f64,
 }
 
 impl Transform {
@@ -261,12 +277,7 @@ impl Transform {
         use paint_core::selection::Warp;
         match self.quad {
             None => Warp::Affine(self.matrix()),
-            Some(q) => {
-                let [x0, y0, x1, y1] = self.src;
-                let to_unit = [1.0 / (x1 - x0).max(1e-9), 0.0, -x0 / (x1 - x0).max(1e-9), 0.0, 1.0 / (y1 - y0).max(1e-9), -y0 / (y1 - y0).max(1e-9), 0.0, 0.0, 1.0];
-                let qd = q.map(|p| [p.x as f64, p.y as f64]);
-                Warp::Projective(paint_core::resample::mul3(paint_core::resample::square_to_quad(qd), to_unit))
-            }
+            Some(q) => Warp::Quad { src: self.src, quad: q.map(|p| [p.x as f64, p.y as f64]), perspective: self.perspective },
         }
     }
 
@@ -701,6 +712,9 @@ struct PaintApp {
     grow_dialog: Option<GrowDialog>,
     gradient: Option<GradientEdit>,
     grad_opts: GradientOpts,
+    transform_kind: TransformKind,
+    /// Ползунок «Перспектива» трансформации, 0–100.
+    transform_perspective: u8,
     move_drag: Option<MoveDrag>,
     transform: Option<Transform>,
     /// Мазок пера или ластика выделения и его путь на холсте (для показа во время мазка).
@@ -816,6 +830,8 @@ impl PaintApp {
             grow_dialog: None,
             gradient: None,
             grad_opts: GradientOpts::default(),
+            transform_kind: TransformKind::Free,
+            transform_perspective: 0,
             move_drag: None,
             transform: None,
             sel_stroke: None,
@@ -1026,6 +1042,9 @@ impl PaintApp {
         if let Some(v) = s.bool("key_hints") {
             keys::set_hints(v);
         }
+        if let Some(v) = s.f32("transform_perspective") {
+            self.transform_perspective = v.clamp(0.0, 100.0) as u8;
+        }
         s.read_bool("lasso_polygon", &mut self.lasso_polygon);
         s.read_bool("lasso_aa", &mut self.lasso_aa);
         s.read_bool("gradient_circle", &mut self.grad_opts.circle);
@@ -1139,6 +1158,7 @@ impl PaintApp {
         s.set("back.b", self.back.b());
         s.set("stabilizer", self.stabilizer.label());
         s.set("wand_tolerance", self.wand_tolerance);
+        s.set("transform_perspective", self.transform_perspective);
         s.set("lasso_polygon", self.lasso_polygon);
         s.set("lasso_aa", self.lasso_aa);
         s.set("gradient_circle", self.grad_opts.circle);
@@ -2251,6 +2271,7 @@ impl PaintApp {
             mode: paint_core::resample::Mode::Bilinear,
             dirty: false,
             quad: None,
+            perspective: self.transform_perspective as f64 / 100.0,
         });
         self.status = String::from(tr("Трансформация: углы и стороны — размер, Ctrl + угол — свободная деформация, внутри — сдвиг, снаружи — поворот; Enter — применить, Esc — отмена"));
     }
@@ -3405,7 +3426,7 @@ impl PaintApp {
             &[
                 tr("Трансформация"), tr("Допуск"), tr("Режим"), tr("Жесткость"), tr("Размер"), tr("Минимальный"),
                 tr("Плотн."), tr("Мин. Плотн."), tr("Смешивание"), tr("Разбавление"), tr("Стойкость"),
-                tr("Порог размыт."), tr("   Усил. плотн."),
+                tr("Порог размыт."), tr("   Усил. плотн."), tr("Перспектива"),
             ],
         );
         let w = ui.available_width() - lw - 8.0;
@@ -3427,6 +3448,22 @@ impl PaintApp {
                     }
                 });
                 if t.mode != before {
+                    t.dirty = true;
+                }
+            });
+            for (k, name) in [
+                (TransformKind::Free, tr("Свободно")),
+                (TransformKind::Resize, tr("Изменить размер")),
+                (TransformKind::Deform, tr("Деформация")),
+                (TransformKind::Rotate, tr("Поворот")),
+            ] {
+                ui.radio_value(&mut self.transform_kind, k, name);
+            }
+            sai_ui::row(ui, tr("Перспектива"), lw, true, |ui| {
+                let mut v = self.transform_perspective as f32;
+                if sai_ui::bar(ui, &mut v, 0.0, 100.0, format!("{}", self.transform_perspective), w, true).changed() {
+                    self.transform_perspective = v.round().clamp(0.0, 100.0) as u8;
+                    t.perspective = self.transform_perspective as f64 / 100.0;
                     t.dirty = true;
                 }
             });
@@ -4709,9 +4746,12 @@ impl PaintApp {
                 if let (Some(pos), Some(t)) = (pointer, self.transform.as_mut()) {
                     let c = to_canvas(pos, zoom, self.offset);
                     let near = t.handle_points().into_iter().find(|&(_, p)| (screen(p) - pos).length() < 8.0).map(|h| h.0);
-                    // Ctrl + угол — свободная деформация: дальше каждый угол двигается отдельно
+                    // Ctrl + угол (в режиме «Деформация» — без Ctrl) — свободная деформация: дальше
+                    // каждый угол двигается отдельно
+                    let kind = self.transform_kind;
                     let near = match near {
-                        Some(Handle::Scale(hx, hy)) if ctrl && hx != 0 && hy != 0 => {
+                        Some(Handle::Scale(..)) if kind == TransformKind::Rotate => Some(Handle::Rotate),
+                        Some(Handle::Scale(hx, hy)) if (ctrl || kind == TransformKind::Deform) && hx != 0 && hy != 0 => {
                             t.quad = Some(t.corners());
                             Some(Handle::Corner(match (hx, hy) {
                                 (-1, -1) => 0,
@@ -4725,7 +4765,10 @@ impl PaintApp {
                     let inside = t.contains(c);
                     let free = t.quad.is_some();
                     let handle = near.unwrap_or(if inside || free { Handle::Move } else { Handle::Rotate });
-                    t.drag = Some((handle, c));
+                    // «Размер» не поворачивает
+                    if !(kind == TransformKind::Resize && handle == Handle::Rotate) {
+                        t.drag = Some((handle, c));
+                    }
                 }
             } else if let Some(t) = self.transform.as_mut() {
                 if let Some((h, mut last)) = t.drag {

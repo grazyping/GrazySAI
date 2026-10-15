@@ -406,3 +406,9 @@ S-кривая = S-Curve Gradation
 Расширить выделение = Dilate Selection
 Сузить выделение = Erode Selection
 Сглаживание края = Anti-Aliasing
+
+# Трансформация: режимы и перспектива (0.8.15)
+Изменить размер = Resize
+Деформация = Deform
+Поворот = Rotate
+Перспектива = Perspective

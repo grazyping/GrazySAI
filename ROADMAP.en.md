@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.14)
+### 0.8 — linework and shapes (current version 0.8.15)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -113,7 +113,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Gradient: linear and radial, main colour → background or transparent, S-curve — checked against the live SAI (`docs/31-gradient-selection.md`)
 - [x] Polygonal lasso and anti-aliasing switch
 - [x] Dilate and erode the selection by 1–25 px with a preview, corners as in SAI
-- [ ] Perspective transform
+- [x] Transform: SAI modes and “Perspective” 0–100 — a blend of bilinear and perspective deform, checked against the live SAI
 - [ ] Several canvases in tabs
 - [ ] Layer outline (inside, centre, outside) and binary pen
 - [x] PSD: opening 16-bit files and layer masks, ZIP compression, grayscale — checked with files from Krita (`docs/21-file-formats.md`)

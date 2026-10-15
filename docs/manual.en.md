@@ -206,6 +206,8 @@ Normal layers only (not folders).
 - **Transform (Ctrl+T)**:
   - corners and side midpoints — size;
   - Ctrl + corner — free deform (each corner separately);
+  - the panel has SAI's modes: “Freeform”, “Resize”, “Deform” (corners without Ctrl), “Rotate”;
+    “Perspective” 0–100 — 0 stretches evenly (bilinear), 100 adds perspective;
   - drag inside the frame — move, outside — rotate;
   - the resampling method is in the panel;
   - Enter — apply, Esc — cancel.

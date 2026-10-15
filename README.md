@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md)
 
-A painting program in Rust modelled on PaintTool SAI 2 — a personal project. Version 0.8.14.
+A painting program in Rust modelled on PaintTool SAI 2 — a personal project. Version 0.8.15.
 How to use it is in the [manual](docs/manual.en.md); what is done and what comes next is in
 [ROADMAP.en.md](ROADMAP.en.md) and on the [Milestones](https://github.com/grazyping/SOsai/milestones)
 tab; ready builds are under Releases. Linux and Windows, tablet pen (XPPen Artist 24 Pro),

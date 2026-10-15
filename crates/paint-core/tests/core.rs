@@ -975,3 +975,28 @@ fn mixing_brushes_fingerprint_large() {
     }
     assert_eq!(out.join(" "), "fd35badc61b48b13 184298a9dd1016b2 92bf592505a8c9e");
 }
+
+#[test]
+fn free_deform_blends_bilinear_and_perspective_like_sai() {
+    use paint_core::selection::Warp;
+    // замер живой SAI 2017: угол (1062, 258) рамки 739..1062 × 258..561 утянут в (960, 320)
+    let quad = [[739.0, 258.0], [960.0, 320.0], [1062.0, 561.0], [739.0, 561.0]];
+    let w = |p: f64| Warp::Quad { src: [739.0, 258.0, 1062.0, 561.0], quad, perspective: p };
+    // билинейно: середина рамки — среднее углов
+    let (x, y) = w(0.0).apply(900.5, 409.5);
+    assert!((x - 875.0).abs() < 1e-9 && (y - 425.0).abs() < 1e-9);
+    // линия сетки y = 410 пересекает столбец x = 800 (SAI: 417,0 / 409,0 / 400,5 / 392,5 / 383,5)
+    for (p, want) in [(0.0, 417.0), (0.25, 409.0), (0.5, 400.5), (0.75, 392.5), (1.0, 383.5)] {
+        let (mut lo, mut hi) = (739.0, 1062.0);
+        for _ in 0..60 {
+            let m = (lo + hi) / 2.0;
+            if w(p).apply(m, 410.0).0 < 800.0 { lo = m } else { hi = m }
+        }
+        let y = w(p).apply(lo, 410.0).1;
+        assert!((y - want).abs() < 1.0, "перспектива {p}: {y} вместо {want}");
+    }
+    // обратное отображение через warp_preview: квадрат остаётся на месте при тождественной рамке
+    let id = Warp::Quad { src: [0.0, 0.0, 10.0, 10.0], quad: [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]], perspective: 0.3 };
+    let (x, y) = id.apply(3.0, 7.0);
+    assert!((x - 3.0).abs() < 1e-9 && (y - 7.0).abs() < 1e-9);
+}

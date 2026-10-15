@@ -405,3 +405,9 @@ S-кривая = Courbe en S
 Расширить выделение = Dilater la sélection
 Сузить выделение = Éroder la sélection
 Сглаживание края = Anticrénelage
+
+# Трансформация: режимы и перспектива (0.8.15)
+Изменить размер = Redimensionner
+Деформация = Déformer
+Поворот = Rotation
+Перспектива = Perspective

@@ -381,8 +381,13 @@ pub fn transform_pixels(src: &ColorMap, sel: &Selection, m: [f64; 6], mode: crat
 pub enum Warp {
     /// `x' = m0·x + m1·y + m2`, `y' = m3·x + m4·y + m5`.
     Affine([f64; 6]),
-    /// Матрица 3×3 по строкам (перспектива, свободная деформация).
+    /// Матрица 3×3 по строкам (перспектива).
     Projective([f64; 9]),
+    /// Свободная деформация, как в SAI 2017: прямоугольник `src` (x0, y0, x1, y1) в
+    /// четырёхугольник `quad` (по часовой от левого верхнего). Точка — смесь билинейного и
+    /// перспективного отображения в доле `perspective` (0..=1, ползунок «Perspective» 0–100;
+    /// сверено с живой SAI, docs/17-selection-move.md).
+    Quad { src: [f64; 4], quad: [[f64; 2]; 4], perspective: f64 },
 }
 
 impl Warp {
@@ -390,13 +395,64 @@ impl Warp {
         match self {
             Warp::Affine(m) => [m[0], m[1], m[2], m[3], m[4], m[5], 0.0, 0.0, 1.0],
             Warp::Projective(m) => m,
+            Warp::Quad { src, quad, .. } => {
+                let [x0, y0, x1, y1] = src;
+                let to_unit = [1.0 / (x1 - x0).max(1e-9), 0.0, -x0 / (x1 - x0).max(1e-9), 0.0, 1.0 / (y1 - y0).max(1e-9), -y0 / (y1 - y0).max(1e-9), 0.0, 0.0, 1.0];
+                crate::resample::mul3(crate::resample::square_to_quad(quad), to_unit)
+            }
         }
     }
 
     pub fn apply(self, x: f64, y: f64) -> (f64, f64) {
         let m = self.full();
         let w = m[6] * x + m[7] * y + m[8];
-        ((m[0] * x + m[1] * y + m[2]) / w, (m[3] * x + m[4] * y + m[5]) / w)
+        let proj = ((m[0] * x + m[1] * y + m[2]) / w, (m[3] * x + m[4] * y + m[5]) / w);
+        match self {
+            Warp::Quad { src, quad, perspective } if perspective < 1.0 => {
+                let u = (x - src[0]) / (src[2] - src[0]).max(1e-9);
+                let v = (y - src[1]) / (src[3] - src[1]).max(1e-9);
+                let [a, b, c, d] = quad;
+                let bil = |i: usize| (1.0 - u) * (1.0 - v) * a[i] + u * (1.0 - v) * b[i] + u * v * c[i] + (1.0 - u) * v * d[i];
+                let t = perspective;
+                ((1.0 - t) * bil(0) + t * proj.0, (1.0 - t) * bil(1) + t * proj.1)
+            }
+            _ => proj,
+        }
+    }
+
+    /// Обратное отображение: точка результата → точка источника.
+    fn inverse(self) -> Option<impl Fn(f64, f64) -> Option<(f64, f64)>> {
+        let inv = crate::resample::invert3(self.full())?;
+        let blend = matches!(self, Warp::Quad { perspective, .. } if perspective < 1.0);
+        Some(move |x: f64, y: f64| {
+            let w = inv[6] * x + inv[7] * y + inv[8];
+            if w.abs() < 1e-12 {
+                return None;
+            }
+            let mut p = ((inv[0] * x + inv[1] * y + inv[2]) / w, (inv[3] * x + inv[4] * y + inv[5]) / w);
+            if !blend {
+                return Some(p);
+            }
+            // смесь с билинейным: метод Ньютона от перспективного ответа
+            for _ in 0..12 {
+                let f = self.apply(p.0, p.1);
+                let (ex, ey) = (f.0 - x, f.1 - y);
+                if ex * ex + ey * ey < 1e-8 {
+                    return Some(p);
+                }
+                let h = 1e-3;
+                let fx = self.apply(p.0 + h, p.1);
+                let fy = self.apply(p.0, p.1 + h);
+                let (a, b, c, d) = ((fx.0 - f.0) / h, (fy.0 - f.0) / h, (fx.1 - f.1) / h, (fy.1 - f.1) / h);
+                let det = a * d - b * c;
+                if det.abs() < 1e-12 {
+                    return None;
+                }
+                p = (p.0 - (d * ex - b * ey) / det, p.1 - (a * ey - c * ex) / det);
+            }
+            let f = self.apply(p.0, p.1);
+            ((f.0 - x).hypot(f.1 - y) < 0.01).then_some(p)
+        })
     }
 }
 
@@ -406,7 +462,7 @@ pub fn warp_pixels(src: &ColorMap, sel: &Selection, warp: Warp, mode: crate::res
     // область источника
     let bounds = if whole { content_bounds(src) } else { sel.bounds() };
     let Some((x0, y0, x1, y1)) = bounds else { return (src.clone(), sel.mask.clone()) };
-    let Some(inv) = crate::resample::invert3(warp.full()) else { return (src.clone(), sel.mask.clone()) };
+    let Some(inverse) = warp.inverse() else { return (src.clone(), sel.mask.clone()) };
     let (sw, sh) = ((x1 - x0) as usize, (y1 - y0) as usize);
     let k = 1.0 / ONE as f32;
     let mut part = vec![[0f32; 4]; sw * sh];
@@ -441,10 +497,7 @@ pub fn warp_pixels(src: &ColorMap, sel: &Selection, warp: Warp, mode: crate::res
     let dy1 = corners.iter().map(|c| c.1).fold(f64::MIN, f64::max).ceil() as i32 + 1;
     let (dw, dh) = ((dx1 - dx0) as usize, (dy1 - dy0) as usize);
     // обратное отображение в координаты буфера источника
-    let back = |x: f64, y: f64| {
-        let w = inv[6] * x + inv[7] * y + inv[8];
-        (w.abs() > 1e-12).then(|| ((inv[0] * x + inv[1] * y + inv[2]) / w - x0 as f64, (inv[3] * x + inv[4] * y + inv[5]) / w - y0 as f64))
-    };
+    let back = |x: f64, y: f64| inverse(x, y).map(|(sx, sy)| (sx - x0 as f64, sy - y0 as f64));
     let moved = crate::resample::sample_map(&part, sw, sh, dx0, dy0, dw, dh, mode, back);
     let mmask = crate::resample::sample_map(&mpart, sw, sh, dx0, dy0, dw, dh, mode, back);
     let mut mask = MaskMap::new();
