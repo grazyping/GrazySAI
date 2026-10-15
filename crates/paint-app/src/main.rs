@@ -95,6 +95,9 @@ struct TextEditing {
     text: String,
     font: String,
     size: f32,
+    bold: bool,
+    italic: bool,
+    vertical: bool,
     /// Остальное из файла (флаги, матрица) — сохраняется как было.
     base: Option<paint_formats::sai2_text::TextLayer>,
 }
@@ -1151,10 +1154,24 @@ impl PaintApp {
                     text: t.text(),
                     font: first.map_or(self.text_font.clone(), |r| r.font.clone()),
                     size: first.map_or(self.text_size, |r| r.size),
+                    bold: first.is_some_and(|r| r.style & sai2_text::STYLE_BOLD != 0),
+                    italic: first.is_some_and(|r| r.style & sai2_text::STYLE_ITALIC != 0),
+                    vertical: t.flags[0] & sai2_text::FLAG_VERTICAL != 0,
                     base: Some(t),
                 }
             }
-            None => TextEditing { path: None, x, y, text: String::new(), font: self.text_font.clone(), size: self.text_size, base: None },
+            None => TextEditing {
+                path: None,
+                x,
+                y,
+                text: String::new(),
+                font: self.text_font.clone(),
+                size: self.text_size,
+                bold: false,
+                italic: false,
+                vertical: false,
+                base: None,
+            },
         });
     }
 
@@ -1186,7 +1203,12 @@ impl PaintApp {
                 ui.label(tr("Размер"));
                 ui.add(egui::DragValue::new(&mut e.size).range(1.0..=999.0).speed(0.5).suffix(" px"));
             });
-            ui.weak(tr("Цвет — основной цвет панели. Жирный, курсив и вертикальный текст — позже."));
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut e.bold, tr("Жирный"));
+                ui.checkbox(&mut e.italic, tr("Курсив"));
+                ui.checkbox(&mut e.vertical, tr("Вертикально"));
+            });
+            ui.weak(tr("Цвет — основной цвет панели."));
             ui.horizontal(|ui| {
                 ok = ui.button("OK").clicked();
                 cancel = ui.button(tr("Отмена")).clicked();
@@ -1202,12 +1224,17 @@ impl PaintApp {
         self.text_font = e.font.clone();
         self.text_size = e.size;
         let c = self.color();
-        let run = TextRun { font: e.font.clone(), size: e.size, color: [c.r(), c.g(), c.b()], style: 0, text: e.text.clone() };
+        let style = if e.bold { sai2_text::STYLE_BOLD } else { 0 } | if e.italic { sai2_text::STYLE_ITALIC } else { 0 };
+        let run = TextRun { font: e.font.clone(), size: e.size, color: [c.r(), c.g(), c.b()], style, text: e.text.clone() };
         let mut layer = e.base.clone().unwrap_or_else(|| TextLayer::new(e.x, e.y, run.clone()));
         // правка без изменений атрибутов и текста — слой как был (в том числе по отрезкам)
-        let same = e.base.as_ref().is_some_and(|b| b.text() == e.text && b.runs.first().is_some_and(|r| r.font == e.font && r.size == e.size));
+        let vflag = if e.vertical { sai2_text::FLAG_VERTICAL } else { 0 };
+        let same = e.base.as_ref().is_some_and(|b| {
+            b.text() == e.text && b.flags[0] & sai2_text::FLAG_VERTICAL == vflag && b.runs.first().is_some_and(|r| r.font == e.font && r.size == e.size && r.style == style)
+        });
         if !same {
             layer.runs = vec![run];
+            layer.flags[0] = (layer.flags[0] & !sai2_text::FLAG_VERTICAL) | vflag;
         }
         if e.text.is_empty() && e.path.is_none() {
             return;

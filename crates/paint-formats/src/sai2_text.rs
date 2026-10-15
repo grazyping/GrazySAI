@@ -11,7 +11,7 @@
 //! - в конце блока u32 0.
 //!
 //! Атрибут меняется только там, где меняется (начальные значения — нули), поэтому чёрный цвет
-//! и стиль 0 тегов не пишут. Стиль (жирный, курсив) по коду не дочитан — пишется 0.
+//! и стиль 0 тегов не пишут. Стиль: 4 — жирный, 8 — курсив; флаг слоя 1 — вертикальный текст.
 
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont};
 use paint_core::tile::ColorMap;
@@ -29,6 +29,12 @@ pub struct TextRun {
     pub style: u16,
     pub text: String,
 }
+
+/// Биты стиля отрезка и флаг слоя (по образцу пользователя из SAI 2017).
+pub const STYLE_BOLD: u16 = 4;
+pub const STYLE_ITALIC: u16 = 8;
+/// `flags[0]`: вертикальный текст — строка повёрнута на 90° по часовой.
+pub const FLAG_VERTICAL: u8 = 1;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextLayer {
@@ -210,9 +216,105 @@ fn font(name: &str) -> Option<Arc<FontVec>> {
     found
 }
 
-/// Файл шрифта и номер в коллекции.
+/// Шрифты системы, как их видит SAI: старое имя семейства (nameID 1 таблицы имён, как у GDI и
+/// Wine), не длиннее 31 знака UTF-16, только контурные TrueType/OpenType; имя → файл и номер
+/// в коллекции. Сверено с перечислением Wine (`EnumFontFamiliesExW`, как в SAI): совпало 1628
+/// имён из 1640, остальное — встроенные шрифты Wine.
+fn font_index() -> &'static Vec<(String, std::path::PathBuf, u32)> {
+    static INDEX: OnceLock<Vec<(String, std::path::PathBuf, u32)>> = OnceLock::new();
+    INDEX.get_or_init(|| {
+        let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for (path, index) in font_files() {
+            if !seen.insert((path.clone(), index)) {
+                continue;
+            }
+            let Ok(data) = std::fs::read(&path) else { continue };
+            let Ok(face) = ttf_parser::Face::parse(&data, index) else { continue };
+            // только контурные: у цветных и растровых нет glyf/CFF
+            let t = face.tables();
+            if t.glyf.is_none() && t.cff.is_none() && t.cff2.is_none() {
+                continue;
+            }
+            if let Some(name) = gdi_family(&face) {
+                if !name.starts_with('@') {
+                    out.push((name, path.clone(), index));
+                }
+            }
+        }
+        out
+    })
+}
+
+/// Имя семейства для GDI: nameID 1 платформы Windows, лучше английское; обрезка до 31 знака.
+fn gdi_family(face: &ttf_parser::Face) -> Option<String> {
+    let mut best: Option<(u8, String)> = None;
+    for rec in face.names() {
+        if rec.name_id != 1 {
+            continue;
+        }
+        let rank = match (rec.platform_id, rec.language_id) {
+            (ttf_parser::PlatformId::Windows, 0x0409) => 0,
+            (ttf_parser::PlatformId::Windows, _) => 1,
+            _ => 2,
+        };
+        if let Some(n) = rec.to_string() {
+            if best.as_ref().is_none_or(|(r, _)| rank < *r) {
+                best = Some((rank, n));
+            }
+        }
+    }
+    let name = best?.1;
+    let units: Vec<u16> = name.encode_utf16().take(31).collect();
+    Some(String::from_utf16_lossy(&units))
+}
+
+/// Файлы шрифтов системы и номера в коллекциях.
 #[cfg(not(windows))]
+fn font_files() -> Vec<(std::path::PathBuf, u32)> {
+    let Ok(o) = std::process::Command::new("fc-list").args(["-f", "%{file}|%{index}\n"]).output() else { return Vec::new() };
+    String::from_utf8_lossy(&o.stdout)
+        .lines()
+        .filter_map(|l| {
+            let (f, i) = l.rsplit_once('|')?;
+            Some((std::path::PathBuf::from(f), i.trim().parse().unwrap_or(0)))
+        })
+        .collect()
+}
+
+#[cfg(windows)]
+fn font_files() -> Vec<(std::path::PathBuf, u32)> {
+    let mut dirs = vec![std::path::PathBuf::from(std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".into())).join("Fonts")];
+    if let Some(l) = std::env::var_os("LOCALAPPDATA") {
+        dirs.push(std::path::PathBuf::from(l).join(r"Microsoft\Windows\Fonts"));
+    }
+    let mut out = Vec::new();
+    for d in dirs {
+        let Ok(rd) = std::fs::read_dir(d) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            let ext = p.extension().map(|x| x.to_string_lossy().to_lowercase()).unwrap_or_default();
+            if !matches!(ext.as_str(), "ttf" | "otf" | "ttc" | "otc") {
+                continue;
+            }
+            let n = std::fs::read(&p).ok().and_then(|d| ttf_parser::fonts_in_collection(&d)).unwrap_or(1);
+            out.extend((0..n).map(|i| (p.clone(), i)));
+        }
+    }
+    out
+}
+
+/// Файл шрифта по имени, как его пишет SAI; иначе — подбор системы (только Linux).
 fn find_font_file(name: &str) -> Option<(std::path::PathBuf, u32)> {
+    let want = name.to_lowercase();
+    if let Some((_, p, i)) = font_index().iter().find(|(n, _, _)| n.to_lowercase() == want) {
+        return Some((p.clone(), *i));
+    }
+    fc_match(name)
+}
+
+#[cfg(not(windows))]
+fn fc_match(name: &str) -> Option<(std::path::PathBuf, u32)> {
     let out = std::process::Command::new("fc-match").args(["-f", "%{file}\n%{index}", name]).output().ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
     let mut lines = text.lines();
@@ -221,53 +323,9 @@ fn find_font_file(name: &str) -> Option<(std::path::PathBuf, u32)> {
     (!file.is_empty()).then(|| (file.into(), index))
 }
 
-/// В Windows — по таблицам имён шрифтов в папках системы и пользователя.
 #[cfg(windows)]
-fn find_font_file(name: &str) -> Option<(std::path::PathBuf, u32)> {
-    let want = name.to_lowercase();
-    let index = font_index();
-    let hit = |w: &str| index.iter().find(|(n, _, _, _)| n.to_lowercase() == w);
-    hit(&want)
-        .or_else(|| index.iter().find(|(n, _, _, _)| want.starts_with(&n.to_lowercase())))
-        .map(|(_, p, i, _)| (p.clone(), *i))
-}
-
-/// Имена шрифтов Windows: (имя, файл, номер в коллекции, вид имени 1/4/16).
-#[cfg(windows)]
-fn font_index() -> &'static Vec<(String, std::path::PathBuf, u32, u16)> {
-    static INDEX: OnceLock<Vec<(String, std::path::PathBuf, u32, u16)>> = OnceLock::new();
-    INDEX.get_or_init(|| {
-        let mut dirs = vec![std::path::PathBuf::from(std::env::var("WINDIR").unwrap_or_else(|_| r"C:\Windows".into())).join("Fonts")];
-        if let Some(l) = std::env::var_os("LOCALAPPDATA") {
-            dirs.push(std::path::PathBuf::from(l).join(r"Microsoft\Windows\Fonts"));
-        }
-        let mut out = Vec::new();
-        for d in dirs {
-            let Ok(rd) = std::fs::read_dir(d) else { continue };
-            for e in rd.flatten() {
-                let p = e.path();
-                let ext = p.extension().map(|x| x.to_string_lossy().to_lowercase()).unwrap_or_default();
-                if !matches!(ext.as_str(), "ttf" | "otf" | "ttc" | "otc") {
-                    continue;
-                }
-                let Ok(data) = std::fs::read(&p) else { continue };
-                let n = ttf_parser::fonts_in_collection(&data).unwrap_or(1);
-                for i in 0..n {
-                    if let Ok(face) = ttf_parser::Face::parse(&data, i) {
-                        for rec in face.names() {
-                            // полное имя (4) и имя семейства с начертанием (1, 16)
-                            if matches!(rec.name_id, 1 | 4 | 16) {
-                                if let Some(s) = rec.to_string() {
-                                    out.push((s, p.clone(), i, rec.name_id));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        out
-    })
+fn fc_match(_name: &str) -> Option<(std::path::PathBuf, u32)> {
+    None
 }
 
 /// Запасной шрифт для символов, которых нет в выбранном (как делает система у SAI).
@@ -283,12 +341,20 @@ fn fallback() -> Option<Arc<FontVec>> {
 pub fn render(layer: &TextLayer, pixels: &mut ColorMap) {
     let fb = fallback();
     let [a, b, c, d] = layer.matrix;
+    // вертикальный текст: строка повёрнута на 90° по часовой, верх букв смотрит вправо
+    let vertical = layer.flags[0] & FLAG_VERTICAL != 0;
     let (mut pen_x, mut line_y) = (0.0f32, 0.0f32);
     for run in &layer.runs {
         let Some(main) = font(&run.font).or_else(|| fb.clone()) else { continue };
         let scale = PxScale::from(run.size);
         let ascent = main.as_scaled(scale).ascent();
         let line = main.as_scaled(scale).height() + main.as_scaled(scale).line_gap();
+        // стиль: 4 — жирный, 8 — курсив (по образцу пользователя). Как у SAI под Wine: курсив —
+        // наклон 0,209, жирный — буквы не толще, но шаг шире на размер/12 (подобрано по ширине
+        // надписей образца: 98–356 px против 98–355)
+        let italic = run.style & STYLE_ITALIC != 0;
+        let strength = if run.style & STYLE_BOLD != 0 { run.size / 12.0 } else { 0.0 };
+        let rgb = run.color.map(|v| v as u32);
         for ch in run.text.chars() {
             if ch == '\n' {
                 pen_x = 0.0;
@@ -297,56 +363,53 @@ pub fn render(layer: &TextLayer, pixels: &mut ColorMap) {
             }
             let f = if main.glyph_id(ch).0 == 0 { fb.as_ref().unwrap_or(&main) } else { &main };
             let sf = f.as_scaled(scale);
-            let g = f.glyph_id(ch).with_scale_and_position(scale, ab_glyph::point(pen_x, line_y + ascent));
-            pen_x += sf.h_advance(g.id);
+            let baseline = line_y + ascent;
+            let g = f.glyph_id(ch).with_scale_and_position(scale, ab_glyph::point(pen_x, baseline));
+            pen_x += sf.h_advance(g.id) + strength;
             let Some(outline) = f.outline_glyph(g) else { continue };
             let bb = outline.px_bounds();
-            let rgb = run.color.map(|v| v as u32);
+            let (w, h) = (bb.width() as i32, bb.height() as i32);
+            let mut buf = vec![0f32; (w * h).max(0) as usize];
             outline.draw(|gx, gy, cov| {
-                if cov <= 0.0 {
-                    return;
+                if (gx as i32) < w && (gy as i32) < h {
+                    buf[(gy as i32 * w + gx as i32) as usize] = cov.min(1.0);
                 }
-                // точка строки (u, v) → холст через матрицу слоя
-                let (u, v) = (bb.min.x as f64 + gx as f64 + 0.5, bb.min.y as f64 + gy as f64 + 0.5);
-                let (px, py) = (layer.x + a * u + c * v, layer.y + b * u + d * v);
-                let (ix, iy) = (px.floor() as i32, py.floor() as i32);
-                let one = paint_core::pixel::ONE;
-                let k = (cov.min(1.0) * one as f32).round() as u32;
-                let old = pixels.get(ix, iy);
-                let add = [rgb[0] * k / 255, rgb[1] * k / 255, rgb[2] * k / 255, k];
-                let px = std::array::from_fn(|i| (add[i] + old[i] as u32 * (one - k) / one).min(one) as u16);
-                pixels.set(ix, iy, px);
             });
+            for gy in 0..h {
+                for gx in 0..w {
+                    let cov = buf[(gy * w + gx) as usize];
+                    if cov <= 0.0 {
+                        continue;
+                    }
+                    let mut u = bb.min.x as f64 + gx as f64 + 0.5;
+                    let v = bb.min.y as f64 + gy as f64 + 0.5;
+                    if italic {
+                        u += (baseline as f64 - v) * 0.209;
+                    }
+                    let (u, v) = if vertical { (-v, u) } else { (u, v) };
+                    let (px, py) = (layer.x + a * u + c * v, layer.y + b * u + d * v);
+                    let (ix, iy) = (px.floor() as i32, py.floor() as i32);
+                    let one = paint_core::pixel::ONE;
+                    let k = (cov * one as f32).round() as u32;
+                    let old = pixels.get(ix, iy);
+                    let add = [rgb[0] * k / 255, rgb[1] * k / 255, rgb[2] * k / 255, k];
+                    let px = std::array::from_fn(|i| (add[i] + old[i] as u32 * (one - k) / one).min(one) as u16);
+                    pixels.set(ix, iy, px);
+                }
+            }
         }
     }
 }
 
-/// Шрифты системы — именами, как их показывает SAI («Noto Sans Mono Black»), по алфавиту.
+/// Шрифты системы — именами, как их показывает SAI, по алфавиту. Надпись со шрифтом, которого
+/// нет в списке SAI, SAI открыть не может («Внутренняя ошибка»), поэтому список — тот же.
 pub fn system_fonts() -> Vec<String> {
     static LIST: OnceLock<Vec<String>> = OnceLock::new();
     LIST.get_or_init(|| {
-        let mut out = list_fonts();
+        let mut out: Vec<String> = font_index().iter().map(|(n, _, _)| n.clone()).collect();
         out.sort_by_key(|n| n.to_lowercase());
         out.dedup();
         out
     })
     .clone()
-}
-
-#[cfg(not(windows))]
-fn list_fonts() -> Vec<String> {
-    let Ok(o) = std::process::Command::new("fc-list").args(["-f", "%{fullname[0]}|%{family[0]}\n"]).output() else { return Vec::new() };
-    String::from_utf8_lossy(&o.stdout)
-        .lines()
-        .filter_map(|l| {
-            let (full, family) = l.split_once('|')?;
-            let n = if full.trim().is_empty() { family } else { full };
-            (!n.trim().is_empty()).then(|| n.trim().to_string())
-        })
-        .collect()
-}
-
-#[cfg(windows)]
-fn list_fonts() -> Vec<String> {
-    font_index().iter().filter(|(_, _, _, id)| *id == 4).map(|(n, _, _, _)| n.clone()).collect()
 }

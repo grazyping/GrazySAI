@@ -380,5 +380,8 @@ SOsai на GitHub = SOsai sur GitHub
 # Инструмент «Текст» / Text tool
 Поиск = Rechercher
 Текст: щелчок — новая надпись, по текстовому слою — правка = Texte : clic — nouveau texte, sur un calque de texte — le modifier
-Цвет — основной цвет панели. Жирный, курсив и вертикальный текст — позже. = La couleur est la couleur principale du panneau. Gras, italique et texte vertical — plus tard.
 Шрифт = Police
+Вертикально = Vertical
+Жирный = Gras
+Курсив = Italique
+Цвет — основной цвет панели. = La couleur est la couleur principale du panneau.
