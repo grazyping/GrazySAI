@@ -66,7 +66,6 @@ PSD (со слоями) = PSD (with layers)
 Уменьшить = Zoom Out
 Масштаб 100% = Zoom 100%
 Вписать в окно = Fit to Window
-Панели — позже = Panels — later
 Клавиши… = Shortcut Keys…
 О программе = About
 
@@ -475,3 +474,16 @@ S-кривая = S-Curve Gradation
 Прозрачный (светлая шашка) = Transparent (Bright Checker)
 Чёрный = Black
 Белый = White
+
+# Меню «Вид» (0.8.21)
+Сбросить положение вида = Reset Position of View
+Сбросить угол вида = Reset Angle of View
+
+# Меню «Окно» (0.8.21)
+Масштаб интерфейса = Scaling of User Interface
+Панель цвета и инструментов справа = Show Color and Tool Panels on Right Side
+Панель навигатора и слоёв справа = Show Navigator and Layer Panels on Right Side
+Полный экран = Full Screen
+Показывать все панели = Show All User Interface Panels
+Курсор-точка у кистей = Use Dot Cursor for Brush Tools
+Кружок размера кисти = Show Brush Size Circle for Brush Tools

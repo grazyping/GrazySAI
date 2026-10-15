@@ -60,6 +60,12 @@ The layout follows SAI 2:
 
 Shortcut keys in menu items and tooltips can be hidden: “Window → Show shortcut keys”.
 
+The “Window” menu, as in SAI: UI scale (100–200%), the color and tool panel and the navigator and
+layer panel on the right or left, full screen (F11, Shift+Tab), “Show All User Interface Panels”
+(Tab leaves only the canvas), a dot cursor for brushes, the brush size circle. The “View” menu:
+rotate and mirror the view, “Reset Position of View” (Home), “Reset Angle of View” (Shift+Home),
+100% (Ctrl+Alt+0).
+
 ## Painting
 
 ### Brushes

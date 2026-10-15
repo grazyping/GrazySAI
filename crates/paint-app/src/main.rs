@@ -188,6 +188,27 @@ struct FilterDialog {
     dirty: bool,
 }
 
+/// Меню «Окно», как в SAI 2017.
+#[derive(Clone, Copy, PartialEq)]
+struct WindowOpts {
+    ui_scale: f32,
+    /// Цвет и инструменты справа (по умолчанию слева).
+    tools_right: bool,
+    /// Навигатор и слои справа (по умолчанию справа).
+    layers_right: bool,
+    fullscreen: bool,
+    /// Tab: спрятать панели, оставить холст.
+    panels_hidden: bool,
+    dot_cursor: bool,
+    brush_circle: bool,
+}
+
+impl Default for WindowOpts {
+    fn default() -> Self {
+        Self { ui_scale: 1.0, tools_right: false, layers_right: true, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true }
+    }
+}
+
 /// Окно «Обводка…» слоя (как в SAI 2017): ширина 1–25, внутри / по центру / снаружи.
 struct OutlineDialog {
     path: Vec<usize>,
@@ -784,6 +805,10 @@ struct PaintApp {
     gradient: Option<GradientEdit>,
     grad_opts: GradientOpts,
     transform_kind: TransformKind,
+    /// Настройки меню «Окно».
+    win: WindowOpts,
+    /// Нажата Tab (`Some(shift)`), перехвачена до egui в `raw_input_hook`.
+    tab_pressed: Option<bool>,
     /// Окно «Цвет фона холста»: выбираемый цвет.
     bg_color_edit: Option<[u8; 3]>,
     /// Недавние файлы, сверху — последний.
@@ -920,6 +945,8 @@ impl PaintApp {
             clip: clip::Clip::new(),
             recent: Vec::new(),
             bg_color_edit: None,
+            win: WindowOpts::default(),
+            tab_pressed: None,
             clip_own: None,
             layer_props: None,
             transform_perspective: 0,
@@ -1147,6 +1174,13 @@ impl PaintApp {
         if let Some(v) = s.bool("key_hints") {
             keys::set_hints(v);
         }
+        if let Some(v) = s.f32("ui_scale") {
+            self.win.ui_scale = v.clamp(1.0, 2.0);
+        }
+        s.read_bool("tools_right", &mut self.win.tools_right);
+        s.read_bool("layers_right", &mut self.win.layers_right);
+        s.read_bool("dot_cursor", &mut self.win.dot_cursor);
+        s.read_bool("brush_circle", &mut self.win.brush_circle);
         if let Some(v) = s.f32("transform_perspective") {
             self.transform_perspective = v.clamp(0.0, 100.0) as u8;
         }
@@ -1271,6 +1305,12 @@ impl PaintApp {
         s.set("stabilizer", self.stabilizer.label());
         s.set("wand_tolerance", self.wand_tolerance);
         s.set("transform_perspective", self.transform_perspective);
+        let w = &self.win;
+        s.set("ui_scale", w.ui_scale);
+        s.set("tools_right", w.tools_right as u8);
+        s.set("layers_right", w.layers_right as u8);
+        s.set("dot_cursor", w.dot_cursor as u8);
+        s.set("brush_circle", w.brush_circle as u8);
         s.set("lasso_polygon", self.lasso_polygon);
         s.set("lasso_aa", self.lasso_aa);
         s.set("gradient_circle", self.grad_opts.circle);
@@ -2914,6 +2954,15 @@ impl PaintApp {
 
     /// Масштаб вокруг центра области просмотра.
     /// Повернуть вид на `step` градусов (0 — сбросить угол). Рисунок не меняется.
+    /// «Сбросить положение вида» (Home в SAI): холст посередине окна, масштаб прежний.
+    fn reset_view_position(&mut self) {
+        let r = self.view;
+        if r.width() > 0.0 {
+            let (w, h) = (self.doc.width as f32, self.doc.height as f32);
+            self.offset = Vec2::new((w - r.width() / self.zoom) / 2.0, (h - r.height() / self.zoom) / 2.0);
+        }
+    }
+
     fn rotate_view(&mut self, step: f32) {
         if step == 0.0 {
             self.view_angle = 0.0;
@@ -3310,12 +3359,35 @@ impl PaintApp {
                     self.set_zoom(self.zoom / 1.25);
                     ui.close_menu();
                 }
-                if ui.button(tr("Масштаб 100%")).clicked() {
+                if ui.add(menu_item("Масштаб 100%", "Ctrl+Alt+0")).clicked() {
                     self.set_zoom(1.0);
                     ui.close_menu();
                 }
                 if ui.button(tr("Вписать в окно")).clicked() {
                     self.fit_pending = true;
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui.add(menu_item("Повернуть вид против часовой", "Shift+PageUp")).clicked() {
+                    self.rotate_view(-15.0);
+                    ui.close_menu();
+                }
+                if ui.add(menu_item("Повернуть вид по часовой", "Shift+PageDown")).clicked() {
+                    self.rotate_view(15.0);
+                    ui.close_menu();
+                }
+                if ui.add(menu_item("Сбросить положение вида", "Home")).clicked() {
+                    self.reset_view_position();
+                    ui.close_menu();
+                }
+                if ui.add(menu_item("Сбросить угол вида", "Shift+Home")).clicked() {
+                    self.rotate_view(0.0);
+                    ui.close_menu();
+                }
+                ui.separator();
+                let mut flip = self.view_flip;
+                if ui.checkbox(&mut flip, tr("Зеркало вида")).on_hover_text("H").clicked() {
+                    self.view_flip = flip;
                     ui.close_menu();
                 }
             });
@@ -3344,7 +3416,29 @@ impl PaintApp {
                     s.set("key_hints", on as u8);
                     s.save();
                 }
-                ui.add_enabled(false, egui::Button::new(tr("Панели — позже")));
+                ui.separator();
+                // как меню Window в SAI 2017
+                let w = &mut self.win;
+                ui.menu_button(tr("Масштаб интерфейса"), |ui| {
+                    for z in [1.0_f32, 1.25, 1.5, 2.0] {
+                        if ui.radio((w.ui_scale - z).abs() < 0.01, format!("{:.0}%", z * 100.0)).clicked() {
+                            w.ui_scale = z;
+                            ui.close_menu();
+                        }
+                    }
+                });
+                ui.checkbox(&mut w.tools_right, tr("Панель цвета и инструментов справа"));
+                ui.checkbox(&mut w.layers_right, tr("Панель навигатора и слоёв справа"));
+                ui.separator();
+                if ui.add(egui::Checkbox::new(&mut w.fullscreen, tr("Полный экран"))).on_hover_text("F11, Shift+Tab").changed() {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(w.fullscreen));
+                }
+                let mut shown = !w.panels_hidden;
+                if ui.checkbox(&mut shown, tr("Показывать все панели")).on_hover_text("Tab").changed() {
+                    w.panels_hidden = !shown;
+                }
+                ui.checkbox(&mut w.dot_cursor, tr("Курсор-точка у кистей"));
+                ui.checkbox(&mut w.brush_circle, tr("Кружок размера кисти"));
             });
             ui.menu_button(keys::hint(tr("Помощь(H)")), |ui| {
                 if ui.button(tr("Клавиши…")).clicked() {
@@ -5538,11 +5632,13 @@ impl PaintApp {
         if let Some(pos) = pointer.filter(|p| rect.contains(*p)) {
             if self.tool == Tool::Brush {
                 let size = self.brushes[self.brush].params.size;
-                painter.circle_stroke(
-                    pos,
-                    (size * self.zoom / 2.0).max(1.0),
-                    egui::Stroke::new(1.0_f32, Color32::from_gray(90)),
-                );
+                if self.win.brush_circle {
+                    painter.circle_stroke(pos, (size * self.zoom / 2.0).max(1.0), egui::Stroke::new(1.0_f32, Color32::from_gray(90)));
+                }
+                if self.win.dot_cursor {
+                    painter.circle_filled(pos, 1.5, Color32::from_gray(40));
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::None);
+                }
             }
         }
     }
@@ -6252,6 +6348,19 @@ impl eframe::App for PaintApp {
 
     /// Виртуальное перо: события касания с силой нажима и указателя, как от Windows Ink.
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        // Tab и Shift+Tab — панели и полный экран (как в SAI): забрать до egui, иначе он
+        // переводит ими фокус по кнопкам
+        if !ctx.wants_keyboard_input() {
+            raw.events.retain(|e| match e {
+                egui::Event::Key { key: egui::Key::Tab, pressed, modifiers, .. } if !modifiers.command => {
+                    if *pressed {
+                        self.tab_pressed = Some(modifiers.shift);
+                    }
+                    false
+                }
+                _ => true,
+            });
+        }
         let Some(vp) = self.virtual_pen.as_mut() else { return };
         ctx.request_repaint();
         if !self.view.is_positive() {
@@ -6402,6 +6511,28 @@ impl eframe::App for PaintApp {
             }
             if hit(A::FlipView) {
                 self.view_flip = !self.view_flip;
+            }
+            // как в SAI: Tab — спрятать панели, F11 и Shift+Tab — полный экран
+            let shift_tab = self.tab_pressed.take();
+            let tab = shift_tab == Some(false);
+            let full = ctx.input(|i| i.key_pressed(egui::Key::F11)) || shift_tab == Some(true);
+            if tab {
+                self.win.panels_hidden = !self.win.panels_hidden;
+            }
+            if full {
+                self.win.fullscreen = !self.win.fullscreen;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.win.fullscreen));
+            }
+            // как в SAI: Home — положение вида, Ctrl+Alt+0 — масштаб 100 %
+            let (home, zoom100) = ctx.input(|i| {
+                let m = i.modifiers;
+                (i.key_pressed(egui::Key::Home) && !m.shift && !m.command && !m.alt, i.key_pressed(egui::Key::Num0) && m.command && m.alt)
+            });
+            if home {
+                self.reset_view_position();
+            }
+            if zoom100 {
+                self.set_zoom(1.0);
             }
             if hit(A::RotateCcw) {
                 self.rotate_view(-15.0);
@@ -6559,16 +6690,16 @@ impl eframe::App for PaintApp {
                 });
             });
         });
-        egui::SidePanel::left("tools")
-            .exact_width(236.0)
-            .resizable(false)
-            .show(ctx, |ui| self.left_panel(ui));
-        egui::SidePanel::right("layers")
-            .exact_width(186.0)
-            .resizable(false)
-            .show(ctx, |ui| self.right_panel(ui));
-        egui::TopBottomPanel::top("quick").show(ctx, |ui| self.quick_bar(ui));
-        egui::TopBottomPanel::bottom("tabs").show(ctx, |ui| {
+        if (ctx.zoom_factor() - self.win.ui_scale).abs() > 0.001 {
+            ctx.set_zoom_factor(self.win.ui_scale);
+        }
+        let side = |right: bool, id: &'static str| if right { egui::SidePanel::right(id) } else { egui::SidePanel::left(id) };
+        if !self.win.panels_hidden {
+            side(self.win.tools_right, "tools").exact_width(236.0).resizable(false).show(ctx, |ui| self.left_panel(ui));
+            side(self.win.layers_right, "layers").exact_width(186.0).resizable(false).show(ctx, |ui| self.right_panel(ui));
+            egui::TopBottomPanel::top("quick").show(ctx, |ui| self.quick_bar(ui));
+        }
+        egui::TopBottomPanel::bottom("tabs").show_animated(ctx, !self.win.panels_hidden, |ui| {
             ui.horizontal(|ui| {
                 let (rect, _) =
                     ui.allocate_exact_size(Vec2::new(180.0, 18.0), egui::Sense::click());

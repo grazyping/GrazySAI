@@ -65,7 +65,6 @@ PSD (со слоями) = PSD (avec calques)
 Уменьшить = Zoom arrière
 Масштаб 100% = Zoom 100 %
 Вписать в окно = Ajuster à la fenêtre
-Панели — позже = Panneaux — plus tard
 Клавиши… = Raccourcis clavier…
 О программе = À propos
 
@@ -474,3 +473,16 @@ S-кривая = Courbe en S
 Прозрачный (светлая шашка) = Transparent (damier clair)
 Чёрный = Noir
 Белый = Blanc
+
+# Меню «Вид» (0.8.21)
+Сбросить положение вида = Réinitialiser la position de la vue
+Сбросить угол вида = Réinitialiser l'angle de la vue
+
+# Меню «Окно» (0.8.21)
+Масштаб интерфейса = Échelle de l'interface
+Панель цвета и инструментов справа = Panneaux couleur et outils à droite
+Панель навигатора и слоёв справа = Panneaux navigateur et calques à droite
+Полный экран = Plein écran
+Показывать все панели = Afficher tous les panneaux
+Курсор-точка у кистей = Curseur point pour les pinceaux
+Кружок размера кисти = Cercle de taille du pinceau

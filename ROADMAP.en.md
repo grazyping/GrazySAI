@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.20)
+### 0.8 — linework and shapes (current version 0.8.21)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -123,8 +123,9 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Edit: cut, copy, paste (as a new layer), copy by selection bounds; new canvas from the clipboard — system clipboard
 - [x] File: recent files (up to 10, kept between runs)
 - [x] Canvas: trim by selection, canvas background (white, checker, etc.) — from SAI's code, read and written in `.sai2`
-- [ ] View: reset position and angle, 100% (Ctrl+Alt+0), rotate and mirror in the menu
-- [ ] Window: full screen (F11), hide panels (Tab), panels on the right, UI scale, HSL mode, dot cursor and brush size circle
+- [x] View: reset position and angle, 100% (Ctrl+Alt+0), rotate and mirror in the menu
+- [x] Window: full screen (F11, Shift+Tab), hide panels (Tab), panels on the right or left, UI scale, dot cursor and brush size circle
+- [ ] Window: HSL mode for the color sliders, swatch size
 
 ### First after 1.0 — filters as in Clip Studio Paint
 
