@@ -268,7 +268,7 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 | Format | Open | Save |
 |---|---|---|
 | `.sai2` | Yes (Ctrl+O) | Ctrl+S, Shift+Ctrl+S (in the same format as SAI 2) |
-| `.psd` | Yes (RGB, 8 bit) | “File → Export → PSD”: with layers, folders, modes |
+| `.psd` | Yes (RGB and grayscale, 8 and 16 bit, layer masks) | “File → Export → PSD”: with layers, folders, modes |
 | `.png`, `.jpg` | Yes, as one layer | “File → Export → PNG / JPEG” (flattened image) |
 
 “Open”, “Save As” and “Export” show the system window: File Explorer on Windows, the desktop's

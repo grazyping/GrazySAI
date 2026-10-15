@@ -72,3 +72,24 @@ fn reads_psd_written_by_another_program() {
     assert_eq!((flat.width, flat.height), (360, 256));
     assert!(!flat.layers.is_empty());
 }
+
+/// PSD из Krita 5.2.9 (8 и 16 бит): слои, маска прозрачности, папка с умножением; сведение
+/// сверяется с картинкой, которую сохранила сама Krita (скрипт `make_psd.py` навыка krita).
+#[test]
+fn reads_krita_psd_with_mask_and_16_bits() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+    for bits in [8, 16] {
+        let doc = paint_formats::psd::load(&dir.join(format!("krita-probe-{bits}.psd"))).unwrap();
+        let top = doc.layers.iter().find(|l| l.name == "top").expect("слой top");
+        assert!(top.mask.is_some(), "{bits} бит: маска слоя не прочитана");
+        let (w, h, want) = paint_core::io::load_png(&dir.join(format!("krita-probe-{bits}.png"))).unwrap();
+        assert_eq!((w, h), (doc.width, doc.height));
+        let got = doc.flatten();
+        // 16 бит у Krita по умолчанию — линейный профиль: цвета переводятся в sRGB, но слои Krita
+        // смешивает в линейном свете, а SOsai (как SAI) — в sRGB; поэтому для 16 бит сверяются
+        // точки вне полупрозрачного слоя top (8..48 × 8..38)
+        let skip = |i: usize| bits == 16 && (8..48).contains(&(i / 4 % w as usize)) && (8..38).contains(&(i / 4 / w as usize));
+        let worst = got.iter().zip(&want).enumerate().filter(|(i, _)| !skip(*i)).map(|(_, (a, b))| (*a as i32 - *b as i32).abs()).max().unwrap();
+        assert!(worst <= 2, "{bits} бит: наибольшая разница {worst}");
+    }
+}

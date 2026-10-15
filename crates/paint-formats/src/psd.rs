@@ -2,10 +2,11 @@
 //!
 //! Пишутся: слои с именами (`luni` — юникод), непрозрачность, видимость, прикрепление, режимы
 //! наложения, папки (`lsct`), сведённая картинка. Каналы сжаты PackBits построчно.
-//! Читаются те же сведения; если слоёв нет — сведённая картинка становится одним слоем.
+//! Читаются те же сведения, а ещё 16 бит, оттенки серого, сжатие ZIP и маски слоя; если слоёв
+//! нет — сведённая картинка становится одним слоем.
 
 use paint_core::blend::BlendMode;
-use paint_core::pixel::{from_rgba8, to_rgba8};
+use paint_core::pixel::to_rgba8;
 use paint_core::tile::ColorMap;
 use paint_core::{Document, Layer};
 use std::io::Write;
@@ -332,33 +333,127 @@ impl Reader<'_> {
 }
 
 /// Канал: сжатие и данные → `n` байт на строку × `h` строк.
-fn read_channel(data: &[u8], w: usize, h: usize) -> Res<Vec<u8>> {
+/// Распаковать `rows` строк по `row_bytes` байт: 0 — без сжатия, 1 — PackBits (счётчики строк
+/// лежат в `counts`), 2 — ZIP, 3 — ZIP с предсказанием (разность соседних отсчётов в строке).
+fn unpack(comp: u16, body: &[u8], counts: &[usize], rows: usize, row_bytes: usize, depth: u16) -> Res<Vec<u8>> {
+    let need = rows * row_bytes;
+    let mut out = match comp {
+        0 => body.get(..need).ok_or("PSD: короткий канал")?.to_vec(),
+        1 => {
+            let mut pos = 0;
+            let mut out = Vec::with_capacity(need);
+            for &c in counts {
+                out.extend(unpackbits(body.get(pos..pos + c).ok_or("PSD: короткий канал")?, row_bytes)?);
+                pos += c;
+            }
+            out
+        }
+        2 | 3 => miniz_oxide::inflate::decompress_to_vec_zlib(body).map_err(|e| format!("PSD: ZIP: {e:?}"))?,
+        _ => return Err(format!("PSD: неизвестное сжатие {comp}").into()),
+    };
+    out.resize(need, 0);
+    if comp == 3 {
+        for row in out.chunks_mut(row_bytes.max(1)) {
+            if depth == 16 {
+                let mut prev = 0u16;
+                for c in row.as_chunks_mut::<2>().0 {
+                    prev = prev.wrapping_add(u16::from_be_bytes(*c));
+                    *c = prev.to_be_bytes();
+                }
+            } else {
+                for i in 1..row.len() {
+                    row[i] = row[i].wrapping_add(row[i - 1]);
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Отсчёты канала, приведённые к 16 битам (0..=65535).
+fn samples(raw: &[u8], depth: u16) -> Vec<u16> {
+    if depth == 16 {
+        raw.as_chunks::<2>().0.iter().map(|c| u16::from_be_bytes(*c)).collect()
+    } else {
+        raw.iter().map(|&v| v as u16 * 257).collect()
+    }
+}
+
+/// Канал слоя: два байта сжатия и данные.
+fn read_channel(data: &[u8], w: usize, h: usize, depth: u16) -> Res<Vec<u16>> {
     if data.len() < 2 {
         return Ok(vec![0; w * h]);
     }
     let comp = u16::from_be_bytes([data[0], data[1]]);
-    let body = &data[2..];
-    match comp {
-        0 => {
-            let mut v = body.get(..w * h).ok_or("PSD: короткий канал")?.to_vec();
-            v.resize(w * h, 0);
-            Ok(v)
-        }
-        1 => {
-            let counts: Vec<usize> = (0..h).map(|y| u16::from_be_bytes([body[2 * y], body[2 * y + 1]]) as usize).collect();
-            let mut pos = 2 * h;
-            let mut out = Vec::with_capacity(w * h);
-            for c in counts {
-                out.extend(unpackbits(body.get(pos..pos + c).ok_or("PSD: короткий канал")?, w)?);
-                pos += c;
-            }
-            Ok(out)
-        }
-        _ => Err("PSD: сжатие ZIP не поддерживается".into()),
+    let mut body = &data[2..];
+    let row_bytes = w * depth as usize / 8;
+    let mut counts = Vec::new();
+    if comp == 1 {
+        counts = (0..h).map(|y| body.get(2 * y..2 * y + 2).map(|c| u16::from_be_bytes([c[0], c[1]]) as usize)).collect::<Option<_>>().ok_or("PSD: короткий канал")?;
+        body = &body[2 * h..];
     }
+    Ok(samples(&unpack(comp, body, &counts, h, row_bytes, depth)?, depth))
 }
 
-/// Открыть PSD (RGB, 8 бит).
+/// Встроенный профиль цвета (ресурс 1039) линейный — гамма 1 (так Krita по умолчанию пишет
+/// 16 бит: «sRGB-elle-V2-g10»). Тогда цвета переводятся в sRGB, иначе берутся как есть.
+fn linear_profile(res: &[u8]) -> bool {
+    let be32 = |d: &[u8], o: usize| d.get(o..o + 4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize);
+    let mut p = 0;
+    while p + 12 <= res.len() && &res[p..p + 4] == b"8BIM" {
+        let id = u16::from_be_bytes([res[p + 4], res[p + 5]]);
+        let nl = res[p + 6] as usize;
+        let q = p + 6 + (nl + 2) / 2 * 2; // имя: байт длины и текст, до чётного
+        let Some(size) = be32(res, q) else { return false };
+        let data = res.get(q + 4..q + 4 + size).unwrap_or(&[]);
+        if id == 1039 {
+            let Some(count) = be32(data, 128) else { return false };
+            for t in 0..count.min(64) {
+                let e = 132 + t * 12;
+                if data.get(e..e + 4) != Some(b"rTRC") {
+                    continue;
+                }
+                let Some(off) = be32(data, e + 4) else { return false };
+                let tag = data.get(off..).unwrap_or(&[]);
+                return match tag.get(..4) {
+                    Some(b"curv") => match be32(tag, 8) {
+                        Some(0) => true,
+                        Some(1) => tag.get(12..14) == Some(&[1, 0]),
+                        _ => false,
+                    },
+                    Some(b"para") => be32(tag, 12).is_some_and(|g| (g as i64 - 0x10000).abs() < 0x100) && tag.get(8..10) == Some(&[0, 0]),
+                    _ => false,
+                };
+            }
+            return false;
+        }
+        p = q + 4 + size.div_ceil(2) * 2;
+    }
+    false
+}
+
+/// Цвета из линейных в sRGB (альфа как есть).
+fn encode(c: [u16; 4], linear: bool) -> [u16; 4] {
+    if !linear {
+        return c;
+    }
+    let f = |v: u16| -> u16 {
+        let l = v as f64 / 65535.0;
+        let s = if l <= 0.003_130_8 { l * 12.92 } else { 1.055 * l.powf(1.0 / 2.4) - 0.055 };
+        (s * 65535.0).round() as u16
+    };
+    [f(c[0]), f(c[1]), f(c[2]), c[3]]
+}
+
+/// Пиксель из 16-битных RGBA без предумножения.
+fn from_rgba16(c: [u16; 4]) -> paint_core::pixel::Px {
+    let one = paint_core::pixel::ONE as u64;
+    let a = (c[3] as u64 * one + 32767) / 65535;
+    let f = |v: u16| -> u16 { (((v as u64 * one + 32767) / 65535 * a + one / 2) / one) as u16 };
+    [f(c[0]), f(c[1]), f(c[2]), a as u16]
+}
+
+/// Открыть PSD: RGB или оттенки серого, 8 или 16 бит; слои, папки, маски слоя.
 pub fn load(path: &Path) -> Res<Document> {
     let d = std::fs::read(path)?;
     let mut r = Reader { d: &d, p: 0 };
@@ -371,13 +466,16 @@ pub fn load(path: &Path) -> Res<Document> {
     let w = r.u32()? as usize;
     let depth = r.u16()?;
     let mode = r.u16()?;
-    if depth != 8 || mode != 3 {
-        return Err(format!("PSD: поддерживается только RGB по 8 бит (глубина {depth}, режим {mode})").into());
+    if !matches!(depth, 8 | 16) || !matches!(mode, 1 | 3) {
+        return Err(format!("PSD: поддерживаются RGB и оттенки серого по 8 и 16 бит (глубина {depth}, режим {mode})").into());
     }
+    let gray = mode == 1;
+    // номера каналов цвета: у серого один канал на все три
+    let color_ids: [i16; 3] = if gray { [0, 0, 0] } else { [0, 1, 2] };
     let n = r.u32()? as usize;
     r.take(n)?;
     let n = r.u32()? as usize;
-    r.take(n)?;
+    let linear = linear_profile(r.take(n)?);
     let lm_len = r.u32()? as usize;
     let lm_end = r.p + lm_len;
     let mut doc = Document::new(w as u32, h as u32);
@@ -397,6 +495,8 @@ pub fn load(path: &Path) -> Res<Document> {
                 visible: bool,
                 name: String,
                 section: u32,
+                /// Маска слоя: прямоугольник, цвет за ним, выключена ли.
+                mask: Option<([i32; 4], u8, bool)>,
             }
             let mut recs = Vec::new();
             for _ in 0..count {
@@ -415,7 +515,11 @@ pub fn load(path: &Path) -> Res<Document> {
                 let extra = r.u32()? as usize;
                 let end = r.p + extra;
                 let ml = r.u32()? as usize;
-                r.take(ml)?;
+                let md = r.take(ml)?;
+                let mask = (ml >= 18).then(|| {
+                    let i = |o: usize| i32::from_be_bytes([md[o], md[o + 1], md[o + 2], md[o + 3]]);
+                    ([i(0), i(4), i(8), i(12)], md[16], md[17] & 2 != 0)
+                });
                 let bl = r.u32()? as usize;
                 r.take(bl)?;
                 let nl = r.u8()? as usize;
@@ -434,35 +538,53 @@ pub fn load(path: &Path) -> Res<Document> {
                     if &k == b"luni" && data.len() >= 4 {
                         let n = u32::from_be_bytes(data[..4].try_into()?) as usize;
                         let units: Vec<u16> = data[4..].chunks(2).take(n).map(|c| u16::from_be_bytes([c[0], *c.get(1).unwrap_or(&0)])).collect();
-                        name = String::from_utf16_lossy(&units);
+                        // Krita считает в длине и завершающий нуль
+                        name = String::from_utf16_lossy(&units).trim_end_matches('\0').to_string();
                     }
                     if (&k == b"lsct" || &k == b"lsdk") && data.len() >= 4 {
                         section = u32::from_be_bytes(data[..4].try_into()?);
                     }
                 }
                 r.p = end;
-                recs.push(Rec { rect, chans, key, opacity, clipping, visible: flags & 2 == 0, name, section });
+                recs.push(Rec { rect, chans, key, opacity, clipping, visible: flags & 2 == 0, name, section, mask });
             }
             for rec in recs {
                 let [top, left, bottom, right] = rec.rect;
                 let (lw, lh) = ((right - left).max(0) as usize, (bottom - top).max(0) as usize);
-                let mut planes = [vec![255u8; lw * lh], vec![0u8; lw * lh], vec![0u8; lw * lh], vec![0u8; lw * lh]];
+                let mut alpha = vec![65535u16; lw * lh];
+                let mut color = [vec![0u16; lw * lh], vec![0u16; lw * lh], vec![0u16; lw * lh]];
+                let mut user_mask = None;
                 for (id, len) in &rec.chans {
                     let data = r.take(*len)?.to_vec();
-                    let idx = match id {
-                        -1 => 0,
-                        0 => 1,
-                        1 => 2,
-                        2 => 3,
-                        _ => continue,
-                    };
-                    planes[idx] = read_channel(&data, lw, lh)?;
+                    match id {
+                        -1 => alpha = read_channel(&data, lw, lh, depth)?,
+                        -2 => {
+                            if let Some((mr, _, _)) = rec.mask {
+                                let (mw, mh) = ((mr[3] - mr[1]).max(0) as usize, (mr[2] - mr[0]).max(0) as usize);
+                                user_mask = Some(read_channel(&data, mw, mh, depth)?);
+                            }
+                        }
+                        &c if c >= 0 => {
+                            let plane = read_channel(&data, lw, lh, depth)?;
+                            for (i, &cid) in color_ids.iter().enumerate() {
+                                if cid == c {
+                                    color[i] = plane.clone();
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 let mut layer = Layer::new(&rec.name);
                 layer.opacity = rec.opacity as f32 / 255.0;
                 layer.visible = rec.visible;
                 layer.clipping = rec.clipping;
                 layer.mode = mode_of(&rec.key);
+                if let (Some((mr, default, disabled)), Some(m)) = (rec.mask, &user_mask) {
+                    if !disabled {
+                        layer.mask = Some(paint_core::layer::LayerMask { hide: mask_hide(m, mr, default, w, h), flags: [1, 1, 1, 0] });
+                    }
+                }
                 match rec.section {
                     3 => {
                         stack.push(Vec::new());
@@ -480,9 +602,9 @@ pub fn load(path: &Path) -> Res<Document> {
                         for y in 0..lh {
                             for x in 0..lw {
                                 let i = y * lw + x;
-                                let a = planes[0][i];
+                                let a = alpha[i];
                                 if a > 0 {
-                                    layer.pixels.set(left + x as i32, top + y as i32, from_rgba8([planes[1][i], planes[2][i], planes[3][i], a]));
+                                    layer.pixels.set(left + x as i32, top + y as i32, from_rgba16(encode([color[0][i], color[1][i], color[2][i], a], linear)));
                                 }
                             }
                         }
@@ -498,28 +620,32 @@ pub fn load(path: &Path) -> Res<Document> {
         // слоёв нет — сведённая картинка
         r.p = lm_end;
         let comp = r.u16()?;
-        let mut planes = Vec::new();
+        let row_bytes = w * depth as usize / 8;
+        let mut counts = Vec::new();
         if comp == 1 {
-            let counts: Vec<usize> = (0..channels * h).map(|_| r.u16().map(|v| v as usize)).collect::<Res<_>>()?;
-            for c in 0..channels.min(4) {
-                let mut plane = Vec::with_capacity(w * h);
-                for y in 0..h {
-                    plane.extend(unpackbits(r.take(counts[c * h + y])?, w)?);
-                }
-                planes.push(plane);
-            }
-        } else if comp == 0 {
-            for _ in 0..channels.min(4) {
-                planes.push(r.take(w * h)?.to_vec());
-            }
-        } else {
-            return Err("PSD: сжатие ZIP не поддерживается".into());
+            counts = (0..channels * h).map(|_| r.u16().map(|v| v as usize)).collect::<Res<_>>()?;
         }
+        let body = &d[r.p..];
+        let planes: Vec<Vec<u16>> = if comp == 1 {
+            let mut pos = 0;
+            let mut planes = Vec::new();
+            for c in 0..channels.min(4) {
+                let cs = &counts[c * h..(c + 1) * h];
+                let len: usize = cs.iter().sum();
+                planes.push(samples(&unpack(1, body.get(pos..pos + len).ok_or("PSD: короткий канал")?, cs, h, row_bytes, depth)?, depth));
+                pos += len;
+            }
+            planes
+        } else {
+            let all = samples(&unpack(comp, body, &[], channels * h, row_bytes, depth)?, depth);
+            all.chunks(w * h).take(channels.min(4)).map(|c| c.to_vec()).collect()
+        };
+        let (ci, ai) = if gray { ([0, 0, 0], 1) } else { ([0, 1, 2], 3) };
         let mut layer = Layer::new("Слой 1");
         for i in 0..w * h {
-            let a = planes.get(3).map_or(255, |p| p[i]);
+            let a = planes.get(ai).map_or(65535, |p| p[i]);
             if a > 0 {
-                layer.pixels.set((i % w) as i32, (i / w) as i32, from_rgba8([planes[0][i], planes[1][i], planes[2][i], a]));
+                layer.pixels.set((i % w) as i32, (i / w) as i32, from_rgba16(encode([planes[ci[0]][i], planes[ci[1]][i], planes[ci[2]][i], a], linear)));
             }
         }
         layers.push(layer);
@@ -528,9 +654,46 @@ pub fn load(path: &Path) -> Res<Document> {
     Ok(doc)
 }
 
+/// Маска слоя PSD (255 — видно) в маску SOsai (0x4000 — скрыто); за прямоугольником маски —
+/// цвет `default` по всему холсту `w`×`h`.
+fn mask_hide(m: &[u16], rect: [i32; 4], default: u8, w: usize, h: usize) -> paint_core::tile::MaskMap {
+    let [top, left, bottom, right] = rect;
+    let hide = |v: u16| ((65535 - v as u32) * 0x4000 / 65535) as u16;
+    let mut out = paint_core::tile::MaskMap::new();
+    let mw = (right - left).max(0) as usize;
+    let outside = hide(default as u16 * 257);
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
+            let inside = x >= left && x < right && y >= top && y < bottom;
+            let v = if inside { hide(m[(y - top) as usize * mw + (x - left) as usize]) } else { outside };
+            if v > 0 {
+                out.set(x, y, v);
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zip_with_prediction_16_bit() {
+        // как пишет Photoshop: в строке разности соседних отсчётов, затем zlib
+        let rows: Vec<Vec<u16>> = (0..3).map(|y| (0..5).map(|x| (x * 9000 + y * 77) as u16).collect()).collect();
+        let mut packed = Vec::new();
+        for row in &rows {
+            let mut prev = 0u16;
+            for &v in row {
+                packed.extend(v.wrapping_sub(prev).to_be_bytes());
+                prev = v;
+            }
+        }
+        let z = miniz_oxide::deflate::compress_to_vec_zlib(&packed, 6);
+        let got = samples(&unpack(3, &z, &[], 3, 10, 16).unwrap(), 16);
+        assert_eq!(got, rows.concat());
+    }
 
     #[test]
     fn packbits_round_trip() {
