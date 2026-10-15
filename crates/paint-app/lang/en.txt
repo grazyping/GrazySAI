@@ -495,3 +495,9 @@ S-кривая = S-Curve Gradation
 
 # Режим ползунков HSV (0.8.25)
 Режим ползунков HSV = HSV/HSL Mode
+
+# Размер образцов (0.8.26)
+Маленький = Small
+Средний = Middle
+Большой = Large
+Размер образцов = Swatches Size

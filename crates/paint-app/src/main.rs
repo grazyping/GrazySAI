@@ -224,11 +224,13 @@ struct WindowOpts {
     brush_circle: bool,
     /// Режим ползунков HSV: 0 — V-HSV (как SAI по умолчанию), 1 — HSL, 2 — HSV.
     hsv_mode: u8,
+    /// Размер образцов: 0 — маленький (10 px), 1 — средний (12), 2 — большой (14, по умолчанию).
+    swatch_size: u8,
 }
 
 impl Default for WindowOpts {
     fn default() -> Self {
-        Self { ui_scale: 1.0, tools_right: false, layers_right: true, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true, hsv_mode: 0 }
+        Self { ui_scale: 1.0, tools_right: false, layers_right: true, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true, hsv_mode: 0, swatch_size: 2 }
     }
 }
 
@@ -1215,6 +1217,9 @@ impl PaintApp {
         if let Some(v) = s.f32("hsv_mode") {
             self.win.hsv_mode = (v as u8).min(2);
         }
+        if let Some(v) = s.f32("swatch_size") {
+            self.win.swatch_size = (v as u8).min(2);
+        }
         if let Some(v) = s.f32("transform_perspective") {
             self.transform_perspective = v.clamp(0.0, 100.0) as u8;
         }
@@ -1346,6 +1351,7 @@ impl PaintApp {
         s.set("dot_cursor", w.dot_cursor as u8);
         s.set("brush_circle", w.brush_circle as u8);
         s.set("hsv_mode", w.hsv_mode);
+        s.set("swatch_size", w.swatch_size);
         s.set("lasso_polygon", self.lasso_polygon);
         s.set("lasso_aa", self.lasso_aa);
         s.set("gradient_circle", self.grad_opts.circle);
@@ -3600,6 +3606,14 @@ impl PaintApp {
                         }
                     }
                 });
+                ui.menu_button(tr("Размер образцов"), |ui| {
+                    for (m, name) in [(0u8, tr("Маленький")), (1, tr("Средний")), (2, tr("Большой"))] {
+                        if ui.radio(w.swatch_size == m, name).clicked() {
+                            w.swatch_size = m;
+                            ui.close_menu();
+                        }
+                    }
+                });
                 ui.checkbox(&mut w.tools_right, tr("Панель цвета и инструментов справа"));
                 ui.checkbox(&mut w.layers_right, tr("Панель навигатора и слоёв справа"));
                 ui.separator();
@@ -3906,7 +3920,7 @@ impl PaintApp {
         }
         if self.color_views[4] {
             let labels = [tr("Зарегистрировать цвет"), tr("Удалить цвет")];
-            match sai_ui::swatches(ui, &self.swatches, &mut self.swatch_sel, labels) {
+            match sai_ui::swatches(ui, &self.swatches, &mut self.swatch_sel, labels, [10.0, 12.0, 14.0][self.win.swatch_size.min(2) as usize]) {
                 Some(sai_ui::SwatchAction::Pick(c)) => self.set_color(c),
                 Some(sai_ui::SwatchAction::Register(i)) => self.swatches[i] = Some(self.color()),
                 Some(sai_ui::SwatchAction::Delete(i)) => self.swatches[i] = None,

@@ -494,3 +494,9 @@ S-кривая = Curva em S
 
 # Режим ползунков HSV (0.8.25)
 Режим ползунков HSV = Modo HSV/HSL
+
+# Размер образцов (0.8.26)
+Маленький = Pequeno
+Средний = Médio
+Большой = Grande
+Размер образцов = Tamanho das amostras

@@ -494,3 +494,9 @@ S-кривая = Courbe en S
 
 # Режим ползунков HSV (0.8.25)
 Режим ползунков HSV = Mode HSV/HSL
+
+# Размер образцов (0.8.26)
+Маленький = Petite
+Средний = Moyenne
+Большой = Grande
+Размер образцов = Taille des nuanciers

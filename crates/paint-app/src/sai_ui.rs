@@ -1059,8 +1059,8 @@ pub enum SwatchAction {
 /// Образцы цвета: ячейки по 14 точек; щелчок — выбрать ячейку (и взять её цвет), правый
 /// щелчок — меню «Зарегистрировать цвет» / «Удалить цвет». Видны две строки, остальное —
 /// прокруткой.
-pub fn swatches(ui: &mut Ui, cells: &[Option<Color32>], selected: &mut usize, labels: [&str; 2]) -> Option<SwatchAction> {
-    let cell = 14.0;
+/// `cell` — размер ячейки: 10, 12 или 14 px («Swatches Size» Small, Middle, Large в SAI 2017).
+pub fn swatches(ui: &mut Ui, cells: &[Option<Color32>], selected: &mut usize, labels: [&str; 2], cell: f32) -> Option<SwatchAction> {
     let cols = ((ui.available_width() - 2.0) / cell).floor().max(1.0) as usize;
     let rows = cells.len().div_ceil(cols);
     let mut action = None;
