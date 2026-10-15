@@ -341,6 +341,22 @@ impl Transform {
 }
 
 /// Идёт перемещение: исходные пиксели слоя и выделение, точка начала, текущий сдвиг.
+/// Слой, который тянут в списке.
+struct LayerDrag {
+    path: Vec<usize>,
+    /// Ширина строки — шире ярлык у курсора не бывает.
+    width: f32,
+}
+
+/// Цвет подсказок перетаскивания слоя — темнее рамки выбранного, чтобы читалось сразу.
+const DROP_INK: Color32 = Color32::from_rgb(70, 70, 190);
+
+/// Подсказка, куда упадёт слой: полоса между строками или подсвеченная папка.
+enum DropMark {
+    Line(f32, f32, f32),
+    Into(Rect),
+}
+
 struct MoveDrag {
     path: Vec<usize>,
     start: Vec2,
@@ -487,7 +503,7 @@ struct PaintApp {
     paper_dir: String,
     paper_names: Option<Vec<String>>,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
-    layer_drag: Option<Vec<usize>>,
+    layer_drag: Option<LayerDrag>,
     /// Кисть рисует в маске выбранного слоя, а не в слое.
     mask_edit: bool,
     /// Мазок в маске: штрих (его покрытие), маска до мазка, к какому значению ведёт мазок.
@@ -672,6 +688,26 @@ impl PaintApp {
         match path {
             Some(p) => app.open(p),
             None => app.invalidate_all(),
+        }
+        // Для проверок вида на разных языках: PAINT_SHOW_DIALOG — открыть окно при запуске.
+        match std::env::var("PAINT_SHOW_DIALOG").as_deref() {
+            Ok("new") => app.show_new = true,
+            Ok("open") => app.show_open = true,
+            Ok("save_as") => app.show_save_as = true,
+            Ok("keys") => app.show_keys = true,
+            Ok("about") => app.show_about = true,
+            Ok(d @ ("resolution" | "size")) => {
+                app.canvas_dialog = Some(CanvasDialog {
+                    resample: d == "resolution",
+                    size: [app.doc.width, app.doc.height],
+                    keep_ratio: true,
+                    mode: paint_core::resample::Mode::Bicubic,
+                    anchor: (1, 1),
+                })
+            }
+            Ok("blur") => app.open_filter(FilterKind::GaussianBlur),
+            Ok("bc") => app.open_filter(FilterKind::BrightnessContrast),
+            _ => {}
         }
         // Для проверок: PAINT_TOOL=move|marquee|lasso|wand — инструмент при запуске;
         // PAINT_SELECT=x0,y0,x1,y1 — готовое выделение прямоугольником.
@@ -2538,13 +2574,7 @@ impl PaintApp {
                                 enabled,
                                 &tip,
                                 |p, r, c| {
-                                    p.text(
-                                        r.left_top(),
-                                        egui::Align2::LEFT_TOP,
-                                        tr(name),
-                                        egui::FontId::proportional(10.0),
-                                        c,
-                                    );
+                                    sai_ui::fit_text(p, r.left_top(), egui::Align2::LEFT_TOP, tr(name), r.width(), 10.0, c);
                                     sai_ui::glyph(
                                         p,
                                         Rect::from_min_size(
@@ -2565,7 +2595,15 @@ impl PaintApp {
                 }
             });
         ui.add_space(4.0);
-        let lw = 92.0;
+        let lw = sai_ui::label_w(
+            ui,
+            64.0,
+            &[
+                tr("Трансформация"), tr("Допуск"), tr("Режим"), tr("Жесткость"), tr("Размер"), tr("Минимальный"),
+                tr("Плотн."), tr("Мин. Плотн."), tr("Смешивание"), tr("Разбавление"), tr("Стойкость"),
+                tr("Порог размыт."), tr("   Усил. плотн."),
+            ],
+        );
         let w = ui.available_width() - lw - 8.0;
         let mut finish = None;
         if let Some(t) = self.transform.as_mut() {
@@ -3008,7 +3046,15 @@ impl PaintApp {
             if response.drag_started() {
                 let at = response.interact_pointer_pos().unwrap_or_default();
                 if !eye.contains(at) {
-                    self.layer_drag = Some(path.clone());
+                    self.layer_drag = Some(LayerDrag { path: path.clone(), width: rect.width() });
+                }
+            }
+            // Схваченный слой (и всё внутри схваченной папки) бледнеет на старом месте.
+            if self.layer_drag.as_ref().is_some_and(|d| path.starts_with(&d.path)) {
+                let p = ui.painter();
+                p.rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(236, 236, 240, 190));
+                if self.layer_drag.as_ref().is_some_and(|d| d.path == *path) {
+                    sai_ui::dashed_rect(p, rect.shrink(1.0), egui::Stroke::new(1.0_f32, sai_ui::SELECT_EDGE));
                 }
             }
             if response.double_clicked() && is_folder {
@@ -3078,7 +3124,12 @@ impl PaintApp {
     fn right_panel(&mut self, ui: &mut egui::Ui) {
         let mut changed = false;
         self.navigator(ui);
-        let lw = 50.0;
+        let lw = sai_ui::label_w(ui, 44.0, &[tr("Масштаб"), tr("Угол")]);
+        let lw_fx = sai_ui::label_w(
+            ui,
+            lw + 10.0,
+            &[tr("   Эффект"), tr("   Ширина"), tr("   Сила"), tr("   Порог"), tr("   Выбрать"), tr("   Масштаб")],
+        ) - 10.0;
         let b = Vec2::splat(18.0);
         let w = ui.available_width() - lw - 3.0 * 20.0 - 10.0;
         sai_ui::row(ui, tr("Масштаб"), lw, true, |ui| {
@@ -3127,12 +3178,12 @@ impl PaintApp {
         });
         ui.add_space(3.0);
         if sai_ui::section(ui, "sec_effect", tr("Эффекты слоя")) {
-            changed |= self.effect_panel(ui, lw);
+            changed |= self.effect_panel(ui, lw_fx);
         }
         if sai_ui::section(ui, "sec_paper", tr("Текстура")) {
-            changed |= self.paper_panel(ui, lw);
+            changed |= self.paper_panel(ui, lw_fx);
         }
-        let lw2 = 52.0;
+        let lw2 = sai_ui::label_w(ui, 46.0, &[tr("Режим"), tr("Непроз."), tr("Замок")]);
         let w2 = ui.available_width() - lw2 - 8.0;
         let path = self.selected.clone();
         if let Some(layer) = self.doc.layer_mut(&path) {
@@ -3277,38 +3328,101 @@ impl PaintApp {
         }
     }
 
-    /// Куда упадёт перетаскиваемый слой: стопка и место в ней (как в `move_layer_to`) и линия-
-    /// подсказка. Верх строки — над слоем, низ — под ним, середина папки — внутрь папки (наверх).
-    fn layer_drop_target(&self, at: Pos2) -> Option<(Vec<usize>, usize, Rect)> {
-        let (path, rect, folder) = self.layer_rects.iter().find(|(_, r, _)| r.y_range().contains(at.y))?;
-        let (last, parent) = path.split_last()?;
-        let t = (at.y - rect.top()) / rect.height();
-        let line = |y: f32| Rect::from_min_max(Pos2::new(rect.left(), y - 1.0), Pos2::new(rect.right(), y + 1.0));
-        if *folder && (0.25..0.75).contains(&t) {
-            let n = self.doc.layer(path)?.children.as_ref()?.len();
-            return Some((path.clone(), n, rect.shrink(1.0)));
+    /// Куда упадёт перетаскиваемый слой: стопка и место в ней (как в `move_layer_to`) и вид
+    /// подсказки. Верх строки — над слоем, низ — под ним, середина папки — внутрь папки (наверх).
+    /// Выше первой строки — на самый верх, ниже последней — в самый низ. `None` — бросить некуда
+    /// (в саму себя или на то же место).
+    fn layer_drop_target(&self, at: Pos2, list: Rect) -> Option<(Vec<usize>, usize, DropMark)> {
+        let from = &self.layer_drag.as_ref()?.path;
+        let (first, last) = (self.layer_rects.first()?, self.layer_rects.last()?);
+        let found = self.layer_rects.iter().find(|(_, r, _)| r.y_range().contains(at.y));
+        let (parent, index, mark) = match found {
+            Some((path, rect, folder)) => {
+                let (i, parent) = path.split_last()?;
+                let t = (at.y - rect.top()) / rect.height();
+                if *folder && (0.25..0.75).contains(&t) && !path.starts_with(from) {
+                    let n = self.doc.layer(path)?.children.as_ref()?.len();
+                    (path.clone(), n, DropMark::Into(*rect))
+                } else if t < 0.5 {
+                    (parent.to_vec(), i + 1, DropMark::Line(rect.left(), rect.right(), rect.top()))
+                } else {
+                    (parent.to_vec(), *i, DropMark::Line(rect.left(), rect.right(), rect.bottom()))
+                }
+            }
+            None if at.y < first.1.top() && at.y > list.top() - 30.0 => {
+                let r = first.1;
+                (Vec::new(), self.doc.layers.len(), DropMark::Line(r.left(), r.right(), r.top()))
+            }
+            None if at.y > last.1.bottom() && at.y < list.bottom() + 30.0 => {
+                let r = last.1;
+                (Vec::new(), 0, DropMark::Line(list.left() + 1.0, list.right() - 1.0, r.bottom()))
+            }
+            None => return None,
+        };
+        let (fi, fp) = from.split_last()?;
+        if parent.starts_with(from) || (parent == fp && (index == *fi || index == fi + 1)) {
+            return None;
         }
-        if t < 0.5 {
-            Some((parent.to_vec(), last + 1, line(rect.top())))
-        } else {
-            Some((parent.to_vec(), *last, line(rect.bottom())))
-        }
+        Some((parent, index, mark))
     }
 
-    /// Перетаскивание слоя в списке: подсказка во время протяжки, перенос при отпускании.
+    /// Перетаскивание слоя в списке: схваченная строка бледнеет, её копия едет за курсором,
+    /// место вставки — полоса с засечками или подсвеченная папка; у краёв список прокручивается;
+    /// Esc отменяет. Перенос — при отпускании.
     fn layer_drop(&mut self, ui: &mut egui::Ui) -> bool {
-        let Some(from) = self.layer_drag.clone() else { return false };
-        let (pos, released) = ui.input(|i| (i.pointer.interact_pos(), !i.pointer.primary_down()));
-        let target = pos.and_then(|p| self.layer_drop_target(p));
+        let Some(drag) = self.layer_drag.as_ref() else { return false };
+        let from = drag.path.clone();
+        let (pos, released, esc) =
+            ui.input(|i| (i.pointer.interact_pos(), !i.pointer.primary_down(), i.key_pressed(egui::Key::Escape)));
+        if esc {
+            self.layer_drag = None;
+            return false;
+        }
+        let list = ui.clip_rect();
+        let target = pos.and_then(|p| self.layer_drop_target(p, list));
         if !released {
-            if let Some((_, _, mark)) = &target {
-                ui.painter().rect_filled(*mark, 0.0, sai_ui::SELECT_EDGE.gamma_multiply(0.6));
+            if let Some(p) = pos {
+                // прокрутка у краёв списка
+                let edge = 24.0;
+                let dy = if p.y < list.top() + edge { 6.0 } else if p.y > list.bottom() - edge { -6.0 } else { 0.0 };
+                if dy != 0.0 && list.x_range().contains(p.x) {
+                    ui.scroll_with_delta(Vec2::new(0.0, dy));
+                }
+            }
+            match &target {
+                &Some((_, _, DropMark::Line(x0, x1, y))) => {
+                    let p = ui.painter();
+                    let ink = DROP_INK;
+                    p.rect_filled(Rect::from_min_max(Pos2::new(x0 + 2.0, y - 1.5), Pos2::new(x1 - 2.0, y + 1.5)), 1.0, ink);
+                    for (x, dir) in [(x0 + 1.0, 1.0f32), (x1 - 1.0, -1.0)] {
+                        p.add(egui::Shape::convex_polygon(
+                            vec![Pos2::new(x, y - 5.0), Pos2::new(x + 6.0 * dir, y), Pos2::new(x, y + 5.0)],
+                            ink,
+                            egui::Stroke::NONE,
+                        ));
+                    }
+                }
+                Some((_, _, DropMark::Into(r))) => {
+                    let p = ui.painter();
+                    p.rect_filled(*r, 0.0, sai_ui::SELECT_BG.gamma_multiply(0.35));
+                    p.rect_stroke(r.shrink(1.0), 2.0, egui::Stroke::new(2.0_f32, DROP_INK));
+                }
+                None => {}
+            }
+            ui.ctx().set_cursor_icon(if target.is_some() { egui::CursorIcon::Grabbing } else { egui::CursorIcon::NoDrop });
+            if let Some(p) = pos {
+                self.layer_ghost(ui, p);
             }
             ui.ctx().request_repaint();
             return false;
         }
         self.layer_drag = None;
-        let Some((parent, index, _)) = target else { return false };
+        let Some((parent, index, mark)) = target else { return false };
+        if matches!(mark, DropMark::Into(_)) {
+            // папку, в которую положили слой, раскрываем — чтобы было видно, куда он ушёл
+            let fid = ui.make_persistent_id(("folder", parent.clone()));
+            ui.data_mut(|d| d.insert_persisted(fid, true));
+        }
         if self.transform.is_some() {
             self.finish_transform(true);
         }
@@ -3323,6 +3437,33 @@ impl PaintApp {
             }
             None => false,
         }
+    }
+
+    /// Ярлык схваченного слоя у курсора: миниатюра и имя, поверх всего окна. Сдвинут вправо-
+    /// вниз от курсора, чтобы не закрывать строку под ним и подсказку, куда упадёт слой.
+    fn layer_ghost(&self, ui: &egui::Ui, at: Pos2) {
+        let Some(d) = &self.layer_drag else { return };
+        let Some(layer) = self.doc.layer(&d.path) else { return };
+        let font = egui::FontId::proportional(12.0);
+        let name_w = ui.fonts(|f| f.layout_no_wrap(layer.name.clone(), font.clone(), sai_ui::INK).size().x);
+        let w = (24.0 + 6.0 + name_w + 8.0).min(d.width);
+        let rect = Rect::from_min_size(at + Vec2::new(14.0, 12.0), Vec2::new(w, 28.0));
+        let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("layer_ghost")));
+        p.rect_filled(rect.translate(Vec2::new(2.0, 2.0)), 3.0, Color32::from_black_alpha(45));
+        p.rect_filled(rect, 3.0, Color32::from_rgba_unmultiplied(232, 232, 252, 235));
+        p.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5_f32, DROP_INK));
+        let thumb = Rect::from_min_size(rect.min + Vec2::new(3.0, 2.0), Vec2::splat(24.0));
+        if layer.children.is_some() {
+            sai_ui::glyph(&p, thumb.shrink(3.0), Color32::from_gray(90), "new_folder");
+        } else {
+            p.rect_filled(thumb, 0.0, Color32::WHITE);
+            if let Some(t) = self.thumbs.get(d.path.as_slice()) {
+                p.image(t.id(), thumb, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+            }
+            p.rect_stroke(thumb, 0.0, egui::Stroke::new(1.0_f32, Color32::from_gray(170)));
+        }
+        let clip = Rect::from_min_max(Pos2::new(thumb.right() + 6.0, rect.top()), rect.max - Vec2::new(4.0, 0.0));
+        p.with_clip_rect(clip).text(Pos2::new(clip.left(), rect.center().y), egui::Align2::LEFT_CENTER, &layer.name, font, sai_ui::INK);
     }
 
     /// Эффект выбранного слоя: кайма (ширина, сила) или двухцветный (порог). Как в SAI — только у
@@ -3865,7 +4006,7 @@ impl PaintApp {
                             let text = if self.key_capture == Some(a) {
                                 tr("нажмите сочетание…").to_string()
                             } else {
-                                self.keymap.get(&a).copied().flatten().map_or_else(|| "—".to_string(), |b| b.text())
+                                self.keymap.get(&a).copied().flatten().map_or_else(|| "—".to_string(), |b| b.label())
                             };
                             ui.horizontal(|ui| {
                                 if ui.button(text).clicked() {
@@ -3944,13 +4085,13 @@ impl PaintApp {
                 egui::Grid::new("filter").num_columns(2).show(ui, |ui| {
                     match f.kind {
                         FilterKind::HueSaturation => {
-                            ui.label(tr("Тон :"));
+                            ui.label(tr("Тон:"));
                             ui.add(egui::Slider::new(&mut f.hs.hue, -180..=180));
                             ui.end_row();
-                            ui.label(tr("Насыщенность :"));
+                            ui.label(tr("Насыщенность:"));
                             ui.add(egui::Slider::new(&mut f.hs.saturation, -100..=100));
                             ui.end_row();
-                            ui.label(tr("Яркость :"));
+                            ui.label(tr("Яркость:"));
                             ui.add(egui::Slider::new(&mut f.hs.luminance, -100..=100));
                             ui.end_row();
                             ui.label("");
@@ -3958,18 +4099,18 @@ impl PaintApp {
                             ui.end_row();
                         }
                         FilterKind::BrightnessContrast => {
-                            ui.label(tr("Яркость :"));
+                            ui.label(tr("Яркость:"));
                             ui.add(egui::Slider::new(&mut f.bc.brightness, -100..=100));
                             ui.end_row();
-                            ui.label(tr("Контраст :"));
+                            ui.label(tr("Контраст:"));
                             ui.add(egui::Slider::new(&mut f.bc.contrast, -100..=100));
                             ui.end_row();
-                            ui.label(tr("Глубина :"));
+                            ui.label(tr("Глубина:"));
                             ui.add(egui::Slider::new(&mut f.bc.depth, -100..=100));
                             ui.end_row();
                         }
                         FilterKind::GaussianBlur => {
-                            ui.label(tr("Радиус :"));
+                            ui.label(tr("Радиус:"));
                             ui.add(egui::Slider::new(&mut f.radius, 0.1..=40.0).step_by(0.1));
                             ui.end_row();
                         }
@@ -4010,10 +4151,10 @@ impl PaintApp {
                     ui.label(trf("Сейчас: {0}×{1} px", &[&w, &h]));
                     let before = d.size;
                     egui::Grid::new("canvasdlg").num_columns(2).show(ui, |ui| {
-                        ui.label(tr("Ширина :"));
+                        ui.label(tr("Ширина:"));
                         ui.add(egui::DragValue::new(&mut d.size[0]).range(1..=16000).suffix(" px"));
                         ui.end_row();
-                        ui.label(tr("Высота :"));
+                        ui.label(tr("Высота:"));
                         ui.add(egui::DragValue::new(&mut d.size[1]).range(1..=16000).suffix(" px"));
                         ui.end_row();
                         ui.label("");
@@ -4117,14 +4258,14 @@ impl PaintApp {
                 .resizable(false)
                 .show(ctx, |ui| {
                     egui::Grid::new("newcanvas").num_columns(2).show(ui, |ui| {
-                        ui.label(tr("Ширина :"));
+                        ui.label(tr("Ширина:"));
                         ui.add(
                             egui::DragValue::new(&mut self.new_size[0])
                                 .range(1..=16000)
                                 .suffix(" px"),
                         );
                         ui.end_row();
-                        ui.label(tr("Высота :"));
+                        ui.label(tr("Высота:"));
                         ui.add(
                             egui::DragValue::new(&mut self.new_size[1])
                                 .range(1..=16000)
@@ -4573,15 +4714,18 @@ impl eframe::App for PaintApp {
                     sai_ui::bar(ui, &mut v, 0.0, 100.0, text, 110.0, false);
                     ui.label(tr("Памяти занято"));
                     ui.separator();
+                    if !self.queue.is_empty() {
+                        ui.weak(trf("пересчёт: {0} плиток", &[&self.queue.len()]));
+                        ui.separator();
+                    }
+                    // Сведения о пере — наименее важное: на узком окне или в длинном переводе
+                    // обрезаются многоточием, а не наезжают на сообщение слева.
                     let info = self.pen.lock().map(|s| s.info.clone()).unwrap_or_default();
-                    ui.weak(format!(
+                    let text = format!(
                         "{info} | {}",
                         trf("{0}: нажим {1}", &[&self.last_source, &format!("{:.2}", self.last_pressure)])
-                    ));
-                    if !self.queue.is_empty() {
-                        ui.separator();
-                        ui.weak(trf("пересчёт: {0} плиток", &[&self.queue.len()]));
-                    }
+                    );
+                    ui.add(egui::Label::new(egui::RichText::new(text).weak()).truncate());
                 });
             });
         });

@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.2)
+### 0.8 — linework and shapes (current version 0.8.3)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -85,7 +85,8 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] User manual (`docs/manual.en.md`, updated with every version)
 - [x] RGB and HSV color sliders, dragging layers in the list
 - [x] Large brushes 4–40 times faster with identical results (`docs/23-performance.md`)
-- [x] Interface in 10 languages (English, Russian, Ukrainian, German, French, Spanish, Portuguese, Japanese, Chinese, Korean), system language by default, switchable without a restart
+- [x] Layer dragging with clear feedback: the layer fades in place, a label at the cursor, an insertion bar, folder highlight, scrolling at the edges, Esc
+- [x] Interface in 10 languages (English, Russian, Ukrainian, German, French, Spanish, Portuguese, Japanese, Chinese, Korean), system language by default, switchable without a restart; labels and columns adapt to the length of each translation, a light CJK font
 
 ## Ahead
 

@@ -144,6 +144,9 @@ pub fn install_fonts(ctx: &egui::Context) {
     if let Some((data, index)) = cjk_font(code()) {
         let mut fd = egui::FontData::from_owned(data);
         fd.index = index;
+        // Иероглифы крупнее и плотнее светлой латиницы интерфейса — чуть уменьшаем.
+        let scale = std::env::var("PAINT_CJK_SCALE").ok().and_then(|v| v.parse().ok()).unwrap_or(CJK_SCALE);
+        fd.tweak = egui::FontTweak { scale, ..Default::default() };
         fonts.font_data.insert("cjk".into(), fd);
         for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
             fonts.families.entry(family).or_default().push("cjk".into());
@@ -152,7 +155,10 @@ pub fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-/// Файл шрифта и номер начертания в коллекции `.ttc`.
+const CJK_SCALE: f32 = 0.94;
+
+/// Файл шрифта и номер начертания в коллекции `.ttc`. Берём светлые начертания: шрифт
+/// интерфейса (Ubuntu Light) тонкий, обычные иероглифы рядом с ним выглядят жирно.
 fn cjk_font(lang: &str) -> Option<(Vec<u8>, u32)> {
     // В NotoSansCJK.ttc начертания идут JP, KR, SC, TC, HK — порядок важен для вида иероглифов.
     let noto = match lang {
@@ -164,14 +170,17 @@ fn cjk_font(lang: &str) -> Option<(Vec<u8>, u32)> {
     if cfg!(windows) {
         let dir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into()) + "\\Fonts\\";
         let names: &[&str] = match lang {
-            "zh" => &["msyh.ttc", "simsun.ttc", "YuGothM.ttc", "malgun.ttf"],
-            "ko" => &["malgun.ttf", "gulim.ttc", "msyh.ttc", "YuGothM.ttc"],
-            _ => &["YuGothM.ttc", "meiryo.ttc", "msgothic.ttc", "msyh.ttc", "malgun.ttf"],
+            "zh" => &["msyhl.ttc", "msyh.ttc", "simsun.ttc", "YuGothR.ttc", "malgun.ttf"],
+            "ko" => &["malgunsl.ttf", "malgun.ttf", "gulim.ttc", "msyh.ttc", "YuGothR.ttc"],
+            _ => &["YuGothL.ttc", "YuGothR.ttc", "YuGothM.ttc", "meiryo.ttc", "msgothic.ttc", "msyh.ttc", "malgun.ttf"],
         };
         candidates.extend(names.iter().map(|n| (format!("{dir}{n}"), 0)));
     } else {
-        for d in ["/usr/share/fonts/opentype/noto", "/usr/share/fonts/noto-cjk", "/usr/share/fonts/google-noto-cjk", "/usr/share/fonts/noto"] {
-            candidates.push((format!("{d}/NotoSansCJK-Regular.ttc"), noto));
+        let weight = std::env::var("PAINT_CJK_WEIGHT").unwrap_or_else(|_| "Light".into());
+        for w in [weight.as_str(), "Light", "DemiLight", "Regular"] {
+            for d in ["/usr/share/fonts/opentype/noto", "/usr/share/fonts/noto-cjk", "/usr/share/fonts/google-noto-cjk", "/usr/share/fonts/noto"] {
+                candidates.push((format!("{d}/NotoSansCJK-{w}.ttc"), noto));
+            }
         }
         candidates.push(("/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf".into(), 0));
         // что подскажет fontconfig

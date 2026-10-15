@@ -123,19 +123,42 @@ pub fn bar(
     response
 }
 
-/// Подпись слева и элемент справа в одну строку фиксированной ширины.
+/// Подпись слева и элемент справа в одну строку фиксированной ширины. Слишком длинная подпись
+/// (перевод) ужимается, а не наезжает на элемент.
 pub fn row(ui: &mut Ui, label: &str, label_w: f32, enabled: bool, add: impl FnOnce(&mut Ui)) {
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(Vec2::new(label_w, 16.0), Sense::hover());
-        ui.painter().text(
-            r.left_center(),
-            egui::Align2::LEFT_CENTER,
-            label,
-            egui::FontId::proportional(12.0),
-            if enabled { INK } else { DIM },
-        );
+        fit_text(ui.painter(), r.left_center(), egui::Align2::LEFT_CENTER, label, label_w - 3.0, 12.0, if enabled { INK } else { DIM });
         ui.add_enabled_ui(enabled, add);
     });
+}
+
+/// Ширина колонки подписей: по самой длинной подписи (на выбранном языке), не меньше `min` и не
+/// больше 45 % ширины панели — остальное `row` ужмёт.
+pub fn label_w(ui: &Ui, min: f32, labels: &[&str]) -> f32 {
+    let widest = labels.iter().map(|l| text_w(ui.painter(), l, 12.0)).fold(0.0, f32::max);
+    (widest + 8.0).max(min).min((ui.available_width() * 0.45).max(min)).ceil()
+}
+
+fn text_w(p: &Painter, text: &str, size: f32) -> f32 {
+    p.layout_no_wrap(text.to_string(), egui::FontId::proportional(size), INK).size().x
+}
+
+/// Текст не шире `max_w`: сначала мельче (до 3/4 размера), потом с многоточием.
+pub fn fit_text(p: &Painter, pos: egui::Pos2, align: egui::Align2, text: &str, max_w: f32, size: f32, color: Color32) {
+    let mut s = size;
+    while s > size * 0.75 && text_w(p, text, s) > max_w {
+        s -= 0.5;
+    }
+    let mut shown = text.to_string();
+    if text_w(p, &shown, s) > max_w {
+        let mut chars: Vec<char> = text.chars().collect();
+        while chars.len() > 1 && text_w(p, &(chars.iter().collect::<String>() + "…"), s) > max_w {
+            chars.pop();
+        }
+        shown = chars.iter().collect::<String>().trim_end().to_string() + "…";
+    }
+    p.text(pos, align, shown, egui::FontId::proportional(s), color);
 }
 
 /// Сворачиваемый раздел «▸ Текстура»: возвращает, открыт ли он.
@@ -204,6 +227,14 @@ pub fn icon_button(
     }
     draw(p, rect.shrink(3.0), if enabled { INK } else { DIM });
     response.on_hover_text(tip)
+}
+
+/// Пунктирная рамка (схваченный слой на старом месте).
+pub fn dashed_rect(p: &Painter, r: Rect, stroke: Stroke) {
+    let pts = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()];
+    for w in pts.windows(2) {
+        p.extend(egui::Shape::dashed_line(&[w[0], w[1]], stroke, 4.0, 3.0));
+    }
 }
 
 /// Значки общих инструментов и кнопок, нарисованные линиями.
@@ -704,6 +735,12 @@ pub fn hardness_icon(p: &Painter, r: Rect, step: usize, c: Color32) {
         ));
     }
     pts.push(r.right_bottom());
+    // Совпадающие соседние точки (края кривой ложатся на углы) ломают заливку egui: при
+    // некоторых ширинах значок рисовался пустым контуром.
+    pts.dedup_by(|b, a| a.distance(*b) < 0.05);
+    if pts.len() > 2 && pts[0].distance(pts[pts.len() - 1]) < 0.05 {
+        pts.pop();
+    }
     p.add(Shape::convex_polygon(pts, c, Stroke::NONE));
 }
 

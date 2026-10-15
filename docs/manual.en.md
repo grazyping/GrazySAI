@@ -94,9 +94,13 @@ Water also blurs the layer under the stroke.
 - Buttons and the “Layer” menu: new layer, new folder, new linework layer, new shape layer,
   copy, delete, erase (Delete), transfer down (F), merge down (Ctrl+E), order, flip,
   “Luminance to Opacity”, “Rasterize Layer”, “Flatten Image”.
-- **Order**: drag a layer in the list with the mouse or the pen. The top of a row puts it above
-  that layer, the bottom puts it below, the middle of a folder row puts it inside the folder.
-  Undone with Ctrl+Z.
+- **Order**: drag a layer in the list with the mouse or the pen. The grabbed layer fades in
+  place and a label follows the cursor. A blue bar with end marks shows where it will go (the
+  top of a row — above that layer, the bottom — below it, above or below the whole list — to
+  the very top or bottom); hovering the middle of a folder outlines it — the layer goes inside
+  and the folder opens. A “not allowed” cursor means it cannot be dropped there (same place, or
+  a folder into itself). The list scrolls at its edges, Esc cancels the drag, Ctrl+Z undoes a
+  finished move.
 - **Properties**: blend mode (SAI's 28 modes), opacity, visibility (the eye in the list),
   “Clipping Group” (visible only within the layer below), folder “Pass Through”.
 - **Locks**: “Preserve Opacity” (the brush changes only color), protect from painting, protect

@@ -113,6 +113,29 @@ impl Binding {
         s
     }
 
+    /// Для показа: знаки вместо имён клавиш (`[` вместо `OpenBracket`), как подписано на
+    /// клавиатуре. В настройках хранится `text()`.
+    pub fn label(&self) -> String {
+        let t = self.text();
+        let (mods, key) = t.rsplit_once('+').map_or(("", t.as_str()), |(m, k)| (m, k));
+        let key = match key {
+            "OpenBracket" => "[",
+            "CloseBracket" => "]",
+            "Equals" => "=",
+            "Minus" => "−",
+            "Plus" => "+",
+            "Comma" => ",",
+            "Period" => ".",
+            "Slash" => "/",
+            "Backslash" => "\\",
+            "Semicolon" => ";",
+            "Quote" => "'",
+            "Backtick" => "`",
+            k => k,
+        };
+        if mods.is_empty() { key.to_string() } else { format!("{mods}+{key}") }
+    }
+
     pub fn pressed(&self, i: &InputState) -> bool {
         let m = i.modifiers;
         i.key_pressed(self.key) && m.command == self.ctrl && m.shift == self.shift && m.alt == self.alt
@@ -137,6 +160,8 @@ mod tests {
         }
         let d = defaults();
         assert_eq!(d.len(), ALL.len());
+        assert_eq!(Binding::parse("Ctrl+Equals").unwrap().label(), "Ctrl+=");
+        assert_eq!(Binding::parse("OpenBracket").unwrap().label(), "[");
         // нет двух действий на одной клавише
         let mut seen = std::collections::HashSet::new();
         for b in d.values().flatten() {
