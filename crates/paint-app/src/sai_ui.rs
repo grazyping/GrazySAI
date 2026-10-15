@@ -939,3 +939,115 @@ pub fn checker(p: &Painter, r: Rect, cell: f32) {
         }
     }
 }
+
+/// Строка смесителя цвета, как у образца: края — два цвета (щелчок ставит туда текущий),
+/// между ними градиент по RGB; щелчок или протяжка по нему берёт смешанный цвет и ставит метку.
+/// Возвращает взятый цвет.
+pub fn mixer_row(ui: &mut Ui, ends: &mut [Color32; 2], pos: &mut Option<f32>, current: Color32) -> Option<Color32> {
+    let w = ui.available_width();
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(w, 15.0), Sense::click_and_drag());
+    let edge = 14.0;
+    let left = Rect::from_min_max(rect.min, Pos2::new(rect.left() + edge, rect.bottom()));
+    let right = Rect::from_min_max(Pos2::new(rect.right() - edge, rect.top()), rect.max);
+    let mid = Rect::from_min_max(Pos2::new(left.right(), rect.top()), Pos2::new(right.left(), rect.bottom()));
+    let lerp = |ends: [Color32; 2], t: f32| {
+        let m = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
+        let [a, b] = ends;
+        Color32::from_rgb(m(a.r(), b.r()), m(a.g(), b.g()), m(a.b(), b.b()))
+    };
+    let mut picked = None;
+    if let Some(p) = response.interact_pointer_pos() {
+        if response.clicked() && left.contains(p) {
+            ends[0] = current;
+        } else if response.clicked() && right.contains(p) {
+            ends[1] = current;
+        } else if (response.clicked() || response.dragged()) && p.x > mid.left() - 2.0 && p.x < mid.right() + 2.0 {
+            let t = ((p.x - mid.left()) / mid.width()).clamp(0.0, 1.0);
+            *pos = Some(t);
+            picked = Some(lerp(*ends, t));
+        }
+    }
+    let p = ui.painter();
+    p.rect_filled(left, 0.0, ends[0]);
+    p.rect_filled(right, 0.0, ends[1]);
+    let mut mesh = egui::Mesh::default();
+    let n = 16u32;
+    for i in 0..=n {
+        let t = i as f32 / n as f32;
+        let x = mid.left() + t * mid.width();
+        mesh.colored_vertex(Pos2::new(x, mid.top()), lerp(*ends, t));
+        mesh.colored_vertex(Pos2::new(x, mid.bottom()), lerp(*ends, t));
+        if i > 0 {
+            let b = i * 2;
+            mesh.add_triangle(b - 2, b - 1, b);
+            mesh.add_triangle(b - 1, b + 1, b);
+        }
+    }
+    p.add(Shape::mesh(mesh));
+    p.line_segment([mid.left_top(), mid.left_bottom()], Stroke::new(1.0_f32, BORDER));
+    p.line_segment([mid.right_top(), mid.right_bottom()], Stroke::new(1.0_f32, BORDER));
+    p.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, BORDER));
+    if let Some(t) = *pos {
+        let c = Pos2::new(mid.left() + t * mid.width(), mid.center().y);
+        p.circle_stroke(c, 4.0, Stroke::new(2.0_f32, Color32::WHITE));
+        p.circle_stroke(c, 5.5, Stroke::new(1.0_f32, Color32::from_gray(60)));
+    }
+    picked
+}
+
+/// Что сделали с образцами.
+pub enum SwatchAction {
+    Pick(Color32),
+    Register(usize),
+    Delete(usize),
+}
+
+/// Образцы цвета: ячейки по 14 точек; щелчок — выбрать ячейку (и взять её цвет), правый
+/// щелчок — меню «Зарегистрировать цвет» / «Удалить цвет». Видны две строки, остальное —
+/// прокруткой.
+pub fn swatches(ui: &mut Ui, cells: &[Option<Color32>], selected: &mut usize, labels: [&str; 2]) -> Option<SwatchAction> {
+    let cell = 14.0;
+    let cols = ((ui.available_width() - 2.0) / cell).floor().max(1.0) as usize;
+    let rows = cells.len().div_ceil(cols);
+    let mut action = None;
+    egui::Frame::none().stroke(Stroke::new(1.0_f32, BORDER)).inner_margin(1.0).show(ui, |ui| {
+        egui::ScrollArea::vertical().id_salt("swatches").max_height(cell * 2.0).min_scrolled_height(cell * 2.0).show(ui, |ui| {
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(cols as f32 * cell, rows as f32 * cell), Sense::hover());
+            for (i, c) in cells.iter().enumerate() {
+                let r = Rect::from_min_size(
+                    rect.min + Vec2::new((i % cols) as f32 * cell, (i / cols) as f32 * cell),
+                    Vec2::splat(cell),
+                );
+                let resp = ui.interact(r, ui.id().with(("swatch", i)), Sense::click());
+                let p = ui.painter();
+                match c {
+                    Some(c) => {
+                        p.rect_filled(r.shrink(1.0), 0.0, *c);
+                    }
+                    None => checker(p, r, cell / 2.0),
+                }
+                if i == *selected {
+                    p.rect_stroke(r.shrink(0.5), 0.0, Stroke::new(1.0_f32, INK));
+                }
+                if resp.clicked() {
+                    *selected = i;
+                    if let Some(c) = c {
+                        action = Some(SwatchAction::Pick(*c));
+                    }
+                }
+                resp.context_menu(|ui| {
+                    *selected = i;
+                    if ui.button(labels[0]).clicked() {
+                        action = Some(SwatchAction::Register(i));
+                        ui.close_menu();
+                    }
+                    if c.is_some() && ui.button(labels[1]).clicked() {
+                        action = Some(SwatchAction::Delete(i));
+                        ui.close_menu();
+                    }
+                });
+            }
+        });
+    });
+    action
+}

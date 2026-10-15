@@ -107,6 +107,11 @@ Water also blurs the layer under the stroke.
 - The buttons above the wheel show and hide color panel views: the wheel, RGB sliders (red,
   green, blue, 0–255), HSV sliders (hue 0–359, saturation and value 0–255). Several can be shown
   at once; the choice is remembered.
+- Color Mixer (fourth button): four bars. Clicking an end of a bar puts the current color there;
+  clicking or dragging in the middle takes the mixed color — a marker shows where.
+- Swatches (fifth button): click a cell to take its color; right-click — “Register Color” (store
+  the current one) or “Delete Color”. Two rows are visible, scroll for the rest. The mixer and
+  swatches are kept between runs.
 - The arrow by the main and background color squares (or the X key) swaps them.
 - Color picker: Alt + click (or the Color Picker tool).
 

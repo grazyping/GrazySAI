@@ -85,8 +85,6 @@ PSD (со слоями) = PSD (avec calques)
 Цветовой круг = Roue chromatique
 Ползунки RGB = Curseurs RVB
 Ползунки HSV = Curseurs TSV
-Смеситель — позже = Mélangeur — plus tard
-Образцы цвета — позже = Nuancier — plus tard
 Выделение (M): Shift — добавить, Alt — вычесть = Sélection (M) : Maj — ajouter, Alt — soustraire
 Лассо (L): Shift — добавить, Alt — вычесть = Lasso (L) : Maj — ajouter, Alt — soustraire
 Волшебная палочка (W): Shift — добавить, Alt — вычесть = Baguette magique (W) : Maj — ajouter, Alt — soustraire
@@ -370,3 +368,9 @@ SOsai на GitHub = SOsai sur GitHub
 Клавиши в пунктах меню и во всплывающих подсказках = Raccourcis dans les menus et les infobulles
 Рисунки = Images
 Все файлы = Tous les fichiers
+
+# Смеситель и образцы / Mixer and swatches
+Смеситель цвета = Mélangeur de couleurs
+Образцы цвета = Nuancier
+Зарегистрировать цвет = Enregistrer la couleur
+Удалить цвет = Supprimer la couleur

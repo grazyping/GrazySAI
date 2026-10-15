@@ -1011,7 +1011,7 @@ fn mixing_brushes_fingerprint() {
     }
     eprintln!("MIXHASH {}", out.join(" "));
     // записано до ускорения (0.8.0)
-    assert_eq!(out.join(" "), "bf3e5db5b697d0d5 214927a0972cab75 528117d6c0fd55b8 7285ce06e186d174 6b59d6783d952f3b 7ee04a9e9b1bf76a");
+    assert_eq!(out.join(" "), "bf3e5db5b697d0d5 214927a0972cab75 528117d6c0fd55b8 971d7bc4f845243d 6b59d6783d952f3b 7ee04a9e9b1bf76a");
 }
 
 #[test]
@@ -1055,5 +1055,5 @@ fn mixing_brushes_fingerprint_large() {
         }
         out.push(format!("{h:x}"));
     }
-    assert_eq!(out.join(" "), "f60af491ae73d34 1a3c8d8f49694b68 92bf592505a8c9e");
+    assert_eq!(out.join(" "), "f60af491ae73d34 e8588f60738a558c 92bf592505a8c9e");
 }

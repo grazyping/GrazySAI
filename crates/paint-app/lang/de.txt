@@ -85,8 +85,6 @@ PSD (со слоями) = PSD (mit Ebenen)
 Цветовой круг = Farbkreis
 Ползунки RGB = RGB-Regler
 Ползунки HSV = HSV-Regler
-Смеситель — позже = Farbmischer — später
-Образцы цвета — позже = Farbfelder — später
 Выделение (M): Shift — добавить, Alt — вычесть = Auswahl (M): Shift — hinzufügen, Alt — abziehen
 Лассо (L): Shift — добавить, Alt — вычесть = Lasso (L): Shift — hinzufügen, Alt — abziehen
 Волшебная палочка (W): Shift — добавить, Alt — вычесть = Zauberstab (W): Shift — hinzufügen, Alt — abziehen
@@ -370,3 +368,9 @@ SOsai на GitHub = SOsai auf GitHub
 Клавиши в пунктах меню и во всплывающих подсказках = Tasten in Menüpunkten und Tooltips
 Рисунки = Bilder
 Все файлы = Alle Dateien
+
+# Смеситель и образцы / Mixer and swatches
+Смеситель цвета = Farbmischer
+Образцы цвета = Farbfelder
+Зарегистрировать цвет = Farbe speichern
+Удалить цвет = Farbe löschen

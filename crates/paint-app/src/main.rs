@@ -528,6 +528,9 @@ enum LayerAction {
     Down,
 }
 
+/// Число ячеек образцов цвета.
+const SWATCHES: usize = 104;
+
 /// Номер ластика в сетке — им рисует обратный конец пера.
 const ERASER: usize = 5;
 /// Перо и ластик выделения в сетке.
@@ -564,7 +567,13 @@ struct PaintApp {
     /// Мазок в маске: штрих (его покрытие), маска до мазка, к какому значению ведёт мазок.
     mask_stroke: Option<(Stroke, paint_core::layer::LayerMask, u16)>,
     /// Виды панели цвета: круг, ползунки RGB, ползунки HSV.
-    color_views: [bool; 3],
+    color_views: [bool; 5],
+    /// Смеситель цвета: четыре строки — два края и метка взятого цвета.
+    mixer: [[Color32; 2]; 4],
+    mixer_pos: [Option<f32>; 4],
+    /// Образцы цвета и выбранная ячейка.
+    swatches: Vec<Option<Color32>>,
+    swatch_sel: usize,
     layer_rects: Vec<(Vec<usize>, Rect, bool)>,
     status: String,
     notes: Vec<String>,
@@ -678,7 +687,11 @@ impl PaintApp {
             layer_drag: None,
             ruler: ruler::Ruler::default(),
             ruler_drag: None,
-            color_views: [true, false, true],
+            color_views: [true, false, true, false, false],
+            mixer: [[Color32::WHITE; 2]; 4],
+            mixer_pos: [None; 4],
+            swatches: vec![None; SWATCHES],
+            swatch_sel: 0,
             mask_edit: false,
             mask_stroke: None,
             layer_rects: Vec::new(),
@@ -945,6 +958,17 @@ impl PaintApp {
         for (i, v) in self.color_views.iter_mut().enumerate() {
             s.read_bool(&format!("color_view.{i}"), v);
         }
+        let hex = |v: &str| u32::from_str_radix(v, 16).ok().map(|n| Color32::from_rgb((n >> 16) as u8, (n >> 8) as u8, n as u8));
+        for (r, row) in self.mixer.iter_mut().enumerate() {
+            for (e, c) in row.iter_mut().enumerate() {
+                if let Some(v) = s.str(&format!("mixer.{r}.{e}")).and_then(hex) {
+                    *c = v;
+                }
+            }
+        }
+        for (i, c) in self.swatches.iter_mut().enumerate() {
+            *c = s.str(&format!("swatch.{i}")).and_then(hex);
+        }
         if let Some(p) = s.str("paper_dir") {
             self.paper_dir = p.to_string();
             self.set_paper_dir();
@@ -1039,6 +1063,18 @@ impl PaintApp {
         s.set("paper_dir", &self.paper_dir);
         for (i, v) in self.color_views.iter().enumerate() {
             s.set(&format!("color_view.{i}"), *v as u8);
+        }
+        let hex = |c: Color32| format!("{:02x}{:02x}{:02x}", c.r(), c.g(), c.b());
+        for (r, row) in self.mixer.iter().enumerate() {
+            for (e, c) in row.iter().enumerate() {
+                s.set(&format!("mixer.{r}.{e}"), hex(*c));
+            }
+        }
+        for (i, c) in self.swatches.iter().enumerate() {
+            match c {
+                Some(c) => s.set(&format!("swatch.{i}"), hex(*c)),
+                None => s.remove(&format!("swatch.{i}")),
+            }
         }
         s.save();
     }
@@ -1158,6 +1194,13 @@ impl PaintApp {
         let fore = self.color();
         self.hsv = sai_ui::rgb_to_hsv(self.back);
         self.back = fore;
+    }
+
+    /// Основной цвет из RGB; у серого тон не определён — прежний остаётся.
+    fn set_color(&mut self, c: Color32) {
+        let hsv = sai_ui::rgb_to_hsv(c);
+        let hue = if hsv[1] == 0.0 { self.hsv[0] } else { hsv[0] };
+        self.hsv = [hue, hsv[1], hsv[2]];
     }
 
     fn color(&self) -> Color32 {
@@ -2781,13 +2824,27 @@ impl PaintApp {
                     self.color_views[i] = !self.color_views[i];
                 }
             }
-            for tip in [tr("Смеситель — позже"), tr("Образцы цвета — позже")] {
-                sai_ui::icon_button(ui, b, false, false, tip, |p, r, c| {
-                    for k in 0..3 {
-                        let y = r.top() + 2.0 + k as f32 * 4.0;
-                        p.line_segment([Pos2::new(r.left(), y), Pos2::new(r.right(), y)], egui::Stroke::new(1.5_f32, c));
+            if sai_ui::icon_button(ui, b, self.color_views[3], true, tr("Смеситель цвета"), |p, r, c| {
+                for k in 0..4 {
+                    let y = r.top() + 2.0 + k as f32 * 3.5;
+                    p.line_segment([Pos2::new(r.left(), y), Pos2::new(r.right(), y)], egui::Stroke::new(1.5_f32, c));
+                }
+            })
+            .clicked()
+            {
+                self.color_views[3] = !self.color_views[3];
+            }
+            if sai_ui::icon_button(ui, b, self.color_views[4], true, tr("Образцы цвета"), |p, r, c| {
+                for k in 0..3 {
+                    for j in 0..3 {
+                        let q = Rect::from_min_size(r.min + Vec2::new(j as f32 * 6.0, k as f32 * 6.0), Vec2::splat(4.5));
+                        p.rect_filled(q, 0.0, c);
                     }
-                });
+                }
+            })
+            .clicked()
+            {
+                self.color_views[4] = !self.color_views[4];
             }
         });
         if self.color_views[0] {
@@ -2827,6 +2884,24 @@ impl PaintApp {
             }
             if sai_ui::channel_slider(ui, "V", &mut val, 255.0, |t| sai_ui::hsv_to_rgb(hsv[0], hsv[1], t)) {
                 self.hsv[2] = val / 255.0;
+            }
+        }
+        if self.color_views[3] {
+            let current = self.color();
+            ui.add_space(2.0);
+            for r in 0..4 {
+                if let Some(c) = sai_ui::mixer_row(ui, &mut self.mixer[r], &mut self.mixer_pos[r], current) {
+                    self.set_color(c);
+                }
+            }
+        }
+        if self.color_views[4] {
+            let labels = [tr("Зарегистрировать цвет"), tr("Удалить цвет")];
+            match sai_ui::swatches(ui, &self.swatches, &mut self.swatch_sel, labels) {
+                Some(sai_ui::SwatchAction::Pick(c)) => self.set_color(c),
+                Some(sai_ui::SwatchAction::Register(i)) => self.swatches[i] = Some(self.color()),
+                Some(sai_ui::SwatchAction::Delete(i)) => self.swatches[i] = None,
+                None => {}
             }
         }
         ui.add_space(4.0);

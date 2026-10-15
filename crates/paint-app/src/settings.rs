@@ -78,6 +78,10 @@ impl Settings {
         self.map.get(key).map(|v| v == "1" || v == "true")
     }
 
+    pub fn remove(&mut self, key: &str) {
+        self.map.remove(key);
+    }
+
     pub fn str(&self, key: &str) -> Option<&str> {
         self.map.get(key).map(|s| s.as_str())
     }

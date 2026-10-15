@@ -86,8 +86,6 @@ PSD (со слоями) = PSD (with layers)
 Цветовой круг = Color Wheel
 Ползунки RGB = RGB Sliders
 Ползунки HSV = HSV Sliders
-Смеситель — позже = Color Mixer — later
-Образцы цвета — позже = Swatches — later
 Выделение (M): Shift — добавить, Alt — вычесть = Selection (M): Shift — add, Alt — subtract
 Лассо (L): Shift — добавить, Alt — вычесть = Lasso (L): Shift — add, Alt — subtract
 Волшебная палочка (W): Shift — добавить, Alt — вычесть = Magic Wand (W): Shift — add, Alt — subtract
@@ -371,3 +369,9 @@ SOsai на GitHub = SOsai on GitHub
 Клавиши в пунктах меню и во всплывающих подсказках = Keys in menu items and tooltips
 Рисунки = Images
 Все файлы = All files
+
+# Смеситель и образцы / Mixer and swatches
+Смеситель цвета = Color Mixer
+Образцы цвета = Swatches
+Зарегистрировать цвет = Register Color
+Удалить цвет = Delete Color
