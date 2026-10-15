@@ -59,7 +59,7 @@ pub struct Loaded {
     pub vector_layers: Vec<(u32, Vec<sai2_vector::Shape>)>,
 }
 
-fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info: &Sai2Info, notes: &mut BTreeSet<String>) -> io::Result<Vec<Layer>> {
+fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info: &Sai2Info, notes: &mut BTreeSet<String>, decoded: &mut [Option<io::Result<paint_core::tile::ColorMap>>]) -> io::Result<Vec<Layer>> {
     // В файле слои идут сверху вниз; в документе — снизу вверх.
     let mut top_down = Vec::new();
     while *pos < infos.len() && infos[*pos].depth >= depth {
@@ -80,9 +80,12 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
         });
         if li.is_folder {
             layer.pass_through = li.blend == "pass";
-            layer.children = Some(build(infos, pos, depth + 1, file, info, notes)?);
+            layer.children = Some(build(infos, pos, depth + 1, file, info, notes, decoded)?);
         } else {
-            layer.pixels = sai2_pixels::read_layer(file, &info.entries, li)?;
+            layer.pixels = match decoded[*pos - 1].take() {
+                Some(r) => r?,
+                None => sai2_pixels::read_layer(file, &info.entries, li)?,
+            };
             match li.kind.as_str() {
                 "norm" => {}
                 "shap" => match read_vector(file, info, li) {
@@ -205,7 +208,28 @@ pub fn load(path: &Path) -> io::Result<Loaded> {
     let mut file = File::open(path)?;
     let mut notes = BTreeSet::new();
     let mut pos = 0;
-    let layers = build(&info.layers, &mut pos, 0, &mut file, &info, &mut notes)?;
+    // пиксели слоёв раскодируются параллельно, у каждого потока свой дескриптор файла
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let slots: Vec<std::sync::Mutex<Option<io::Result<paint_core::tile::ColorMap>>>> = info.layers.iter().map(|_| std::sync::Mutex::new(None)).collect();
+    std::thread::scope(|scope| {
+        for _ in 0..threads.min(info.layers.len().max(1)) {
+            scope.spawn(|| {
+                let Ok(mut f) = File::open(path) else { return };
+                loop {
+                    let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(li) = info.layers.get(k) else { break };
+                    if li.is_folder {
+                        continue;
+                    }
+                    let r = sai2_pixels::read_layer(&mut f, &info.entries, li);
+                    *slots[k].lock().unwrap() = Some(r);
+                }
+            });
+        }
+    });
+    let mut decoded: Vec<Option<io::Result<paint_core::tile::ColorMap>>> = slots.into_iter().map(|m| m.into_inner().unwrap()).collect();
+    let layers = build(&info.layers, &mut pos, 0, &mut file, &info, &mut notes, &mut decoded)?;
     let mut vector_layers = Vec::new();
     for li in info.layers.iter().filter(|l| l.kind == "liwk" || l.kind == "shap") {
         let Some(e) = info.entries.iter().find(|e| e.tag == li.kind.as_bytes() && e.id == li.id) else { continue };

@@ -530,6 +530,8 @@ struct PaintApp {
     /// Сводка по нажиму от пера за сеанс: (источник, мин., макс., число замеров) — для проверок.
     pen_stats: HashMap<&'static str, (f32, f32, u32)>,
     started: Instant,
+    /// Для `PAINT_TIMING`: когда начали показ холста целиком (после открытия или нового холста).
+    timing: Option<Instant>,
     sel_drag: Option<SelDrag>,
     move_drag: Option<MoveDrag>,
     transform: Option<Transform>,
@@ -610,6 +612,7 @@ impl PaintApp {
             virtual_done: 0,
             pen_stats: HashMap::new(),
             started: Instant::now(),
+            timing: None,
             sel_drag: None,
             move_drag: None,
             transform: None,
@@ -1005,6 +1008,9 @@ impl PaintApp {
     }
 
     fn invalidate_all(&mut self) {
+        if std::env::var_os("PAINT_TIMING").is_some() {
+            self.timing = Some(Instant::now());
+        }
         self.sel_dirty = true;
         self.transform = None;
         self.filter = None;
@@ -1037,26 +1043,45 @@ impl PaintApp {
     fn render_pending(&mut self, budget: Duration) {
         let started = Instant::now();
         let (w, h) = (self.doc.width as i32, self.doc.height as i32);
-        while let Some(key) = self.queue.pop_front() {
-            self.queued.remove(&key);
-            if key.0 < 0 || key.1 < 0 || key.0 * TILE >= w || key.1 * TILE >= h {
-                continue;
+        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        loop {
+            // пачка плиток — по нескольку на поток; свежие правки стоят в начале очереди
+            let mut batch = Vec::new();
+            while batch.len() < threads * 4 {
+                let Some(key) = self.queue.pop_front() else { break };
+                self.queued.remove(&key);
+                if key.0 < 0 || key.1 < 0 || key.0 * TILE >= w || key.1 * TILE >= h {
+                    continue;
+                }
+                batch.push(key);
             }
-            let rgba = self.doc.render_tile(key);
-            let dkey = (key.0 * TILE / DT, key.1 * TILE / DT);
-            let tile = self.display.entry(dkey).or_insert_with(|| DisplayTile {
-                pixels: vec![0u8; (DT * DT * 4) as usize],
-                texture: None,
-                stale: true,
+            if batch.is_empty() {
+                if let Some(t) = self.timing.take() {
+                    eprintln!("timing: холст {}×{} показан целиком за {:.2} с", w, h, t.elapsed().as_secs_f32());
+                }
+                break;
+            }
+            let doc = &self.doc;
+            let chunk = batch.len().div_ceil(threads);
+            let rendered: Vec<(Key, Vec<u8>)> = std::thread::scope(|scope| {
+                let handles: Vec<_> = batch.chunks(chunk).map(|keys| scope.spawn(move || keys.iter().map(|k| (*k, doc.render_tile(*k))).collect::<Vec<_>>())).collect();
+                handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
             });
-            let (ox, oy) = (key.0 * TILE - dkey.0 * DT, key.1 * TILE - dkey.1 * DT);
-            for y in 0..TILE {
-                let dst = (((oy + y) * DT + ox) * 4) as usize;
-                let src = (y * TILE * 4) as usize;
-                tile.pixels[dst..dst + (TILE * 4) as usize]
-                    .copy_from_slice(&rgba[src..src + (TILE * 4) as usize]);
+            for (key, rgba) in rendered {
+                let dkey = (key.0 * TILE / DT, key.1 * TILE / DT);
+                let tile = self.display.entry(dkey).or_insert_with(|| DisplayTile {
+                    pixels: vec![0u8; (DT * DT * 4) as usize],
+                    texture: None,
+                    stale: true,
+                });
+                let (ox, oy) = (key.0 * TILE - dkey.0 * DT, key.1 * TILE - dkey.1 * DT);
+                for y in 0..TILE {
+                    let dst = (((oy + y) * DT + ox) * 4) as usize;
+                    let src = (y * TILE * 4) as usize;
+                    tile.pixels[dst..dst + (TILE * 4) as usize].copy_from_slice(&rgba[src..src + (TILE * 4) as usize]);
+                }
+                tile.stale = true;
             }
-            tile.stale = true;
             if started.elapsed() > budget {
                 break;
             }

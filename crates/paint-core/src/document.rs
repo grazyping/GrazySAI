@@ -800,28 +800,46 @@ impl Document {
         let (w, h) = (self.width as i32, self.height as i32);
         let mut out = vec![0u8; (w * h * 4) as usize];
         let bg = self.background_f32();
-        let mut buf = vec![bg; TILE_LEN];
-        for ty in 0..(h + TILE - 1) / TILE {
-            for tx in 0..(w + TILE - 1) / TILE {
-                buf.fill(bg);
-                render_group(&self.layers, (tx, ty), &mut buf);
-                for y in 0..TILE {
-                    let py = ty * TILE + y;
-                    if py >= h {
-                        break;
-                    }
-                    for x in 0..TILE {
-                        let px = tx * TILE + x;
-                        if px >= w {
+        let rows = (h + TILE - 1) / TILE;
+        let cols = (w + TILE - 1) / TILE;
+        let row_bytes = (w * 4 * TILE) as usize;
+        // полосы по высоте плитки — каждая в своём потоке
+        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let next = std::sync::atomic::AtomicI32::new(0);
+        let strips: Vec<std::sync::Mutex<&mut [u8]>> = out.chunks_mut(row_bytes).map(std::sync::Mutex::new).collect();
+        std::thread::scope(|scope| {
+            for _ in 0..threads.min(rows.max(1) as usize) {
+                scope.spawn(|| {
+                    let mut buf = vec![bg; TILE_LEN];
+                    loop {
+                        let ty = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        if ty >= rows {
                             break;
                         }
-                        let c = to_rgba8(from_f32(buf[(y * TILE + x) as usize]));
-                        let o = ((py * w + px) * 4) as usize;
-                        out[o..o + 4].copy_from_slice(&c);
+                        let mut strip = strips[ty as usize].lock().unwrap();
+                        for tx in 0..cols {
+                            buf.fill(bg);
+                            render_group(&self.layers, (tx, ty), &mut buf);
+                            for y in 0..TILE {
+                                if ty * TILE + y >= h {
+                                    break;
+                                }
+                                for x in 0..TILE {
+                                    let px = tx * TILE + x;
+                                    if px >= w {
+                                        break;
+                                    }
+                                    let c = to_rgba8(from_f32(buf[(y * TILE + x) as usize]));
+                                    let o = ((y * w + px) * 4) as usize;
+                                    strip[o..o + 4].copy_from_slice(&c);
+                                }
+                            }
+                        }
                     }
-                }
+                });
             }
-        }
+        });
+        drop(strips);
         out
     }
 }
