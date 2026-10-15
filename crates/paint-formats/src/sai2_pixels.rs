@@ -283,3 +283,77 @@ fn decode_intg_with(data: &[u8], start: usize, w: usize, h: usize, planes: usize
     }
     Ok(img)
 }
+
+/// Блок маски: номер по горизонтали и вертикали и 32×32 значения.
+pub type MaskBlock = ((i32, i32), Vec<u16>);
+
+/// Восстанавливает один канал блока маски по поправкам (то же предсказание, что у пикселей).
+fn reconstruct_mask(residuals: &[i16]) -> Vec<u16> {
+    let mut out = vec![0u16; BLOCK_LEN];
+    for y in 0..BLOCK as usize {
+        let (mut left, mut up_left) = (0u16, 0u16);
+        for x in 0..BLOCK as usize {
+            let up = if y == 0 { 0 } else { out[(y - 1) * BLOCK as usize + x] };
+            let predicted = left.wrapping_add(up).saturating_sub(up_left).min(SAI_ONE);
+            let value = predicted.wrapping_add(residuals[(y * BLOCK as usize + x) * 4] as u16);
+            out[y * BLOCK as usize + x] = (value as i16).clamp(0, SAI_ONE as i16) as u16;
+            left = value;
+            up_left = up;
+        }
+    }
+    out
+}
+
+/// Разбирает блок маски `mpix`: область `rect` в блоках 32 точки (лево, верх, ширина, высота).
+/// Возвращает блоки (номер по горизонтали и вертикали) со значениями 0..=0x4000; пропущенные
+/// блоки — нулевые.
+pub fn decode_mpix(data: &[u8], rect: [i32; 4]) -> io::Result<Vec<MaskBlock>> {
+    let [left, top, width, height] = rect;
+    let mut out = Vec::new();
+    if width <= 0 || height <= 0 {
+        return Ok(out);
+    }
+    if data.get(0..4) != Some(b"dpcm") {
+        return Err(bad("у маски неизвестный способ сжатия"));
+    }
+    if !(-8192..=8192).contains(&left) || !(-8192..=8192).contains(&top) || width > 8192 || height > 8192 {
+        return Err(bad("границы маски неправдоподобны"));
+    }
+    let right = left + width;
+    let mut o = 4 + height as usize * 4;
+    for by in top..top + height {
+        let mut bx = left;
+        loop {
+            let marker = data.get(o..o + 2).ok_or_else(|| bad("данные маски оборваны"))?;
+            if marker[0] != 0xFF || (marker[1] & 0x0F) as i32 != bx & 0x0F {
+                return Err(bad(format!("сбой разметки маски в строке блоков {by}, блок {bx}")));
+            }
+            o += 2;
+            match marker[1] >> 4 {
+                0xF if bx == right => break,
+                0x0 if bx < right => {
+                    bx += u16_at(data, o)? as i32 + 1;
+                    o += 2;
+                }
+                0x5 if bx < right => {
+                    let v = u16_at(data, o)?.min(SAI_ONE);
+                    o += 2;
+                    if v != 0 {
+                        out.push(((bx, by), vec![v; BLOCK_LEN]));
+                    }
+                    bx += 1;
+                }
+                0xA if bx < right => {
+                    let len = u16_at(data, o)? as usize;
+                    o += 2;
+                    let body = data.get(o..o + len).ok_or_else(|| bad("данные маски оборваны"))?;
+                    o += len;
+                    out.push(((bx, by), reconstruct_mask(&decode_residuals(body, BLOCK_LEN, 1)?.0)));
+                    bx += 1;
+                }
+                k => return Err(bad(format!("неизвестная запись {k:X} маски в строке блоков {by}, блок {bx}"))),
+            }
+        }
+    }
+    Ok(out)
+}

@@ -201,6 +201,66 @@ fn encode_lpix(layer: &Layer, bw: usize, bh: usize) -> Vec<u8> {
     out
 }
 
+/// Блок маски `mpix` (один канал, 0..=0x4000) на области `bw`×`bh` блоков от угла холста.
+/// Пустые блоки пропускаются, остальные пишутся картинкой (как у образца).
+fn encode_mpix(hide: &paint_core::tile::MaskMap, bw: usize, bh: usize) -> Vec<u8> {
+    let mut rows: Vec<Vec<u8>> = Vec::with_capacity(bh);
+    for by in 0..bh {
+        let mut row = Vec::new();
+        let mut empty_run = 0usize;
+        let flush_empty = |row: &mut Vec<u8>, run: &mut usize, bx_end: usize| {
+            while *run > 0 {
+                let n = (*run).min(65536);
+                let start = bx_end - *run;
+                row.extend([0xFF, (start & 0x0F) as u8]);
+                row.extend(((n - 1) as u16).to_le_bytes());
+                *run -= n;
+            }
+        };
+        for bx in 0..bw {
+            let mut v = vec![0u16; BLOCK * BLOCK];
+            for y in 0..BLOCK {
+                for x in 0..BLOCK {
+                    v[y * BLOCK + x] = hide.get((bx * BLOCK + x) as i32, (by * BLOCK + y) as i32).min(SAI_ONE);
+                }
+            }
+            if v.iter().all(|m| *m == 0) {
+                empty_run += 1;
+                continue;
+            }
+            flush_empty(&mut row, &mut empty_run, bx);
+            let mut res = vec![0i32; BLOCK * BLOCK];
+            for y in 0..BLOCK {
+                let (mut left, mut up_left) = (0u16, 0u16);
+                for x in 0..BLOCK {
+                    let up = if y == 0 { 0 } else { v[(y - 1) * BLOCK + x] };
+                    let predicted = left.wrapping_add(up).saturating_sub(up_left).min(SAI_ONE);
+                    res[y * BLOCK + x] = v[y * BLOCK + x] as i32 - predicted as i32;
+                    left = v[y * BLOCK + x];
+                    up_left = up;
+                }
+            }
+            let mut w = BitWriter::default();
+            encode_plane(&mut w, res.into_iter());
+            let stream = w.finish();
+            row.extend([0xFF, 0xA0 | (bx & 0x0F) as u8]);
+            row.extend((stream.len() as u16).to_le_bytes());
+            row.extend(stream);
+        }
+        flush_empty(&mut row, &mut empty_run, bw);
+        row.extend([0xFF, 0xF0 | (bw & 0x0F) as u8]);
+        rows.push(row);
+    }
+    let mut out = b"dpcm".to_vec();
+    for r in &rows {
+        out.extend((r.len() as u32).to_le_bytes());
+    }
+    for r in rows {
+        out.extend(r);
+    }
+    out
+}
+
 /// Сведённое изображение `intg`: блоки 256×256, каждая строка пикселей — свой поток.
 /// `rgba` — RGBA по 8 бит без предумножения; `planes` — 3 (непрозрачный фон) или 4.
 fn encode_intg(rgba: &[u8], w: usize, h: usize, planes: usize) -> Vec<u8> {
@@ -263,7 +323,7 @@ fn flatten_tree<'a>(layers: &'a [Layer], depth: u8, out: &mut Vec<Flat<'a>>) {
     }
 }
 
-fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4]) -> Vec<u8> {
+fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4], mask_id: Option<u32>) -> Vec<u8> {
     let l = f.layer;
     let mut d = Vec::with_capacity(96);
     d.extend(b"layr");
@@ -315,6 +375,16 @@ fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4]) -> Vec<u8> {
     d.extend(b"name");
     d.extend((name.len() as u32).to_le_bytes());
     d.extend(name);
+    // маска: номер блока mpix, область, признаки
+    if let (Some(m), Some(mid)) = (&l.mask, mask_id) {
+        d.extend(b"lmsk");
+        d.extend(24u32.to_le_bytes());
+        d.extend(mid.to_le_bytes());
+        for v in rect {
+            d.extend(v.to_le_bytes());
+        }
+        d.extend(m.flags);
+    }
     let effect = l.effect.as_ref().map(|e| e.to_block());
     for (tag, body) in effect.iter().chain(&l.extra) {
         d.extend(tag);
@@ -341,8 +411,17 @@ pub fn save(doc: &Document, path: &Path) -> io::Result<()> {
     let planes = if doc.background.is_some() { 3 } else { 4 };
     let mut blocks: Vec<([u8; 4], u32, Vec<u8>)> = Vec::new();
     blocks.push((*b"intg", 0, encode_intg(&doc.flatten(), w, h, planes)));
+    // маски — свои блоки с номерами после слоёв
+    let mut mask_ids = vec![None; flat.len()];
+    let mut next_id = flat.len() as u32 + 2;
     for (i, f) in flat.iter().enumerate() {
-        blocks.push((*b"layr", ids[i], layer_record(f, ids[i], count - i as u32, rect)));
+        if f.layer.mask.is_some() {
+            mask_ids[i] = Some(next_id);
+            next_id += 1;
+        }
+    }
+    for (i, f) in flat.iter().enumerate() {
+        blocks.push((*b"layr", ids[i], layer_record(f, ids[i], count - i as u32, rect, mask_ids[i])));
     }
     // пиксели слоёв кодируются параллельно, по слою на поток
     // слои контура и фигур — своим векторным блоком, без пикселей (как у образца)
@@ -367,6 +446,11 @@ pub fn save(doc: &Document, path: &Path) -> io::Result<()> {
     });
     for ((i, _), data) in raster.iter().zip(encoded.into_inner().unwrap()) {
         blocks.push((*b"lpix", ids[*i], data));
+    }
+    for (i, f) in flat.iter().enumerate() {
+        if let (Some(m), Some(mid)) = (&f.layer.mask, mask_ids[i]) {
+            blocks.push((*b"mpix", mid, encode_mpix(&m.hide, bw, bh)));
+        }
     }
     let mut out = Vec::new();
     out.extend(crate::sai2::MAGIC);

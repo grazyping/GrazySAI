@@ -259,3 +259,29 @@ fn normal_handles_match_the_file() {
     assert!(count > 100 && worst < 0.01, "узлов {count}, расхождение {worst}");
 }
 
+
+#[test]
+fn layer_mask_flattens_like_the_reference() {
+    let Some((exact, mean)) = match_with_reference("маска.sai2") else { return };
+    eprintln!("маска: точно {exact:.4}, средняя {mean:.4}");
+    assert!(exact > 0.99, "точно {exact:.4}, средняя разница {mean:.4}");
+}
+
+#[test]
+fn layer_mask_survives_save() {
+    let Some(p) = sample("маска.sai2") else { return };
+    let a = sai2_doc::load(&p).unwrap();
+    let out = std::env::temp_dir().join(format!("sosai-mask-{}.sai2", std::process::id()));
+    paint_formats::sai2_write::save(&a.document, &out).unwrap();
+    let b = sai2_doc::load(&out).unwrap();
+    std::fs::remove_file(&out).ok();
+    let (ma, mb) = (a.document.layers[0].mask.as_ref().unwrap(), b.document.layers[0].mask.as_ref().unwrap());
+    for y in 0..300 {
+        for x in 0..300 {
+            assert_eq!(ma.hide.get(x, y), mb.hide.get(x, y), "{x},{y}");
+        }
+    }
+    assert_eq!(ma.flags, mb.flags);
+    assert_eq!(a.document.flatten(), b.document.flatten());
+    assert!(b.warnings.is_empty(), "{:?}", b.warnings);
+}

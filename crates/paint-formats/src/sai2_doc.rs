@@ -88,6 +88,14 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
             notes.insert(format!("режим «{}» заменён приближённым", li.blend));
             blend_fallback(&li.blend)
         });
+        if let Some((id, rect, flags)) = li.mask {
+            match read_mask(file, info, id, rect) {
+                Ok(hide) => layer.mask = Some(paint_core::layer::LayerMask { hide, flags }),
+                Err(e) => {
+                    notes.insert(format!("маска слоя «{}» не прочитана: {e}", li.name));
+                }
+            }
+        }
         if li.is_folder {
             layer.pass_through = li.blend == "pass";
             layer.children = Some(build(infos, pos, depth + 1, file, info, notes, decoded)?);
@@ -125,6 +133,31 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
     }
     top_down.reverse();
     Ok(top_down)
+}
+
+/// Маска слоя из блока `mpix` с номером `id`.
+fn read_mask(file: &mut File, info: &Sai2Info, id: u32, rect: [i32; 4]) -> io::Result<paint_core::tile::MaskMap> {
+    let mut map = paint_core::tile::MaskMap::new();
+    let Some(e) = info.entries.iter().find(|e| &e.tag == b"mpix" && e.id == id) else {
+        return Ok(map);
+    };
+    if e.len > 1 << 30 {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "маска слишком велика"));
+    }
+    let mut data = vec![0u8; e.len as usize];
+    file.seek(SeekFrom::Start(e.offset))?;
+    file.read_exact(&mut data)?;
+    for ((bx, by), v) in sai2_pixels::decode_mpix(&data, rect)? {
+        for y in 0..32 {
+            for x in 0..32 {
+                let m = v[(y * 32 + x) as usize];
+                if m != 0 {
+                    map.set(bx * 32 + x, by * 32 + y, m);
+                }
+            }
+        }
+    }
+    Ok(map)
 }
 
 /// Сырые байты векторного блока слоя (для записи обратно без изменений).
@@ -254,11 +287,6 @@ pub fn load(path: &Path) -> io::Result<Loaded> {
             Err(err) => {
                 notes.insert(format!("кривые слоя «{}» не прочитаны: {err}", li.name));
             }
-        }
-    }
-    for tag in ["mask", "mpix"] {
-        if info.entries.iter().any(|e| e.tag == tag.as_bytes()) {
-            notes.insert("маски слоёв не прочитаны".to_string());
         }
     }
     let mut document = Document::new(info.width, info.height);

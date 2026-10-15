@@ -799,7 +799,8 @@ impl Document {
         below.push(last - 1);
         let upper = self.layer(path)?;
         let lower = self.layer(&below)?;
-        if upper.children.is_some() || lower.children.is_some() {
+        // слияние на слой с маской пока не делается: маска нижнего легла бы и на верхний
+        if upper.children.is_some() || lower.children.is_some() || lower.mask.is_some() {
             return None;
         }
         // Нижний слой — как обычный непрозрачный «фон» пары; верхний — со своими свойствами.
@@ -934,6 +935,18 @@ fn touches(layer: &Layer, key: Key) -> bool {
 
 /// Содержимое слоя или папки в одной плитке, без учёта его режима и непрозрачности.
 fn layer_source(layer: &Layer, key: Key, size: (i32, i32)) -> Option<Buf> {
+    let mut buf = layer_content(layer, key, size)?;
+    if let Some(tile) = layer.mask.as_ref().and_then(|m| m.hide.tiles.get(&key)) {
+        for (px, &m) in buf.iter_mut().zip(tile.0.iter()) {
+            let k = 1.0 - m.min(0x4000) as f32 / 16384.0;
+            *px = px.map(|v| v * k);
+        }
+    }
+    Some(buf)
+}
+
+/// Содержимое слоя или папки без маски.
+fn layer_content(layer: &Layer, key: Key, size: (i32, i32)) -> Option<Buf> {
     match &layer.children {
         Some(children) => {
             if !children.iter().any(|c| c.visible && touches(c, key)) {

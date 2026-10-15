@@ -15,6 +15,14 @@ pub struct VectorData {
     pub raw: Vec<u8>,
 }
 
+/// Маска слоя, как в SAI 2: сколько слоя скрыто в точке, 0 (виден) ..= 16384 (скрыт).
+#[derive(Clone, Debug, PartialEq)]
+pub struct LayerMask {
+    pub hide: crate::tile::MaskMap,
+    /// Четыре байта признаков из файла (смысл не разобран; у образца `01 01 01 00`).
+    pub flags: [u8; 4],
+}
+
 #[derive(Clone, Debug)]
 pub struct Layer {
     pub name: String,
@@ -43,6 +51,8 @@ pub struct Layer {
     pub paper: Option<crate::paper::Paper>,
     /// Эффект слоя: кайма или двухцветный.
     pub effect: Option<crate::effects::Effect>,
+    /// Маска слоя.
+    pub mask: Option<LayerMask>,
     /// Прочие вложенные блоки описания слоя из `.sai2` (эффекты и т. п.) — записываются обратно
     /// как были.
     pub extra: Vec<([u8; 4], Vec<u8>)>,
@@ -67,6 +77,7 @@ impl Layer {
             pass_through: false,
             paper: None,
             effect: None,
+            mask: None,
             extra: Vec::new(),
         }
     }

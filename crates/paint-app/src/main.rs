@@ -2833,10 +2833,30 @@ impl PaintApp {
                     egui::Stroke::new(1.0_f32, Color32::from_gray(190)),
                 );
             }
+            // маска — вторая миниатюра справа от первой
+            let layer_thumb = thumb;
+            let has_mask = layer_has_mask(&self.doc, path);
+            let thumb = if has_mask {
+                let mt = Rect::from_min_size(Pos2::new(thumb.right() + 3.0, thumb.top()), thumb.size());
+                let key = { let mut k = path.clone(); k.push(usize::MAX); k };
+                if !self.thumbs.contains_key(&key) {
+                    if let Some(img) = mask_thumbnail(&self.doc, path, 36) {
+                        let t = ui.ctx().load_texture(format!("mask-{path:?}"), img, egui::TextureOptions::LINEAR);
+                        self.thumbs.insert(key.clone(), t);
+                    }
+                }
+                if let Some(t) = self.thumbs.get(&key) {
+                    ui.painter().image(t.id(), mt, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                }
+                ui.painter().rect_stroke(mt, 0.0, egui::Stroke::new(1.0_f32, Color32::from_gray(190)));
+                mt
+            } else {
+                thumb
+            };
             if clipping {
                 p.rect_filled(
                     Rect::from_min_size(
-                        Pos2::new(thumb.left() - 3.0, rect.top() + 3.0),
+                        Pos2::new(layer_thumb.left() - 3.0, rect.top() + 3.0),
                         Vec2::new(2.0, 36.0),
                     ),
                     0.0,
@@ -4094,6 +4114,29 @@ fn layer_thumbnail(doc: &Document, path: &[usize], size: usize) -> Option<egui::
             let a = a as u32;
             let over = |c: u8| ((c as u32 * a + 255 * (255 - a)) / 255) as u8;
             img[(x, y)] = Color32::from_rgb(over(r), over(g), over(b));
+        }
+    }
+    Some(img)
+}
+
+/// Миниатюра маски слоя: белое — слой виден, чёрное — скрыт.
+fn layer_has_mask(doc: &Document, path: &[usize]) -> bool {
+    doc.layer(path).is_some_and(|l| l.mask.is_some())
+}
+
+fn mask_thumbnail(doc: &Document, path: &[usize], size: usize) -> Option<egui::ColorImage> {
+    let mask = doc.layer(path)?.mask.as_ref()?;
+    let (w, h) = (doc.width as f32, doc.height as f32);
+    let k = (w / size as f32).max(h / size as f32);
+    let (ox, oy) = ((size as f32 - w / k) / 2.0, (size as f32 - h / k) / 2.0);
+    let mut img = egui::ColorImage::new([size, size], Color32::from_gray(225));
+    for y in 0..size {
+        for x in 0..size {
+            let (cx, cy) = (((x as f32 + 0.5 - ox) * k) as i32, ((y as f32 + 0.5 - oy) * k) as i32);
+            if cx >= 0 && cy >= 0 && cx < doc.width as i32 && cy < doc.height as i32 {
+                let m = mask.hide.get(cx, cy).min(0x4000) as u32;
+                img[(x, y)] = Color32::from_gray((255 - m * 255 / 0x4000) as u8);
+            }
         }
     }
     Some(img)

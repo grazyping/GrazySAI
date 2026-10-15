@@ -42,7 +42,10 @@ pub struct LayerInfo {
     pub name: String,
     /// Бумага слоя (`ptex`): имя текстуры, сила, масштаб, флаг.
     pub paper: Option<(String, u16, u16, u16)>,
-    /// Прочие вложенные блоки (кроме `name` и `ptex`) — как в файле.
+    /// Маска (`lmsk`): номер блока `mpix`, область в блоках 32 точки (лево, верх, ширина, высота),
+    /// четыре байта признаков.
+    pub mask: Option<(u32, [i32; 4], [u8; 4])>,
+    /// Прочие вложенные блоки (кроме `name`, `ptex`, `lmsk`) — как в файле.
     pub extra: Vec<([u8; 4], Vec<u8>)>,
     pub has_pixels: bool,
 }
@@ -83,6 +86,7 @@ fn parse_layer(d: &[u8], has_pixels: bool) -> io::Result<LayerInfo> {
     let bounds = [l * 32, t * 32, (l + w) * 32, (t + h) * 32];
     let mut name = String::new();
     let mut paper = None;
+    let mut mask = None;
     let mut extra = Vec::new();
     let mut o = 56;
     while o + 8 <= d.len() {
@@ -100,6 +104,10 @@ fn parse_layer(d: &[u8], has_pixels: bool) -> io::Result<LayerInfo> {
                 body[8..].as_chunks::<2>().0.iter().take(n).map(|c| u16::from_le_bytes(*c)).collect();
             let tex = String::from_utf16_lossy(&units).trim_end_matches('\0').to_string();
             paper = Some((tex, v(0), v(2), v(4)));
+        } else if &d[o..o + 4] == b"lmsk" && body.len() >= 24 {
+            let v = |i: usize| u32::from_le_bytes([body[i], body[i + 1], body[i + 2], body[i + 3]]);
+            let rect = [v(4), v(8), v(12), v(16)].map(|x| (x as i32).clamp(-100_000, 100_000));
+            mask = Some((v(0), rect, [body[20], body[21], body[22], body[23]]));
         } else if len > 0 || &d[o..o + 4] != b"\0\0\0\0" {
             extra.push((d[o..o + 4].try_into().unwrap(), body.to_vec()));
         }
@@ -122,6 +130,7 @@ fn parse_layer(d: &[u8], has_pixels: bool) -> io::Result<LayerInfo> {
         selection_source: d[54] & 0x80 != 0,
         name,
         paper,
+        mask,
         extra,
         has_pixels,
     })
