@@ -836,6 +836,13 @@ impl PaintApp {
         s.save();
     }
 
+    /// Поменять основной и фоновый цвет (X, стрелка у квадратов цвета).
+    fn swap_colors(&mut self) {
+        let fore = self.color();
+        self.hsv = sai_ui::rgb_to_hsv(self.back);
+        self.back = fore;
+    }
+
     fn color(&self) -> Color32 {
         sai_ui::hsv_to_rgb(self.hsv[0], self.hsv[1], self.hsv[2])
     }
@@ -2288,9 +2295,7 @@ impl PaintApp {
                     .interact_pointer_pos()
                     .is_some_and(|q| swap.expand(2.0).contains(q))
             {
-                let fore = self.color();
-                self.hsv = sai_ui::rgb_to_hsv(self.back);
-                self.back = fore;
+                self.swap_colors();
             }
         });
         ui.add_space(2.0);
@@ -3986,6 +3991,10 @@ impl eframe::App for PaintApp {
             }
             d
         });
+        let key_x = ctx.input(|i| !i.modifiers.any() && i.key_pressed(egui::Key::X));
+        if key_x && !ctx.wants_keyboard_input() && self.live.is_none() {
+            self.swap_colors();
+        }
         let view_keys = ctx.input(|i| {
             let sh = i.modifiers.shift && !i.modifiers.command && !i.modifiers.alt;
             (
