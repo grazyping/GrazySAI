@@ -90,6 +90,8 @@ pub struct Document {
     pub bg_color: [u8; 3],
     /// «Layer Effect Color» (0x3C заголовка): `norm`, `vivd`, `deep`, `mult`, `ver1` — хранится как был.
     pub effect_color: [u8; 4],
+    /// Разрешение печати, как в `.sai2` (0x1C): точек на сантиметр × 65536; 96 dpi по умолчанию.
+    pub resolution: u32,
     /// Выделение; пустое — рисовать можно везде.
     pub selection: Selection,
     undo: Vec<HistoryEntry>,
@@ -106,6 +108,7 @@ impl Document {
             bg_code: 0x01,
             bg_color: [0x80, 0x80, 0x80],
             effect_color: *b"norm",
+            resolution: (96.0f64 / 2.54 * 65536.0).round() as u32,
             selection: Selection::default(),
             undo: Vec::new(),
             redo: Vec::new(),
@@ -122,6 +125,7 @@ impl Document {
             bg_code: self.bg_code,
             bg_color: self.bg_color,
             effect_color: self.effect_color,
+            resolution: self.resolution,
             selection: self.selection.clone(),
             undo: Vec::new(),
             redo: Vec::new(),

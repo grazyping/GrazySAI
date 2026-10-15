@@ -129,12 +129,13 @@ fn canvas_background_survives_save() {
         let mut doc = Document::new(64, 48);
         doc.set_background(code, color);
         doc.effect_color = *b"deep";
+        doc.resolution = 0x0011_d4a2;
         let path = dir.join(format!("bg{code}.sai2"));
         paint_formats::sai2_write::save(&doc, &path).unwrap();
         let head = std::fs::read(&path).unwrap();
         assert_eq!((head[0x11], &head[0x38..0x3b], &head[0x3c..0x40]), (code, &color[..], &b"deep"[..]));
         let back = paint_formats::sai2_doc::load(&path).unwrap().document;
-        assert_eq!((back.bg_code, back.bg_color, back.background), (code, color, doc.background));
+        assert_eq!((back.bg_code, back.bg_color, back.background, back.resolution), (code, color, doc.background, 0x0011_d4a2));
     }
     std::fs::remove_dir_all(dir).ok();
 }

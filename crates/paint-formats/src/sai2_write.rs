@@ -463,7 +463,7 @@ pub fn save(doc: &Document, path: &Path) -> io::Result<()> {
     out.extend([0, doc.bg_code, 0, 0]);
     out.extend((w as u32).to_le_bytes());
     out.extend((h as u32).to_le_bytes());
-    out.extend(((96.0f64 / 2.54 * 65536.0).round() as u32).to_le_bytes());
+    out.extend(doc.resolution.to_le_bytes());
     out.extend((blocks.len() as u32).to_le_bytes());
     out.extend(ids.first().copied().unwrap_or(0).to_le_bytes());
     out.extend([0u8; 16]);

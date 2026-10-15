@@ -60,6 +60,8 @@ pub struct Sai2Info {
     pub bg_code: u8,
     pub bg_color: [u8; 3],
     pub effect_color: [u8; 4],
+    /// Разрешение как в файле: точек на сантиметр × 65536.
+    pub resolution: u32,
     pub entries: Vec<Entry>,
     /// В порядке оглавления файла.
     pub layers: Vec<LayerInfo>,
@@ -193,6 +195,7 @@ pub fn read_info(path: &Path) -> io::Result<Sai2Info> {
         bg_code: head.get(0x11).copied().unwrap_or(1),
         bg_color: head.get(0x38..0x3b).and_then(|c| c.try_into().ok()).unwrap_or([0x80; 3]),
         effect_color: head.get(0x3c..0x40).and_then(|c| c.try_into().ok()).unwrap_or(*b"norm"),
+        resolution: u32_at(&head, 0x1c)?,
         entries,
         layers,
     })

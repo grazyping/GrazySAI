@@ -313,6 +313,9 @@ pub fn load(path: &Path) -> io::Result<Loaded> {
     let mut document = Document::new(info.width, info.height);
     document.set_background(info.bg_code, info.bg_color);
     document.effect_color = info.effect_color;
+    if info.resolution != 0 {
+        document.resolution = info.resolution;
+    }
     document.layers = layers;
     Ok(Loaded { document, info, warnings: notes.into_iter().collect(), vector_layers })
 }
