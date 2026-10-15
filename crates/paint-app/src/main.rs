@@ -2,12 +2,14 @@
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod i18n;
 mod pen;
 mod sai_ui;
 mod keys;
 mod settings;
 mod virtual_pen;
 
+use i18n::{tr, trf};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use paint_core::tile::{Key, TILE};
 use paint_core::mix::MixParams;
@@ -585,7 +587,7 @@ struct PaintApp {
 impl PaintApp {
     fn new(path: Option<PathBuf>, pen: pen::PenFeed) -> Self {
         let mut app = Self {
-            doc: Document::new(1200, 900),
+            doc: new_document(1200, 900),
             file: None,
             open_path: path
                 .as_ref()
@@ -598,7 +600,7 @@ impl PaintApp {
             mask_edit: false,
             mask_stroke: None,
             layer_rects: Vec::new(),
-            status: String::from("Новый холст 1200×900"),
+            status: String::from(tr("Новый холст 1200×900")),
             notes: Vec::new(),
             zoom: 1.0,
             offset: Vec2::ZERO,
@@ -621,7 +623,7 @@ impl PaintApp {
             touch_down: false,
             stroke_by_touch: false,
             last_pressure: 1.0,
-            last_source: "мышь",
+            last_source: tr("мышь"),
             view: Rect::NOTHING,
             show_open: false,
             show_new: false,
@@ -899,7 +901,7 @@ impl PaintApp {
 
     fn file_name(&self) -> String {
         self.file.as_ref().and_then(|f| f.file_name()).map_or_else(
-            || "НовыйХолст1.sai2".to_string(),
+            || tr("НовыйХолст1.sai2").to_string(),
             |n| n.to_string_lossy().into_owned(),
         )
     }
@@ -918,13 +920,9 @@ impl PaintApp {
                     self.doc = doc;
                     self.had_vectors = false;
                     self.notes.clear();
-                    self.status = format!(
-                        "Открыт {} — {}×{}, слоёв {}, за {:.1} с",
-                        path.display(),
-                        self.doc.width,
-                        self.doc.height,
-                        self.doc.layers.len(),
-                        started.elapsed().as_secs_f32()
+                    self.status = trf(
+                        "Открыт {0} — {1}×{2}, слоёв {3}, за {4} с",
+                        &[&path.display(), &self.doc.width, &self.doc.height, &self.doc.layers.len(), &format!("{:.1}", started.elapsed().as_secs_f32())],
                     );
                     self.file = Some(path);
                     self.selected = first_raster(&self.doc.layers).unwrap_or_default();
@@ -933,7 +931,7 @@ impl PaintApp {
                     self.dirty = false;
                     self.invalidate_all();
                 }
-                Err(e) => self.status = format!("Не удалось открыть {}: {e}", path.display()),
+                Err(e) => self.status = trf("Не удалось открыть {0}: {1}", &[&path.display(), &e]),
             }
             return;
         }
@@ -944,13 +942,9 @@ impl PaintApp {
                 self.had_vectors = false;
                 self.doc = loaded.document;
                 self.notes = loaded.warnings;
-                self.status = format!(
-                    "Открыт {} — {}×{}, слоёв {}, за {:.1} с",
-                    path.display(),
-                    self.doc.width,
-                    self.doc.height,
-                    loaded.info.layers.len(),
-                    started.elapsed().as_secs_f32()
+                self.status = trf(
+                    "Открыт {0} — {1}×{2}, слоёв {3}, за {4} с",
+                    &[&path.display(), &self.doc.width, &self.doc.height, &loaded.info.layers.len(), &format!("{:.1}", started.elapsed().as_secs_f32())],
                 );
                 self.file = Some(path);
                 self.selected = first_raster(&self.doc.layers).unwrap_or_default();
@@ -958,19 +952,19 @@ impl PaintApp {
                 self.fit_pending = true;
                 self.invalidate_all();
             }
-            Err(e) => self.status = format!("Не удалось открыть {}: {e}", path.display()),
+            Err(e) => self.status = trf("Не удалось открыть {0}: {1}", &[&path.display(), &e]),
         }
     }
 
     fn new_canvas(&mut self, w: u32, h: u32) {
-        self.doc = Document::new(w, h);
+        self.doc = new_document(w, h);
         self.had_vectors = false;
         self.file = None;
         self.notes.clear();
         self.selected = vec![0];
         self.live = None;
         self.fit_pending = true;
-        self.status = format!("Новый холст {w}×{h}");
+        self.status = trf("Новый холст {0}×{1}", &[&w, &h]);
         self.invalidate_all();
     }
 
@@ -989,7 +983,7 @@ impl PaintApp {
     }
 
     fn ask_save_as(&mut self) {
-        let base = self.file.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("НовыйХолст1.sai2"));
+        let base = self.file.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join(tr("НовыйХолст1.sai2")));
         let suggested = if self.had_vectors {
             let stem = base.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
             base.with_file_name(format!("{stem}-paint-rs.sai2"))
@@ -1007,12 +1001,12 @@ impl PaintApp {
         let started = Instant::now();
         match paint_formats::sai2_write::save(&self.doc, &path) {
             Ok(()) => {
-                self.status = format!("Сохранено: {} (за {:.1} с)", path.display(), started.elapsed().as_secs_f32());
+                self.status = trf("Сохранено: {0} (за {1} с)", &[&path.display(), &format!("{:.1}", started.elapsed().as_secs_f32())]);
                 self.file = Some(path);
                 self.dirty = false;
                 self.had_vectors = false;
             }
-            Err(e) => self.status = format!("Не удалось сохранить {}: {e}", path.display()),
+            Err(e) => self.status = trf("Не удалось сохранить {0}: {1}", &[&path.display(), &e]),
         }
     }
 
@@ -1034,8 +1028,8 @@ impl PaintApp {
             paint_core::io::save_jpeg(&path, self.doc.width, self.doc.height, &self.doc.flatten(), 92)
         };
         self.status = match result {
-            Ok(()) => format!("Сохранено: {}", path.display()),
-            Err(e) => format!("Не удалось сохранить {}: {e}", path.display()),
+            Ok(()) => trf("Сохранено: {0}", &[&path.display()]),
+            Err(e) => trf("Не удалось сохранить {0}: {1}", &[&path.display(), &e]),
         };
     }
 
@@ -1049,8 +1043,8 @@ impl PaintApp {
         let result =
             paint_core::io::save_png(&path, self.doc.width, self.doc.height, &self.doc.flatten());
         self.status = match result {
-            Ok(()) => format!("Сохранено: {}", path.display()),
-            Err(e) => format!("Не удалось сохранить {}: {e}", path.display()),
+            Ok(()) => trf("Сохранено: {0}", &[&path.display()]),
+            Err(e) => trf("Не удалось сохранить {0}: {1}", &[&path.display(), &e]),
         };
     }
 
@@ -1159,9 +1153,9 @@ impl PaintApp {
                 .map(|_| (s.pressure, s.eraser))
         });
         let (pressure, eraser, source) = match (fresh, self.touch_force) {
-            (Some((p, e)), _) => (p, e, "перо (XInput 2)"),
-            (None, Some(f)) if self.touch_down || (self.stroke_by_touch && (self.live.is_some() || self.line_stroke.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some())) => (f, false, "перо (Windows Ink)"),
-            _ => (1.0, false, "мышь"),
+            (Some((p, e)), _) => (p, e, tr("перо (XInput 2)")),
+            (None, Some(f)) if self.touch_down || (self.stroke_by_touch && (self.live.is_some() || self.line_stroke.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some())) => (f, false, tr("перо (Windows Ink)")),
+            _ => (1.0, false, tr("мышь")),
         };
         self.last_pressure = pressure;
         self.last_source = source;
@@ -1207,7 +1201,7 @@ impl PaintApp {
                     });
                     self.line_apply(tool, p);
                 }
-                Err(e) => self.status = format!("Кривые слоя не прочитаны: {e}"),
+                Err(e) => self.status = trf("Кривые слоя не прочитаны: {0}", &[&e]),
             }
             return;
         }
@@ -1219,14 +1213,14 @@ impl PaintApp {
             return;
         }
         if self.filter.is_some() {
-            self.status = String::from("Сначала закройте окно фильтра (OK или «Отмена»)");
+            self.status = String::from(tr("Сначала закройте окно фильтра (OK или «Отмена»)"));
             return;
         }
         if self.mask_edit && self.brush != SEL_PEN && self.brush != SEL_ERASER {
             // кисть рисует в маске: тёмный цвет скрывает слой, светлый и ластик — показывают
             let Some(orig) = self.doc.layer(&self.selected).and_then(|l| l.mask.clone()) else {
                 self.mask_edit = false;
-                self.status = String::from("У слоя нет маски");
+                self.status = String::from(tr("У слоя нет маски"));
                 return;
             };
             let mut params = if eraser_end { self.brushes[ERASER].params } else { self.brushes[self.brush].params };
@@ -1255,9 +1249,9 @@ impl PaintApp {
         }
         if !self.can_paint() {
             self.status = if self.doc.layer(&self.selected).is_some_and(|l| l.vector.is_some()) {
-                String::from("Это слой контура или фигур: кистью он не правится (как в SAI). «Слой → Растеризовать слой» — сделать обычным")
+                String::from(tr("Это слой контура или фигур: кистью он не правится (как в SAI). «Слой → Растеризовать слой» — сделать обычным"))
             } else {
-                String::from("Рисовать можно на видимом обычном слое без запрета рисования — выберите его в списке справа")
+                String::from(tr("Рисовать можно на видимом обычном слое без запрета рисования — выберите его в списке справа"))
             };
             return;
         }
@@ -1443,7 +1437,7 @@ impl PaintApp {
         let raw = match paint_formats::linework::append_shape(&v.raw, self.shape_kind, x0, y0, x1, y1, [c.r(), c.g(), c.b()]) {
             Ok(r) => r,
             Err(e) => {
-                self.status = format!("Не удалось добавить фигуру: {e}");
+                self.status = trf("Не удалось добавить фигуру: {0}", &[&e]);
                 return;
             }
         };
@@ -1455,7 +1449,7 @@ impl PaintApp {
                 self.thumbs.clear();
                 self.dirty = true;
             }
-            Err(e) => self.status = format!("Не удалось добавить фигуру: {e}"),
+            Err(e) => self.status = trf("Не удалось добавить фигуру: {0}", &[&e]),
         }
     }
 
@@ -1464,7 +1458,7 @@ impl PaintApp {
         let mut path = self.selected.clone();
         let index = path.pop().map_or(0, |i| i + 1);
         let n = count_layers(&self.doc.layers) + 1;
-        let mut layer = Layer::new(&format!("Фигуры{n}"));
+        let mut layer = Layer::new(&trf("Фигуры{0}", &[&n]));
         layer.vector = Some(paint_formats::linework::empty_shapes());
         path.push(index);
         let keys = self.doc.insert_layer(&path, layer);
@@ -1475,7 +1469,7 @@ impl PaintApp {
     /// Штрих пера на слое контура → кривая, добавленная к кривым слоя (одна запись истории).
     fn commit_line(&mut self, pts: &[paint_core::vectorize::StrokePoint]) {
         let Some((nodes, closed)) = paint_core::vectorize::vectorize(pts, 1.0) else {
-            self.status = String::from("Штрих слишком короткий для кривой");
+            self.status = String::from(tr("Штрих слишком короткий для кривой"));
             return;
         };
         let path = self.selected.clone();
@@ -1488,7 +1482,7 @@ impl PaintApp {
         let raw = match paint_formats::linework::append(&v.raw, &nodes, closed, &st) {
             Ok(r) => r,
             Err(e) => {
-                self.status = format!("Не удалось добавить кривую: {e}");
+                self.status = trf("Не удалось добавить кривую: {0}", &[&e]);
                 return;
             }
         };
@@ -1500,9 +1494,9 @@ impl PaintApp {
                 self.invalidate(keys);
                 self.thumbs.clear();
                 self.dirty = true;
-                self.status = format!("Кривая: узлов {}", nodes.len());
+                self.status = trf("Кривая: узлов {0}", &[&nodes.len()]);
             }
-            Err(e) => self.status = format!("Не удалось нарисовать кривую: {e}"),
+            Err(e) => self.status = trf("Не удалось нарисовать кривую: {0}", &[&e]),
         }
     }
 
@@ -1546,10 +1540,10 @@ impl PaintApp {
         self.doc.select(area, mode);
         self.sel_dirty = true;
         self.status = if self.doc.selection.is_empty() {
-            "Выделение снято".to_string()
+            tr("Выделение снято").to_string()
         } else {
             let (x0, y0, x1, y1) = self.doc.selection.bounds().unwrap_or_default();
-            format!("Выделение {}×{} в ({x0}, {y0})", x1 - x0, y1 - y0)
+            trf("Выделение {0}×{1} в ({2}, {3})", &[&(x1 - x0), &(y1 - y0), &x0, &y0])
         };
     }
 
@@ -1574,7 +1568,7 @@ impl PaintApp {
         }
         let Some(layer) = self.doc.layer(&self.selected) else { return };
         if layer.children.is_some() || !layer.visible || !layer.movable() {
-            self.status = String::from("Двигать можно видимый обычный слой без запрета перемещения");
+            self.status = String::from(tr("Двигать можно видимый обычный слой без запрета перемещения"));
             return;
         }
         self.move_drag = Some(MoveDrag {
@@ -1594,7 +1588,7 @@ impl PaintApp {
         }
         d.offset = off;
         let keys = self.doc.move_preview(&d.path, &d.original, &d.orig_sel, off.0, off.1);
-        self.status = format!("Сдвиг: {}, {}", off.0, off.1);
+        self.status = trf("Сдвиг: {0}, {1}", &[&off.0, &off.1]);
         self.sel_dirty = true;
         self.invalidate(keys);
     }
@@ -1613,13 +1607,13 @@ impl PaintApp {
         }
         let Some(layer) = self.doc.layer(&self.selected) else { return };
         if layer.children.is_some() || !layer.visible || !layer.movable() {
-            self.status = String::from("Трансформировать можно видимый обычный слой без запрета перемещения");
+            self.status = String::from(tr("Трансформировать можно видимый обычный слой без запрета перемещения"));
             return;
         }
         let sel = self.doc.selection.clone();
         let bounds = if sel.mask.tiles.is_empty() { paint_core::selection::content_bounds(&layer.pixels) } else { sel.bounds() };
         let Some((x0, y0, x1, y1)) = bounds else {
-            self.status = String::from("На слое нечего трансформировать");
+            self.status = String::from(tr("На слое нечего трансформировать"));
             return;
         };
         let src = [x0 as f64, y0 as f64, x1 as f64, y1 as f64];
@@ -1637,7 +1631,7 @@ impl PaintApp {
             dirty: false,
             quad: None,
         });
-        self.status = String::from("Трансформация: углы и стороны — размер, Ctrl + угол — свободная деформация, внутри — сдвиг, снаружи — поворот; Enter — применить, Esc — отмена");
+        self.status = String::from(tr("Трансформация: углы и стороны — размер, Ctrl + угол — свободная деформация, внутри — сдвиг, снаружи — поворот; Enter — применить, Esc — отмена"));
     }
 
     /// Пересчитать показ трансформации (во время протяжки — быстрым билинейным способом).
@@ -1658,11 +1652,11 @@ impl PaintApp {
         if apply {
             self.doc.move_commit(&t.path, t.original, t.orig_sel);
             self.dirty = true;
-            self.status = String::from("Трансформация применена");
+            self.status = String::from(tr("Трансформация применена"));
         } else {
             let keys = self.doc.move_preview(&t.path, &t.original, &t.orig_sel, 0, 0);
             self.invalidate(keys);
-            self.status = String::from("Трансформация отменена");
+            self.status = String::from(tr("Трансформация отменена"));
         }
         self.sel_dirty = true;
         self.thumbs.clear();
@@ -1677,7 +1671,7 @@ impl PaintApp {
         self.dirty = true;
         self.fit_pending = true;
         self.invalidate_all();
-        self.status = format!("Холст {}×{}", self.doc.width, self.doc.height);
+        self.status = trf("Холст {0}×{1}", &[&self.doc.width, &self.doc.height]);
     }
 
     /// Открыть фильтр для текущего слоя.
@@ -1690,7 +1684,7 @@ impl PaintApp {
         }
         let Some(layer) = self.doc.layer(&self.selected) else { return };
         if layer.children.is_some() || !layer.paintable() {
-            self.status = String::from("Фильтр применяется к обычному слою без запрета рисования");
+            self.status = String::from(tr("Фильтр применяется к обычному слою без запрета рисования"));
             return;
         }
         self.filter = Some(FilterDialog {
@@ -1768,7 +1762,7 @@ impl PaintApp {
     /// Залить область `area` основным цветом на текущем слое.
     fn fill_area(&mut self, area: &paint_core::tile::MaskMap) {
         if !self.can_paint() {
-            self.status = String::from("Заливать можно видимый обычный слой без запрета рисования");
+            self.status = String::from(tr("Заливать можно видимый обычный слой без запрета рисования"));
             return;
         }
         let c = self.color();
@@ -1820,7 +1814,7 @@ impl PaintApp {
         let mut path = self.selected.clone();
         let index = path.pop().map_or(0, |i| i + 1);
         let n = count_layers(&self.doc.layers) + 1;
-        let mut layer = Layer::new(&format!("Контур{n}"));
+        let mut layer = Layer::new(&trf("Контур{0}", &[&n]));
         layer.vector = Some(paint_formats::linework::empty());
         path.push(index);
         let keys = self.doc.insert_layer(&path, layer);
@@ -1832,7 +1826,7 @@ impl PaintApp {
         let mut path = self.selected.clone();
         let index = path.pop().map_or(0, |i| i + 1);
         let n = count_layers(&self.doc.layers) + 1;
-        let new = if folder { Layer::folder(&format!("Папка{n}"), Vec::new()) } else { Layer::new(&format!("Слой{n}")) };
+        let new = if folder { Layer::folder(&trf("Папка{0}", &[&n]), Vec::new()) } else { Layer::new(&trf("Слой{0}", &[&n])) };
         path.push(index);
         let keys = self.doc.insert_layer(&path, new);
         self.selected = path;
@@ -1891,7 +1885,7 @@ impl PaintApp {
                 self.selected = p;
                 self.after_structure(keys);
             }
-            None => self.status = String::from("С этим слоем так нельзя (нужен обычный слой и обычный слой под ним)"),
+            None => self.status = String::from(tr("С этим слоем так нельзя (нужен обычный слой и обычный слой под ним)")),
         }
     }
 
@@ -1948,47 +1942,47 @@ impl PaintApp {
 
     fn menu_bar(&mut self, ui: &mut egui::Ui) {
         egui::menu::bar(ui, |ui| {
-            ui.menu_button("Файл(F)", |ui| {
-                if ui.button("Создать холст…").clicked() {
+            ui.menu_button(tr("Файл(F)"), |ui| {
+                if ui.button(tr("Создать холст…")).clicked() {
                     self.show_new = true;
                     ui.close_menu();
                 }
-                if ui.button("Открыть…").clicked() {
+                if ui.button(tr("Открыть…")).clicked() {
                     self.show_open = true;
                     ui.close_menu();
                 }
-                if ui.button("Сохранить                Ctrl+S").clicked() {
+                if ui.add(menu_item("Сохранить", "Ctrl+S")).clicked() {
                     self.save();
                     ui.close_menu();
                 }
-                if ui.button("Сохранить как…      Shift+Ctrl+S").clicked() {
+                if ui.add(menu_item("Сохранить как…", "Shift+Ctrl+S")).clicked() {
                     self.ask_save_as();
                     ui.close_menu();
                 }
-                ui.menu_button("Экспорт", |ui| {
-                    if ui.button("PNG (сведённая картинка)").clicked() {
+                ui.menu_button(tr("Экспорт"), |ui| {
+                    if ui.button(tr("PNG (сведённая картинка)")).clicked() {
                         self.export_png();
                         ui.close_menu();
                     }
-                    if ui.button("JPEG (качество 92)").clicked() {
+                    if ui.button(tr("JPEG (качество 92)")).clicked() {
                         self.export_as("jpg");
                         ui.close_menu();
                     }
-                    if ui.button("PSD (со слоями)").clicked() {
+                    if ui.button(tr("PSD (со слоями)")).clicked() {
                         self.export_as("psd");
                         ui.close_menu();
                     }
                 });
                 ui.separator();
-                if ui.button("Выход").clicked() {
+                if ui.button(tr("Выход")).clicked() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             });
-            ui.menu_button("Правка(E)", |ui| {
+            ui.menu_button(tr("Правка(E)"), |ui| {
                 if ui
                     .add_enabled(
                         self.doc.can_undo(),
-                        egui::Button::new("Отменить        Ctrl+Z"),
+                        menu_item("Отменить", "Ctrl+Z"),
                     )
                     .clicked()
                 {
@@ -1998,7 +1992,7 @@ impl PaintApp {
                 if ui
                     .add_enabled(
                         self.doc.can_redo(),
-                        egui::Button::new("Повторить       Ctrl+Y"),
+                        menu_item("Повторить", "Ctrl+Y"),
                     )
                     .clicked()
                 {
@@ -2006,8 +2000,8 @@ impl PaintApp {
                     ui.close_menu();
                 }
             });
-            ui.menu_button("Холст(C)", |ui| {
-                for (item, resample) in [("Изменить разрешение…", true), ("Изменить размер…", false)] {
+            ui.menu_button(tr("Холст(C)"), |ui| {
+                for (item, resample) in [(tr("Изменить разрешение…"), true), (tr("Изменить размер…"), false)] {
                     if ui.button(item).clicked() {
                         self.canvas_dialog = Some(CanvasDialog {
                             resample,
@@ -2021,10 +2015,10 @@ impl PaintApp {
                 }
                 ui.separator();
                 for (item, op) in [
-                    ("Отразить по горизонтали", 0),
-                    ("Отразить по вертикали", 1),
-                    ("Повернуть на 90° против часовой", 2),
-                    ("Повернуть на 90° по часовой", 3),
+                    (tr("Отразить по горизонтали"), 0),
+                    (tr("Отразить по вертикали"), 1),
+                    (tr("Повернуть на 90° против часовой"), 2),
+                    (tr("Повернуть на 90° по часовой"), 3),
                 ] {
                     if ui.button(item).clicked() {
                         self.canvas_op(|d| match op {
@@ -2037,40 +2031,40 @@ impl PaintApp {
                     }
                 }
             });
-            ui.menu_button("Слой(L)", |ui| {
-                if ui.button("Новый слой").clicked() {
+            ui.menu_button(tr("Слой(L)"), |ui| {
+                if ui.button(tr("Новый слой")).clicked() {
                     self.add_layer(false);
                     ui.close_menu();
                 }
-                if ui.button("Новый слой контура").clicked() {
+                if ui.button(tr("Новый слой контура")).clicked() {
                     self.add_linework_layer();
                     ui.close_menu();
                 }
-                if ui.button("Новый слой фигур").clicked() {
+                if ui.button(tr("Новый слой фигур")).clicked() {
                     self.add_shape_layer();
                     ui.close_menu();
                 }
-                if ui.button("Новая папка").clicked() {
+                if ui.button(tr("Новая папка")).clicked() {
                     self.add_layer(true);
                     ui.close_menu();
                 }
                 ui.separator();
-                for (item, action) in [
-                    ("Копировать слой", LayerAction::Duplicate),
-                    ("Удалить слой", LayerAction::Delete),
-                    ("Очистить слой           Delete", LayerAction::Clear),
-                    ("Перенести на нижний     F", LayerAction::Transfer),
-                    ("Слить с нижним          Ctrl+E", LayerAction::Merge),
-                    ("Поднять слой", LayerAction::Up),
-                    ("Опустить слой", LayerAction::Down),
+                for (item, key, action) in [
+                    ("Копировать слой", "", LayerAction::Duplicate),
+                    ("Удалить слой", "", LayerAction::Delete),
+                    ("Очистить слой", "Delete", LayerAction::Clear),
+                    ("Перенести на нижний", "F", LayerAction::Transfer),
+                    ("Слить с нижним", "Ctrl+E", LayerAction::Merge),
+                    ("Поднять слой", "", LayerAction::Up),
+                    ("Опустить слой", "", LayerAction::Down),
                 ] {
-                    if ui.button(item).clicked() {
+                    if ui.add(menu_item(item, key)).clicked() {
                         self.layer_action(action);
                         ui.close_menu();
                     }
                 }
                 ui.separator();
-                for (item, horizontal) in [("Отразить слой по горизонтали", true), ("Отразить слой по вертикали", false)] {
+                for (item, horizontal) in [(tr("Отразить слой по горизонтали"), true), (tr("Отразить слой по вертикали"), false)] {
                     if ui.button(item).clicked() {
                         if self.transform.is_some() {
                             self.finish_transform(true);
@@ -2086,21 +2080,21 @@ impl PaintApp {
                 ui.separator();
                 let masked = self.doc.layer(&self.selected).is_some_and(|l| l.mask.is_some());
                 let raster = self.doc.layer(&self.selected).is_some_and(|l| l.children.is_none());
-                if ui.add_enabled(!masked, egui::Button::new("Новая маска слоя")).clicked() {
+                if ui.add_enabled(!masked, egui::Button::new(tr("Новая маска слоя"))).clicked() {
                     self.mask_command(0);
                     ui.close_menu();
                 }
-                if ui.add_enabled(masked && raster, egui::Button::new("Применить маску")).clicked() {
+                if ui.add_enabled(masked && raster, egui::Button::new(tr("Применить маску"))).clicked() {
                     self.mask_command(1);
                     ui.close_menu();
                 }
-                if ui.add_enabled(masked, egui::Button::new("Удалить маску")).clicked() {
+                if ui.add_enabled(masked, egui::Button::new(tr("Удалить маску"))).clicked() {
                     self.mask_command(2);
                     ui.close_menu();
                 }
                 ui.separator();
                 let is_vec = self.doc.layer(&self.selected).is_some_and(|l| l.vector.is_some());
-                if ui.add_enabled(is_vec, egui::Button::new("Растеризовать слой")).clicked() {
+                if ui.add_enabled(is_vec, egui::Button::new(tr("Растеризовать слой"))).clicked() {
                     let path = self.selected.clone();
                     let keys = self.doc.rasterize_layer(&path);
                     self.invalidate(keys);
@@ -2108,91 +2102,104 @@ impl PaintApp {
                     self.dirty = true;
                     ui.close_menu();
                 }
-                if ui.button("Яркость в прозрачность").clicked() {
+                if ui.button(tr("Яркость в прозрачность")).clicked() {
                     let keys = self.doc.luminance_to_alpha(&self.selected.clone());
                     self.invalidate(keys);
                     self.thumbs.clear();
                     self.dirty = true;
                     ui.close_menu();
                 }
-                if ui.button("Свести всё").clicked() {
+                if ui.button(tr("Свести всё")).clicked() {
                     self.canvas_op(|d| d.flatten_layers());
                     self.selected = vec![0];
                     ui.close_menu();
                 }
             });
-            ui.menu_button("Выделение(S)", |ui| {
+            ui.menu_button(tr("Выделение(S)"), |ui| {
                 let has = !self.doc.selection.is_empty();
-                if ui.button("Выделить всё        Ctrl+A").clicked() {
+                if ui.add(menu_item("Выделить всё", "Ctrl+A")).clicked() {
                     self.select_all();
                     ui.close_menu();
                 }
-                if ui.add_enabled(has, egui::Button::new("Снять выделение   Ctrl+D")).clicked() {
+                if ui.add_enabled(has, menu_item("Снять выделение", "Ctrl+D")).clicked() {
                     self.deselect();
                     ui.close_menu();
                 }
-                if ui.button("Инвертировать").clicked() {
+                if ui.button(tr("Инвертировать")).clicked() {
                     self.invert_selection();
                     ui.close_menu();
                 }
-                if ui.button(if self.show_selection { "Скрыть выделение   Ctrl+H" } else { "Показать выделение Ctrl+H" }).clicked() {
+                if ui.add(menu_item(if self.show_selection { "Скрыть выделение" } else { "Показать выделение" }, "Ctrl+H")).clicked() {
                     self.show_selection = !self.show_selection;
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.add_enabled(has, egui::Button::new("Расширить на 1 px")).clicked() {
+                if ui.add_enabled(has, egui::Button::new(tr("Расширить на 1 px"))).clicked() {
                     self.doc.grow_selection(true);
                     self.sel_dirty = true;
                     ui.close_menu();
                 }
-                if ui.add_enabled(has, egui::Button::new("Сузить на 1 px")).clicked() {
+                if ui.add_enabled(has, egui::Button::new(tr("Сузить на 1 px"))).clicked() {
                     self.doc.grow_selection(false);
                     self.sel_dirty = true;
                     ui.close_menu();
                 }
             });
-            ui.menu_button("Линейка(R)", |ui| {
-                ui.add_enabled(false, egui::Button::new("Показать линейку"));
+            ui.menu_button(tr("Линейка(R)"), |ui| {
+                ui.add_enabled(false, egui::Button::new(tr("Показать линейку")));
             });
-            ui.menu_button("Фильтр(T)", |ui| {
-                for (item, kind) in [
-                    ("Тон и насыщенность…   Ctrl+U", FilterKind::HueSaturation),
-                    ("Яркость и контраст…", FilterKind::BrightnessContrast),
-                    ("Размытие по Гауссу…", FilterKind::GaussianBlur),
+            ui.menu_button(tr("Фильтр(T)"), |ui| {
+                for (item, key, kind) in [
+                    ("Тон и насыщенность…", "Ctrl+U", FilterKind::HueSaturation),
+                    ("Яркость и контраст…", "", FilterKind::BrightnessContrast),
+                    ("Размытие по Гауссу…", "", FilterKind::GaussianBlur),
                 ] {
-                    if ui.button(item).clicked() {
+                    if ui.add(menu_item(item, key)).clicked() {
                         self.open_filter(kind);
                         ui.close_menu();
                     }
                 }
             });
-            ui.menu_button("Вид(V)", |ui| {
-                if ui.button("Увеличить        Ctrl++").clicked() {
+            ui.menu_button(tr("Вид(V)"), |ui| {
+                if ui.add(menu_item("Увеличить", "Ctrl++")).clicked() {
                     self.set_zoom(self.zoom * 1.25);
                     ui.close_menu();
                 }
-                if ui.button("Уменьшить       Ctrl+−").clicked() {
+                if ui.add(menu_item("Уменьшить", "Ctrl+−")).clicked() {
                     self.set_zoom(self.zoom / 1.25);
                     ui.close_menu();
                 }
-                if ui.button("Масштаб 100%").clicked() {
+                if ui.button(tr("Масштаб 100%")).clicked() {
                     self.set_zoom(1.0);
                     ui.close_menu();
                 }
-                if ui.button("Вписать в окно").clicked() {
+                if ui.button(tr("Вписать в окно")).clicked() {
                     self.fit_pending = true;
                     ui.close_menu();
                 }
             });
-            ui.menu_button("Окно(W)", |ui| {
-                ui.add_enabled(false, egui::Button::new("Панели — позже"));
+            ui.menu_button(tr("Окно(W)"), |ui| {
+                ui.menu_button(tr("Язык (Language)"), |ui| {
+                    for (code, native, _) in i18n::LANGS {
+                        if ui.radio(i18n::code() == code, native).clicked() {
+                            i18n::set(code);
+                            i18n::install_fonts(ui.ctx());
+                            let mut s = settings::Settings::load();
+                            s.set("lang", code);
+                            s.save();
+                            ui.close_menu();
+                        }
+                    }
+                });
+                ui.separator();
+                ui.add_enabled(false, egui::Button::new(tr("Панели — позже")));
             });
-            ui.menu_button("Помощь(H)", |ui| {
-                if ui.button("Клавиши…").clicked() {
+            ui.menu_button(tr("Помощь(H)"), |ui| {
+                if ui.button(tr("Клавиши…")).clicked() {
                     self.show_keys = true;
                     ui.close_menu();
                 }
-                if ui.button("О программе").clicked() {
+                if ui.button(tr("О программе")).clicked() {
                     self.show_about = true;
                     ui.close_menu();
                 }
@@ -2209,7 +2216,7 @@ impl PaintApp {
                 b,
                 false,
                 self.doc.can_undo(),
-                "Отменить (Ctrl+Z)",
+                tr("Отменить (Ctrl+Z)"),
                 |p, r, c| sai_ui::glyph(p, r, c, "undo"),
             )
             .clicked()
@@ -2221,7 +2228,7 @@ impl PaintApp {
                 b,
                 false,
                 self.doc.can_redo(),
-                "Повторить (Ctrl+Y)",
+                tr("Повторить (Ctrl+Y)"),
                 |p, r, c| sai_ui::glyph(p, r, c, "redo"),
             )
             .clicked()
@@ -2230,16 +2237,16 @@ impl PaintApp {
             }
             ui.separator();
             let has_sel = !self.doc.selection.is_empty();
-            if sai_ui::icon_button(ui, b, false, has_sel, "Снять выделение (Ctrl+D)", |p, r, c| sai_ui::glyph(p, r, c, "deselect")).clicked() {
+            if sai_ui::icon_button(ui, b, false, has_sel, tr("Снять выделение (Ctrl+D)"), |p, r, c| sai_ui::glyph(p, r, c, "deselect")).clicked() {
                 self.deselect();
             }
-            if sai_ui::icon_button(ui, b, false, true, "Инвертировать выделение", |p, r, c| sai_ui::glyph(p, r, c, "invert")).clicked() {
+            if sai_ui::icon_button(ui, b, false, true, tr("Инвертировать выделение"), |p, r, c| sai_ui::glyph(p, r, c, "invert")).clicked() {
                 self.invert_selection();
             }
-            if sai_ui::icon_button(ui, b, self.show_selection, true, "Показать выделение (Ctrl+H)", |p, r, c| sai_ui::glyph(p, r, c, "eye")).clicked() {
+            if sai_ui::icon_button(ui, b, self.show_selection, true, tr("Показать выделение (Ctrl+H)"), |p, r, c| sai_ui::glyph(p, r, c, "eye")).clicked() {
                 self.show_selection = !self.show_selection;
             }
-            ui.label("Выделение");
+            ui.label(tr("Выделение"));
             ui.separator();
             let current = format!("{:.0}%", self.zoom * 100.0);
             let mut pick = None;
@@ -2256,21 +2263,21 @@ impl PaintApp {
             if let Some(z) = pick {
                 self.set_zoom(z);
             }
-            if sai_ui::icon_button(ui, b, false, true, "Уменьшить", |p, r, c| {
+            if sai_ui::icon_button(ui, b, false, true, tr("Уменьшить"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "minus")
             })
             .clicked()
             {
                 self.set_zoom(self.zoom / 1.25);
             }
-            if sai_ui::icon_button(ui, b, false, true, "Увеличить", |p, r, c| {
+            if sai_ui::icon_button(ui, b, false, true, tr("Увеличить"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "plus")
             })
             .clicked()
             {
                 self.set_zoom(self.zoom * 1.25);
             }
-            if sai_ui::icon_button(ui, b, false, true, "Масштаб 100%", |p, r, c| {
+            if sai_ui::icon_button(ui, b, false, true, tr("Масштаб 100%"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "reset")
             })
             .clicked()
@@ -2294,15 +2301,15 @@ impl PaintApp {
                 self.view_angle = a.to_radians();
             }
             for (g, tip, step) in [
-                ("ccw", "Повернуть вид против часовой (Shift+PageUp)", -15.0f32),
-                ("cw", "Повернуть вид по часовой (Shift+PageDown)", 15.0),
-                ("reset", "Сбросить поворот (Shift+Home)", 0.0),
+                ("ccw", tr("Повернуть вид против часовой (Shift+PageUp)"), -15.0f32),
+                ("cw", tr("Повернуть вид по часовой (Shift+PageDown)"), 15.0),
+                ("reset", tr("Сбросить поворот (Shift+Home)"), 0.0),
             ] {
                 if sai_ui::icon_button(ui, b, false, true, tip, |p, r, c| sai_ui::glyph(p, r, c, g)).clicked() {
                     self.rotate_view(step);
                 }
             }
-            if sai_ui::icon_button(ui, b, self.view_flip, true, "Отразить вид (H)", |p, r, c| {
+            if sai_ui::icon_button(ui, b, self.view_flip, true, tr("Отразить вид (H)"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "flip")
             })
             .clicked()
@@ -2310,7 +2317,7 @@ impl PaintApp {
                 self.view_flip = !self.view_flip;
             }
             ui.separator();
-            ui.label("Сглаживание");
+            ui.label(tr("Сглаживание"));
             egui::ComboBox::from_id_salt("stab")
                 .selected_text(self.stabilizer.label())
                 .width(44.0)
@@ -2320,7 +2327,7 @@ impl PaintApp {
                         ui.selectable_value(&mut self.stabilizer, v, v.label());
                     }
                 });
-            sai_ui::icon_button(ui, b, false, false, "Прямая линия", |p, r, c| {
+            sai_ui::icon_button(ui, b, false, false, tr("Прямая линия"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "line")
             });
         });
@@ -2331,14 +2338,14 @@ impl PaintApp {
         // показывается или прячется отдельно.
         ui.horizontal(|ui| {
             let b = Vec2::splat(18.0);
-            if sai_ui::icon_button(ui, b, self.color_views[0], true, "Цветовой круг", |p, r, _| {
+            if sai_ui::icon_button(ui, b, self.color_views[0], true, tr("Цветовой круг"), |p, r, _| {
                 p.circle_stroke(r.center(), r.width() / 2.0, egui::Stroke::new(2.0_f32, Color32::from_rgb(200, 80, 160)));
             })
             .clicked()
             {
                 self.color_views[0] = !self.color_views[0];
             }
-            for (i, tip) in [(1, "Ползунки RGB"), (2, "Ползунки HSV")] {
+            for (i, tip) in [(1, tr("Ползунки RGB")), (2, tr("Ползунки HSV"))] {
                 if sai_ui::icon_button(ui, b, self.color_views[i], true, tip, |p, r, c| {
                     for k in 0..3 {
                         let y = r.top() + 2.0 + k as f32 * 4.0;
@@ -2350,7 +2357,7 @@ impl PaintApp {
                     self.color_views[i] = !self.color_views[i];
                 }
             }
-            for tip in ["Смеситель — позже", "Образцы цвета — позже"] {
+            for tip in [tr("Смеситель — позже"), tr("Образцы цвета — позже")] {
                 sai_ui::icon_button(ui, b, false, false, tip, |p, r, c| {
                     for k in 0..3 {
                         let y = r.top() + 2.0 + k as f32 * 4.0;
@@ -2405,18 +2412,18 @@ impl PaintApp {
                 let b = Vec2::splat(24.0);
                 ui.horizontal(|ui| {
                     for (g, tip, tool) in [
-                        ("select", "Выделение (M): Shift — добавить, Alt — вычесть", Tool::Marquee),
-                        ("lasso", "Лассо (L): Shift — добавить, Alt — вычесть", Tool::Lasso),
-                        ("wand", "Волшебная палочка (W): Shift — добавить, Alt — вычесть", Tool::Wand),
+                        ("select", tr("Выделение (M): Shift — добавить, Alt — вычесть"), Tool::Marquee),
+                        ("lasso", tr("Лассо (L): Shift — добавить, Alt — вычесть"), Tool::Lasso),
+                        ("wand", tr("Волшебная палочка (W): Shift — добавить, Alt — вычесть"), Tool::Wand),
                     ] {
                         if sai_ui::icon_button(ui, b, self.tool == tool, true, tip, |p, r, c| sai_ui::glyph(p, r, c, g)).clicked() {
                             self.tool = tool;
                         }
                     }
-                    if sai_ui::icon_button(ui, b, self.tool == Tool::Fill, true, "Заливка (Alt+Delete — залить выделенное)", |p, r, c| sai_ui::glyph(p, r, c, "bucket")).clicked() {
+                    if sai_ui::icon_button(ui, b, self.tool == Tool::Fill, true, tr("Заливка (Alt+Delete — залить выделенное)"), |p, r, c| sai_ui::glyph(p, r, c, "bucket")).clicked() {
                         self.tool = Tool::Fill;
                     }
-                    sai_ui::icon_button(ui, b, false, false, "Текст", |p, r, c| sai_ui::glyph(p, r, c, "text"));
+                    sai_ui::icon_button(ui, b, false, false, tr("Текст"), |p, r, c| sai_ui::glyph(p, r, c, "text"));
                 });
                 ui.horizontal(|ui| {
                     if sai_ui::icon_button(
@@ -2424,7 +2431,7 @@ impl PaintApp {
                         b,
                         self.tool == Tool::Move,
                         true,
-                        "Перемещение слоя или выделенного (Ctrl + перетаскивание, Alt+стрелки)",
+                        tr("Перемещение слоя или выделенного (Ctrl + перетаскивание, Alt+стрелки)"),
                         |p, r, c| sai_ui::glyph(p, r, c, "move"),
                     )
                     .clicked()
@@ -2436,7 +2443,7 @@ impl PaintApp {
                         b,
                         self.tool == Tool::Zoom,
                         true,
-                        "Масштаб: щелчок — крупнее, Alt+щелчок — мельче",
+                        tr("Масштаб: щелчок — крупнее, Alt+щелчок — мельче"),
                         |p, r, c| sai_ui::glyph(p, r, c, "zoom"),
                     )
                     .clicked()
@@ -2448,7 +2455,7 @@ impl PaintApp {
                         b,
                         false,
                         false,
-                        "Поворот вида",
+                        tr("Поворот вида"),
                         |p, r, c| sai_ui::glyph(p, r, c, "rotate"),
                     );
                     if sai_ui::icon_button(
@@ -2456,7 +2463,7 @@ impl PaintApp {
                         b,
                         self.tool == Tool::Hand,
                         true,
-                        "Рука (пробел)",
+                        tr("Рука (пробел)"),
                         |p, r, c| sai_ui::glyph(p, r, c, "hand"),
                     )
                     .clicked()
@@ -2468,7 +2475,7 @@ impl PaintApp {
                         b,
                         self.tool == Tool::Picker,
                         true,
-                        "Пипетка (Alt)",
+                        tr("Пипетка (Alt)"),
                         |p, r, c| sai_ui::glyph(p, r, c, "picker"),
                     )
                     .clicked()
@@ -2520,9 +2527,9 @@ impl PaintApp {
                             );
                             let selected = self.tool == Tool::Brush && self.brush == i;
                             let tip = if enabled {
-                                name.to_string()
+                                tr(name).to_string()
                             } else {
-                                format!("{name} — позже")
+                                trf("{0} — позже", &[&tr(name)])
                             };
                             let r = sai_ui::icon_button(
                                 ui,
@@ -2534,7 +2541,7 @@ impl PaintApp {
                                     p.text(
                                         r.left_top(),
                                         egui::Align2::LEFT_TOP,
-                                        name,
+                                        tr(name),
                                         egui::FontId::proportional(10.0),
                                         c,
                                     );
@@ -2562,14 +2569,14 @@ impl PaintApp {
         let w = ui.available_width() - lw - 8.0;
         let mut finish = None;
         if let Some(t) = self.transform.as_mut() {
-            sai_ui::row(ui, "Трансформация", lw, true, |ui| {
+            sai_ui::row(ui, tr("Трансформация"), lw, true, |ui| {
                 use paint_core::resample::Mode;
                 let name = |m: Mode| match m {
-                    Mode::Nearest => "Ближайший",
-                    Mode::Bilinear => "Билинейный",
-                    Mode::Bicubic => "Бикубический",
-                    Mode::Lanczos2 => "Ланцош 2",
-                    Mode::Lanczos3 => "Ланцош 3",
+                    Mode::Nearest => tr("Ближайший"),
+                    Mode::Bilinear => tr("Билинейный"),
+                    Mode::Bicubic => tr("Бикубический"),
+                    Mode::Lanczos2 => tr("Ланцош 2"),
+                    Mode::Lanczos3 => tr("Ланцош 3"),
                 };
                 let before = t.mode;
                 egui::ComboBox::from_id_salt("tmode").selected_text(name(t.mode)).width(w - 8.0).show_ui(ui, |ui| {
@@ -2582,10 +2589,10 @@ impl PaintApp {
                 }
             });
             ui.horizontal(|ui| {
-                if ui.button("Применить (Enter)").clicked() {
+                if ui.button(tr("Применить (Enter)")).clicked() {
                     finish = Some(true);
                 }
-                if ui.button("Отмена (Esc)").clicked() {
+                if ui.button(tr("Отмена (Esc)")).clicked() {
                     finish = Some(false);
                 }
             });
@@ -2598,9 +2605,9 @@ impl PaintApp {
         }
         if self.doc.layer(&self.selected).is_some_and(|l| l.vector.as_ref().is_some_and(|v| &v.kind == b"shap")) {
             use paint_formats::linework::ShapeKind;
-            ui.label("Фигура (протяните на холсте):");
+            ui.label(tr("Фигура (протяните на холсте):"));
             ui.horizontal(|ui| {
-                for (k, name) in [(ShapeKind::Rectangle, "Прямоугольник"), (ShapeKind::Ellipse, "Эллипс"), (ShapeKind::Triangle, "Треугольник")] {
+                for (k, name) in [(ShapeKind::Rectangle, tr("Прямоугольник")), (ShapeKind::Ellipse, tr("Эллипс")), (ShapeKind::Triangle, tr("Треугольник"))] {
                     if ui.selectable_label(self.shape_kind == k, name).clicked() {
                         self.shape_kind = k;
                         self.tool = Tool::Brush;
@@ -2610,15 +2617,15 @@ impl PaintApp {
             ui.add_space(4.0);
         }
         if self.doc.layer(&self.selected).is_some_and(|l| l.vector.as_ref().is_some_and(|v| &v.kind == b"liwk")) {
-            ui.label("Инструменты контура:");
+            ui.label(tr("Инструменты контура:"));
             ui.horizontal_wrapped(|ui| {
                 for (t, name, tip) in [
-                    (LineTool::Pen, "Перо", "Рисовать кривые"),
-                    (LineTool::Eraser, "Ластик", "Удалить путь, которого коснулись (E)"),
-                    (LineTool::Weight, "Толщина", "Задать путям размер кисти"),
-                    (LineTool::Color, "Цвет", "Перекрасить пути в основной цвет"),
-                    (LineTool::Edit, "Узлы", "Двигать узлы (I)"),
-                    (LineTool::Pressure, "Нажим", "Нажим узла: тянуть вверх или вниз (P)"),
+                    (LineTool::Pen, tr("Перо"), tr("Рисовать кривые")),
+                    (LineTool::Eraser, tr("Ластик"), tr("Удалить путь, которого коснулись (E)")),
+                    (LineTool::Weight, tr("Толщина"), tr("Задать путям размер кисти")),
+                    (LineTool::Color, tr("Цвет"), tr("Перекрасить пути в основной цвет")),
+                    (LineTool::Edit, tr("Узлы"), tr("Двигать узлы (I)")),
+                    (LineTool::Pressure, tr("Нажим"), tr("Нажим узла: тянуть вверх или вниз (P)")),
                 ] {
                     if ui.selectable_label(self.line_tool == t, name).on_hover_text(tip).clicked() {
                         self.line_tool = t;
@@ -2630,7 +2637,7 @@ impl PaintApp {
         }
         if matches!(self.tool, Tool::Wand | Tool::Fill) {
             let tol = &mut self.wand_tolerance;
-            sai_ui::row(ui, "Допуск", lw, true, |ui| {
+            sai_ui::row(ui, tr("Допуск"), lw, true, |ui| {
                 let mut v = *tol as f32;
                 let text = format!("{}", *tol);
                 if sai_ui::bar(ui, &mut v, 0.0, 255.0, text, w, true).changed() {
@@ -2640,13 +2647,13 @@ impl PaintApp {
             ui.add_space(4.0);
         }
         let brush = &mut self.brushes[self.brush].params;
-        sai_ui::row(ui, "Режим", lw, false, |ui| {
+        sai_ui::row(ui, tr("Режим"), lw, false, |ui| {
             egui::ComboBox::from_id_salt("paintmode")
-                .selected_text("Обычный")
+                .selected_text(tr("Обычный"))
                 .width(w - 8.0)
                 .show_ui(ui, |_| {});
         });
-        sai_ui::row(ui, "Жесткость", lw, true, |ui| {
+        sai_ui::row(ui, tr("Жесткость"), lw, true, |ui| {
             ui.spacing_mut().item_spacing.x = 1.0;
             for (i, step) in paint_core::brush::HARDNESS_STEPS.iter().enumerate() {
                 let sel = (brush.hardness - step).abs() < 0.01;
@@ -2655,7 +2662,7 @@ impl PaintApp {
                     Vec2::new(w / 5.0 - 1.0, 16.0),
                     sel,
                     true,
-                    &format!("Ступень {}", i + 1),
+                    &trf("Ступень {0}", &[&(i + 1)]),
                     |p, r, c| sai_ui::hardness_icon(p, r, i, c),
                 )
                 .clicked()
@@ -2664,7 +2671,7 @@ impl PaintApp {
                 }
             }
         });
-        sai_ui::row(ui, "Размер", lw, true, |ui| {
+        sai_ui::row(ui, tr("Размер"), lw, true, |ui| {
             let text = if brush.size < 10.0 {
                 format!("{:.1}", brush.size)
             } else {
@@ -2677,7 +2684,7 @@ impl PaintApp {
         });
         sai_ui::row(
             ui,
-            "Минимальный",
+            tr("Минимальный"),
             lw,
             brush.size_by_pressure,
             |ui| {
@@ -2688,7 +2695,7 @@ impl PaintApp {
                 }
             },
         );
-        sai_ui::row(ui, "Плотн.", lw, true, |ui| {
+        sai_ui::row(ui, tr("Плотн."), lw, true, |ui| {
             let mut v = brush.density * 100.0;
             let text = format!("{:.0}", v);
             if sai_ui::bar(ui, &mut v, 0.0, 100.0, text, w, true).changed() {
@@ -2697,7 +2704,7 @@ impl PaintApp {
         });
         sai_ui::row(
             ui,
-            "Мин. Плотн.",
+            tr("Мин. Плотн."),
             lw,
             brush.density_by_pressure,
             |ui| {
@@ -2720,28 +2727,28 @@ impl PaintApp {
                     }
                 });
             };
-            pct(ui, "Смешивание", &mut mix.blending);
-            pct(ui, "Разбавление", &mut mix.dilution);
-            pct(ui, "Стойкость", &mut mix.persistence);
+            pct(ui, tr("Смешивание"), &mut mix.blending);
+            pct(ui, tr("Разбавление"), &mut mix.dilution);
+            pct(ui, tr("Стойкость"), &mut mix.persistence);
             if mix.blend_by_pressure {
-                pct(ui, "Порог размыт.", &mut mix.blur_pressure);
+                pct(ui, tr("Порог размыт."), &mut mix.blur_pressure);
             }
         }
-        if sai_ui::section(ui, "sec_form", "Форма") {
-            ui.weak("   Формы кисти — позже");
+        if sai_ui::section(ui, "sec_form", tr("Форма")) {
+            ui.weak(tr("   Формы кисти — позже"));
         }
-        if sai_ui::section(ui, "sec_tex", "Текстура") {
-            ui.weak("   Текстуры кисти — позже");
+        if sai_ui::section(ui, "sec_tex", tr("Текстура")) {
+            ui.weak(tr("   Текстуры кисти — позже"));
         }
-        if sai_ui::section(ui, "sec_misc", "Разное") {
-            sai_ui::row(ui, "   Усил. плотн.", lw, true, |ui| {
+        if sai_ui::section(ui, "sec_misc", tr("Разное")) {
+            sai_ui::row(ui, tr("   Усил. плотн."), lw, true, |ui| {
                 let mut v = brush.amplify * 100.0;
                 let text = format!("{:.0}", v);
                 if sai_ui::bar(ui, &mut v, 0.0, 100.0, text, w, true).changed() {
                     brush.amplify = (v.round() / 100.0).clamp(0.0, 1.0);
                 }
             });
-            ui.checkbox(&mut brush.ver1_density, "Нажим на плотность как в версии 1");
+            ui.checkbox(&mut brush.ver1_density, tr("Нажим на плотность как в версии 1"));
             sai_ui::row(ui, "   Sharpness", lw, true, |ui| {
                 let mut v = brush.sharpness * 100.0;
                 let text = format!("{:.0}", v);
@@ -2751,10 +2758,10 @@ impl PaintApp {
             });
         }
         ui.horizontal(|ui| {
-            ui.checkbox(&mut brush.size_by_pressure, "Размер");
-            ui.checkbox(&mut brush.density_by_pressure, "Плотн.");
+            ui.checkbox(&mut brush.size_by_pressure, tr("Размер"));
+            ui.checkbox(&mut brush.density_by_pressure, tr("Плотн."));
             if let Some(mix) = brush.mix.as_mut() {
-                ui.checkbox(&mut mix.blend_by_pressure, "Смеш.");
+                ui.checkbox(&mut mix.blend_by_pressure, tr("Смеш."));
             }
         });
         // Сетка размеров: кружок и число, 5 в ряд.
@@ -2840,9 +2847,9 @@ impl PaintApp {
             let mode = MODES
                 .iter()
                 .find(|(m, _)| *m == layer.mode)
-                .map_or("Обычный", |(_, n)| n);
+                .map_or(tr("Обычный"), |(_, n)| tr(n));
             let mode = if is_folder && layer.pass_through {
-                "Насквозь"
+                tr("Насквозь")
             } else {
                 mode
             };
@@ -3074,21 +3081,21 @@ impl PaintApp {
         let lw = 50.0;
         let b = Vec2::splat(18.0);
         let w = ui.available_width() - lw - 3.0 * 20.0 - 10.0;
-        sai_ui::row(ui, "Масштаб", lw, true, |ui| {
+        sai_ui::row(ui, tr("Масштаб"), lw, true, |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             let mut z = self.zoom.ln();
             let text = format!("{:.0}%", self.zoom * 100.0);
             if sai_ui::bar(ui, &mut z, 0.02f32.ln(), 32f32.ln(), text, w, true).changed() {
                 self.set_zoom(z.exp());
             }
-            if sai_ui::icon_button(ui, b, false, true, "Уменьшить", |p, r, c| {
+            if sai_ui::icon_button(ui, b, false, true, tr("Уменьшить"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "minus")
             })
             .clicked()
             {
                 self.set_zoom(self.zoom / 1.25);
             }
-            if sai_ui::icon_button(ui, b, false, true, "Увеличить", |p, r, c| {
+            if sai_ui::icon_button(ui, b, false, true, tr("Увеличить"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "plus")
             })
             .clicked()
@@ -3103,7 +3110,7 @@ impl PaintApp {
                 self.set_zoom(1.0);
             }
         });
-        sai_ui::row(ui, "Угол", lw, false, |ui| {
+        sai_ui::row(ui, tr("Угол"), lw, false, |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             let mut a = 0.0;
             sai_ui::bar(ui, &mut a, -180.0, 180.0, "+0°".into(), w, false);
@@ -3113,16 +3120,16 @@ impl PaintApp {
                     b,
                     false,
                     false,
-                    "Поворот вида — позже",
+                    tr("Поворот вида — позже"),
                     |p, r, c| sai_ui::glyph(p, r, c, g),
                 );
             }
         });
         ui.add_space(3.0);
-        if sai_ui::section(ui, "sec_effect", "Эффекты слоя") {
+        if sai_ui::section(ui, "sec_effect", tr("Эффекты слоя")) {
             changed |= self.effect_panel(ui, lw);
         }
-        if sai_ui::section(ui, "sec_paper", "Текстура") {
+        if sai_ui::section(ui, "sec_paper", tr("Текстура")) {
             changed |= self.paper_panel(ui, lw);
         }
         let lw2 = 52.0;
@@ -3132,19 +3139,19 @@ impl PaintApp {
             let current = MODES
                 .iter()
                 .find(|(m, _)| *m == layer.mode)
-                .map_or("Обычный", |(_, n)| n);
-            sai_ui::row(ui, "Режим", lw2, true, |ui| {
+                .map_or(tr("Обычный"), |(_, n)| tr(n));
+            sai_ui::row(ui, tr("Режим"), lw2, true, |ui| {
                 egui::ComboBox::from_id_salt("mode")
                     .selected_text(current)
                     .width(w2 - 4.0)
                     .height(420.0)
                     .show_ui(ui, |ui| {
                         for (mode, name) in MODES {
-                            changed |= ui.selectable_value(&mut layer.mode, mode, name).changed();
+                            changed |= ui.selectable_value(&mut layer.mode, mode, tr(name)).changed();
                         }
                     });
             });
-            sai_ui::row(ui, "Непроз.", lw2, true, |ui| {
+            sai_ui::row(ui, tr("Непроз."), lw2, true, |ui| {
                 let mut v = layer.opacity * 100.0;
                 let text = format!("{:.0}%", v);
                 if sai_ui::bar(ui, &mut v, 0.0, 100.0, text, w2, true).changed() {
@@ -3152,14 +3159,14 @@ impl PaintApp {
                     changed = true;
                 }
             });
-            sai_ui::row(ui, "Замок", lw2, true, |ui| {
+            sai_ui::row(ui, tr("Замок"), lw2, true, |ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 if sai_ui::icon_button(
                     ui,
                     b,
                     layer.preserve_opacity,
                     true,
-                    "Сохранять непрозрачность",
+                    tr("Сохранять непрозрачность"),
                     |p, r, c| sai_ui::glyph(p, r, c, "lock_alpha"),
                 )
                 .clicked()
@@ -3167,9 +3174,9 @@ impl PaintApp {
                     layer.preserve_opacity = !layer.preserve_opacity;
                 }
                 for (g, tip, which) in [
-                    ("lock_paint", "Запрет рисования", 0),
-                    ("move", "Запрет перемещения", 1),
-                    ("lock_all", "Запрет всего", 2),
+                    ("lock_paint", tr("Запрет рисования"), 0),
+                    ("move", tr("Запрет перемещения"), 1),
+                    ("lock_all", tr("Запрет всего"), 2),
                 ] {
                     let on = [layer.lock_paint, layer.lock_move, layer.lock_all][which];
                     if sai_ui::icon_button(ui, b, on, true, tip, |p, r, c| sai_ui::glyph(p, r, c, g)).clicked() {
@@ -3182,13 +3189,13 @@ impl PaintApp {
                     }
                 }
             });
-            changed |= ui.checkbox(&mut layer.clipping, "Прикрепление").changed();
+            changed |= ui.checkbox(&mut layer.clipping, tr("Прикрепление")).changed();
             if layer.children.is_some() {
                 changed |= ui
-                    .checkbox(&mut layer.pass_through, "Насквозь (папка)")
+                    .checkbox(&mut layer.pass_through, tr("Насквозь (папка)"))
                     .changed();
             }
-            if ui.radio(layer.selection_source, "Источник выбора").on_hover_text("Палочка и заливка берут цвет со всех слоёв-источников").clicked() {
+            if ui.radio(layer.selection_source, tr("Источник выбора")).on_hover_text(tr("Палочка и заливка берут цвет со всех слоёв-источников")).clicked() {
                 layer.selection_source = !layer.selection_source;
                 changed = true;
             }
@@ -3196,7 +3203,7 @@ impl PaintApp {
         ui.add_space(3.0);
         let b2 = Vec2::splat(22.0);
         ui.horizontal(|ui| {
-            if sai_ui::icon_button(ui, b2, false, true, "Новый слой", |p, r, c| {
+            if sai_ui::icon_button(ui, b2, false, true, tr("Новый слой"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "new_layer")
             })
             .clicked()
@@ -3208,10 +3215,10 @@ impl PaintApp {
                 b2,
                 false,
                 false,
-                "Новый слой контура — позже",
+                tr("Новый слой контура — позже"),
                 |p, r, c| sai_ui::glyph(p, r, c, "new_linework"),
             );
-            if sai_ui::icon_button(ui, b2, false, true, "Новая папка", |p, r, c| {
+            if sai_ui::icon_button(ui, b2, false, true, tr("Новая папка"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "new_folder")
             })
             .clicked()
@@ -3223,29 +3230,29 @@ impl PaintApp {
                 b2,
                 false,
                 false,
-                "Линейка перспективы — позже",
+                tr("Линейка перспективы — позже"),
                 |p, r, c| sai_ui::glyph(p, r, c, "ruler"),
             );
             let masked = self.doc.layer(&self.selected).is_some_and(|l| l.mask.is_some());
-            if sai_ui::icon_button(ui, b2, false, !masked, "Новая маска слоя", |p, r, c| sai_ui::glyph(p, r, c, "mask")).clicked() {
+            if sai_ui::icon_button(ui, b2, false, !masked, tr("Новая маска слоя"), |p, r, c| sai_ui::glyph(p, r, c, "mask")).clicked() {
                 self.mask_command(0);
             }
         });
         ui.horizontal(|ui| {
             for (g, tip, action) in [
-                ("down", "Перенести на нижний (F)", LayerAction::Transfer),
-                ("merge", "Слить с нижним (Ctrl+E)", LayerAction::Merge),
-                ("clear", "Очистить слой (Delete)", LayerAction::Clear),
-                ("delete", "Удалить слой", LayerAction::Delete),
+                ("down", tr("Перенести на нижний (F)"), LayerAction::Transfer),
+                ("merge", tr("Слить с нижним (Ctrl+E)"), LayerAction::Merge),
+                ("clear", tr("Очистить слой (Delete)"), LayerAction::Clear),
+                ("delete", tr("Удалить слой"), LayerAction::Delete),
             ] {
                 if sai_ui::icon_button(ui, b2, false, true, tip, |p, r, c| sai_ui::glyph(p, r, c, g)).clicked() {
                     self.layer_action(action);
                 }
             }
-            if sai_ui::icon_button(ui, b2, false, true, "Слой выше", |p, r, c| sai_ui::glyph(p, r, c, "up")).clicked() {
+            if sai_ui::icon_button(ui, b2, false, true, tr("Слой выше"), |p, r, c| sai_ui::glyph(p, r, c, "up")).clicked() {
                 self.layer_action(LayerAction::Up);
             }
-            if sai_ui::icon_button(ui, b2, false, true, "Слой ниже", |p, r, c| sai_ui::glyph(p, r, c, "lower")).clicked() {
+            if sai_ui::icon_button(ui, b2, false, true, tr("Слой ниже"), |p, r, c| sai_ui::glyph(p, r, c, "lower")).clicked() {
                 self.layer_action(LayerAction::Down);
             }
         });
@@ -3327,16 +3334,16 @@ impl PaintApp {
         let Some(layer) = self.doc.layer_mut(&path) else { return false };
         let enabled = layer.children.is_none();
         let current = match &layer.effect {
-            None => "[ Нет ]",
-            Some(Effect::Fringe { .. }) => "Кайма",
-            Some(Effect::Binary { .. }) => "Двухцветный",
+            None => tr("[ Нет ]"),
+            Some(Effect::Fringe { .. }) => tr("Кайма"),
+            Some(Effect::Binary { .. }) => tr("Двухцветный"),
         };
-        sai_ui::row(ui, "   Эффект", lw + 10.0, enabled, |ui| {
+        sai_ui::row(ui, tr("   Эффект"), lw + 10.0, enabled, |ui| {
             egui::ComboBox::from_id_salt("effect").selected_text(current).width(100.0).show_ui(ui, |ui| {
                 let choices = [
-                    ("[ Нет ]", None),
-                    ("Кайма", Some(Effect::Fringe { kind: *b"watr", width: 2, strength: 100 })),
-                    ("Двухцветный", Some(Effect::Binary { threshold: 50, rest: 0 })),
+                    (tr("[ Нет ]"), None),
+                    (tr("Кайма"), Some(Effect::Fringe { kind: *b"watr", width: 2, strength: 100 })),
+                    (tr("Двухцветный"), Some(Effect::Binary { threshold: 50, rest: 0 })),
                 ];
                 for (name, e) in choices {
                     if ui.selectable_label(current == name, name).clicked() && current != name {
@@ -3358,10 +3365,10 @@ impl PaintApp {
         };
         match &mut layer.effect {
             Some(Effect::Fringe { width, strength, .. }) => {
-                bar(ui, "   Ширина", width, 1, 15);
-                bar(ui, "   Сила", strength, 0, 100);
+                bar(ui, tr("   Ширина"), width, 1, 15);
+                bar(ui, tr("   Сила"), strength, 0, 100);
             }
-            Some(Effect::Binary { threshold, .. }) => bar(ui, "   Порог", threshold, 0, 100),
+            Some(Effect::Binary { threshold, .. }) => bar(ui, tr("   Порог"), threshold, 0, 100),
             None => {}
         }
         changed
@@ -3375,7 +3382,7 @@ impl PaintApp {
         }
         let names = self.paper_names.clone().unwrap_or_default();
         if names.is_empty() {
-            ui.label("Папка с текстурами бумаги (papertex из SAI):");
+            ui.label(tr("Папка с текстурами бумаги (papertex из SAI):"));
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut self.paper_dir).desired_width(150.0));
                 if ui.button("OK").clicked() {
@@ -3386,10 +3393,10 @@ impl PaintApp {
         }
         let path = self.selected.clone();
         let Some(layer) = self.doc.layer_mut(&path) else { return changed };
-        let current = layer.paper.as_ref().map_or("[ Нет ]".to_string(), |p| p.name.clone());
-        sai_ui::row(ui, "   Выбрать", lw + 10.0, true, |ui| {
+        let current = layer.paper.as_ref().map_or(tr("[ Нет ]").to_string(), |p| p.name.clone());
+        sai_ui::row(ui, tr("   Выбрать"), lw + 10.0, true, |ui| {
             egui::ComboBox::from_id_salt("paper").selected_text(&current).width(100.0).height(400.0).show_ui(ui, |ui| {
-                if ui.selectable_label(layer.paper.is_none(), "[ Нет ]").clicked() {
+                if ui.selectable_label(layer.paper.is_none(), tr("[ Нет ]")).clicked() {
                     layer.paper = None;
                     changed = true;
                 }
@@ -3405,14 +3412,14 @@ impl PaintApp {
         });
         if let Some(p) = layer.paper.as_mut() {
             let w = ui.available_width() - lw - 18.0;
-            sai_ui::row(ui, "   Масштаб", lw + 10.0, true, |ui| {
+            sai_ui::row(ui, tr("   Масштаб"), lw + 10.0, true, |ui| {
                 let mut v = p.scale as f32;
                 if sai_ui::bar(ui, &mut v, 10.0, 500.0, format!("{}%", p.scale), w, true).changed() {
                     p.scale = v.round().clamp(10.0, 500.0) as u16;
                     changed = true;
                 }
             });
-            sai_ui::row(ui, "   Сила", lw + 10.0, true, |ui| {
+            sai_ui::row(ui, tr("   Сила"), lw + 10.0, true, |ui| {
                 let mut v = p.strength as f32;
                 if sai_ui::bar(ui, &mut v, 0.0, 100.0, format!("{}", p.strength), w, true).changed() {
                     p.strength = v.round().clamp(0.0, 100.0) as u16;
@@ -3420,7 +3427,7 @@ impl PaintApp {
                 }
             });
             if p.texture.is_none() {
-                ui.label(format!("Файл «{}.bmp» не найден", p.name));
+                ui.label(trf("Файл «{0}.bmp» не найден", &[&p.name]));
             }
         }
         changed
@@ -3849,14 +3856,14 @@ impl PaintApp {
         if self.show_keys {
             let mut open = true;
             let mut reset = false;
-            egui::Window::new("Клавиши").open(&mut open).resizable(true).default_height(480.0).show(ctx, |ui| {
-                ui.label("Нажмите на клавишу действия, затем новое сочетание (Esc — отмена).");
+            egui::Window::new(tr("Клавиши")).open(&mut open).resizable(true).default_height(480.0).show(ctx, |ui| {
+                ui.label(tr("Нажмите на клавишу действия, затем новое сочетание (Esc — отмена)."));
                 egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
                     egui::Grid::new("keys").num_columns(2).striped(true).show(ui, |ui| {
                         for (a, _, name, _) in keys::ALL {
-                            ui.label(name);
+                            ui.label(tr(name));
                             let text = if self.key_capture == Some(a) {
-                                "нажмите сочетание…".to_string()
+                                tr("нажмите сочетание…").to_string()
                             } else {
                                 self.keymap.get(&a).copied().flatten().map_or_else(|| "—".to_string(), |b| b.text())
                             };
@@ -3864,7 +3871,7 @@ impl PaintApp {
                                 if ui.button(text).clicked() {
                                     self.key_capture = Some(a);
                                 }
-                                if ui.small_button("✕").on_hover_text("Убрать клавишу").clicked() {
+                                if ui.small_button("✕").on_hover_text(tr("Убрать клавишу")).clicked() {
                                     self.keymap.insert(a, None);
                                 }
                             });
@@ -3872,7 +3879,7 @@ impl PaintApp {
                         }
                     });
                 });
-                if ui.button("Как в SAI (по умолчанию)").clicked() {
+                if ui.button(tr("Как в SAI (по умолчанию)")).clicked() {
                     reset = true;
                 }
             });
@@ -3886,17 +3893,17 @@ impl PaintApp {
         }
         let mut answer = None;
         if let Some((_, original)) = &self.recovery_found {
-            egui::Window::new("Восстановление работы").collapsible(false).resizable(false).show(ctx, |ui| {
-                ui.label("Прошлый сеанс закончился без сохранения.");
+            egui::Window::new(tr("Восстановление работы")).collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.label(tr("Прошлый сеанс закончился без сохранения."));
                 if !original.is_empty() {
-                    ui.label(format!("Файл: {original}"));
+                    ui.label(trf("Файл: {0}", &[&original]));
                 }
-                ui.label("Есть копия холста, записанная перед сбоем.");
+                ui.label(tr("Есть копия холста, записанная перед сбоем."));
                 ui.horizontal(|ui| {
-                    if ui.button("Восстановить").clicked() {
+                    if ui.button(tr("Восстановить")).clicked() {
                         answer = Some(true);
                     }
-                    if ui.button("Удалить копию").clicked() {
+                    if ui.button(tr("Удалить копию")).clicked() {
                         answer = Some(false);
                     }
                 });
@@ -3913,9 +3920,9 @@ impl PaintApp {
                             self.selected = first_raster(&self.doc.layers).unwrap_or_default();
                             self.fit_pending = true;
                             self.invalidate_all();
-                            self.status = String::from("Работа восстановлена — сохраните её (Ctrl+S)");
+                            self.status = String::from(tr("Работа восстановлена — сохраните её (Ctrl+S)"));
                         }
-                        Err(e) => self.status = format!("Не удалось восстановить: {e}"),
+                        Err(e) => self.status = trf("Не удалось восстановить: {0}", &[&e]),
                     }
                 }
                 if let Some((f, info)) = recovery_files() {
@@ -3927,9 +3934,9 @@ impl PaintApp {
         let mut finish = None;
         if let Some(f) = self.filter.as_mut() {
             let title = match f.kind {
-                FilterKind::HueSaturation => "Тон и насыщенность",
-                FilterKind::BrightnessContrast => "Яркость и контраст",
-                FilterKind::GaussianBlur => "Размытие по Гауссу",
+                FilterKind::HueSaturation => tr("Тон и насыщенность"),
+                FilterKind::BrightnessContrast => tr("Яркость и контраст"),
+                FilterKind::GaussianBlur => tr("Размытие по Гауссу"),
             };
             let mut open = true;
             egui::Window::new(title).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
@@ -3937,43 +3944,43 @@ impl PaintApp {
                 egui::Grid::new("filter").num_columns(2).show(ui, |ui| {
                     match f.kind {
                         FilterKind::HueSaturation => {
-                            ui.label("Тон :");
+                            ui.label(tr("Тон :"));
                             ui.add(egui::Slider::new(&mut f.hs.hue, -180..=180));
                             ui.end_row();
-                            ui.label("Насыщенность :");
+                            ui.label(tr("Насыщенность :"));
                             ui.add(egui::Slider::new(&mut f.hs.saturation, -100..=100));
                             ui.end_row();
-                            ui.label("Яркость :");
+                            ui.label(tr("Яркость :"));
                             ui.add(egui::Slider::new(&mut f.hs.luminance, -100..=100));
                             ui.end_row();
                             ui.label("");
-                            ui.checkbox(&mut f.hs.colorize, "Окрасить");
+                            ui.checkbox(&mut f.hs.colorize, tr("Окрасить"));
                             ui.end_row();
                         }
                         FilterKind::BrightnessContrast => {
-                            ui.label("Яркость :");
+                            ui.label(tr("Яркость :"));
                             ui.add(egui::Slider::new(&mut f.bc.brightness, -100..=100));
                             ui.end_row();
-                            ui.label("Контраст :");
+                            ui.label(tr("Контраст :"));
                             ui.add(egui::Slider::new(&mut f.bc.contrast, -100..=100));
                             ui.end_row();
-                            ui.label("Глубина :");
+                            ui.label(tr("Глубина :"));
                             ui.add(egui::Slider::new(&mut f.bc.depth, -100..=100));
                             ui.end_row();
                         }
                         FilterKind::GaussianBlur => {
-                            ui.label("Радиус :");
+                            ui.label(tr("Радиус :"));
                             ui.add(egui::Slider::new(&mut f.radius, 0.1..=40.0).step_by(0.1));
                             ui.end_row();
                         }
                     }
                 });
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut f.preview, "Предпросмотр");
+                    ui.checkbox(&mut f.preview, tr("Предпросмотр"));
                     if ui.button("OK").clicked() {
                         finish = Some(true);
                     }
-                    if ui.button("Отмена").clicked() {
+                    if ui.button(tr("Отмена")).clicked() {
                         finish = Some(false);
                     }
                 });
@@ -3995,22 +4002,22 @@ impl PaintApp {
         if let Some(d) = self.canvas_dialog.as_mut() {
             let (w, h) = (self.doc.width, self.doc.height);
             let mut open = true;
-            egui::Window::new(if d.resample { "Разрешение холста" } else { "Размер холста" })
+            egui::Window::new(if d.resample { tr("Разрешение холста") } else { tr("Размер холста") })
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
-                    ui.label(format!("Сейчас: {w}×{h} px"));
+                    ui.label(trf("Сейчас: {0}×{1} px", &[&w, &h]));
                     let before = d.size;
                     egui::Grid::new("canvasdlg").num_columns(2).show(ui, |ui| {
-                        ui.label("Ширина :");
+                        ui.label(tr("Ширина :"));
                         ui.add(egui::DragValue::new(&mut d.size[0]).range(1..=16000).suffix(" px"));
                         ui.end_row();
-                        ui.label("Высота :");
+                        ui.label(tr("Высота :"));
                         ui.add(egui::DragValue::new(&mut d.size[1]).range(1..=16000).suffix(" px"));
                         ui.end_row();
                         ui.label("");
-                        ui.checkbox(&mut d.keep_ratio, "Сохранять пропорции");
+                        ui.checkbox(&mut d.keep_ratio, tr("Сохранять пропорции"));
                         ui.end_row();
                     });
                     if d.keep_ratio {
@@ -4030,19 +4037,19 @@ impl PaintApp {
                     if d.resample {
                         use paint_core::resample::Mode;
                         let name = |m: Mode| match m {
-                            Mode::Nearest => "Ближайший",
-                            Mode::Bilinear => "Билинейный",
-                            Mode::Bicubic => "Бикубический",
-                            Mode::Lanczos2 => "Ланцош 2",
-                            Mode::Lanczos3 => "Ланцош 3",
+                            Mode::Nearest => tr("Ближайший"),
+                            Mode::Bilinear => tr("Билинейный"),
+                            Mode::Bicubic => tr("Бикубический"),
+                            Mode::Lanczos2 => tr("Ланцош 2"),
+                            Mode::Lanczos3 => tr("Ланцош 3"),
                         };
-                        egui::ComboBox::from_label("Способ").selected_text(name(d.mode)).show_ui(ui, |ui| {
+                        egui::ComboBox::from_label(tr("Способ")).selected_text(name(d.mode)).show_ui(ui, |ui| {
                             for m in [Mode::Nearest, Mode::Bilinear, Mode::Bicubic, Mode::Lanczos2, Mode::Lanczos3] {
                                 ui.selectable_value(&mut d.mode, m, name(m));
                             }
                         });
                     } else {
-                        ui.label("Привязка рисунка:");
+                        ui.label(tr("Привязка рисунка:"));
                         egui::Grid::new("anchor").spacing([2.0, 2.0]).show(ui, |ui| {
                             for ay in 0..3u8 {
                                 for ax in 0..3u8 {
@@ -4059,7 +4066,7 @@ impl PaintApp {
                         if ui.button("OK").clicked() {
                             apply = Some((d.resample, d.size, d.mode, d.anchor));
                         }
-                        if ui.button("Отмена").clicked() {
+                        if ui.button(tr("Отмена")).clicked() {
                             close = true;
                         }
                     });
@@ -4082,20 +4089,20 @@ impl PaintApp {
         }
         if self.show_open {
             let mut open = true;
-            egui::Window::new("Открыть")
+            egui::Window::new(tr("Открыть"))
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
-                    ui.label("Путь к файлу .sai2 (или перетащите файл в окно):");
+                    ui.label(tr("Путь к файлу .sai2 (или перетащите файл в окно):"));
                     ui.add(egui::TextEdit::singleline(&mut self.open_path).desired_width(420.0));
                     ui.horizontal(|ui| {
-                        if ui.button("Открыть").clicked() && !self.open_path.trim().is_empty()
+                        if ui.button(tr("Открыть")).clicked() && !self.open_path.trim().is_empty()
                         {
                             self.open(PathBuf::from(self.open_path.trim()));
                             self.show_open = false;
                         }
-                        if ui.button("Отмена").clicked() {
+                        if ui.button(tr("Отмена")).clicked() {
                             self.show_open = false;
                         }
                     });
@@ -4104,20 +4111,20 @@ impl PaintApp {
         }
         if self.show_new {
             let mut open = true;
-            egui::Window::new("Новый холст")
+            egui::Window::new(tr("Новый холст"))
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
                 .show(ctx, |ui| {
                     egui::Grid::new("newcanvas").num_columns(2).show(ui, |ui| {
-                        ui.label("Ширина :");
+                        ui.label(tr("Ширина :"));
                         ui.add(
                             egui::DragValue::new(&mut self.new_size[0])
                                 .range(1..=16000)
                                 .suffix(" px"),
                         );
                         ui.end_row();
-                        ui.label("Высота :");
+                        ui.label(tr("Высота :"));
                         ui.add(
                             egui::DragValue::new(&mut self.new_size[1])
                                 .range(1..=16000)
@@ -4138,7 +4145,7 @@ impl PaintApp {
                             self.new_canvas(w, h);
                             self.show_new = false;
                         }
-                        if ui.button("Отмена").clicked() {
+                        if ui.button(tr("Отмена")).clicked() {
                             self.show_new = false;
                         }
                     });
@@ -4147,23 +4154,23 @@ impl PaintApp {
         }
         if self.show_save_as {
             let mut open = true;
-            egui::Window::new("Сохранить как").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
-                ui.label("Путь к файлу .sai2:");
+            egui::Window::new(tr("Сохранить как")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.label(tr("Путь к файлу .sai2:"));
                 ui.add(egui::TextEdit::singleline(&mut self.save_path).desired_width(460.0));
                 if self.had_vectors {
-                    ui.colored_label(egui::Color32::from_rgb(170, 60, 20), "В открытом файле есть слои контура или фигур: их кривые пока сохраняются\nрастром. Поэтому предложен новый файл — исходный останется нетронутым.");
+                    ui.colored_label(egui::Color32::from_rgb(170, 60, 20), tr("В открытом файле есть слои контура или фигур: их кривые пока сохраняются\nрастром. Поэтому предложен новый файл — исходный останется нетронутым."));
                 }
                 let path = PathBuf::from(self.save_path.trim());
                 let exists = path.exists();
                 if exists {
-                    ui.colored_label(egui::Color32::from_rgb(170, 60, 20), "Такой файл уже есть — он будет заменён.");
+                    ui.colored_label(egui::Color32::from_rgb(170, 60, 20), tr("Такой файл уже есть — он будет заменён."));
                 }
                 ui.horizontal(|ui| {
-                    if ui.button(if exists { "Заменить" } else { "Сохранить" }).clicked() && !self.save_path.trim().is_empty() {
+                    if ui.button(if exists { tr("Заменить") } else { tr("Сохранить") }).clicked() && !self.save_path.trim().is_empty() {
                         self.save_to(path.with_extension("sai2"));
                         self.show_save_as = false;
                     }
-                    if ui.button("Отмена").clicked() {
+                    if ui.button(tr("Отмена")).clicked() {
                         self.show_save_as = false;
                     }
                 });
@@ -4172,10 +4179,10 @@ impl PaintApp {
         }
         if self.show_about {
             let mut open = true;
-            egui::Window::new("О программе").open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
-                ui.label(format!("SOsai {} — редактор по образцу PaintTool SAI 2, личный проект.", env!("CARGO_PKG_VERSION")));
-                ui.label("Исходный код: github.com/grazyping/SOsai");
-                ui.label("Открывает .sai2 (растровые слои, папки, контур, фигуры), рисует кистью образца.");
+            egui::Window::new(tr("О программе")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.label(trf("SOsai {0} — редактор по образцу PaintTool SAI 2, личный проект.", &[&env!("CARGO_PKG_VERSION")]));
+                ui.label(tr("Исходный код: github.com/grazyping/SOsai"));
+                ui.label(tr("Открывает .sai2 (растровые слои, папки, контур, фигуры), рисует кистью образца."));
             });
             self.show_about &= open;
         }
@@ -4353,7 +4360,7 @@ impl eframe::App for PaintApp {
         if finished {
             self.virtual_done += 1;
             if self.virtual_done == 20 {
-                self.status = String::from("Виртуальное перо: сценарий закончен");
+                self.status = String::from(tr("Виртуальное перо: сценарий закончен"));
                 if let Ok(out) = std::env::var("PAINT_VIRTUAL_PEN_OUT") {
                     let r = paint_core::io::save_png(std::path::Path::new(&out), self.doc.width, self.doc.height, &self.doc.flatten());
                     eprintln!("virtual pen: {} -> {out}", if r.is_ok() { "saved" } else { "save failed" });
@@ -4564,16 +4571,16 @@ impl eframe::App for PaintApp {
                     };
                     let text = format!("{:.1}%", v);
                     sai_ui::bar(ui, &mut v, 0.0, 100.0, text, 110.0, false);
-                    ui.label("Памяти занято");
+                    ui.label(tr("Памяти занято"));
                     ui.separator();
                     let info = self.pen.lock().map(|s| s.info.clone()).unwrap_or_default();
                     ui.weak(format!(
-                        "{info} | {}: нажим {:.2}",
-                        self.last_source, self.last_pressure
+                        "{info} | {}",
+                        trf("{0}: нажим {1}", &[&self.last_source, &format!("{:.2}", self.last_pressure)])
                     ));
                     if !self.queue.is_empty() {
                         ui.separator();
-                        ui.weak(format!("пересчёт: {} плиток", self.queue.len()));
+                        ui.weak(trf("пересчёт: {0} плиток", &[&self.queue.len()]));
                     }
                 });
             });
@@ -4622,6 +4629,20 @@ impl eframe::App for PaintApp {
     }
 }
 
+/// Новый холст с первым слоем, названным на языке интерфейса.
+fn new_document(w: u32, h: u32) -> Document {
+    let mut doc = Document::new(w, h);
+    if let Some(first) = doc.layers.first_mut() {
+        first.name = trf("Слой{0}", &[&1]);
+    }
+    doc
+}
+
+/// Пункт меню: подпись на выбранном языке и клавиша справа.
+fn menu_item(label: &'static str, shortcut: &str) -> egui::Button<'static> {
+    egui::Button::new(tr(label)).shortcut_text(shortcut.to_string())
+}
+
 fn main() -> eframe::Result {
     // На Wayland перо доходит до окна только через XWayland (см. pen.rs), поэтому открываемся там.
     // PAINT_RS_WAYLAND=1 оставляет родной Wayland — без нажима пера.
@@ -4631,6 +4652,12 @@ fn main() -> eframe::Result {
         std::env::remove_var("WAYLAND_SOCKET");
     }
     let path = std::env::args().nth(1).map(PathBuf::from);
+    // Язык: PAINT_LANG, иначе выбранный в меню, иначе язык системы.
+    let lang = std::env::var("PAINT_LANG")
+        .ok()
+        .or_else(|| settings::Settings::load().str("lang").map(str::to_string))
+        .unwrap_or_else(|| i18n::system().to_string());
+    i18n::set(&lang);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1360.0, 900.0])
@@ -4643,6 +4670,7 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             sai_ui::apply_style(&cc.egui_ctx);
+            i18n::install_fonts(&cc.egui_ctx);
             let feed = pen::new_feed();
             pen::spawn(feed.clone(), cc.egui_ctx.clone());
             Ok(Box::new(PaintApp::new(path, feed)))

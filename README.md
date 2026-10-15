@@ -1,64 +1,80 @@
 # SOsai
 
-Редактор для рисования на Rust по образцу PaintTool SAI 2 — личный проект. Версия 0.8.1.
-Как пользоваться — в [руководстве](docs/manual.md); что готово и что впереди — в [ROADMAP.md](ROADMAP.md) и на вкладке
-[Milestones](https://github.com/grazyping/SOsai/milestones); готовые сборки — в разделе Releases. Linux и Windows,
-перо планшета (XPPen Artist 24 Pro), открытие файлов `.sai2`.
+**English** | [Русский](README.ru.md)
 
-## Что умеет
+A painting program in Rust modelled on PaintTool SAI 2 — a personal project. Version 0.8.2.
+How to use it is in the [manual](docs/manual.en.md); what is done and what comes next is in
+[ROADMAP.en.md](ROADMAP.en.md) and on the [Milestones](https://github.com/grazyping/SOsai/milestones)
+tab; ready builds are under Releases. Linux and Windows, tablet pen (XPPen Artist 24 Pro),
+opens `.sai2` files.
 
-- Открывает `.sai2`: растровые слои, папки, прикрепление, режимы наложения (все 28), слои
-  контура и фигур (кривые строятся заново, как в образце).
-- Кисть по модели образца: отпечаток, край, непрозрачность, шаг (`docs/13-thin-brushes.md`).
-- Кисть, Акварель и Маркер смешивают краску с холстом по правилам образца: смешивание,
-  разбавление, стойкость, порог размытия (`docs/16-mixing.md`).
-- Стабилизатор как в образце: 1–15 и S-1…S-7 (`docs/15-stabilizer.md`).
-- Сохранение `.sai2` (`docs/03-sai2-format.md`).
-- Выделение (прямоугольник, лассо, волшебная палочка), перемещение и трансформация (Ctrl+T)
-  слоя или выделенного (`docs/17-selection-move.md`).
-- Разрешение, размер, отражение и поворот холста; поворот и зеркало вида (`docs/18-canvas-view.md`).
-- Заливка, «Свести всё», замки слоя (`docs/19-fill-locks.md`).
-- Бумага слоя, эффекты «Кайма» и «Двухцветный», маски слоя — как в SAI
+## Features
+
+- Opens `.sai2`: raster layers, folders, clipping groups, blend modes (all 28), linework and
+  shape layers (curves are rebuilt the way SAI does it).
+- Brush following SAI's model: dab, edge, opacity, spacing (`docs/13-thin-brushes.md`).
+- Brush, Water and Marker mix paint with the canvas by SAI's rules: blending, dilution,
+  persistence, blur pressure (`docs/16-mixing.md`).
+- Stabilizer as in SAI: 1–15 and S-1…S-7 (`docs/15-stabilizer.md`).
+- Saves `.sai2` (`docs/03-sai2-format.md`).
+- Selection (rectangle, lasso, magic wand), moving and transforming (Ctrl+T) a layer or the
+  selection (`docs/17-selection-move.md`).
+- Canvas resolution, size, flip and rotation; view rotation and flip (`docs/18-canvas-view.md`).
+- Bucket fill, Flatten Image, layer locks (`docs/19-fill-locks.md`).
+- Layer paper texture, Fringe and Binary Color layer effects, layer masks — as in SAI
   (`docs/24-paper.md`, `docs/25-layer-effects.md`, `docs/26-layer-masks.md`).
-- Фильтры: тон и насыщенность, яркость и контраст, размытие по Гауссу (`docs/20-filters.md`).
-- Открытие и экспорт PSD со слоями, PNG, JPEG (`docs/21-file-formats.md`).
-- Настройки между запусками и восстановление после сбоя (`docs/22-settings-recovery.md`).
-- Слои контура и фигур: перо рисует кривые, правка кривых, фигуры — как в SAI (`docs/11-linework-shapes.md`).
-- Пересэмплирование пяти видов, как в образце (`docs/12-resampling.md`).
-- Окно в раскладке SAI 2 (`docs/04-ui-layout.md`, `docs/ref/paint-rs-ui.png`).
-- Нажим пера: XInput 2 на Linux, Windows Ink на Windows; виртуальное перо и виртуальный
-  планшет для проверок без планшета (`docs/14-virtual-pen.md`).
+- Filters: hue and saturation, brightness and contrast, Gaussian blur (`docs/20-filters.md`).
+- Opens and exports PSD with layers, PNG, JPEG (`docs/21-file-formats.md`).
+- Settings kept between runs and recovery after a crash (`docs/22-settings-recovery.md`).
+- Linework and shape layers: the pen draws curves, curve editing, shapes — as in SAI
+  (`docs/11-linework-shapes.md`).
+- Five resampling methods, as in SAI (`docs/12-resampling.md`).
+- Window laid out like SAI 2 (`docs/04-ui-layout.md`, `docs/ref/paint-rs-ui.png`).
+- Interface in 10 languages: English, Russian, Ukrainian, German, French, Spanish, Portuguese
+  (Brazil), Japanese, Simplified Chinese, Korean. The system language is used by default;
+  change it in “Window → Language”. Translations live in `crates/paint-app/lang/`.
+- Pen pressure: XInput 2 on Linux, Windows Ink on Windows; a virtual pen and a virtual tablet
+  for testing without a tablet (`docs/14-virtual-pen.md`).
 
-## Сборка
+The documents in `docs/` other than the manual are written in Russian.
+
+## Building
 
 ```bash
-cargo build --release -p paint-app      # редактор: target/release/SOsai [файл.sai2]
-cargo build --release -p paint-cli      # командная строка: сверки, рендер, разбор .sai2
+cargo build --release -p paint-app      # editor: target/release/SOsai [file.sai2]
+cargo build --release -p paint-cli      # command line: comparisons, rendering, .sai2 inspection
 cargo test --workspace --release
 ```
 
-Сборка под Windows с Linux: цель `x86_64-pc-windows-gnullvm`, компоновщик llvm-mingw
-(путь — в `.cargo/config.toml`, поправить под свою машину).
+Windows build from Linux: target `x86_64-pc-windows-gnullvm`, linker llvm-mingw (path in
+`.cargo/config.toml` — adjust it for your machine).
 
-Тесты по файлам пользователя ищут образцы в `~/SAI2` (или в `SAI2_SAMPLES`); если их нет, эти
-тесты пропускаются.
+Tests that use the author's sample files look for them in `~/SAI2` (or in `SAI2_SAMPLES`); if
+the files are missing, those tests are skipped.
 
-## Устройство
+## Translations
 
-| Каталог | Что |
+Each language is a plain text file `crates/paint-app/lang/<code>.txt` with lines
+`Russian source text = translation`; `{0}`, `{1}` are values inserted by the program. The test
+`every_key_is_translated` (`cargo test -p paint-app`) checks that every interface string has a
+translation in every file. Corrections and new languages are welcome as pull requests.
+
+## Layout
+
+| Directory | What |
 |---|---|
-| `crates/paint-core` | Пиксели, плитки, слои, наложение, кисть (`dab.rs`), штрих, векторные фигуры, пересэмплирование |
-| `crates/paint-formats` | Чтение `.sai2`: оглавление, слои, пиксели, векторные блоки |
-| `crates/paint-app` | Окно редактора (egui) |
-| `crates/paint-cli` | Командная строка для сверок с образцом |
-| `crates/pen-test` | Журнал событий пера (Windows Ink, WinTab, XInput 2) |
-| `crates/virtual-tablet` | Виртуальный планшет через `/dev/uinput` (Linux) |
-| `docs/` | План, формат `.sai2`, правила образца своими словами, сверки, интерфейс |
-| `tools/` | Проверка виртуальным пером |
+| `crates/paint-core` | Pixels, tiles, layers, blending, brush (`dab.rs`), strokes, vector shapes, resampling |
+| `crates/paint-formats` | `.sai2` reading and writing: table of contents, layers, pixels, vector blocks; PSD |
+| `crates/paint-app` | Editor window (egui), translations in `lang/` |
+| `crates/paint-cli` | Command line for comparisons with the reference program |
+| `crates/pen-test` | Pen event logger (Windows Ink, WinTab, XInput 2) |
+| `crates/virtual-tablet` | Virtual tablet via `/dev/uinput` (Linux) |
+| `docs/` | Plan, `.sai2` format, SAI's rules in our own words, comparisons, interface |
+| `tools/` | Virtual pen check |
 
-## Лицензия
+## License
 
-MIT — см. [LICENSE](LICENSE). SOsai — независимый проект и не связан с SYSTEMAX Software
-Development, автором PaintTool SAI; названия SAI и PaintTool SAI принадлежат их владельцу.
-Код написан заново по наблюдаемому поведению программы и формату файлов; кода PaintTool SAI в
-репозитории нет.
+MIT — see [LICENSE](LICENSE). SOsai is an independent project and is not affiliated with
+SYSTEMAX Software Development, the author of PaintTool SAI; the names SAI and PaintTool SAI
+belong to their owner. The code is written from scratch based on the program's observed
+behaviour and file format; there is no PaintTool SAI code in this repository.

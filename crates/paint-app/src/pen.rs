@@ -8,6 +8,9 @@
 //!   egui отдаёт это событием `Touch { force }`; его читает само окно, см. `main.rs`.
 //!   В драйвере планшета должен быть включён режим Windows Ink.
 
+use crate::i18n::tr;
+#[cfg(target_os = "linux")]
+use crate::i18n::trf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -30,7 +33,7 @@ pub fn new_feed() -> PenFeed {
         eraser: false,
         at: None,
         device: String::new(),
-        info: String::from("перо: источник не подключён"),
+        info: String::from(tr("перо: источник не подключён")),
     }))
 }
 
@@ -39,7 +42,7 @@ pub fn spawn(feed: PenFeed, ctx: eframe::egui::Context) {
     std::thread::spawn(move || {
         if let Err(e) = run(&feed, &ctx) {
             if let Ok(mut s) = feed.lock() {
-                s.info = format!("перо: чтение XInput 2 не работает ({e})");
+                s.info = trf("перо: чтение XInput 2 не работает ({0})", &[&e]);
             }
         }
     });
@@ -48,7 +51,7 @@ pub fn spawn(feed: PenFeed, ctx: eframe::egui::Context) {
 #[cfg(not(target_os = "linux"))]
 pub fn spawn(feed: PenFeed, _ctx: eframe::egui::Context) {
     if let Ok(mut s) = feed.lock() {
-        s.info = String::from("перо: Windows Ink (сила касания)");
+        s.info = String::from(tr("перо: Windows Ink (сила касания)"));
     }
 }
 
@@ -89,14 +92,11 @@ fn run(feed: &PenFeed, ctx: &eframe::egui::Context) -> Result<(), Box<dyn std::e
     };
     let describe = |pens: &HashMap<u16, Pen>| {
         if pens.is_empty() {
-            String::from("перо: планшет в X11 не найден, рисование мышью")
+            String::from(tr("перо: планшет в X11 не найден, рисование мышью"))
         } else {
-            format!(
-                "перо: XInput 2, {}",
-                pens.values()
-                    .map(|p| p.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join("; ")
+            trf(
+                "перо: XInput 2, {0}",
+                &[&pens.values().map(|p| p.name.as_str()).collect::<Vec<_>>().join("; ")],
             )
         }
     };
