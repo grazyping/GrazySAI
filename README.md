@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md)
 
-A painting program in Rust modelled on PaintTool SAI 2 — a personal project. Version 0.8.5.
+A painting program in Rust modelled on PaintTool SAI 2 — a personal project. Version 0.8.6.
 How to use it is in the [manual](docs/manual.en.md); what is done and what comes next is in
 [ROADMAP.en.md](ROADMAP.en.md) and on the [Milestones](https://github.com/grazyping/SOsai/milestones)
 tab; ready builds are under Releases. Linux and Windows, tablet pen (XPPen Artist 24 Pro),
@@ -34,6 +34,8 @@ opens `.sai2` files.
 - Interface in 10 languages: English, Russian, Ukrainian, German, French, Spanish, Portuguese
   (Brazil), Japanese, Simplified Chinese, Korean. The system language is used by default;
   change it in “Window → Language”. Translations live in `crates/paint-app/lang/`.
+- Updates itself from GitHub releases: a quiet notice in the menu bar, download, checksum,
+  replace, restart — no server of its own (`docs/28-updates.md`).
 - Pen pressure: XInput 2 on Linux, Windows Ink on Windows; a virtual pen and a virtual tablet
   for testing without a tablet (`docs/14-virtual-pen.md`).
 

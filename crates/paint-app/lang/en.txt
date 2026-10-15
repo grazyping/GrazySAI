@@ -259,7 +259,6 @@ PSD (со слоями) = PSD (with layers)
 Такой файл уже есть — он будет заменён. = This file already exists — it will be replaced.
 Заменить = Replace
 SOsai {0} — редактор по образцу PaintTool SAI 2, личный проект. = SOsai {0} — a painting program modelled on PaintTool SAI 2, a personal project.
-Исходный код: github.com/grazyping/SOsai = Source code: github.com/grazyping/SOsai
 Открывает .sai2 (растровые слои, папки, контур, фигуры), рисует кистью образца. = Opens .sai2 (raster layers, folders, linework, shapes) and paints with SAI's brush.
 
 # Shortcut actions
@@ -339,3 +338,26 @@ SOsai {0} — редактор по образцу PaintTool SAI 2, личный
 Ctrl + перетаскивание полосы поворачивает линейку вокруг оси = Ctrl + dragging the band rotates the ruler around the pivot
 Сбросить линейку = Reset Ruler
 Показать/скрыть линейку = Show/hide ruler
+
+# Обновление / Update
+SOsai на GitHub = SOsai on GitHub
+Проверить обновления… = Check for Updates…
+Проверять обновления при запуске = Check for updates at startup
+Вышла версия {0} = Version {0} is out
+Загрузка обновления… = Downloading update…
+Версия {0} готова — перезапустите = Version {0} is ready — restart
+Исходный код: = Source code:
+Обновление = Update
+Установлена версия {0}. = Installed version: {0}.
+Проверка… = Checking…
+Это последняя версия. = This is the latest version.
+Не получилось: = Could not update:
+Новая версия: {0} = New version: {0}
+Загрузка и установка… = Downloading and installing…
+Готово: новая версия откроется при следующем запуске. = Done: the new version opens on next start.
+Перезапустить сейчас = Restart Now
+Сначала сохраните холст = Save the canvas first
+Позже = Later
+Скачать и установить = Download and Install
+Страница выпуска = Release Page
+Страница выпусков = Releases Page

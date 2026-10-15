@@ -219,7 +219,7 @@ mod tests {
             let src = src.split("#[cfg(test)]").next().unwrap();
             for line in src.lines() {
                 let code = line.trim_start();
-                if code.starts_with("//") || code.starts_with("eprintln!") || code.contains("eprintln!(\"") {
+                if code.starts_with("//") || code.starts_with("eprintln!") || code.contains("eprintln!(\"") || line.ends_with("// не перевод") {
                     continue;
                 }
                 let mut rest = line;

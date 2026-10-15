@@ -17,6 +17,19 @@ Ready builds are on the [Releases](https://github.com/grazyping/SOsai/releases) 
 
 A file can also be opened by dropping it onto the window.
 
+### Updating
+
+At startup the program checks GitHub for a newer version. If there is one, “⬆ Version … is
+out” appears at the right of the menu bar. Click it to see what changed and press “Download and
+Install”: the program downloads the archive, verifies it and puts the new version in place of
+the old one. The new version runs after a restart (“Restart Now” — once the canvas is saved).
+If updating fails (no network, no write access to the program folder), the window offers the
+release page so you can download it by hand.
+
+The startup check can be turned off: “Help → Check for updates at startup”. To check by hand —
+“Help → Check for Updates…”. The project page is “GitHub” at the right of the menu bar or
+“Help → SOsai on GitHub”. On Windows this needs Windows 10 (1803) or newer.
+
 ### Tablet
 
 - **Windows**: pressure comes through Windows Ink. It must be enabled in the tablet driver

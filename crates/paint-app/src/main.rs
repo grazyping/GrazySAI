@@ -8,6 +8,7 @@ mod ruler;
 mod sai_ui;
 mod keys;
 mod settings;
+mod update;
 mod virtual_pen;
 
 use i18n::{tr, trf};
@@ -605,6 +606,10 @@ struct PaintApp {
     show_selection: bool,
     /// Допуск волшебной палочки, 0..=255.
     wand_tolerance: u8,
+    /// Обновление с GitHub: состояние фоновой проверки и загрузки.
+    update: update::Shared,
+    show_update: bool,
+    check_updates: bool,
 }
 
 impl PaintApp {
@@ -688,6 +693,9 @@ impl PaintApp {
             sel_dirty: false,
             show_selection: true,
             wand_tolerance: 10,
+            update: std::sync::Arc::new(std::sync::Mutex::new(update::State::Idle)),
+            show_update: false,
+            check_updates: true,
         };
         app.load_settings();
         app.recovery_found = recovery_files().filter(|(f, _)| f.exists()).map(|(f, info)| {
@@ -714,6 +722,7 @@ impl PaintApp {
             Ok("save_as") => app.show_save_as = true,
             Ok("keys") => app.show_keys = true,
             Ok("about") => app.show_about = true,
+            Ok("update") => app.show_update = true,
             Ok(d @ ("resolution" | "size")) => {
                 app.canvas_dialog = Some(CanvasDialog {
                     resample: d == "resolution",
@@ -847,6 +856,7 @@ impl PaintApp {
                 self.keymap.insert(a, if v == "none" { None } else { keys::Binding::parse(v) });
             }
         }
+        s.read_bool("check_updates", &mut self.check_updates);
         if let Some(t) = s.f32("wand_tolerance") {
             self.wand_tolerance = t.clamp(0.0, 255.0) as u8;
         }
@@ -930,6 +940,7 @@ impl PaintApp {
         s.set("back.b", self.back.b());
         s.set("stabilizer", self.stabilizer.label());
         s.set("wand_tolerance", self.wand_tolerance);
+        s.set("check_updates", self.check_updates as u8);
         for (a, id, _, _) in keys::ALL {
             let v = self.keymap.get(&a).copied().flatten().map_or_else(|| "none".to_string(), |b| b.text());
             s.set(&format!("key.{id}"), v);
@@ -940,6 +951,91 @@ impl PaintApp {
             s.set(&format!("color_view.{i}"), *v as u8);
         }
         s.save();
+    }
+
+    /// Окно «Обновление»: что нашлось, заметки выпуска, загрузка и перезапуск.
+    fn update_window(&mut self, ctx: &egui::Context) {
+        use update::State;
+        let state = self.update.lock().unwrap().clone();
+        let mut open = true;
+        let mut close = false;
+        egui::Window::new(tr("Обновление"))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .default_width(380.0)
+            .show(ctx, |ui| {
+                ui.label(trf("Установлена версия {0}.", &[&update::current()]));
+                let release = match &state {
+                    State::Available(r) | State::Downloading(r) | State::Installed(r) => Some(r.clone()),
+                    State::Failed(_, r) => r.clone(),
+                    _ => None,
+                };
+                match &state {
+                    State::Idle | State::Checking => {
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.label(tr("Проверка…"));
+                        });
+                    }
+                    State::UpToDate => {
+                        ui.label(tr("Это последняя версия."));
+                    }
+                    State::Failed(err, _) => {
+                        ui.colored_label(sai_ui::HEADER, tr("Не получилось:"));
+                        ui.add(egui::Label::new(egui::RichText::new(err).weak()).wrap());
+                    }
+                    _ => {}
+                }
+                if let Some(r) = &release {
+                    ui.strong(trf("Новая версия: {0}", &[&r.version]));
+                    let notes = update::notes_for(&r.notes, i18n::code());
+                    if !notes.is_empty() {
+                        egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
+                            ui.add(egui::Label::new(notes.replace("**", "")).wrap());
+                        });
+                    }
+                    ui.add_space(4.0);
+                    match &state {
+                        State::Downloading(_) => {
+                            ui.horizontal(|ui| {
+                                ui.spinner();
+                                ui.label(tr("Загрузка и установка…"));
+                            });
+                        }
+                        State::Installed(_) => {
+                            ui.label(tr("Готово: новая версия откроется при следующем запуске."));
+                            ui.horizontal(|ui| {
+                                let restart = ui
+                                    .add_enabled(!self.dirty, egui::Button::new(tr("Перезапустить сейчас")))
+                                    .on_disabled_hover_text(tr("Сначала сохраните холст"));
+                                if restart.clicked() && update::restart() {
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                }
+                                if ui.button(tr("Позже")).clicked() {
+                                    close = true;
+                                }
+                            });
+                        }
+                        _ => {
+                            ui.horizontal(|ui| {
+                                if r.asset.is_some() && ui.button(tr("Скачать и установить")).clicked() {
+                                    update::install(&self.update, r.clone(), ctx);
+                                }
+                                if ui.button(tr("Страница выпуска")).clicked() {
+                                    update::open_url(&r.page);
+                                }
+                                if ui.button(tr("Позже")).clicked() {
+                                    close = true;
+                                }
+                            });
+                        }
+                    }
+                } else if ui.button(tr("Страница выпусков")).clicked() {
+                    update::open_url(&format!("{}/releases", update::REPO));
+                }
+            });
+        self.show_update = open && !close;
     }
 
     /// Поменять основной и фоновый цвет (X, стрелка у квадратов цвета).
@@ -1440,11 +1536,11 @@ impl PaintApp {
             self.apply_selection(&s.mask, mode);
             return;
         }
-        self.thumbs.clear();
-        self.dirty = true;
         let Some(mut live) = self.live.take() else {
             return;
         };
+        self.thumbs.clear();
+        self.dirty = true;
         for p in self.smoother.finish() {
             live.stroke.add_point(p);
         }
@@ -2308,9 +2404,48 @@ impl PaintApp {
                     self.show_keys = true;
                     ui.close_menu();
                 }
+                ui.separator();
+                if ui.button(tr("SOsai на GitHub")).clicked() {
+                    update::open_url(update::REPO);
+                    ui.close_menu();
+                }
+                if ui.button(tr("Проверить обновления…")).clicked() {
+                    update::check(&self.update, ui.ctx());
+                    self.show_update = true;
+                    ui.close_menu();
+                }
+                if ui.checkbox(&mut self.check_updates, tr("Проверять обновления при запуске")).changed() {
+                    let mut s = settings::Settings::load();
+                    s.set("check_updates", self.check_updates as u8);
+                    s.save();
+                }
+                ui.separator();
                 if ui.button(tr("О программе")).clicked() {
                     self.show_about = true;
                     ui.close_menu();
+                }
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add(egui::Button::new(egui::RichText::new("GitHub").weak()).frame(false))
+                    .on_hover_text(update::REPO)
+                    .clicked()
+                {
+                    update::open_url(update::REPO);
+                }
+                // ненавязчиво: одна строка справа в меню, по щелчку — окно обновления
+                let state = self.update.lock().unwrap().clone();
+                let notice = match &state {
+                    update::State::Available(r) => Some(trf("Вышла версия {0}", &[&r.version])),
+                    update::State::Downloading(_) => Some(tr("Загрузка обновления…").to_string()),
+                    update::State::Installed(r) => Some(trf("Версия {0} готова — перезапустите", &[&r.version])),
+                    _ => None,
+                };
+                if let Some(text) = notice {
+                    ui.separator();
+                    let text = egui::RichText::new(format!("⬆ {text}")).color(sai_ui::HEADER);
+                    if ui.add(egui::Button::new(text).frame(false)).clicked() {
+                        self.show_update = true;
+                    }
                 }
             });
         });
@@ -4513,10 +4648,18 @@ impl PaintApp {
             let mut open = true;
             egui::Window::new(tr("О программе")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
                 ui.label(trf("SOsai {0} — редактор по образцу PaintTool SAI 2, личный проект.", &[&env!("CARGO_PKG_VERSION")]));
-                ui.label(tr("Исходный код: github.com/grazyping/SOsai"));
+                ui.horizontal(|ui| {
+                    ui.label(tr("Исходный код:"));
+                    if ui.link("github.com/grazyping/SOsai").clicked() {
+                        update::open_url(update::REPO);
+                    }
+                });
                 ui.label(tr("Открывает .sai2 (растровые слои, папки, контур, фигуры), рисует кистью образца."));
             });
             self.show_about &= open;
+        }
+        if self.show_update {
+            self.update_window(ctx);
         }
     }
 }
@@ -5011,7 +5154,14 @@ fn main() -> eframe::Result {
             i18n::install_fonts(&cc.egui_ctx);
             let feed = pen::new_feed();
             pen::spawn(feed.clone(), cc.egui_ctx.clone());
-            Ok(Box::new(PaintApp::new(path, feed)))
+            let app = PaintApp::new(path, feed);
+            update::cleanup();
+            // проверка при запуске — только с настройками (не в прогонах проверок) и если не выключена
+            let auto = std::env::var("PAINT_UPDATE_CHECK").map_or(settings::dir().is_some(), |v| v != "off");
+            if auto && app.check_updates {
+                update::check(&app.update, &cc.egui_ctx);
+            }
+            Ok(Box::new(app))
         }),
     )
 }
