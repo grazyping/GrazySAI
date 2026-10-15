@@ -783,6 +783,8 @@ struct PaintApp {
     gradient: Option<GradientEdit>,
     grad_opts: GradientOpts,
     transform_kind: TransformKind,
+    /// Окно «Свойства слоя»: слой и новое имя.
+    layer_props: Option<(Vec<usize>, String)>,
     /// Окно «Свойства» инструмента сетки: номер, имя, вторая строка.
     tool_props: Option<(usize, String, String)>,
     /// Ползунок «Перспектива» трансформации, 0–100.
@@ -906,6 +908,7 @@ impl PaintApp {
             grad_opts: GradientOpts::default(),
             transform_kind: TransformKind::Free,
             tool_props: None,
+            layer_props: None,
             transform_perspective: 0,
             move_drag: None,
             transform: None,
@@ -2945,6 +2948,19 @@ impl PaintApp {
                     }
                 }
                 ui.separator();
+                for (item, cw) in [(tr("Повернуть слой на 90° против часовой"), false), (tr("Повернуть слой на 90° по часовой"), true)] {
+                    if ui.button(item).clicked() {
+                        if self.transform.is_some() {
+                            self.finish_transform(true);
+                        }
+                        let keys = self.doc.rotate_layer(&self.selected.clone(), cw);
+                        self.invalidate(keys);
+                        self.sel_dirty = true;
+                        self.thumbs.clear();
+                        self.dirty = true;
+                        ui.close_menu();
+                    }
+                }
                 for (item, horizontal) in [(tr("Отразить слой по горизонтали"), true), (tr("Отразить слой по вертикали"), false)] {
                     if ui.button(item).clicked() {
                         if self.transform.is_some() {
@@ -2998,9 +3014,26 @@ impl PaintApp {
                     self.dirty = true;
                     ui.close_menu();
                 }
+                if ui.button(tr("Слить видимые")).clicked() {
+                    if self.transform.is_some() {
+                        self.finish_transform(true);
+                    }
+                    let name = trf("Слой{0}", &[&(count_layers(&self.doc.layers) + 1)]);
+                    if let Some((i, keys)) = self.doc.merge_visible(&name) {
+                        self.selected = vec![i];
+                        self.after_structure(keys);
+                        self.dirty = true;
+                    }
+                    ui.close_menu();
+                }
                 if ui.button(tr("Свести всё")).clicked() {
                     self.canvas_op(|d| d.flatten_layers());
                     self.selected = vec![0];
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui.add_enabled(self.doc.layer(&self.selected).is_some(), egui::Button::new(tr("Свойства слоя…"))).clicked() {
+                    self.layer_props = self.doc.layer(&self.selected).map(|l| (self.selected.clone(), l.name.clone()));
                     ui.close_menu();
                 }
             });
@@ -4202,6 +4235,9 @@ impl PaintApp {
             if response.double_clicked() && is_folder {
                 open = !open;
                 ui.data_mut(|d| d.insert_persisted(fid, open));
+            } else if response.double_clicked() {
+                // двойной щелчок по слою — «Свойства слоя» (имя), как в SAI
+                self.layer_props = self.doc.layer(path).map(|l| (path.clone(), l.name.clone()));
             }
             if is_folder && open {
                 self.layer_rows(ui, path, depth + 1, changed);
@@ -5410,6 +5446,42 @@ impl PaintApp {
         self.update_gradient();
         if self.sel_poly.is_some() && !(self.tool == Tool::Lasso && self.lasso_polygon) {
             self.sel_poly = None;
+        }
+        let mut lp_done = None;
+        if let Some((_, name)) = self.layer_props.as_mut() {
+            let mut open = true;
+            egui::Window::new(tr("Свойства слоя")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(tr("Имя слоя:"));
+                    let r = ui.add(egui::TextEdit::singleline(name).desired_width(200.0));
+                    if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        lp_done = Some(true);
+                    }
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("OK").clicked() {
+                        lp_done = Some(true);
+                    }
+                    if ui.button(tr("Отмена")).clicked() {
+                        lp_done = Some(false);
+                    }
+                });
+            });
+            if !open {
+                lp_done = Some(false);
+            }
+        }
+        if let Some(ok) = lp_done {
+            let (path, name) = self.layer_props.take().unwrap();
+            let name = name.trim().to_string();
+            if ok && !name.is_empty() {
+                if let Some(l) = self.doc.layer_mut(&path) {
+                    if l.name != name {
+                        l.name = name;
+                        self.dirty = true;
+                    }
+                }
+            }
         }
         let mut props_done = None;
         if let Some((_, name, extra)) = self.tool_props.as_mut() {

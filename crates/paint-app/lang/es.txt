@@ -436,3 +436,11 @@ S-кривая = Curva en S
 По центру = Centro
 Снаружи = Fuera
 Также по краям холста = Aplicar también a los bordes del lienzo
+
+# Меню «Слой» как в SAI (0.8.18)
+Слить видимые = Combinar capas visibles
+Свойства слоя… = Propiedades de la capa…
+Свойства слоя = Propiedades de la capa
+Имя слоя: = Nombre de la capa:
+Повернуть слой на 90° против часовой = Girar capa 90° a la izquierda
+Повернуть слой на 90° по часовой = Girar capa 90° a la derecha

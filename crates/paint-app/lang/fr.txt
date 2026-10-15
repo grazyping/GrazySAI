@@ -436,3 +436,11 @@ S-кривая = Courbe en S
 По центру = Centre
 Снаружи = Extérieur
 Также по краям холста = Appliquer aussi aux bords du canevas
+
+# Меню «Слой» как в SAI (0.8.18)
+Слить видимые = Fusionner les calques visibles
+Свойства слоя… = Propriétés du calque…
+Свойства слоя = Propriétés du calque
+Имя слоя: = Nom du calque :
+Повернуть слой на 90° против часовой = Faire pivoter le calque de 90° (sens antihoraire)
+Повернуть слой на 90° по часовой = Faire pivoter le calque de 90° (sens horaire)

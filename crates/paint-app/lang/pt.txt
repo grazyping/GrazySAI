@@ -436,3 +436,11 @@ S-кривая = Curva em S
 По центру = Centro
 Снаружи = Fora
 Также по краям холста = Aplicar também às bordas da tela
+
+# Меню «Слой» как в SAI (0.8.18)
+Слить видимые = Mesclar camadas visíveis
+Свойства слоя… = Propriedades da camada…
+Свойства слоя = Propriedades da camada
+Имя слоя: = Nome da camada:
+Повернуть слой на 90° против часовой = Girar camada 90° anti-horário
+Повернуть слой на 90° по часовой = Girar camada 90° horário

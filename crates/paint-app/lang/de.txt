@@ -436,3 +436,11 @@ S-кривая = S-Kurve
 По центру = Mitte
 Снаружи = Außen
 Также по краям холста = Auch an den Leinwandrändern
+
+# Меню «Слой» как в SAI (0.8.18)
+Слить видимые = Sichtbare zusammenführen
+Свойства слоя… = Ebeneneigenschaften…
+Свойства слоя = Ebeneneigenschaften
+Имя слоя: = Ebenenname:
+Повернуть слой на 90° против часовой = Ebene 90° gegen den Uhrzeigersinn drehen
+Повернуть слой на 90° по часовой = Ebene 90° im Uhrzeigersinn drehen

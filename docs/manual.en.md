@@ -142,7 +142,9 @@ evenly from start to end; the ends can be moved and the settings changed until y
 
 - Buttons and the “Layer” menu: new layer, new folder, new linework layer, new shape layer,
   copy, delete, erase (Delete), transfer down (F), merge down (Ctrl+E), order, flip,
-  “Outline…”, “Luminance to Opacity”, “Rasterize Layer”, “Flatten Image”.
+  rotate layer by 90° (around the middle of its painting), “Outline…”, “Luminance to Opacity”,
+  “Rasterize Layer”, “Merge Visible Layers” (visible layers into one new layer, hidden ones stay),
+  “Flatten Image”, “Layer Property…” (name; also a double-click on the layer).
 - **“Outline…”** — as in SAI: outlines the layer's painting with the main color, 1–25 px inside,
   centered or outside; “Apply to Canvas Edges too” also outlines where the painting meets the
   canvas edge.

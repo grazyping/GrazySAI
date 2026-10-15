@@ -1044,3 +1044,28 @@ fn outline_matches_sai_shapes() {
     assert_eq!((top[0], *top.last().unwrap()), (72, 184));
     assert!(painted(&doc, 90, 100) && !painted(&doc, 91, 100) && painted(&doc, 66, 100));
 }
+
+#[test]
+fn rotate_layer_and_merge_visible_like_sai() {
+    let black = paint_core::pixel::from_rgba8([0, 0, 0, 255]);
+    let mut doc = Document::new(100, 100);
+    for x in 10..40 {
+        for y in 20..30 {
+            doc.layers[0].pixels.set(x, y, black);
+        }
+    }
+    // поворот вокруг середины рисунка (25, 25): полоса 30×10 становится 10×30 на том же месте
+    doc.rotate_layer(&[0], true);
+    assert_eq!(paint_core::selection::content_bounds(&doc.layers[0].pixels), Some((20, 10, 30, 40)));
+    doc.rotate_layer(&[0], false);
+    assert_eq!(paint_core::selection::content_bounds(&doc.layers[0].pixels), Some((10, 20, 40, 30)));
+    // слить видимые: скрытый слой остаётся, новый — на месте верхнего видимого
+    let mut hidden = paint_core::Layer::new("скрытый");
+    hidden.visible = false;
+    doc.layers.push(hidden);
+    doc.layers.push(paint_core::Layer::new("верх"));
+    let (i, _) = doc.merge_visible("слитый").unwrap();
+    let names: Vec<&str> = doc.layers.iter().map(|l| l.name.as_str()).collect();
+    assert_eq!((names, i), (vec!["скрытый", "слитый"], 1));
+    assert_eq!(doc.layers[1].pixels.get(15, 25)[3], paint_core::pixel::ONE as u16);
+}

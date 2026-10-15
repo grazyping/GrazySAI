@@ -595,6 +595,58 @@ impl Document {
         self.replace_canvas(width, height, layers)
     }
 
+    /// Повернуть слой на 90° (`cw` — по часовой) вокруг середины его рисунка, как «Rotate Layer
+    /// 90deg.» SAI 2017 (с выделением — выделенное, вокруг его середины). Середина — целая точка,
+    /// чтобы пиксели легли на сетку.
+    pub fn rotate_layer(&mut self, path: &[usize], cw: bool) -> Vec<Key> {
+        let Some(layer) = self.layer(path) else { return Vec::new() };
+        if layer.children.is_some() {
+            return Vec::new();
+        }
+        let sel = self.selection.clone();
+        let bounds = if sel.mask.tiles.is_empty() { crate::selection::content_bounds(&layer.pixels) } else { sel.bounds() };
+        let Some((x0, y0, x1, y1)) = bounds else { return Vec::new() };
+        let (cx, cy) = (((x0 + x1) / 2) as f64, ((y0 + y1) / 2) as f64);
+        // по часовой (y вниз): (dx, dy) → (−dy, dx)
+        let m = if cw { [0.0, -1.0, cx + cy, 1.0, 0.0, cy - cx] } else { [0.0, 1.0, cx - cy, -1.0, 0.0, cx + cy] };
+        let original = layer.pixels.clone();
+        let mask = self.mask_snapshot(path);
+        let keys = self.transform_preview(path, &original, mask.as_ref(), &sel, m, crate::resample::Mode::Nearest);
+        self.move_commit(path, original, mask, sel);
+        keys
+    }
+
+    /// «Слить видимые» (Merge Visible Layers в SAI 2017): видимые слои верхнего уровня сводятся в
+    /// новый слой `name` на месте самого верхнего из них; скрытые остаются. Возвращает его номер.
+    pub fn merge_visible(&mut self, name: &str) -> Option<(usize, Vec<Key>)> {
+        let top = self.layers.iter().rposition(|l| l.visible)?;
+        let mut merged = Layer::new(name);
+        let (tw, th) = ((self.width as i32 + TILE - 1) / TILE, (self.height as i32 + TILE - 1) / TILE);
+        for ty in 0..th {
+            for tx in 0..tw {
+                let mut buf = vec![[0f32; 4]; TILE_LEN];
+                render_group(&self.layers, (tx, ty), &mut buf, self.size());
+                if buf.iter().any(|p| p[3] > 0.0) {
+                    merged.pixels.tiles.insert((tx, ty), Tile(buf.iter().map(|p| from_f32(*p)).collect()));
+                }
+            }
+        }
+        let mut layers = Vec::new();
+        let mut index = 0;
+        for (i, l) in self.layers.iter().enumerate() {
+            if !l.visible {
+                layers.push(l.clone());
+            }
+            if i == top {
+                index = layers.len();
+                layers.push(merged.clone());
+            }
+        }
+        let selection = self.selection.mask.clone();
+        let keys = self.perform(vec![Op::Canvas { width: self.width, height: self.height, layers, selection }]);
+        Some((index, keys))
+    }
+
     /// Отразить слой `path` (с выделением — только выделенное, вокруг его середины).
     pub fn flip_layer(&mut self, path: &[usize], horizontal: bool) -> Vec<Key> {
         let Some(layer) = self.layer(path) else { return Vec::new() };
@@ -619,8 +671,6 @@ impl Document {
         keys
     }
 
-    /// Залить слой цветом `rgb` в пределах `area` (доля 0..=ONE) и выделения — одна запись истории.
-    /// С «сохранять непрозрачность» меняется только цвет.
     /// «Обводка» слоя, как в SAI 2017 (сверено с живой SAI, docs/31-gradient-selection.md):
     /// основной цвет поверх слоя с долей «расширенная на `outside` непрозрачность минус суженная на
     /// `inside`». Снаружи — (N, 0), внутри — (0, N), по центру — (⌊N/2⌋, ⌈N/2⌉). `canvas_edges` —
@@ -672,6 +722,8 @@ impl Document {
         tiles.into_iter().collect()
     }
 
+    /// Залить слой цветом `rgb` в пределах `area` (доля 0..=ONE) и выделения — одна запись истории.
+    /// С «сохранять непрозрачность» меняется только цвет.
     pub fn fill(&mut self, path: &[usize], area: &MaskMap, rgb: [u8; 3]) -> Vec<Key> {
         let Some(layer) = self.layer(path) else { return Vec::new() };
         if layer.children.is_some() || !layer.paintable() {

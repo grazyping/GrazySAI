@@ -76,3 +76,11 @@ Edges too», предпросмотр. Замеры на живой SAI:
 
 Код — `Document::outline`, общая для выделения и обводки `selection::morph`; тест
 `outline_matches_sai_shapes`.
+
+## Меню «Слой» (0.8.18)
+
+По живой SAI 2017: «Merge Visible Layers» сводит все видимые слои (и папки) в новый слой со
+следующим номером на месте самого верхнего видимого, скрытые остаются, новый выбран; «Rotate
+Layer 90deg. CW/CCW» поворачивает рисунок слоя вокруг середины его рисунка (не холста);
+«Layer Property…» — только имя слоя. Код — `Document::merge_visible`, `rotate_layer`; тест
+`rotate_layer_and_merge_visible_like_sai`.
