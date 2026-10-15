@@ -230,6 +230,11 @@ impl Dab {
 
     /// Покрытие на расстоянии `dist` от центра (центр пикселя): значение таблицы без
     /// интерполяции, как в `dab_coverage_tile`.
+    /// Радиус, внутри которого покрытие постоянно.
+    pub fn inner_radius(&self) -> f32 {
+        self.inner
+    }
+
     pub fn coverage(&self, dist: f32) -> f32 {
         let n = self.profile.len();
         let u = (dist.min(self.outer()) - self.inner).max(0.0);

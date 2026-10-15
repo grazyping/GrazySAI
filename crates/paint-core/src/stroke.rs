@@ -34,11 +34,118 @@ impl Shape {
             Shape::Fitted(s, _) => s.coverage(dist),
         }
     }
+    /// Квадрат радиуса, внутри которого покрытие постоянно (`coverage(0)`): там не нужны ни
+    /// корень, ни степень — у большой кисти это почти весь отпечаток.
+    fn flat_r2(&self) -> f32 {
+        let r = match self {
+            Shape::Sai(d, _) => d.inner_radius(),
+            Shape::Fitted(s, _) => s.r_in,
+        };
+        // чуть меньше, чтобы округление квадрата не задело край
+        let r = (r - 1e-3).max(0.0);
+        r * r
+    }
 }
 use crate::mix::{Mixer, Sample};
 use crate::pixel::{Px, ONE};
 use crate::tile::{key_of, ColorMap, Key, MaskMap, Tile, TILE};
 use std::collections::{HashMap, HashSet};
+
+/// Отпечаток обычной кисти, ждущий наложения в покрытие штриха (`flush_dabs`).
+struct Placed {
+    p: InputPoint,
+    shape: Shape,
+    opacity: f32,
+    cap: u32,
+    reach: f32,
+    x0: i32,
+    x1: i32,
+    y0: i32,
+    y1: i32,
+    round: bool,
+    flat_cov: f32,
+    flat_r2: f32,
+    flat_a: u32,
+}
+
+impl Placed {
+    fn new(p: InputPoint, shape: Shape, density: f32) -> Self {
+        let opacity = shape.opacity();
+        let cap = (density * ONE as f32 + 0.5) as u32;
+        let reach = shape.outer() + 1.0;
+        // За пределами круга `reach` покрытие нулевое — строки обходятся только внутри круга.
+        let round = shape.coverage(reach - 1.0) <= 0.0;
+        let flat_cov = shape.coverage(0.0);
+        let flat_r2 = shape.flat_r2();
+        Self {
+            p,
+            opacity,
+            cap,
+            reach,
+            x0: (p.x - reach).floor() as i32,
+            x1: (p.x + reach).ceil() as i32,
+            y0: (p.y - reach).floor() as i32,
+            y1: (p.y + reach).ceil() as i32,
+            round,
+            flat_cov,
+            flat_r2,
+            flat_a: (flat_cov * opacity * ONE as f32 + 0.5) as u32,
+            shape,
+        }
+    }
+
+    /// Накладывает отпечаток на одну плитку покрытия (создаёт её при первом попадании).
+    /// Возвращает, было ли попадание.
+    fn paint_tile(&self, key: Key, tile: &mut Option<Tile<u16>>) -> bool {
+        let p = self.p;
+        let (tx, ty) = key;
+        let (ya, yb) = ((ty * TILE).max(self.y0), (ty * TILE + TILE - 1).min(self.y1));
+        let (xa, xb) = ((tx * TILE).max(self.x0), (tx * TILE + TILE - 1).min(self.x1));
+        let mut hit = false;
+        for y in ya..=yb {
+            let cy = y as f32 + 0.5 - p.y;
+            let (mut ra, mut rb) = (xa, xb);
+            if self.round {
+                let w2 = self.reach * self.reach - cy * cy;
+                if w2 < 0.0 {
+                    continue;
+                }
+                let w = w2.sqrt() + 1.0;
+                ra = ra.max((p.x - 0.5 - w).floor() as i32);
+                rb = rb.min((p.x - 0.5 + w).ceil() as i32);
+            }
+            let row = (y - ty * TILE) * TILE - tx * TILE;
+            for x in ra..=rb {
+                let i = (row + x) as usize;
+                let old = tile.as_ref().map_or(0, |t| t.0[i] as u32);
+                if old >= self.cap {
+                    continue; // уже набрано до плотности этого отпечатка — не изменится
+                }
+                // Центр пикселя — в (x + 0.5, y + 0.5).
+                let cx = x as f32 + 0.5 - p.x;
+                let d2 = cx * cx + cy * cy;
+                let a = if d2 < self.flat_r2 {
+                    if self.flat_cov <= 0.0 {
+                        continue;
+                    }
+                    self.flat_a
+                } else {
+                    let cov = self.shape.coverage(d2.sqrt());
+                    if cov <= 0.0 {
+                        continue;
+                    }
+                    (cov * self.opacity * ONE as f32 + 0.5) as u32
+                };
+                hit = true;
+                let t = tile.get_or_insert_with(|| Tile::filled(0));
+                // Наложение «поверх», но не выше плотности этого отпечатка и не ниже уже набранного.
+                let sum = old + ((ONE - old) * a + ONE / 2) / ONE;
+                t.0[i] = sum.min(self.cap).max(old) as u16;
+            }
+        }
+        hit
+    }
+}
 
 /// Отпечаток смешивающей кисти, ждущий своей пачки.
 struct Pending {
@@ -70,6 +177,8 @@ pub struct Stroke {
     touched: HashSet<Key>,
     /// Смешивающая кисть: отпечатки, ещё не нарисованные, и краска на кисти.
     pending: Vec<Pending>,
+    /// Отпечатки обычной кисти, ещё не наложенные в покрытие.
+    queued: Vec<Placed>,
     mixer: Option<Mixer>,
 }
 
@@ -83,6 +192,7 @@ impl Stroke {
             dab_count: 0,
             touched: HashSet::new(),
             pending: Vec::new(),
+            queued: Vec::new(),
             mixer: None,
         }
     }
@@ -160,6 +270,7 @@ impl Stroke {
     pub fn add_point(&mut self, p: InputPoint) {
         let Some(prev) = self.last else {
             self.dab(p);
+            self.flush_dabs();
             self.last = Some(p);
             return;
         };
@@ -185,6 +296,7 @@ impl Stroke {
             self.dab(InputPoint { x: prev.x + dx * t, y: prev.y + dy * t, pressure });
             self.carry = 0.0;
         }
+        self.flush_dabs();
         self.last = Some(p);
     }
 
@@ -208,28 +320,54 @@ impl Stroke {
             self.pending.push(Pending { x: p.x, y: p.y, pressure: p.pressure, shape });
             return;
         }
-        let opacity = shape.opacity();
-        let cap = (density * ONE as f32 + 0.5) as u32;
-        let reach = shape.outer() + 1.0;
-        let (x0, x1) = ((p.x - reach).floor() as i32, (p.x + reach).ceil() as i32);
-        let (y0, y1) = ((p.y - reach).floor() as i32, (p.y + reach).ceil() as i32);
-        for y in y0..=y1 {
-            for x in x0..=x1 {
-                // Центр пикселя — в (x + 0.5, y + 0.5).
-                let (cx, cy) = (x as f32 + 0.5 - p.x, y as f32 + 0.5 - p.y);
-                let cov = shape.coverage((cx * cx + cy * cy).sqrt());
-                if cov <= 0.0 {
-                    continue;
+        self.queued.push(Placed::new(p, shape, density));
+    }
+
+    /// Кладёт отложенные отпечатки в покрытие штриха. Каждая плитка получает свои отпечатки в
+    /// прежнем порядке, поэтому результат тот же, что при поштучном наложении; плитки
+    /// независимы и считаются параллельно, если работы много.
+    fn flush_dabs(&mut self) {
+        let dabs = std::mem::take(&mut self.queued);
+        if dabs.is_empty() {
+            return;
+        }
+        // плитка → номера отпечатков, задевающих её, по порядку
+        let mut per_tile: HashMap<Key, Vec<usize>> = HashMap::new();
+        let mut work = 0usize;
+        for (n, d) in dabs.iter().enumerate() {
+            for ty in d.y0.div_euclid(TILE)..=d.y1.div_euclid(TILE) {
+                for tx in d.x0.div_euclid(TILE)..=d.x1.div_euclid(TILE) {
+                    per_tile.entry((tx, ty)).or_default().push(n);
                 }
-                let a = (cov * opacity * ONE as f32 + 0.5) as u32;
-                let key = key_of(x, y);
+            }
+            work += ((d.x1 - d.x0 + 1) * (d.y1 - d.y0 + 1)) as usize;
+        }
+        let mut jobs: Vec<(Key, Option<Tile<u16>>, Vec<usize>)> =
+            per_tile.into_iter().map(|(k, list)| (k, self.mask.tiles.remove(&k), list)).collect();
+        let run = |job: &mut (Key, Option<Tile<u16>>, Vec<usize>)| -> bool {
+            let (key, tile, list) = job;
+            let mut hit = false;
+            for &n in list.iter() {
+                hit |= dabs[n].paint_tile(*key, tile);
+            }
+            hit
+        };
+        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let hits: Vec<bool> = if work < 200_000 || threads < 2 || jobs.len() < 2 {
+            jobs.iter_mut().map(run).collect()
+        } else {
+            let chunk = jobs.len().div_ceil(threads);
+            std::thread::scope(|scope| {
+                let handles: Vec<_> = jobs.chunks_mut(chunk).map(|c| scope.spawn(move || c.iter_mut().map(run).collect::<Vec<bool>>())).collect();
+                handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+            })
+        };
+        for ((key, tile, _), hit) in jobs.into_iter().zip(hits) {
+            if let Some(t) = tile {
+                self.mask.tiles.insert(key, t);
+            }
+            if hit {
                 self.touched.insert(key);
-                let tile = self.mask.tile_mut(key);
-                let i = (y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize;
-                let old = tile.0[i] as u32;
-                // Наложение «поверх», но не выше плотности этого отпечатка и не ниже уже набранного.
-                let sum = old + ((ONE - old) * a + ONE / 2) / ONE;
-                tile.0[i] = sum.min(cap).max(old) as u16;
             }
         }
     }
@@ -259,13 +397,26 @@ impl Stroke {
             let n = mixer.next_batch(softness).min(self.pending.len());
             let batch: Vec<Pending> = self.pending.drain(..n).collect();
             // Средний цвет холста под пачкой — по всем пикселям, которых она касается.
-            let mut seen = HashSet::new();
+            let mut seen = Grid::over(&batch, false);
             let mut sample = Sample::default();
+            let k = 1.0 / ONE as f64;
             for d in &batch {
-                for_pixels(d, |x, y, _| {
-                    if seen.insert((x, y)) {
-                        let px = pixels.get(x, y);
-                        let k = 1.0 / ONE as f64;
+                for_rows(d, |y, ra, rb, cov_at| {
+                    let mut cached: (Key, Option<&Tile<Px>>) = ((i32::MIN, 0), None);
+                    for x in ra..=rb {
+                        if cov_at(x) <= 0.0 {
+                            continue;
+                        }
+                        let first = seen.at(x, y);
+                        if *first {
+                            continue;
+                        }
+                        *first = true;
+                        let key = key_of(x, y);
+                        if cached.0 != key {
+                            cached = (key, pixels.tiles.get(&key));
+                        }
+                        let px = cached.1.map_or([0; 4], |t| t.0[(y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize]);
                         sample.add(px.map(|v| v as f64 * k));
                     }
                 });
@@ -275,26 +426,92 @@ impl Stroke {
                 let size = self.params.diameter_at(batch[0].pressure);
                 water_blur(pixels, &batch, size, sel, originals, &mut changed);
             }
-            for d in &batch {
-                let opacity = d.shape.opacity();
-                for_pixels(d, |x, y, cov| {
-                    let s = sel.amount(x, y);
-                    if s == 0 {
-                        return;
-                    }
-                    let cov = cov * s as f32 / ONE as f32;
-                    let key = key_of(x, y);
-                    originals.entry(key).or_insert_with(|| pixels.tiles.get(&key).cloned());
-                    changed.insert(key);
-                    let tile = pixels.tile_mut(key);
-                    let i = (y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize;
-                    tile.0[i] = lay(tile.0[i], paint, (cov * opacity) as f64, preserve_opacity);
-                });
-            }
+            lay_batch(pixels, &batch, paint, preserve_opacity, sel, originals, &mut changed);
         }
         let keys: Vec<Key> = changed.into_iter().collect();
         self.touched.extend(keys.iter().copied());
         keys
+    }
+}
+
+/// Пачка отпечатков кладёт краску `paint`. Плитки независимы: каждая получает свои отпечатки в
+/// прежнем порядке, поэтому результат тот же, что при поштучном счёте; много работы — параллельно.
+fn lay_batch(
+    pixels: &mut ColorMap,
+    batch: &[Pending],
+    paint: [f64; 4],
+    preserve_opacity: bool,
+    sel: &crate::selection::Selection,
+    originals: &mut HashMap<Key, Option<Tile<Px>>>,
+    changed: &mut HashSet<Key>,
+) {
+    // плитка → отпечатки, чей прямоугольник её задевает
+    let mut per_tile: HashMap<Key, Vec<usize>> = HashMap::new();
+    let mut work = 0usize;
+    for (n, d) in batch.iter().enumerate() {
+        let reach = d.shape.outer() + 1.0;
+        let (x0, x1) = ((d.x - reach).floor() as i32, (d.x + reach).ceil() as i32);
+        let (y0, y1) = ((d.y - reach).floor() as i32, (d.y + reach).ceil() as i32);
+        for ty in y0.div_euclid(TILE)..=y1.div_euclid(TILE) {
+            for tx in x0.div_euclid(TILE)..=x1.div_euclid(TILE) {
+                per_tile.entry((tx, ty)).or_default().push(n);
+            }
+        }
+        work += ((x1 - x0 + 1) * (y1 - y0 + 1)) as usize;
+    }
+    let mut jobs: Vec<(Key, Option<Tile<Px>>, Vec<usize>)> =
+        per_tile.into_iter().map(|(k, list)| (k, pixels.tiles.remove(&k), list)).collect();
+    // одна плитка: отпечатки по очереди, точки — как в `for_pixels`, только в пределах плитки
+    let run = |job: &mut (Key, Option<Tile<Px>>, Vec<usize>)| -> bool {
+        let ((tx, ty), tile, list) = job;
+        let (tx0, ty0) = (*tx * TILE, *ty * TILE);
+        let mut hit = false;
+        for &n in list.iter() {
+            let d = &batch[n];
+            let opacity = d.shape.opacity();
+            for_rows(d, |y, ra, rb, cov_at| {
+                if y < ty0 || y >= ty0 + TILE {
+                    return;
+                }
+                for x in ra.max(tx0)..=rb.min(tx0 + TILE - 1) {
+                    let cov = cov_at(x);
+                    if cov <= 0.0 {
+                        continue;
+                    }
+                    let s = sel.amount(x, y);
+                    if s == 0 {
+                        continue;
+                    }
+                    let cov = cov * s as f32 / ONE as f32;
+                    hit = true;
+                    let t = tile.get_or_insert_with(|| Tile::filled([0; 4]));
+                    let i = ((y - ty0) * TILE + x - tx0) as usize;
+                    t.0[i] = lay(t.0[i], paint, (cov * opacity) as f64, preserve_opacity);
+                }
+            });
+        }
+        hit
+    };
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    // прежний вид плиток — до правки (для отмены)
+    let before: Vec<Option<Tile<Px>>> = jobs.iter().map(|(k, t, _)| if originals.contains_key(k) { None } else { t.clone() }).collect();
+    let hits: Vec<bool> = if work < 150_000 || threads < 2 || jobs.len() < 2 {
+        jobs.iter_mut().map(run).collect()
+    } else {
+        let chunk = jobs.len().div_ceil(threads);
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = jobs.chunks_mut(chunk).map(|c| scope.spawn(move || c.iter_mut().map(run).collect::<Vec<bool>>())).collect();
+            handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+        })
+    };
+    for (((key, tile, _), hit), old) in jobs.into_iter().zip(hits).zip(before) {
+        if hit {
+            originals.entry(key).or_insert(old);
+            changed.insert(key);
+        }
+        if let Some(t) = tile {
+            pixels.tiles.insert(key, t);
+        }
     }
 }
 
@@ -309,59 +526,165 @@ fn water_blur(
 ) {
     let (r1, r2) = crate::mix::water_blur_radii(size);
     // Доля размытия в каждом пикселе: отпечатки пачки накладываются «поверх».
-    let mut weight: HashMap<(i32, i32), f64> = HashMap::new();
+    // вес < 0 — точку не задел ни один отпечаток
+    let mut weight = Grid::over(batch, -1.0f64);
+    let (mut x0, mut y0, mut x1, mut y1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
     for d in batch {
         let o = d.shape.opacity();
         for_pixels(d, |x, y, cov| {
-            let w = weight.entry((x, y)).or_insert(0.0);
+            let w = weight.at(x, y);
+            if *w < 0.0 {
+                *w = 0.0;
+            }
             *w += (1.0 - *w) * (cov * o) as f64;
+            (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
         });
     }
-    let Some(x0) = weight.keys().map(|k| k.0).min() else { return };
-    let x1 = weight.keys().map(|k| k.0).max().unwrap();
-    let y0 = weight.keys().map(|k| k.1).min().unwrap();
-    let y1 = weight.keys().map(|k| k.1).max().unwrap();
+    if x0 > x1 {
+        return;
+    }
     let m = (r1 + r2) as i32;
     let (bx, by) = (x0 - m, y0 - m);
     let (w, h) = ((x1 + m - bx + 1) as usize, (y1 + m - by + 1) as usize);
     let k = 1.0 / ONE as f64;
-    let mut buf = vec![[0.0f64; 4]; w * h];
-    for (i, v) in buf.iter_mut().enumerate() {
-        let px = pixels.get(bx + (i % w) as i32, by + (i / w) as i32);
-        *v = px.map(|c| c as f64 * k);
+    // буфер копии переиспользуется между пачками: выделять и обнулять десятки мегабайт на каждую
+    // пачку дороже самого счёта
+    thread_local!(static BUF: std::cell::RefCell<Vec<[f64; 4]>> = const { std::cell::RefCell::new(Vec::new()) });
+    let mut buf = BUF.with(|b| std::mem::take(&mut *b.borrow_mut()));
+    buf.resize(w * h, [0.0; 4]);
+    buf.truncate(w * h);
+    // копия области слоя: построчно, кусками по плиткам, строки — параллельно
+    let fill = |row0: usize, part: &mut [[f64; 4]]| {
+        for (j, line) in part.chunks_mut(w).enumerate() {
+            let y = by + (row0 + j) as i32;
+            let mut col = 0usize;
+            while col < w {
+                let x = bx + col as i32;
+                let key = key_of(x, y);
+                let run = ((TILE - x.rem_euclid(TILE)) as usize).min(w - col);
+                match pixels.tiles.get(&key) {
+                    Some(t) => {
+                        let i0 = (y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize;
+                        for (v, px) in line[col..col + run].iter_mut().zip(&t.0[i0..i0 + run]) {
+                            *v = px.map(|c| c as f64 * k);
+                        }
+                    }
+                    None => line[col..col + run].fill([0.0; 4]),
+                }
+                col += run;
+            }
+        }
+    };
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    if w * h < 40_000 || threads < 2 {
+        fill(0, &mut buf);
+    } else {
+        let per = h.div_ceil(threads);
+        std::thread::scope(|scope| {
+            for (n, part) in buf.chunks_mut(per * w).enumerate() {
+                let fill = &fill;
+                scope.spawn(move || fill(n * per, part));
+            }
+        });
     }
     for r in [r1, r2] {
         crate::mix::box_blur(&mut buf, w, h, r, false);
         crate::mix::box_blur(&mut buf, w, h, r, true);
     }
-    for (&(x, y), &a) in &weight {
-        let a = a * sel.amount(x, y) as f64 / ONE as f64;
-        if a <= 0.0 {
-            continue;
+
+    for y in y0..=y1 {
+        let mut cur: Option<(Key, &mut Tile<Px>)> = None;
+        for x in x0..=x1 {
+            let a = *weight.at(x, y);
+            if a < 0.0 {
+                continue;
+            }
+            let a = a * sel.amount(x, y) as f64 / ONE as f64;
+            if a <= 0.0 {
+                continue;
+            }
+            let key = key_of(x, y);
+            if cur.as_ref().is_none_or(|c| c.0 != key) {
+                originals.entry(key).or_insert_with(|| pixels.tiles.get(&key).cloned());
+                changed.insert(key);
+                cur = Some((key, pixels.tile_mut(key)));
+            }
+            let blurred = buf[(y - by) as usize * w + (x - bx) as usize];
+            let tile = &mut cur.as_mut().unwrap().1;
+            let i = (y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize;
+            tile.0[i] = lay(tile.0[i], blurred, a, false);
         }
-        let key = key_of(x, y);
-        originals.entry(key).or_insert_with(|| pixels.tiles.get(&key).cloned());
-        changed.insert(key);
-        let blurred = buf[(y - by) as usize * w + (x - bx) as usize];
-        let tile = pixels.tile_mut(key);
-        let i = (y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize;
-        tile.0[i] = lay(tile.0[i], blurred, a, false);
     }
+    BUF.with(|b| *b.borrow_mut() = buf);
 }
 
-/// Пиксели под отпечатком и покрытие в каждом.
+/// Пиксели под отпечатком и покрытие в каждом — построчно, слева направо (порядок важен для
+/// сумм с плавающей точкой). Точки с нулевым покрытием пропускаются; внутри круга постоянного
+/// покрытия не считаются ни корень, ни профиль.
 fn for_pixels(d: &Pending, mut f: impl FnMut(i32, i32, f32)) {
-    let reach = d.shape.outer() + 1.0;
-    let (x0, x1) = ((d.x - reach).floor() as i32, (d.x + reach).ceil() as i32);
-    let (y0, y1) = ((d.y - reach).floor() as i32, (d.y + reach).ceil() as i32);
-    for y in y0..=y1 {
-        for x in x0..=x1 {
-            let (cx, cy) = (x as f32 + 0.5 - d.x, y as f32 + 0.5 - d.y);
-            let cov = d.shape.coverage((cx * cx + cy * cy).sqrt());
+    for_rows(d, |y, ra, rb, cov_at| {
+        for x in ra..=rb {
+            let cov = cov_at(x);
             if cov > 0.0 {
                 f(x, y, cov);
             }
         }
+    });
+}
+
+/// Строки отпечатка: `f(y, x_from, x_to, покрытие(x))`.
+fn for_rows(d: &Pending, mut f: impl FnMut(i32, i32, i32, &dyn Fn(i32) -> f32)) {
+    let reach = d.shape.outer() + 1.0;
+    let (x0, x1) = ((d.x - reach).floor() as i32, (d.x + reach).ceil() as i32);
+    let (y0, y1) = ((d.y - reach).floor() as i32, (d.y + reach).ceil() as i32);
+    let round = d.shape.coverage(reach - 1.0) <= 0.0;
+    let flat_cov = d.shape.coverage(0.0);
+    let flat_r2 = d.shape.flat_r2();
+    for y in y0..=y1 {
+        let cy = y as f32 + 0.5 - d.y;
+        let (mut ra, mut rb) = (x0, x1);
+        if round {
+            let w2 = reach * reach - cy * cy;
+            if w2 < 0.0 {
+                continue;
+            }
+            let w = w2.sqrt() + 1.0;
+            ra = ra.max((d.x - 0.5 - w).floor() as i32);
+            rb = rb.min((d.x - 0.5 + w).ceil() as i32);
+        }
+        let cov_at = |x: i32| {
+            let cx = x as f32 + 0.5 - d.x;
+            let d2 = cx * cx + cy * cy;
+            if d2 < flat_r2 { flat_cov } else { d.shape.coverage(d2.sqrt()) }
+        };
+        f(y, ra, rb, &cov_at);
+    }
+}
+
+/// Плоская сетка флажков/весов над прямоугольником (вместо хеш-таблиц по точкам).
+struct Grid<T> {
+    x0: i32,
+    y0: i32,
+    w: usize,
+    v: Vec<T>,
+}
+
+impl<T: Copy> Grid<T> {
+    fn over(batch: &[Pending], fill: T) -> Self {
+        let mut b = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+        for d in batch {
+            let reach = d.shape.outer() + 1.0;
+            b.0 = b.0.min((d.x - reach).floor() as i32);
+            b.1 = b.1.min((d.y - reach).floor() as i32);
+            b.2 = b.2.max((d.x + reach).ceil() as i32);
+            b.3 = b.3.max((d.y + reach).ceil() as i32);
+        }
+        let w = (b.2 - b.0 + 1).max(0) as usize;
+        let h = (b.3 - b.1 + 1).max(0) as usize;
+        Grid { x0: b.0, y0: b.1, w, v: vec![fill; w * h] }
+    }
+    fn at(&mut self, x: i32, y: i32) -> &mut T {
+        &mut self.v[(y - self.y0) as usize * self.w + (x - self.x0) as usize]
     }
 }
 

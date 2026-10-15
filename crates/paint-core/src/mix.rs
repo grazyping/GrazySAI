@@ -72,30 +72,113 @@ pub fn box_blur(buf: &mut [[f64; 4]], w: usize, h: usize, r: usize, horizontal: 
     if r == 0 {
         return;
     }
-    let (len, lines) = if horizontal { (w, h) } else { (h, w) };
-    let at = |line: usize, i: usize| if horizontal { line * w + i } else { i * w + line };
-    let mut src = vec![[0.0f64; 4]; len];
+    if horizontal {
+        blur_rows(buf, w, r);
+    } else {
+        blur_columns(buf, w, h, r);
+    }
+}
+
+fn workers(cells: usize) -> usize {
+    if cells < 40_000 {
+        1
+    } else {
+        std::thread::available_parallelism().map_or(4, |n| n.get())
+    }
+}
+
+/// Скользящее среднее одной линии `src` в `out` (края повторяются).
+fn blur_line(src: &[[f64; 4]], out: &mut [[f64; 4]], r: usize) {
+    let len = src.len();
     let n = (2 * r + 1) as f64;
-    for line in 0..lines {
-        for (i, v) in src.iter_mut().enumerate() {
-            *v = buf[at(line, i)];
-        }
-        let get = |i: isize| src[i.clamp(0, len as isize - 1) as usize];
-        let mut sum = [0.0f64; 4];
-        for i in -(r as isize)..=(r as isize) {
-            let v = get(i);
-            for c in 0..4 {
-                sum[c] += v[c];
-            }
-        }
-        for i in 0..len {
-            buf[at(line, i)] = sum.map(|s| s / n);
-            let (add, sub) = (get(i as isize + r as isize + 1), get(i as isize - r as isize));
-            for c in 0..4 {
-                sum[c] += add[c] - sub[c];
-            }
+    let get = |i: isize| src[i.clamp(0, len as isize - 1) as usize];
+    let mut sum = [0.0f64; 4];
+    for i in -(r as isize)..=(r as isize) {
+        let v = get(i);
+        for c in 0..4 {
+            sum[c] += v[c];
         }
     }
+    for (i, o) in out.iter_mut().enumerate() {
+        *o = sum.map(|s| s / n);
+        let (add, sub) = (get(i as isize + r as isize + 1), get(i as isize - r as isize));
+        for c in 0..4 {
+            sum[c] += add[c] - sub[c];
+        }
+    }
+}
+
+/// По строкам; строки независимы — считаются параллельно (арифметика каждой строки прежняя).
+fn blur_rows(buf: &mut [[f64; 4]], w: usize, r: usize) {
+    let one = |line: &mut [[f64; 4]]| {
+        let src = line.to_vec();
+        blur_line(&src, line, r);
+    };
+    let threads = workers(buf.len());
+    if threads < 2 {
+        buf.chunks_mut(w).for_each(one);
+        return;
+    }
+    let per = (buf.len() / w).div_ceil(threads) * w;
+    std::thread::scope(|scope| {
+        for part in buf.chunks_mut(per) {
+            scope.spawn(move || part.chunks_mut(w).for_each(one));
+        }
+    });
+}
+
+/// Указатель на буфер для потоков, пишущих в непересекающиеся столбцы.
+#[derive(Clone, Copy)]
+struct Cols(*mut [f64; 4]);
+unsafe impl Send for Cols {}
+unsafe impl Sync for Cols {}
+
+/// По столбцам: полосы по 16 столбцов копируются в непрерывный кусок, считаются, пишутся назад.
+fn blur_columns(buf: &mut [[f64; 4]], w: usize, h: usize, r: usize) {
+    const B: usize = 16;
+    let bands = w.div_ceil(B);
+    let ptr = Cols(buf.as_mut_ptr());
+    let band = move |k: usize| {
+        let p = ptr;
+        let (x0, x1) = (k * B, ((k + 1) * B).min(w));
+        let bw = x1 - x0;
+        let mut local = vec![[0.0f64; 4]; bw * h];
+        // SAFETY: полоса k — только столбцы x0..x1, другие потоки их не трогают; буфер жив,
+        // пока идут потоки (scope).
+        unsafe {
+            for y in 0..h {
+                for j in 0..bw {
+                    local[j * h + y] = *p.0.add(y * w + x0 + j);
+                }
+            }
+        }
+        let mut out = vec![[0.0f64; 4]; h];
+        for j in 0..bw {
+            blur_line(&local[j * h..(j + 1) * h], &mut out, r);
+            unsafe {
+                for (y, v) in out.iter().enumerate() {
+                    *p.0.add(y * w + x0 + j) = *v;
+                }
+            }
+        }
+    };
+    let threads = workers(buf.len()).min(bands);
+    if threads < 2 {
+        (0..bands).for_each(band);
+        return;
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| loop {
+                let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if k >= bands {
+                    break;
+                }
+                band(k);
+            });
+        }
+    });
 }
 
 /// Средний цвет холста под пачкой: сумма предумноженных каналов 0..=1 и число пикселей.
@@ -241,5 +324,50 @@ mod tests {
         assert_eq!(sizes, [2, 2, 2, 2]);
         assert_eq!((batch_limit(0.0), batch_limit(1.0)), (20, 4));
         assert_eq!(batch_dabs(1.0), 1);
+    }
+}
+
+#[cfg(test)]
+mod blur_tests {
+    use super::*;
+
+    /// Прежний последовательный счёт — образец для параллельного.
+    fn reference(buf: &mut [[f64; 4]], w: usize, h: usize, r: usize, horizontal: bool) {
+        let (len, lines) = if horizontal { (w, h) } else { (h, w) };
+        let at = |line: usize, i: usize| if horizontal { line * w + i } else { i * w + line };
+        let mut src = vec![[0.0f64; 4]; len];
+        let n = (2 * r + 1) as f64;
+        for line in 0..lines {
+            for (i, v) in src.iter_mut().enumerate() {
+                *v = buf[at(line, i)];
+            }
+            let get = |i: isize| src[i.clamp(0, len as isize - 1) as usize];
+            let mut sum = [0.0f64; 4];
+            for i in -(r as isize)..=(r as isize) {
+                let v = get(i);
+                for c in 0..4 {
+                    sum[c] += v[c];
+                }
+            }
+            for i in 0..len {
+                buf[at(line, i)] = sum.map(|s| s / n);
+                let (add, sub) = (get(i as isize + r as isize + 1), get(i as isize - r as isize));
+                for c in 0..4 {
+                    sum[c] += add[c] - sub[c];
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn parallel_blur_is_bit_exact() {
+        let (w, h) = (333usize, 271usize);
+        let start: Vec<[f64; 4]> = (0..w * h).map(|i| [((i * 37) % 101) as f64 / 101.0, ((i * 11) % 13) as f64 / 13.0, 0.25, 1.0]).collect();
+        for (r, horizontal) in [(1, true), (40, false), (88, true), (88, false), (300, false)] {
+            let (mut a, mut b) = (start.clone(), start.clone());
+            box_blur(&mut a, w, h, r, horizontal);
+            reference(&mut b, w, h, r, horizontal);
+            assert!(a == b, "r {r}, по строкам {horizontal}");
+        }
     }
 }

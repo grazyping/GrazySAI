@@ -815,3 +815,155 @@ fn mask_create_paint_apply_undo() {
     assert!(doc.layers[0].mask.is_some());
     assert_eq!(doc.layers[0].pixels.get(5, 5)[3], paint_core::pixel::ONE as u16);
 }
+
+/// Скорость большого карандаша (запуск: `cargo test --release big_pencil -- --ignored --nocapture`)
+/// и отпечаток результата — чтобы ускорение не меняло ни одной точки.
+#[test]
+#[ignore]
+fn big_pencil_speed() {
+    use paint_core::{BrushParams, InputPoint, Stroke};
+    for size in [350.0f32, 100.0, 20.0] {
+        let mut s = Stroke::new(BrushParams { size, hardness: 1.0, ..Default::default() });
+        let t = std::time::Instant::now();
+        for i in 0..=100 {
+            s.add_point(InputPoint { x: 400.0 + i as f32 * 10.0, y: 400.0 + (i as f32 * 0.1).sin() * 50.0, pressure: 0.6 + 0.4 * (i as f32 * 0.07).cos().abs() });
+        }
+        let mut h: u64 = 0;
+        let mut keys: Vec<_> = s.mask.tiles.keys().copied().collect();
+        keys.sort();
+        for k in keys {
+            for &v in s.mask.tiles[&k].0.iter() {
+                h = h.wrapping_mul(1_000_003).wrapping_add(v as u64);
+            }
+        }
+        eprintln!("size {size}: {:.2} s, hash {h:x}", t.elapsed().as_secs_f32());
+    }
+}
+
+/// Мазок большим карандашом так, как его ведёт окно: точка за точкой, после каждой — показ.
+#[test]
+#[ignore]
+fn big_pencil_live_speed() {
+    use paint_core::{BrushParams, InputPoint, LiveStroke, Stroke};
+    let mut doc = paint_core::Document::new(2000, 1500);
+    let t = std::time::Instant::now();
+    let mut live = LiveStroke::new(vec![0], Stroke::new(BrushParams { size: 350.0, hardness: 1.0, ..Default::default() }), [10, 20, 30]);
+    let (mut paint, mut layer, mut show) = (0.0f32, 0.0f32, 0.0f32);
+    for i in 0..=500 {
+        let a = std::time::Instant::now();
+        live.stroke.add_point(InputPoint { x: 400.0 + i as f32 * 2.0, y: 600.0, pressure: 1.0 });
+        paint += a.elapsed().as_secs_f32();
+        let b = std::time::Instant::now();
+        let keys = doc.live_update(&mut live);
+        layer += b.elapsed().as_secs_f32();
+        let c = std::time::Instant::now();
+        for k in keys {
+            let _ = doc.render_tile(k);
+        }
+        show += c.elapsed().as_secs_f32();
+    }
+    doc.live_finish(live);
+    eprintln!("всего {:.2} с: отпечатки {paint:.2} с, слой {layer:.2} с, показ {show:.2} с (показ в окне идёт во все ядра)", t.elapsed().as_secs_f32());
+}
+
+/// Скорость смешивающих кистей большого размера (Кисть, Акварель) — мазок, как в окне.
+#[test]
+#[ignore]
+fn big_mixing_speed() {
+    use paint_core::mix::MixParams;
+    use paint_core::{BrushParams, InputPoint, LiveStroke, Stroke};
+    for (name, mix, size) in [("Кисть", MixParams::new(0.0, 0.0, 0.5), 350.0), ("Акварель", MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }, 350.0), ("Акварель", MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }, 100.0), ("Кисть", MixParams::new(0.0, 0.0, 0.5), 100.0)] {
+        let mut doc = paint_core::Document::new(2000, 1500);
+        for y in 0..1500 {
+            for x in 0..2000 {
+                doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([(x / 8) as u8, (y / 6) as u8, 90, 255]));
+            }
+        }
+        let params = BrushParams { size, hardness: 1.0, min_size: 0.5, density_by_pressure: true, mix: Some(mix), ..Default::default() };
+        let t = std::time::Instant::now();
+        let mut live = LiveStroke::new(vec![0], Stroke::new(params), [10, 20, 30]);
+        for i in 0..=250 {
+            live.stroke.add_point(InputPoint { x: 400.0 + i as f32 * 4.0, y: 600.0, pressure: 1.0 });
+            let _ = doc.live_update(&mut live);
+        }
+        doc.live_finish(live);
+        eprintln!("{name} {size}: {:.2} с на 1000 px", t.elapsed().as_secs_f32());
+    }
+}
+
+/// Отпечаток результата смешивающих кистей — ускорение не должно менять ни одной точки.
+#[test]
+fn mixing_brushes_fingerprint() {
+    use paint_core::mix::MixParams;
+    use paint_core::{BrushParams, InputPoint, LiveStroke, Stroke};
+    let mut out = Vec::new();
+    for (mix, hardness) in [(MixParams::new(0.0, 0.0, 0.5), 1.0), (MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }, 1.0), (MixParams::new(0.4, 0.2, 0.7), 0.5)] {
+        for size in [9.0f32, 60.0] {
+            let mut doc = paint_core::Document::new(200, 160);
+            for y in 0..160 {
+                for x in 0..200 {
+                    doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([(x + 30) as u8, (y * 3 / 2) as u8, 90, if x > 150 { 120 } else { 255 }]));
+                }
+            }
+            let params = BrushParams { size, hardness, min_size: 0.5, density_by_pressure: true, mix: Some(mix), ..Default::default() };
+            let mut live = LiveStroke::new(vec![0], Stroke::new(params), [10, 20, 200]);
+            for i in 0..=40 {
+                live.stroke.add_point(InputPoint { x: 20.0 + i as f32 * 4.0, y: 80.0 + (i as f32 * 0.3).sin() * 20.0, pressure: 0.3 + 0.7 * (i as f32 / 40.0) });
+                let _ = doc.live_update(&mut live);
+            }
+            doc.live_finish(live);
+            let mut h: u64 = 0;
+            for v in doc.flatten() {
+                h = h.wrapping_mul(1_000_003).wrapping_add(v as u64);
+            }
+            out.push(format!("{h:x}"));
+        }
+    }
+    eprintln!("MIXHASH {}", out.join(" "));
+    // записано до ускорения (0.8.0)
+    assert_eq!(out.join(" "), "bf3e5db5b697d0d5 214927a0972cab75 528117d6c0fd55b8 7285ce06e186d174 6b59d6783d952f3b 7ee04a9e9b1bf76a");
+}
+
+#[test]
+#[ignore]
+fn box_blur_speed() {
+    let (w, h) = (706usize, 706usize);
+    let mut buf: Vec<[f64; 4]> = (0..w * h).map(|i| [(i % 7) as f64, 0.5, 0.2, 1.0]).collect();
+    let t = std::time::Instant::now();
+    for _ in 0..10 {
+        for r in [88, 88] {
+            paint_core::mix::box_blur(&mut buf, w, h, r, false);
+            paint_core::mix::box_blur(&mut buf, w, h, r, true);
+        }
+    }
+    eprintln!("BLUR {:.1} ms за пачку", t.elapsed().as_secs_f32() * 100.0);
+}
+
+/// То же для крупных кистей (параллельный счёт): отпечаток записан на версии 0.8.0.
+#[test]
+fn mixing_brushes_fingerprint_large() {
+    use paint_core::mix::MixParams;
+    use paint_core::{BrushParams, InputPoint, LiveStroke, Stroke};
+    let mut out = Vec::new();
+    for (mix, hardness, size) in [(MixParams::new(0.0, 0.0, 0.5), 1.0, 300.0f32), (MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }, 1.0, 240.0), (MixParams::new(0.4, 0.2, 0.7), 0.5, 260.0)] {
+        let mut doc = paint_core::Document::new(700, 500);
+        for y in 0..500 {
+            for x in 0..700 {
+                doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([(x / 3) as u8, (y / 2) as u8, 90, if x > 500 { 120 } else { 255 }]));
+            }
+        }
+        let params = BrushParams { size, hardness, min_size: 0.5, density_by_pressure: true, mix: Some(mix), ..Default::default() };
+        let mut live = LiveStroke::new(vec![0], Stroke::new(params), [10, 20, 200]);
+        for i in 0..=12 {
+            live.stroke.add_point(InputPoint { x: 200.0 + i as f32 * 6.0, y: 250.0 + (i as f32 * 0.3).sin() * 20.0, pressure: 0.4 + 0.6 * (i as f32 / 12.0) });
+            let _ = doc.live_update(&mut live);
+        }
+        doc.live_finish(live);
+        let mut h: u64 = 0;
+        for v in doc.flatten() {
+            h = h.wrapping_mul(1_000_003).wrapping_add(v as u64);
+        }
+        out.push(format!("{h:x}"));
+    }
+    assert_eq!(out.join(" "), "f60af491ae73d34 1a3c8d8f49694b68 92bf592505a8c9e");
+}
