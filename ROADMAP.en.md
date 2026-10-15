@@ -119,7 +119,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [ ] Several views of one canvas (“New View”, “New Floating View”)
 - [x] Layer outline (inside, centre, outside, canvas edges) — checked against the live SAI
 - [x] Layer menu as in SAI: “Merge Visible Layers”, “Rotate Layer 90°”, “Layer Property…” — after the live SAI
-- [x] Binary pen: lines without anti-aliasing (SAI's exact stair rule — later)
+- [x] Binary pen: points by SAI's code — stairs at slope 0.2 match SAI; at 0.4 SAI adds a point on every other stair — not found yet
 - [x] PSD: opening 16-bit files and layer masks, ZIP compression, grayscale — checked with files from Krita (`docs/21-file-formats.md`)
 - [x] Custom tools in the grid: right-click an empty cell to add a tool of the needed kind; duplicate, delete, property (name, second line), as in SAI
 - [x] Edit: cut, copy, paste (as a new layer), copy by selection bounds; new canvas from the clipboard — system clipboard
