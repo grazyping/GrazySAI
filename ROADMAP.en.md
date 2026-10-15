@@ -119,6 +119,18 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] PSD: opening 16-bit files and layer masks, ZIP compression, grayscale — checked with files from Krita (`docs/21-file-formats.md`)
 - [ ] Custom tools in the grid: right-click an empty cell to add a tool of the needed kind, as in SAI
 
+### First after 1.0 — filters as in Clip Studio Paint
+
+A Filter menu with CSP's submenus; windows with a preview, like our current filters. They only change layer pixels, so `.sai2` compatibility is kept. CSP is closed source: built from its manual's descriptions, checked against Krita and GIMP where they have a match.
+
+- [ ] Blur filters: average, blur and strong blur, motion, radial, spin, smoothing, lens blur (bokeh)
+- [ ] Sharpen filters: sharpen, sharpen more, unsharp mask
+- [ ] Effect filters: chromatic aberration, noise, mosaic, crystallize, retro film
+- [ ] Distort filters: pinch, ripple, fish-eye lens, polar coordinates, wave, twirl
+- [ ] Render filter: Perlin noise
+- [ ] Correction filters: remove dust, adjust line width
+- [ ] Stylizing filters “Pencil drawing” and “Artistic” (our own take — CSP's method is closed)
+
 ### Beyond SAI — ideas from Krita (after 1.0)
 
 Everything SAI has comes first; these come later. They do not hurt compatibility: in `.sai2` everything lands as plain pixels, the rest goes to the program settings. The window keeps SAI's look: new things live in menus and windows, not on the panels. No Krita code (GPL) is copied — only ideas and formulas, checked against SAI or Krita.
@@ -133,7 +145,7 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 - [ ] “Save incremental” (picture_002.sai2)
 - [ ] History memory and recovery copy interval in a settings window
 - [ ] Wrap-around mode (the canvas repeats at its edges) and a pixel grid at high zoom
-- [ ] Filters: levels, curves, sharpen, unsharp mask, noise, median
+- [ ] Filters: levels, curves, median
 - [ ] Colouring by line art (like Krita's colorize mask); the result is plain pixels
 - [ ] Reference images over the canvas
 - [ ] Pop-up palette on right click (off by default)
