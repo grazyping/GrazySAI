@@ -445,3 +445,16 @@ S-кривая = S-Curve Gradation
 Имя слоя: = Layer Name:
 Повернуть слой на 90° против часовой = Rotate Layer 90° CCW
 Повернуть слой на 90° по часовой = Rotate Layer 90° CW
+
+# Буфер обмена (0.8.19)
+Вырезать = Cut
+Копировать = Copy
+Вставить = Paste
+Копировать по границам выделения = Copy by Selection Bounds
+Холст из буфера обмена = Create Canvas from Clipboard
+Копируется рисунок обычного слоя = Only a normal layer's painting can be copied
+Нечего копировать = Nothing to copy
+Скопировано {0}×{1} = Copied {0}×{1}
+В буфере обмена нет картинки = No picture in the clipboard
+Вставлено {0}×{1} = Pasted {0}×{1}
+Сначала сохраните холст: новый холст заменит текущий = Save the canvas first: a new canvas replaces the current one

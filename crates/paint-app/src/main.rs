@@ -11,6 +11,7 @@ mod settings;
 mod update;
 mod files;
 mod virtual_pen;
+mod clip;
 
 use i18n::{tr, trf};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
@@ -783,6 +784,10 @@ struct PaintApp {
     gradient: Option<GradientEdit>,
     grad_opts: GradientOpts,
     transform_kind: TransformKind,
+    /// Системный буфер обмена и клавиша «Вставить».
+    clip: clip::Clip,
+    /// Где лежало последнее скопированное у нас (x, y, ширина, высота) — вставка на то же место.
+    clip_own: Option<(i32, i32, u32, u32)>,
     /// Окно «Свойства слоя»: слой и новое имя.
     layer_props: Option<(Vec<usize>, String)>,
     /// Окно «Свойства» инструмента сетки: номер, имя, вторая строка.
@@ -908,6 +913,8 @@ impl PaintApp {
             grad_opts: GradientOpts::default(),
             transform_kind: TransformKind::Free,
             tool_props: None,
+            clip: clip::Clip::new(),
+            clip_own: None,
             layer_props: None,
             transform_perspective: 0,
             move_drag: None,
@@ -1289,6 +1296,93 @@ impl PaintApp {
     }
 
     /// Форма и текстура инструмента `tool` для нового штриха (файлы ищутся в папке SAI).
+    /// Копировать (и вырезать) рисунок текущего слоя в пределах выделения, как Ctrl+C в SAI;
+    /// без выделения — весь рисунок слоя. `bounds` — «Копировать по границам выделения»:
+    /// прямоугольник выделения целиком, без мягкого края.
+    fn copy(&mut self, cut: bool, bounds: bool) {
+        let Some(layer) = self.doc.layer(&self.selected) else { return };
+        if layer.children.is_some() {
+            self.status = String::from(tr("Копируется рисунок обычного слоя"));
+            return;
+        }
+        let sel = &self.doc.selection;
+        let whole = sel.is_empty();
+        let area = if whole { paint_core::selection::content_bounds(&layer.pixels) } else { sel.bounds() };
+        let Some((x0, y0, x1, y1)) = area.map(|(a, b, c, d)| (a.max(0), b.max(0), c.min(self.doc.width as i32), d.min(self.doc.height as i32))).filter(|b| b.0 < b.2 && b.1 < b.3) else {
+            self.status = String::from(tr("Нечего копировать"));
+            return;
+        };
+        let (w, h) = ((x1 - x0) as u32, (y1 - y0) as u32);
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let p = layer.pixels.get(x, y);
+                let k = if whole || bounds { paint_core::pixel::ONE } else { sel.amount(x, y) };
+                let p = p.map(|c| ((c as u32 * k + paint_core::pixel::ONE / 2) / paint_core::pixel::ONE) as u16);
+                rgba.extend(paint_core::pixel::to_rgba8(p));
+            }
+        }
+        self.clip.set_image(&clip::Image { width: w, height: h, rgba });
+        self.clip_own = Some((x0, y0, w, h));
+        if cut {
+            self.layer_action(LayerAction::Clear);
+        }
+        self.status = trf("Скопировано {0}×{1}", &[&w, &h]);
+    }
+
+    /// Вставить картинку из буфера новым слоем над текущим, как Ctrl+V в SAI: своё — на то же
+    /// место, чужое — посередине холста. Потом — инструмент «Перемещение».
+    fn paste(&mut self) {
+        let Some(img) = self.clip.get_image() else {
+            self.status = String::from(tr("В буфере обмена нет картинки"));
+            return;
+        };
+        let (x, y) = match self.clip_own {
+            Some((x, y, w, h)) if (w, h) == (img.width, img.height) => (x, y),
+            _ => ((self.doc.width as i32 - img.width as i32) / 2, (self.doc.height as i32 - img.height as i32) / 2),
+        };
+        if self.transform.is_some() {
+            self.finish_transform(true);
+        }
+        let n = count_layers(&self.doc.layers) + 1;
+        let mut layer = Layer::new(&trf("Слой{0}", &[&n]));
+        for (i, px) in img.rgba.chunks_exact(4).enumerate() {
+            if px[3] > 0 {
+                let (dx, dy) = ((i as u32 % img.width) as i32, (i as u32 / img.width) as i32);
+                layer.pixels.set(x + dx, y + dy, paint_core::pixel::from_rgba8([px[0], px[1], px[2], px[3]]));
+            }
+        }
+        let mut path = self.selected.clone();
+        let index = path.pop().map_or(0, |i| i + 1);
+        path.push(index);
+        let keys = self.doc.insert_layer(&path, layer);
+        self.selected = path;
+        self.after_structure(keys);
+        self.tool = Tool::Move;
+        self.dirty = true;
+        self.status = trf("Вставлено {0}×{1}", &[&img.width, &img.height]);
+    }
+
+    /// «Холст из буфера обмена»: новый холст размером с картинку буфера.
+    fn canvas_from_clipboard(&mut self) {
+        if self.dirty {
+            self.status = String::from(tr("Сначала сохраните холст: новый холст заменит текущий"));
+            return;
+        }
+        let Some(img) = self.clip.get_image() else {
+            self.status = String::from(tr("В буфере обмена нет картинки"));
+            return;
+        };
+        self.new_canvas(img.width, img.height);
+        for (i, px) in img.rgba.chunks_exact(4).enumerate() {
+            if px[3] > 0 {
+                let (x, y) = ((i as u32 % img.width) as i32, (i as u32 / img.width) as i32);
+                self.doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([px[0], px[1], px[2], px[3]]));
+            }
+        }
+        self.invalidate_all();
+    }
+
     /// Правый щелчок по сетке инструментов: добавить, копия, удалить, свойства.
     fn grid_action(&mut self, i: usize, act: GridAction) {
         match act {
@@ -2858,6 +2952,11 @@ impl PaintApp {
                     }
                 });
                 ui.separator();
+                if ui.add(menu_item("Холст из буфера обмена", "Ctrl+B")).clicked() {
+                    self.canvas_from_clipboard();
+                    ui.close_menu();
+                }
+                ui.separator();
                 if ui.button(tr("Выход")).clicked() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -2881,6 +2980,23 @@ impl PaintApp {
                     .clicked()
                 {
                     self.redo();
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui.add(menu_item("Вырезать", "Ctrl+X")).clicked() {
+                    self.copy(true, false);
+                    ui.close_menu();
+                }
+                if ui.add(menu_item("Копировать", "Ctrl+C")).clicked() {
+                    self.copy(false, false);
+                    ui.close_menu();
+                }
+                if ui.add(menu_item("Вставить", "Ctrl+V")).clicked() {
+                    self.paste();
+                    ui.close_menu();
+                }
+                if ui.add_enabled(!self.doc.selection.is_empty(), egui::Button::new(tr("Копировать по границам выделения"))).clicked() {
+                    self.copy(false, true);
                     ui.close_menu();
                 }
             });
@@ -6118,6 +6234,28 @@ impl eframe::App for PaintApp {
         // запасные сочетания: Shift+Ctrl+Z — повтор, Ctrl+Plus — приблизить
         let redo_alt = ctx.input(|i| i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::Z));
         let zoom_alt = ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Plus));
+        // буфер обмена: Ctrl+C/X приходят событиями egui, Ctrl+V опрашивается (см. clip.rs)
+        let (ev_copy, ev_cut, ev_paste) = ctx.input(|i| {
+            let has = |f: &dyn Fn(&egui::Event) -> bool| i.events.iter().any(f);
+            (has(&|e| matches!(e, egui::Event::Copy)), has(&|e| matches!(e, egui::Event::Cut)), has(&|e| matches!(e, egui::Event::Paste(_))))
+        });
+        let ctrl_down = ctx.input(|i| i.modifiers.command);
+        let paste = self.clip.paste_pressed(ctrl_down && !typing, ev_paste);
+        let ctrl_b = ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::B));
+        if !typing && self.live.is_none() {
+            if ev_copy {
+                self.copy(false, false);
+            }
+            if ev_cut {
+                self.copy(true, false);
+            }
+            if paste {
+                self.paste();
+            }
+            if ctrl_b {
+                self.canvas_from_clipboard();
+            }
+        }
         if !typing {
             if hit(A::Undo) {
                 self.undo();

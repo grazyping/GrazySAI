@@ -444,3 +444,16 @@ S-кривая = Courbe en S
 Имя слоя: = Nom du calque :
 Повернуть слой на 90° против часовой = Faire pivoter le calque de 90° (sens antihoraire)
 Повернуть слой на 90° по часовой = Faire pivoter le calque de 90° (sens horaire)
+
+# Буфер обмена (0.8.19)
+Вырезать = Couper
+Копировать = Copier
+Вставить = Coller
+Копировать по границам выделения = Copier selon les limites de la sélection
+Холст из буфера обмена = Canevas depuis le presse-papiers
+Копируется рисунок обычного слоя = Seul le dessin d'un calque normal se copie
+Нечего копировать = Rien à copier
+Скопировано {0}×{1} = {0}×{1} copié
+В буфере обмена нет картинки = Pas d'image dans le presse-papiers
+Вставлено {0}×{1} = {0}×{1} collé
+Сначала сохраните холст: новый холст заменит текущий = Enregistrez d'abord : le nouveau canevas remplace l'actuel

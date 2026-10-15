@@ -444,3 +444,16 @@ S-кривая = Curva en S
 Имя слоя: = Nombre de la capa:
 Повернуть слой на 90° против часовой = Girar capa 90° a la izquierda
 Повернуть слой на 90° по часовой = Girar capa 90° a la derecha
+
+# Буфер обмена (0.8.19)
+Вырезать = Cortar
+Копировать = Copiar
+Вставить = Pegar
+Копировать по границам выделения = Copiar según los límites de la selección
+Холст из буфера обмена = Lienzo desde el portapapeles
+Копируется рисунок обычного слоя = Solo se copia el dibujo de una capa normal
+Нечего копировать = Nada que copiar
+Скопировано {0}×{1} = Copiado {0}×{1}
+В буфере обмена нет картинки = No hay imagen en el portapapeles
+Вставлено {0}×{1} = Pegado {0}×{1}
+Сначала сохраните холст: новый холст заменит текущий = Guarde primero: el nuevo lienzo reemplaza al actual

@@ -444,3 +444,16 @@ S-кривая = S-Kurve
 Имя слоя: = Ebenenname:
 Повернуть слой на 90° против часовой = Ebene 90° gegen den Uhrzeigersinn drehen
 Повернуть слой на 90° по часовой = Ebene 90° im Uhrzeigersinn drehen
+
+# Буфер обмена (0.8.19)
+Вырезать = Ausschneiden
+Копировать = Kopieren
+Вставить = Einfügen
+Копировать по границам выделения = Nach Auswahlgrenzen kopieren
+Холст из буфера обмена = Leinwand aus Zwischenablage
+Копируется рисунок обычного слоя = Kopiert wird das Bild einer normalen Ebene
+Нечего копировать = Nichts zu kopieren
+Скопировано {0}×{1} = {0}×{1} kopiert
+В буфере обмена нет картинки = Kein Bild in der Zwischenablage
+Вставлено {0}×{1} = {0}×{1} eingefügt
+Сначала сохраните холст: новый холст заменит текущий = Erst die Leinwand speichern: die neue ersetzt die aktuelle

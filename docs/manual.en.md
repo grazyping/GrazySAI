@@ -210,6 +210,15 @@ Normal layers only (not folders).
   preview (corners are cut at 45°, as in SAI); dilate and erode by 1 px.
 - Brushes, fill, filters and Delete act only inside the selection.
 
+## Clipboard
+
+- **Ctrl+C** copies the layer's painting inside the selection (without one — all of it),
+  **Ctrl+X** cuts, **Ctrl+V** pastes as a new layer above the current one (our own copy lands in
+  the same place, a picture from another program in the middle of the canvas); Move is turned on
+  after pasting. As in SAI.
+- “Edit → Copy by Selection Bounds” copies the whole selection rectangle, without the soft edge.
+- “File → Create Canvas from Clipboard” (Ctrl+B) makes a new canvas the size of the clipboard picture.
+
 ## Move and transform
 
 - **Move**: the Move tool, Ctrl + drag with any tool, or Alt+arrows (by 1 px; with Shift — by
@@ -314,6 +323,8 @@ restores all defaults. Assignments are saved in the settings. The defaults are b
 |---|---|
 | Ctrl+Z / Ctrl+Y (Shift+Ctrl+Z) | Undo / redo |
 | Ctrl+S / Shift+Ctrl+S | Save / save as |
+| Ctrl+C / Ctrl+X / Ctrl+V | Copy / cut / paste as a new layer |
+| Ctrl+B | Create canvas from clipboard |
 | `[` / `]` | Brush size down / up |
 | Ctrl+`+` / Ctrl+`−` | Zoom |
 | N, B, V, C, E | Pencil, airbrush, brush, water, eraser (on a linework layer: N — pen, E — linework eraser) |

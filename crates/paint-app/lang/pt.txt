@@ -444,3 +444,16 @@ S-кривая = Curva em S
 Имя слоя: = Nome da camada:
 Повернуть слой на 90° против часовой = Girar camada 90° anti-horário
 Повернуть слой на 90° по часовой = Girar camada 90° horário
+
+# Буфер обмена (0.8.19)
+Вырезать = Recortar
+Копировать = Copiar
+Вставить = Colar
+Копировать по границам выделения = Copiar pelos limites da seleção
+Холст из буфера обмена = Tela da área de transferência
+Копируется рисунок обычного слоя = Só o desenho de uma camada normal é copiado
+Нечего копировать = Nada para copiar
+Скопировано {0}×{1} = Copiado {0}×{1}
+В буфере обмена нет картинки = Não há imagem na área de transferência
+Вставлено {0}×{1} = Colado {0}×{1}
+Сначала сохраните холст: новый холст заменит текущий = Salve primeiro: a nova tela substitui a atual
