@@ -376,3 +376,9 @@ SOsai на GitHub = SOsai sur GitHub
 Удалить цвет = Supprimer la couleur
 Это текстовый слой: кистью он не правится (как в SAI). «Слой → Растеризовать слой» — сделать обычным = C’est un calque de texte : les pinceaux ne le modifient pas (comme dans SAI). « Calque → Pixelliser le calque » en fait un calque normal
 Это линейка перспективы из более новой SAI: она сохранится в файле как была = C’est une règle de perspective d’un SAI plus récent : elle est conservée telle quelle dans le fichier
+
+# Инструмент «Текст» / Text tool
+Поиск = Rechercher
+Текст: щелчок — новая надпись, по текстовому слою — правка = Texte : clic — nouveau texte, sur un calque de texte — le modifier
+Цвет — основной цвет панели. Жирный, курсив и вертикальный текст — позже. = La couleur est la couleur principale du panneau. Gras, italique et texte vertical — plus tard.
+Шрифт = Police

@@ -82,6 +82,21 @@ enum Tool {
     Fill,
     /// Перемещение слоя или выделенного (то же — Ctrl + перетаскивание).
     Move,
+    /// Текст: щелчок — новая надпись, по текстовому слою — правка (docs/30-text-layers.md).
+    Text,
+}
+
+/// Надпись, которая сейчас правится в окне «Текст».
+struct TextEditing {
+    /// Слой, который правится; `None` — новая надпись.
+    path: Option<Vec<usize>>,
+    x: f64,
+    y: f64,
+    text: String,
+    font: String,
+    size: f32,
+    /// Остальное из файла (флаги, матрица) — сохраняется как было.
+    base: Option<paint_formats::sai2_text::TextLayer>,
 }
 
 /// Перевод координат между экраном и холстом с учётом масштаба, поворота и зеркала вида.
@@ -615,6 +630,11 @@ struct PaintApp {
     /// В открытом файле были слои контура или фигур (их кривые при сохранении станут растром).
     had_vectors: bool,
     show_save_as: bool,
+    /// Инструмент «Текст»: шрифт и размер по умолчанию, открытая правка, строка поиска шрифта.
+    text_font: String,
+    text_size: f32,
+    text_edit: Option<TextEditing>,
+    font_filter: String,
     /// Системное окно «Открыть» / «Сохранить», ждущее ответа.
     file_dialog: Option<files::Pending>,
     /// Для окон, которые открываются не из кадра (клавиши, «Сохранить»).
@@ -727,6 +747,10 @@ impl PaintApp {
             dirty: false,
             had_vectors: false,
             show_save_as: false,
+            text_font: String::new(),
+            text_size: 20.0,
+            text_edit: None,
+            font_filter: String::new(),
             file_dialog: None,
             ctx: None,
             save_path: String::new(),
@@ -1102,6 +1126,117 @@ impl PaintApp {
             paper: g.tex == TexChoice::Paper,
             by_min_density: g.by_min_density,
         })
+    }
+
+    /// Щелчок инструментом «Текст»: правка выбранного текстового слоя или новая надпись в точке.
+    fn begin_text(&mut self, x: f64, y: f64) {
+        use paint_formats::sai2_text;
+        if self.text_font.is_empty() {
+            let fonts = sai2_text::system_fonts();
+            self.text_font = ["Noto Sans", "DejaVu Sans", "Segoe UI", "Arial"]
+                .iter()
+                .find(|f| fonts.iter().any(|n| n == *f))
+                .map(|f| f.to_string())
+                .or_else(|| fonts.first().cloned())
+                .unwrap_or_default();
+        }
+        let existing = self.doc.layer(&self.selected).and_then(|l| l.vector.as_ref()).filter(|v| &v.kind == b"text").and_then(|v| sai2_text::parse(&v.raw));
+        self.text_edit = Some(match existing {
+            Some(t) => {
+                let first = t.runs.first();
+                TextEditing {
+                    path: Some(self.selected.clone()),
+                    x: t.x,
+                    y: t.y,
+                    text: t.text(),
+                    font: first.map_or(self.text_font.clone(), |r| r.font.clone()),
+                    size: first.map_or(self.text_size, |r| r.size),
+                    base: Some(t),
+                }
+            }
+            None => TextEditing { path: None, x, y, text: String::new(), font: self.text_font.clone(), size: self.text_size, base: None },
+        });
+    }
+
+    /// Окно «Текст»: надпись, шрифт, размер; OK — одна запись отмены.
+    fn text_window(&mut self, ctx: &egui::Context) {
+        use paint_formats::sai2_text::{self, TextLayer, TextRun};
+        let Some(mut e) = self.text_edit.take() else { return };
+        let (mut ok, mut cancel) = (false, false);
+        let fonts = sai2_text::system_fonts();
+        let filter = &mut self.font_filter;
+        egui::Window::new(tr("Текст")).collapsible(false).resizable(false).default_width(340.0).show(ctx, |ui| {
+            let edit = ui.add(egui::TextEdit::multiline(&mut e.text).desired_rows(3).desired_width(320.0));
+            if e.text.is_empty() && !edit.has_focus() {
+                edit.request_focus();
+            }
+            ui.horizontal(|ui| {
+                ui.label(tr("Шрифт"));
+                egui::ComboBox::from_id_salt("text_font").selected_text(&e.font).width(240.0).height(360.0).show_ui(ui, |ui| {
+                    ui.add(egui::TextEdit::singleline(filter).hint_text(tr("Поиск")).desired_width(220.0));
+                    let f = filter.to_lowercase();
+                    for name in fonts.iter().filter(|n| f.is_empty() || n.to_lowercase().contains(&f)) {
+                        if ui.selectable_label(*name == e.font, name).clicked() {
+                            e.font = name.clone();
+                        }
+                    }
+                });
+            });
+            ui.horizontal(|ui| {
+                ui.label(tr("Размер"));
+                ui.add(egui::DragValue::new(&mut e.size).range(1.0..=999.0).speed(0.5).suffix(" px"));
+            });
+            ui.weak(tr("Цвет — основной цвет панели. Жирный, курсив и вертикальный текст — позже."));
+            ui.horizontal(|ui| {
+                ok = ui.button("OK").clicked();
+                cancel = ui.button(tr("Отмена")).clicked();
+            });
+        });
+        if cancel {
+            return;
+        }
+        if !ok {
+            self.text_edit = Some(e);
+            return;
+        }
+        self.text_font = e.font.clone();
+        self.text_size = e.size;
+        let c = self.color();
+        let run = TextRun { font: e.font.clone(), size: e.size, color: [c.r(), c.g(), c.b()], style: 0, text: e.text.clone() };
+        let mut layer = e.base.clone().unwrap_or_else(|| TextLayer::new(e.x, e.y, run.clone()));
+        // правка без изменений атрибутов и текста — слой как был (в том числе по отрезкам)
+        let same = e.base.as_ref().is_some_and(|b| b.text() == e.text && b.runs.first().is_some_and(|r| r.font == e.font && r.size == e.size));
+        if !same {
+            layer.runs = vec![run];
+        }
+        if e.text.is_empty() && e.path.is_none() {
+            return;
+        }
+        let mut pixels = paint_core::tile::ColorMap::new();
+        sai2_text::render(&layer, &mut pixels);
+        let vector = paint_core::layer::VectorData { kind: *b"text", raw: sai2_text::to_bytes(&layer) };
+        match e.path {
+            Some(path) => {
+                if same {
+                    return;
+                }
+                let keys = self.doc.set_vector_layer(&path, vector, pixels);
+                self.invalidate(keys);
+            }
+            None => {
+                let mut path = self.selected.clone();
+                let index = path.pop().map_or(0, |i| i + 1);
+                let mut l = Layer::new(tr("Текст"));
+                l.vector = Some(vector);
+                l.pixels = pixels;
+                path.push(index);
+                let keys = self.doc.insert_layer(&path, l);
+                self.selected = path;
+                self.after_structure(keys);
+            }
+        }
+        self.thumbs.clear();
+        self.dirty = true;
     }
 
     /// Окно «Обновление»: что нашлось, заметки выпуска, загрузка и перезапуск.
@@ -2927,7 +3062,9 @@ impl PaintApp {
                     if sai_ui::icon_button(ui, b, self.tool == Tool::Fill, true, &keys::hint(tr("Заливка (Alt+Delete — залить выделенное)")), |p, r, c| sai_ui::glyph(p, r, c, "bucket")).clicked() {
                         self.tool = Tool::Fill;
                     }
-                    sai_ui::icon_button(ui, b, false, false, tr("Текст"), |p, r, c| sai_ui::glyph(p, r, c, "text"));
+                    if sai_ui::icon_button(ui, b, self.tool == Tool::Text, true, tr("Текст: щелчок — новая надпись, по текстовому слою — правка"), |p, r, c| sai_ui::glyph(p, r, c, "text")).clicked() {
+                        self.tool = Tool::Text;
+                    }
                 });
                 ui.horizontal(|ui| {
                     if sai_ui::icon_button(
@@ -4429,6 +4566,13 @@ impl PaintApp {
                     self.fill_at(c.x, c.y);
                 }
             }
+        } else if self.tool == Tool::Text {
+            if pressed && response.hovered() && self.text_edit.is_none() {
+                if let Some(pos) = pointer {
+                    let c = to_canvas(pos, self.zoom, self.offset);
+                    self.begin_text(c.x as f64, c.y as f64);
+                }
+            }
         } else if matches!(self.tool, Tool::Marquee | Tool::Lasso | Tool::Wand) {
             // Выделение: Shift — добавить, Alt — вычесть, Shift+Alt — пересечь.
             let mods = ui.input(|i| i.modifiers);
@@ -5006,6 +5150,9 @@ impl PaintApp {
         }
         if self.show_update {
             self.update_window(ctx);
+        }
+        if self.text_edit.is_some() {
+            self.text_window(ctx);
         }
     }
 }

@@ -376,3 +376,9 @@ SOsai на GitHub = SOsai no GitHub
 Удалить цвет = Excluir cor
 Это текстовый слой: кистью он не правится (как в SAI). «Слой → Растеризовать слой» — сделать обычным = É uma camada de texto: os pincéis não a editam (como no SAI). “Camada → Rasterizar camada” a torna normal
 Это линейка перспективы из более новой SAI: она сохранится в файле как была = É uma régua de perspectiva de um SAI mais novo: fica no arquivo como estava
+
+# Инструмент «Текст» / Text tool
+Поиск = Pesquisar
+Текст: щелчок — новая надпись, по текстовому слою — правка = Texto: clique — novo texto, numa camada de texto — editar
+Цвет — основной цвет панели. Жирный, курсив и вертикальный текст — позже. = A cor é a cor principal do painel. Negrito, itálico e texto vertical — depois.
+Шрифт = Fonte

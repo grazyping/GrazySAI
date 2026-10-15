@@ -311,4 +311,9 @@ fn text_layers_round_trip() {
     let (a, b) = (blocks(&p), blocks(&out));
     let _ = std::fs::remove_file(&out);
     assert_eq!(a, b, "блоки text после сохранения изменились");
+    // свой разбор и запись дают те же байты, что у образца
+    for raw in &a {
+        let t = paint_formats::sai2_text::parse(raw).unwrap();
+        assert_eq!(&paint_formats::sai2_text::to_bytes(&t), raw, "{t:?}");
+    }
 }

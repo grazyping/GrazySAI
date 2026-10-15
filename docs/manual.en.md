@@ -263,7 +263,10 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 own dialog on Linux (KDE, GNOME). Without one, a simple window with the file path appears.
 
 Text layers from `.sai2` are shown with the font chosen in SAI (if it is installed) and saved as
-they were. Text can't be edited yet — only rasterized (“Layer → Rasterize Layer”). Perspective
+they were. The Text tool (“T” button): click the canvas for new text, click with a text layer
+selected to edit it; the window has the text, font and size, the color is the main color. Bold,
+italic and vertical text are not supported yet. Brushes don't paint on text — rasterize it first
+(“Layer → Rasterize Layer”). Perspective
 rulers from newer SAI versions are not shown but are saved too.
 
 ## Settings and recovery
