@@ -455,7 +455,6 @@ S-кривая = S-Kurve
 Скопировано {0}×{1} = {0}×{1} kopiert
 В буфере обмена нет картинки = Kein Bild in der Zwischenablage
 Вставлено {0}×{1} = {0}×{1} eingefügt
-Сначала сохраните холст: новый холст заменит текущий = Erst die Leinwand speichern: die neue ersetzt die aktuelle
 
 # Недавние файлы (0.8.20)
 Недавние = Zuletzt verwendet
@@ -486,3 +485,9 @@ S-кривая = S-Kurve
 Показывать все панели = Alle Panels anzeigen
 Курсор-точка у кистей = Punktcursor für Pinsel
 Кружок размера кисти = Kreis der Pinselgröße
+
+# Вкладки холстов (0.8.22)
+Закрыть = Schließen
+Закрыть холст = Leinwand schließen
+В «{0}» есть несохранённые изменения. = „{0}“ hat ungespeicherte Änderungen.
+Закрыть без сохранения = Ohne Speichern schließen

@@ -303,6 +303,11 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 | `.psd` | Yes (RGB and grayscale, 8 and 16 bit, layer masks) | “File → Export → PSD”: with layers, folders, modes |
 | `.png`, `.jpg` | Yes, as one layer | “File → Export → PNG / JPEG” (flattened image) |
 
+Every canvas has its own tab at the bottom of the window, as in SAI: “New”, “Open” and “Create
+Canvas from Clipboard” open a new tab (an untouched empty canvas is replaced). Click a tab to
+switch to it; the cross, the middle button or Ctrl+W (“File → Close”) closes it, asking first if
+there are unsaved changes. Crash recovery keeps a copy of the active canvas.
+
 “File → Recent” lists the last 10 files opened or saved.
 
 “Open”, “Save As” and “Export” show the system window: File Explorer on Windows, the desktop's

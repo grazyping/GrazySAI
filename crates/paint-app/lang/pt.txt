@@ -455,7 +455,6 @@ S-кривая = Curva em S
 Скопировано {0}×{1} = Copiado {0}×{1}
 В буфере обмена нет картинки = Não há imagem na área de transferência
 Вставлено {0}×{1} = Colado {0}×{1}
-Сначала сохраните холст: новый холст заменит текущий = Salve primeiro: a nova tela substitui a atual
 
 # Недавние файлы (0.8.20)
 Недавние = Recentes
@@ -486,3 +485,9 @@ S-кривая = Curva em S
 Показывать все панели = Mostrar todos os painéis
 Курсор-точка у кистей = Cursor de ponto para pincéis
 Кружок размера кисти = Círculo do tamanho do pincel
+
+# Вкладки холстов (0.8.22)
+Закрыть = Fechar
+Закрыть холст = Fechar tela
+В «{0}» есть несохранённые изменения. = “{0}” tem alterações não salvas.
+Закрыть без сохранения = Fechar sem salvar

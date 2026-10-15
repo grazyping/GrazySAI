@@ -188,6 +188,27 @@ struct FilterDialog {
     dirty: bool,
 }
 
+/// Холст во вкладке, пока он не активен (у активного эти поля — в `PaintApp`).
+struct Tab {
+    doc: Document,
+    file: Option<PathBuf>,
+    ruler: ruler::Ruler,
+    notes: Vec<String>,
+    zoom: f32,
+    offset: Vec2,
+    selected: Vec<usize>,
+    dirty: bool,
+    had_vectors: bool,
+    view_angle: f32,
+    view_flip: bool,
+}
+
+impl Tab {
+    fn title(&self) -> String {
+        self.file.as_ref().and_then(|f| f.file_name()).map_or_else(|| tr("НовыйХолст1.sai2").to_string(), |n| n.to_string_lossy().into_owned())
+    }
+}
+
 /// Меню «Окно», как в SAI 2017.
 #[derive(Clone, Copy, PartialEq)]
 struct WindowOpts {
@@ -805,6 +826,11 @@ struct PaintApp {
     gradient: Option<GradientEdit>,
     grad_opts: GradientOpts,
     transform_kind: TransformKind,
+    /// Вкладки холстов: на месте активной — `None` (её поля — в самом `PaintApp`).
+    tabs: Vec<Option<Tab>>,
+    active_tab: usize,
+    /// Закрыть вкладку с несохранёнными изменениями — спросить.
+    close_ask: Option<usize>,
     /// Настройки меню «Окно».
     win: WindowOpts,
     /// Нажата Tab (`Some(shift)`), перехвачена до egui в `raw_input_hook`.
@@ -946,6 +972,9 @@ impl PaintApp {
             recent: Vec::new(),
             bg_color_edit: None,
             win: WindowOpts::default(),
+            tabs: vec![None],
+            active_tab: 0,
+            close_ask: None,
             tab_pressed: None,
             clip_own: None,
             layer_props: None,
@@ -1415,10 +1444,6 @@ impl PaintApp {
 
     /// «Холст из буфера обмена»: новый холст размером с картинку буфера.
     fn canvas_from_clipboard(&mut self) {
-        if self.dirty {
-            self.status = String::from(tr("Сначала сохраните холст: новый холст заменит текущий"));
-            return;
-        }
         let Some(img) = self.clip.get_image() else {
             self.status = String::from(tr("В буфере обмена нет картинки"));
             return;
@@ -1759,6 +1784,7 @@ impl PaintApp {
             };
             match loaded {
                 Ok(doc) => {
+                    self.prepare_tab();
                     self.doc = doc;
                     self.had_vectors = false;
                     self.notes.clear();
@@ -1782,6 +1808,7 @@ impl PaintApp {
         let started = Instant::now();
         match paint_formats::sai2_doc::load(&path) {
             Ok(loaded) => {
+                self.prepare_tab();
                 // кривые слоёв контура и фигур теперь сохраняются как были
                 self.had_vectors = false;
                 self.doc = loaded.document;
@@ -1803,6 +1830,129 @@ impl PaintApp {
         }
     }
 
+    /// Забрать поля активного холста во вкладку (на их месте — пустой холст).
+    fn take_tab(&mut self) -> Tab {
+        Tab {
+            doc: std::mem::replace(&mut self.doc, Document::new(1, 1)),
+            file: self.file.take(),
+            ruler: self.ruler,
+            notes: std::mem::take(&mut self.notes),
+            zoom: self.zoom,
+            offset: self.offset,
+            selected: std::mem::take(&mut self.selected),
+            dirty: self.dirty,
+            had_vectors: self.had_vectors,
+            view_angle: self.view_angle,
+            view_flip: self.view_flip,
+        }
+    }
+
+    /// Сделать вкладку активной: её поля — в `PaintApp`.
+    fn put_tab(&mut self, t: Tab) {
+        self.doc = t.doc;
+        self.file = t.file;
+        self.ruler = t.ruler;
+        self.notes = t.notes;
+        self.zoom = t.zoom;
+        self.offset = t.offset;
+        self.selected = t.selected;
+        self.dirty = t.dirty;
+        self.had_vectors = t.had_vectors;
+        self.view_angle = t.view_angle;
+        self.view_flip = t.view_flip;
+        self.live = None;
+        self.thumbs.clear();
+        self.sel_dirty = true;
+        self.invalidate_all();
+    }
+
+    /// Закончить начатое на холсте (штрих, трансформация, окна с предпросмотром) перед сменой вкладки.
+    fn settle(&mut self) {
+        if self.transform.is_some() {
+            self.finish_transform(true);
+        }
+        self.finish_filter(false);
+        self.finish_gradient(true);
+        if let Some(d) = self.outline_dialog.take() {
+            let keys = self.doc.set_layer_pixels(&d.path, d.original);
+            self.invalidate(keys);
+        }
+        if let Some(d) = self.grow_dialog.take() {
+            self.doc.selection = d.original;
+        }
+        self.sel_poly = None;
+        self.text_edit = None;
+        self.layer_props = None;
+    }
+
+    /// Перейти на вкладку `i`.
+    fn switch_tab(&mut self, i: usize) {
+        if i == self.active_tab || i >= self.tabs.len() || self.live.is_some() {
+            return;
+        }
+        self.settle();
+        let cur = self.take_tab();
+        self.tabs[self.active_tab] = Some(cur);
+        let t = self.tabs[i].take().expect("tab slot");
+        self.active_tab = i;
+        self.put_tab(t);
+    }
+
+    /// Перед новым холстом или открытием: если текущий холст уже в деле — новая вкладка
+    /// (как в SAI каждый холст — своя вкладка), иначе — на месте пустого.
+    fn prepare_tab(&mut self) {
+        let pristine = self.file.is_none() && !self.dirty && !self.doc.can_undo();
+        if pristine {
+            return;
+        }
+        self.settle();
+        let cur = self.take_tab();
+        self.tabs[self.active_tab] = Some(cur);
+        self.tabs.push(None);
+        self.active_tab = self.tabs.len() - 1;
+        self.thumbs.clear();
+        self.dirty = false;
+        self.had_vectors = false;
+        self.view_angle = 0.0;
+        self.view_flip = false;
+        self.ruler = ruler::Ruler::default();
+    }
+
+    /// Закрыть вкладку `i` (без вопросов); последняя закрытая — пустой новый холст.
+    fn close_tab(&mut self, i: usize) {
+        if i >= self.tabs.len() {
+            return;
+        }
+        if i != self.active_tab {
+            self.tabs.remove(i);
+            if self.active_tab > i {
+                self.active_tab -= 1;
+            }
+            return;
+        }
+        self.settle();
+        if self.tabs.len() == 1 {
+            self.new_canvas_in_place(self.doc.width.max(1), self.doc.height.max(1));
+            self.dirty = false;
+            return;
+        }
+        self.tabs.remove(i);
+        let next = i.min(self.tabs.len() - 1);
+        let t = self.tabs[next].take().expect("tab slot");
+        self.active_tab = next;
+        self.put_tab(t);
+    }
+
+    /// Закрыть вкладку, спросив, если в ней есть несохранённое.
+    fn request_close_tab(&mut self, i: usize) {
+        let dirty = if i == self.active_tab { self.dirty } else { self.tabs.get(i).and_then(|t| t.as_ref()).is_some_and(|t| t.dirty) };
+        if dirty {
+            self.close_ask = Some(i);
+        } else {
+            self.close_tab(i);
+        }
+    }
+
     /// Запомнить файл в «Недавних» (как «Recent» в SAI): сверху, без повторов, до 10.
     fn remember_recent(&mut self, path: &std::path::Path) {
         self.recent.retain(|p| p != path);
@@ -1811,6 +1961,11 @@ impl PaintApp {
     }
 
     fn new_canvas(&mut self, w: u32, h: u32) {
+        self.prepare_tab();
+        self.new_canvas_in_place(w, h);
+    }
+
+    fn new_canvas_in_place(&mut self, w: u32, h: u32) {
         self.doc = new_document(w, h);
         self.had_vectors = false;
         self.file = None;
@@ -3040,6 +3195,10 @@ impl PaintApp {
                         self.status = trf("Файла больше нет: {0}", &[&p.display()]);
                         self.recent.retain(|r| *r != p);
                     }
+                }
+                if ui.add(menu_item("Закрыть", "Ctrl+W")).clicked() {
+                    self.request_close_tab(self.active_tab);
+                    ui.close_menu();
                 }
                 ui.separator();
                 if ui.add(menu_item("Холст из буфера обмена", "Ctrl+B")).clicked() {
@@ -5732,6 +5891,32 @@ impl PaintApp {
         if self.sel_poly.is_some() && !(self.tool == Tool::Lasso && self.lasso_polygon) {
             self.sel_poly = None;
         }
+        if let Some(i) = self.close_ask {
+            let name = match self.tabs.get(i) {
+                Some(Some(t)) => t.title(),
+                _ => self.file_name(),
+            };
+            let mut choice = None;
+            egui::Window::new(tr("Закрыть холст")).collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.label(trf("В «{0}» есть несохранённые изменения.", &[&name]));
+                ui.horizontal(|ui| {
+                    if ui.button(tr("Закрыть без сохранения")).clicked() {
+                        choice = Some(true);
+                    }
+                    if ui.button(tr("Отмена")).clicked() {
+                        choice = Some(false);
+                    }
+                });
+            });
+            match choice {
+                Some(true) => {
+                    self.close_ask = None;
+                    self.close_tab(i);
+                }
+                Some(false) => self.close_ask = None,
+                None => {}
+            }
+        }
         let mut bg_done = None;
         if let Some(c) = self.bg_color_edit.as_mut() {
             let mut open = true;
@@ -6454,6 +6639,10 @@ impl eframe::App for PaintApp {
         let ctrl_down = ctx.input(|i| i.modifiers.command);
         let paste = self.clip.paste_pressed(ctrl_down && !typing, ev_paste);
         let ctrl_b = ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::B));
+        let ctrl_w = ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::W));
+        if !typing && self.live.is_none() && ctrl_w {
+            self.request_close_tab(self.active_tab);
+        }
         if !typing && self.live.is_none() {
             if ev_copy {
                 self.copy(false, false);
@@ -6699,29 +6888,46 @@ impl eframe::App for PaintApp {
             side(self.win.layers_right, "layers").exact_width(186.0).resizable(false).show(ctx, |ui| self.right_panel(ui));
             egui::TopBottomPanel::top("quick").show(ctx, |ui| self.quick_bar(ui));
         }
+        let mut tab_click = None;
+        let mut tab_close = None;
         egui::TopBottomPanel::bottom("tabs").show_animated(ctx, !self.win.panels_hidden, |ui| {
             ui.horizontal(|ui| {
-                let (rect, _) =
-                    ui.allocate_exact_size(Vec2::new(180.0, 18.0), egui::Sense::click());
-                let p = ui.painter();
-                p.rect_filled(rect, 0.0, sai_ui::SELECT_BG);
-                p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::SELECT_EDGE));
-                p.text(
-                    rect.left_center() + Vec2::new(6.0, 0.0),
-                    egui::Align2::LEFT_CENTER,
-                    self.file_name(),
-                    egui::FontId::proportional(12.0),
-                    sai_ui::INK,
-                );
-                p.text(
-                    rect.right_center() - Vec2::new(4.0, 0.0),
-                    egui::Align2::RIGHT_CENTER,
-                    format!("{:.0}%", self.zoom * 100.0),
-                    egui::FontId::proportional(10.0),
-                    sai_ui::INK,
-                );
+                for i in 0..self.tabs.len() {
+                    let active = i == self.active_tab;
+                    let (name, zoom, dirty) = match &self.tabs[i] {
+                        Some(t) => (t.title(), t.zoom, t.dirty),
+                        None => (self.file_name(), self.zoom, self.dirty),
+                    };
+                    let (rect, resp) = ui.allocate_exact_size(Vec2::new(180.0, 18.0), egui::Sense::click());
+                    let p = ui.painter();
+                    p.rect_filled(rect, 0.0, if active { sai_ui::SELECT_BG } else { Color32::from_gray(236) });
+                    p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, if active { sai_ui::SELECT_EDGE } else { sai_ui::BORDER }));
+                    let label = if dirty { format!("{name} *") } else { name };
+                    p.text(rect.left_center() + Vec2::new(6.0, 0.0), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), sai_ui::INK);
+                    p.text(rect.right_center() - Vec2::new(18.0, 0.0), egui::Align2::RIGHT_CENTER, format!("{:.0}%", zoom * 100.0), egui::FontId::proportional(10.0), sai_ui::INK);
+                    // крестик закрытия
+                    let x = Rect::from_center_size(rect.right_center() - Vec2::new(8.0, 0.0), Vec2::splat(12.0));
+                    let over_x = ui.input(|i| i.pointer.hover_pos()).is_some_and(|h| x.contains(h));
+                    p.text(x.center(), egui::Align2::CENTER_CENTER, "×", egui::FontId::proportional(12.0), if over_x { Color32::from_rgb(200, 40, 40) } else { sai_ui::INK });
+                    if resp.clicked() {
+                        if over_x {
+                            tab_close = Some(i);
+                        } else {
+                            tab_click = Some(i);
+                        }
+                    }
+                    if resp.middle_clicked() {
+                        tab_close = Some(i);
+                    }
+                }
             });
         });
+        if let Some(i) = tab_click {
+            self.switch_tab(i);
+        }
+        if let Some(i) = tab_close {
+            self.request_close_tab(i);
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::none())
             .show(ctx, |ui| self.canvas(ui));

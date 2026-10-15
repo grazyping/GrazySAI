@@ -456,7 +456,6 @@ S-кривая = S-Curve Gradation
 Скопировано {0}×{1} = Copied {0}×{1}
 В буфере обмена нет картинки = No picture in the clipboard
 Вставлено {0}×{1} = Pasted {0}×{1}
-Сначала сохраните холст: новый холст заменит текущий = Save the canvas first: a new canvas replaces the current one
 
 # Недавние файлы (0.8.20)
 Недавние = Recent
@@ -487,3 +486,9 @@ S-кривая = S-Curve Gradation
 Показывать все панели = Show All User Interface Panels
 Курсор-точка у кистей = Use Dot Cursor for Brush Tools
 Кружок размера кисти = Show Brush Size Circle for Brush Tools
+
+# Вкладки холстов (0.8.22)
+Закрыть = Close
+Закрыть холст = Close Canvas
+В «{0}» есть несохранённые изменения. = “{0}” has unsaved changes.
+Закрыть без сохранения = Close Without Saving
