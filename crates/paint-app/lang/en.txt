@@ -525,3 +525,13 @@ S-кривая = S-Curve Gradation
 # Плавающий вид (0.8.30)
 Новый плавающий вид = New Floating View
 Плавающий вид = Floating View
+
+# Фильтры «Резкость» (0.8.31)
+Размытие = Blur
+Резкость = Sharpen
+Сильная резкость = Sharpen More
+Нерезкая маска… = Unsharp Mask…
+Нерезкая маска = Unsharp Mask
+Без настроек — OK применяет. = No settings — OK applies.
+Сила: = Strength:
+Порог: = Threshold:

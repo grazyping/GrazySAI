@@ -430,3 +430,118 @@ mod gradient_tests {
         assert!((Gradient { bg: None, ..g() }.paint(400, 0).1 as i32 - ONE as i32 / 2).abs() < 30);
     }
 }
+
+/// Слой в плотный буфер (предумноженные 0..=1) по прямоугольнику содержимого, расширенному на
+/// `pad` и обрезанному холстом `w`×`h`.
+/// Плотный буфер: левый верх, ширина, высота, точки.
+type Dense = (i32, i32, usize, usize, Vec<[f64; 4]>);
+
+fn dense(src: &ColorMap, w: u32, h: u32, pad: i32) -> Option<Dense> {
+    let (x0, y0, x1, y1) = crate::selection::content_bounds(src)?;
+    let (x0, y0) = ((x0 - pad).max(0), (y0 - pad).max(0));
+    let (x1, y1) = ((x1 + pad).min(w as i32), (y1 + pad).min(h as i32));
+    if x0 >= x1 || y0 >= y1 {
+        return None;
+    }
+    let (bw, bh) = ((x1 - x0) as usize, (y1 - y0) as usize);
+    let k = 1.0 / ONE as f64;
+    let buf = (0..bw * bh).map(|i| src.get(x0 + (i % bw) as i32, y0 + (i / bw) as i32).map(|c| c as f64 * k)).collect();
+    Some((x0, y0, bw, bh, buf))
+}
+
+/// Записать плотный результат обратно с долей выделения.
+fn write_back(src: &ColorMap, x0: i32, y0: i32, bw: usize, res: &[[f64; 4]], sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let mut out = src.clone();
+    for (i, v) in res.iter().enumerate() {
+        let (x, y) = (x0 + (i % bw) as i32, y0 + (i / bw) as i32);
+        let s = sel(x, y);
+        if s == 0 {
+            continue;
+        }
+        let a = (v[3].clamp(0.0, 1.0) * ONE as f64 + 0.5) as u16;
+        let q = |c: f64| ((c.clamp(0.0, 1.0) * ONE as f64 + 0.5) as u16).min(a);
+        let n = [q(v[0]), q(v[1]), q(v[2]), a];
+        let old = src.get(x, y);
+        let p = if s >= ONE { n } else { mix(old, n, s) };
+        if p != old {
+            out.set(x, y, p);
+        }
+    }
+    out.tiles.retain(|_, t| t.0.iter().any(|p| p[3] != 0));
+    out
+}
+
+/// «Резкость» (как Sharpen / Sharpen More в Clip Studio Paint): свёртка крестом 3×3 — центр
+/// `1 + 4s`, соседи `−s` (s = 0,5 обычная, 1 — сильная), по предумноженным каналам.
+pub fn sharpen(src: &ColorMap, w: u32, h: u32, s: f64, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let Some((x0, y0, bw, bh, buf)) = dense(src, w, h, 1) else { return src.clone() };
+    let at = |x: isize, y: isize| buf[y.clamp(0, bh as isize - 1) as usize * bw + x.clamp(0, bw as isize - 1) as usize];
+    let res: Vec<[f64; 4]> = (0..bw * bh)
+        .map(|i| {
+            let (x, y) = ((i % bw) as isize, (i / bw) as isize);
+            let (c, l, r, u, d) = (at(x, y), at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1));
+            [0, 1, 2, 3].map(|k| c[k] * (1.0 + 4.0 * s) - s * (l[k] + r[k] + u[k] + d[k]))
+        })
+        .collect();
+    write_back(src, x0, y0, bw, &res, sel)
+}
+
+/// «Нерезкая маска» (Unsharp mask): к точке прибавляется `сила·(точка − размытая)` там, где
+/// разница больше порога (0–255); размытие — Гаусс с σ = радиус.
+pub fn unsharp_mask(src: &ColorMap, w: u32, h: u32, radius: f64, amount: f64, threshold: u8, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let pad = (radius.max(0.1) * 3.0).ceil() as i32;
+    let blurred = gaussian_blur(src, w, h, radius, &|_, _| ONE);
+    let Some((x0, y0, bw, bh, buf)) = dense(src, w, h, pad) else { return src.clone() };
+    let k = 1.0 / ONE as f64;
+    let t = threshold as f64 / 255.0;
+    let res: Vec<[f64; 4]> = (0..bw * bh)
+        .map(|i| {
+            let (x, y) = (x0 + (i % bw) as i32, y0 + (i / bw) as i32);
+            let o = buf[i];
+            let b = blurred.get(x, y).map(|c| c as f64 * k);
+            let diff = [0, 1, 2, 3].map(|c| o[c] - b[c]);
+            if diff.iter().fold(0.0f64, |m, d| m.max(d.abs())) <= t {
+                o
+            } else {
+                [0, 1, 2, 3].map(|c| o[c] + amount * diff[c])
+            }
+        })
+        .collect();
+    let _ = bh;
+    write_back(src, x0, y0, bw, &res, sel)
+}
+
+#[cfg(test)]
+mod sharpen_tests {
+    use super::*;
+    use crate::pixel::{from_rgba8, to_rgba8};
+
+    fn step() -> ColorMap {
+        let mut m = ColorMap::new();
+        for y in 0..20 {
+            for x in 0..20 {
+                let g = if x < 10 { 77 } else { 178 };
+                m.set(x, y, from_rgba8([g, g, g, 255]));
+            }
+        }
+        m
+    }
+
+    #[test]
+    fn sharpen_raises_contrast_at_the_edge_only() {
+        let out = sharpen(&step(), 20, 20, 0.5, &|_, _| ONE);
+        let g = |x| to_rgba8(out.get(x, 10))[0] as i32;
+        // 178 + 0,5·(178 − 77) ≈ 228; 77 − 0,5·101 ≈ 26; вдали от края — как было
+        assert!((g(10) - 228).abs() <= 1 && (g(9) - 26).abs() <= 1, "{} {}", g(9), g(10));
+        assert_eq!((g(3), g(16)), (77, 178));
+    }
+
+    #[test]
+    fn unsharp_threshold_keeps_small_differences() {
+        let src = step();
+        let same = unsharp_mask(&src, 20, 20, 2.0, 1.0, 255, &|_, _| ONE);
+        assert_eq!(to_rgba8(same.get(10, 10)), to_rgba8(src.get(10, 10)));
+        let sharp = unsharp_mask(&src, 20, 20, 2.0, 1.0, 0, &|_, _| ONE);
+        assert!(to_rgba8(sharp.get(10, 10))[0] > 178);
+    }
+}

@@ -524,3 +524,13 @@ S-кривая = Curva en S
 # Плавающий вид (0.8.30)
 Новый плавающий вид = Nueva vista flotante
 Плавающий вид = Vista flotante
+
+# Фильтры «Резкость» (0.8.31)
+Размытие = Desenfoque
+Резкость = Enfocar
+Сильная резкость = Enfocar más
+Нерезкая маска… = Máscara de enfoque…
+Нерезкая маска = Máscara de enfoque
+Без настроек — OK применяет. = Sin ajustes — OK aplica.
+Сила: = Intensidad:
+Порог: = Umbral:

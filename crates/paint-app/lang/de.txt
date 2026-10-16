@@ -524,3 +524,13 @@ S-кривая = S-Kurve
 # Плавающий вид (0.8.30)
 Новый плавающий вид = Neue schwebende Ansicht
 Плавающий вид = Schwebende Ansicht
+
+# Фильтры «Резкость» (0.8.31)
+Размытие = Weichzeichnen
+Резкость = Schärfen
+Сильная резкость = Stärker schärfen
+Нерезкая маска… = Unscharf maskieren…
+Нерезкая маска = Unscharf maskieren
+Без настроек — OK применяет. = Keine Einstellungen — OK wendet an.
+Сила: = Stärke:
+Порог: = Schwelle:

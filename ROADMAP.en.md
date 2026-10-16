@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.30)
+### 0.8 — linework and shapes (current version 0.8.31)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -136,7 +136,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 A Filter menu with CSP's submenus; windows with a preview, like our current filters. They only change layer pixels, so `.sai2` compatibility is kept. CSP is closed source: built from its manual's descriptions, checked against Krita and GIMP where they have a match.
 
 - [ ] Blur filters: average, blur and strong blur, motion, radial, spin, smoothing, lens blur (bokeh)
-- [ ] Sharpen filters: sharpen, sharpen more, unsharp mask
+- [x] Sharpen filters: sharpen, sharpen more, unsharp mask (0.8.31)
 - [ ] Effect filters: chromatic aberration, noise, mosaic, crystallize, retro film
 - [ ] Distort filters: pinch, ripple, fish-eye lens, polar coordinates, wave, twirl
 - [ ] Render filter: Perlin noise

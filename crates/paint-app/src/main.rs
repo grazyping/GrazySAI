@@ -173,6 +173,11 @@ enum FilterKind {
     HueSaturation,
     BrightnessContrast,
     GaussianBlur,
+    /// «Резкость» и «Сильная резкость» (как в Clip Studio Paint) — без настроек.
+    Sharpen,
+    SharpenMore,
+    /// «Нерезкая маска»: радиус, сила, порог.
+    Unsharp,
 }
 
 /// Открытый фильтр: настройки, слой и его исходные пиксели (для предпросмотра и отмены).
@@ -181,6 +186,9 @@ struct FilterDialog {
     hs: paint_core::filters::HueSaturation,
     bc: paint_core::filters::BrightnessContrast,
     radius: f64,
+    /// Нерезкая маска: сила (1 = 100 %) и порог 0–255.
+    amount: f64,
+    threshold: u8,
     preview: bool,
     path: Vec<usize>,
     original: paint_core::tile::ColorMap,
@@ -2860,7 +2868,9 @@ impl PaintApp {
             kind,
             hs: Default::default(),
             bc: Default::default(),
-            radius: 1.0,
+            radius: if kind == FilterKind::Unsharp { 2.0 } else { 1.0 },
+            amount: 1.0,
+            threshold: 0,
             preview: true,
             path: self.selected.clone(),
             original: layer.pixels.clone(),
@@ -2883,6 +2893,11 @@ impl PaintApp {
                 map_pixels(&f.original, &amount, &|p| bc.apply(p))
             }
             FilterKind::GaussianBlur => gaussian_blur(&f.original, self.doc.width, self.doc.height, f.radius, &amount),
+            FilterKind::Sharpen | FilterKind::SharpenMore => {
+                let s = if f.kind == FilterKind::Sharpen { 0.5 } else { 1.0 };
+                paint_core::filters::sharpen(&f.original, self.doc.width, self.doc.height, s, &amount)
+            }
+            FilterKind::Unsharp => paint_core::filters::unsharp_mask(&f.original, self.doc.width, self.doc.height, f.radius, f.amount, f.threshold, &amount),
         }
     }
 
@@ -3571,16 +3586,27 @@ impl PaintApp {
                 }
             });
             ui.menu_button(keys::hint(tr("Фильтр(T)")), |ui| {
-                for (item, key, kind) in [
-                    ("Тон и насыщенность…", "Ctrl+U", FilterKind::HueSaturation),
-                    ("Яркость и контраст…", "", FilterKind::BrightnessContrast),
-                    ("Размытие по Гауссу…", "", FilterKind::GaussianBlur),
-                ] {
+                for (item, key, kind) in [("Тон и насыщенность…", "Ctrl+U", FilterKind::HueSaturation), ("Яркость и контраст…", "", FilterKind::BrightnessContrast)] {
                     if ui.add(menu_item(item, key)).clicked() {
                         self.open_filter(kind);
                         ui.close_menu();
                     }
                 }
+                // подменю — как в Clip Studio Paint
+                ui.menu_button(tr("Размытие"), |ui| {
+                    if ui.button(tr("Размытие по Гауссу…")).clicked() {
+                        self.open_filter(FilterKind::GaussianBlur);
+                        ui.close_menu();
+                    }
+                });
+                ui.menu_button(tr("Резкость"), |ui| {
+                    for (item, kind) in [("Резкость", FilterKind::Sharpen), ("Сильная резкость", FilterKind::SharpenMore), ("Нерезкая маска…", FilterKind::Unsharp)] {
+                        if ui.button(tr(item)).clicked() {
+                            self.open_filter(kind);
+                            ui.close_menu();
+                        }
+                    }
+                });
             });
             ui.menu_button(keys::hint(tr("Вид(V)")), |ui| {
                 if ui.add(menu_item("Увеличить", "Ctrl++")).clicked() {
@@ -6330,10 +6356,13 @@ impl PaintApp {
                 FilterKind::HueSaturation => tr("Тон и насыщенность"),
                 FilterKind::BrightnessContrast => tr("Яркость и контраст"),
                 FilterKind::GaussianBlur => tr("Размытие по Гауссу"),
+                FilterKind::Sharpen => tr("Резкость"),
+                FilterKind::SharpenMore => tr("Сильная резкость"),
+                FilterKind::Unsharp => tr("Нерезкая маска"),
             };
             let mut open = true;
             egui::Window::new(title).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
-                let before = (f.hs, f.bc, f.radius, f.preview);
+                let before = (f.hs, f.bc, f.radius, f.preview, f.amount, f.threshold);
                 egui::Grid::new("filter").num_columns(2).show(ui, |ui| {
                     match f.kind {
                         FilterKind::HueSaturation => {
@@ -6366,6 +6395,24 @@ impl PaintApp {
                             ui.add(egui::Slider::new(&mut f.radius, 0.1..=40.0).step_by(0.1));
                             ui.end_row();
                         }
+                        FilterKind::Sharpen | FilterKind::SharpenMore => {
+                            ui.label(tr("Без настроек — OK применяет."));
+                            ui.end_row();
+                        }
+                        FilterKind::Unsharp => {
+                            ui.label(tr("Радиус:"));
+                            ui.add(egui::Slider::new(&mut f.radius, 0.1..=50.0).step_by(0.1));
+                            ui.end_row();
+                            ui.label(tr("Сила:"));
+                            let mut pct = (f.amount * 100.0).round() as i32;
+                            if ui.add(egui::Slider::new(&mut pct, 1..=500).suffix(" %")).changed() {
+                                f.amount = pct as f64 / 100.0;
+                            }
+                            ui.end_row();
+                            ui.label(tr("Порог:"));
+                            ui.add(egui::Slider::new(&mut f.threshold, 0..=255));
+                            ui.end_row();
+                        }
                     }
                 });
                 ui.horizontal(|ui| {
@@ -6377,7 +6424,7 @@ impl PaintApp {
                         finish = Some(false);
                     }
                 });
-                if before != (f.hs, f.bc, f.radius, f.preview) {
+                if before != (f.hs, f.bc, f.radius, f.preview, f.amount, f.threshold) {
                     f.dirty = true;
                 }
             });
