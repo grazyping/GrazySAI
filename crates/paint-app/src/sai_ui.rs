@@ -730,6 +730,77 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
                 if name == "selpen" { "pen" } else { "eraser" },
             );
         }
+        // значки меню (новые пункты сверх SAI)
+        "f_blur" => {
+            // размытое пятно: круги с убывающей плотностью
+            for (i, a) in [(1.0, 60u8), (0.75, 110), (0.5, 200)] {
+                p.circle_filled(ctr, k * i, Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (a as f32 * c.a() as f32 / 255.0) as u8));
+            }
+        }
+        "f_sharpen" => {
+            // ромб с жёсткой гранью
+            let pts = vec![ctr + Vec2::new(0.0, -k), ctr + Vec2::new(k * 0.7, 0.0), ctr + Vec2::new(0.0, k), ctr + Vec2::new(-k * 0.7, 0.0)];
+            p.add(Shape::closed_line(pts, s));
+            p.add(Shape::convex_polygon(vec![ctr + Vec2::new(0.0, -k), ctr + Vec2::new(k * 0.7, 0.0), ctr + Vec2::new(0.0, k)], c, Stroke::NONE));
+        }
+        "f_correct" => {
+            // линия разной толщины и пылинки
+            p.line_segment([ctr + Vec2::new(-k, k * 0.5), ctr + Vec2::new(k * 0.2, -k * 0.7)], Stroke::new(2.4_f32, c));
+            p.line_segment([ctr + Vec2::new(-k * 0.2, k * 0.9), ctr + Vec2::new(k, -k * 0.3)], Stroke::new(1.0_f32, c));
+            p.circle_filled(ctr + Vec2::new(k * 0.7, k * 0.7), k * 0.12, c);
+            p.circle_filled(ctr + Vec2::new(-k * 0.7, -k * 0.6), k * 0.12, c);
+        }
+        "f_effect" => {
+            // искра: четырёхлучевая звезда
+            let pts: Vec<Pos2> = (0..8)
+                .map(|i| {
+                    let t = i as f32 * PI / 4.0 - PI / 2.0;
+                    let rr = if i % 2 == 0 { k } else { k * 0.28 };
+                    ctr + Vec2::new(t.cos(), t.sin()) * rr
+                })
+                .collect();
+            p.add(Shape::closed_line(pts.clone(), s));
+            for i in (0..8).step_by(2) {
+                p.add(Shape::convex_polygon(vec![ctr, pts[i], pts[(i + 1) % 8]], c, Stroke::NONE));
+            }
+        }
+        "f_render" => {
+            // шум: клетки разной яркости
+            let cell = 2.0 * k / 3.0;
+            for (i, a) in [230u8, 90, 160, 60, 200, 120, 150, 250, 80].into_iter().enumerate() {
+                let o = r.center() - Vec2::splat(k) + Vec2::new((i % 3) as f32 * cell, (i / 3) as f32 * cell);
+                p.rect_filled(Rect::from_min_size(o, Vec2::splat(cell - 0.4)), 0.0, Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (a as f32 * c.a() as f32 / 255.0) as u8));
+            }
+        }
+        "f_distort" => {
+            // волнистые линии
+            for dy in [-0.5f32, 0.0, 0.5] {
+                let pts: Vec<Pos2> = (0..=16)
+                    .map(|i| {
+                        let t = i as f32 / 16.0;
+                        ctr + Vec2::new((t * 2.0 - 1.0) * k, dy * k * 1.3 + (t * TAU).sin() * k * 0.22)
+                    })
+                    .collect();
+                p.add(Shape::line(pts, s));
+            }
+        }
+        "export" => {
+            // стрелка из коробки
+            p.add(Shape::line(vec![ctr + Vec2::new(-k * 0.3, -k * 0.6), ctr + Vec2::new(-k * 0.9, -k * 0.6), ctr + Vec2::new(-k * 0.9, k * 0.9), ctr + Vec2::new(k * 0.6, k * 0.9), ctr + Vec2::new(k * 0.6, k * 0.3)], s));
+            p.line_segment([ctr + Vec2::new(-k * 0.3, k * 0.3), ctr + Vec2::new(k * 0.9, -k * 0.9)], s);
+            p.add(Shape::line(vec![ctr + Vec2::new(k * 0.2, -k * 0.9), ctr + Vec2::new(k * 0.9, -k * 0.9), ctr + Vec2::new(k * 0.9, -k * 0.2)], s));
+        }
+        "view_tab" => {
+            // две вкладки одного холста
+            p.rect_stroke(Rect::from_min_max(ctr + Vec2::new(-k * 0.9, -k * 0.5), ctr + Vec2::new(k * 0.4, k * 0.9)), 0.0, s);
+            p.add(Shape::line(vec![ctr + Vec2::new(-k * 0.5, -k * 0.5), ctr + Vec2::new(-k * 0.5, -k * 0.9), ctr + Vec2::new(k * 0.9, -k * 0.9), ctr + Vec2::new(k * 0.9, k * 0.5), ctr + Vec2::new(k * 0.4, k * 0.5)], s));
+        }
+        "view_float" => {
+            // окно с заголовком
+            let q = Rect::from_center_size(ctr, Vec2::new(k * 1.8, k * 1.5));
+            p.rect_stroke(q, 0.0, s);
+            p.rect_filled(Rect::from_min_size(q.min, Vec2::new(q.width(), k * 0.45)), 0.0, c);
+        }
         _ => {}
     }
 }

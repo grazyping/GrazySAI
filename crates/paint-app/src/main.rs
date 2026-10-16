@@ -3,6 +3,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod i18n;
+mod icons;
 mod pen;
 mod ruler;
 mod sai_ui;
@@ -3525,7 +3526,7 @@ impl PaintApp {
                     self.ask_save_as();
                     ui.close_menu();
                 }
-                ui.menu_button(tr("Экспорт"), |ui| {
+                icons::submenu(ui, "export", tr("Экспорт"), |ui| {
                     for (label, ext) in EXPORTS {
                         if ext == "psd" {
                             ui.separator();
@@ -3877,7 +3878,7 @@ impl PaintApp {
                     }
                 }
                 // подменю — как в Clip Studio Paint
-                ui.menu_button(tr("Размытие"), |ui| {
+                icons::submenu(ui, "f_blur", tr("Размытие"), |ui| {
                     for (item, kind) in [
                         ("Среднее", FilterKind::Average),
                         ("Размытие", FilterKind::Blur),
@@ -3895,7 +3896,7 @@ impl PaintApp {
                         }
                     }
                 });
-                ui.menu_button(tr("Эффекты"), |ui| {
+                icons::submenu(ui, "f_effect", tr("Эффекты"), |ui| {
                     for (item, kind) in [
                         ("Хроматическая аберрация…", FilterKind::Aberration),
                         ("Шум…", FilterKind::Noise),
@@ -3911,7 +3912,7 @@ impl PaintApp {
                         }
                     }
                 });
-                ui.menu_button(tr("Искажение"), |ui| {
+                icons::submenu(ui, "f_distort", tr("Искажение"), |ui| {
                     use paint_core::filters::DistortKind as D;
                     for (item, kind) in [
                         ("Щипок…", D::Pinch),
@@ -3927,13 +3928,13 @@ impl PaintApp {
                         }
                     }
                 });
-                ui.menu_button(tr("Отрисовка"), |ui| {
+                icons::submenu(ui, "f_render", tr("Отрисовка"), |ui| {
                     if ui.button(tr("Шум Перлина…")).clicked() {
                         self.open_filter(FilterKind::Perlin);
                         ui.close_menu();
                     }
                 });
-                ui.menu_button(tr("Коррекция"), |ui| {
+                icons::submenu(ui, "f_correct", tr("Коррекция"), |ui| {
                     for (item, kind) in [("Удаление пыли…", FilterKind::Dust), ("Изменение толщины линий…", FilterKind::LineWidth)] {
                         if ui.button(tr(item)).clicked() {
                             self.open_filter(kind);
@@ -3941,7 +3942,7 @@ impl PaintApp {
                         }
                     }
                 });
-                ui.menu_button(tr("Резкость"), |ui| {
+                icons::submenu(ui, "f_sharpen", tr("Резкость"), |ui| {
                     for (item, kind) in [("Резкость", FilterKind::Sharpen), ("Сильная резкость", FilterKind::SharpenMore), ("Нерезкая маска…", FilterKind::Unsharp)] {
                         if ui.button(tr(item)).clicked() {
                             self.open_filter(kind);
@@ -3984,11 +3985,11 @@ impl PaintApp {
                     self.rotate_view(0.0);
                     ui.close_menu();
                 }
-                if ui.button(tr("Новый вид")).clicked() {
+                if ui.add(egui::Button::image_and_text(icons::image(ui.ctx(), "view_tab"), tr("Новый вид"))).clicked() {
                     self.new_view();
                     ui.close_menu();
                 }
-                if ui.button(tr("Новый плавающий вид")).clicked() {
+                if ui.add(egui::Button::image_and_text(icons::image(ui.ctx(), "view_float"), tr("Новый плавающий вид"))).clicked() {
                     self.float_view = Some(FloatView { zoom: self.zoom, offset: self.offset, angle: self.view_angle, flip: self.view_flip });
                     ui.close_menu();
                 }
