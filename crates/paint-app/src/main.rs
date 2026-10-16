@@ -3,6 +3,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod i18n;
+mod file_viewer;
 mod icons;
 mod pen;
 mod ruler;
@@ -935,6 +936,13 @@ struct PaintApp {
     color_views: [bool; 6],
     /// Черновик панели цвета (Scratch Pad в SAI).
     scratch: ScratchPad,
+    /// Свой обозреватель файлов (FileViewer в SAI): открытое окно, «всегда использовать»,
+    /// закладки и последняя папка.
+    viewer: Option<file_viewer::FileViewer>,
+    always_viewer: bool,
+    viewer_marks: Vec<PathBuf>,
+    viewer_dir: Option<PathBuf>,
+    viewer_view: (u8, u8),
     /// «Настройки»: действующие и окно правки (копия до OK).
     opts: Options,
     opts_edit: Option<Options>,
@@ -1146,6 +1154,11 @@ impl PaintApp {
             ruler_drag: None,
             color_views: [true, false, true, false, false, false],
             scratch: ScratchPad::new(),
+            viewer: None,
+            always_viewer: false,
+            viewer_marks: Vec::new(),
+            viewer_dir: None,
+            viewer_view: (0, 0),
             opts: Options::default(),
             opts_edit: None,
             spring: None,
@@ -1498,6 +1511,14 @@ impl PaintApp {
         for (i, k) in SHOW_KEYS.iter().enumerate() {
             s.read_bool(k, &mut self.win.show[i]);
         }
+        s.read_bool("viewer.always", &mut self.always_viewer);
+        if let Some(m) = s.str("viewer.marks") {
+            self.viewer_marks = m.split('\u{1f}').filter(|x| !x.is_empty()).map(PathBuf::from).collect();
+        }
+        self.viewer_dir = s.str("viewer.dir").map(PathBuf::from);
+        if let Some(v) = s.str("viewer.view").and_then(|v| v.parse::<u16>().ok()) {
+            self.viewer_view = ((v >> 8) as u8, v as u8);
+        }
         let o = &mut self.opts;
         for (k, v) in [("opt.dbl_props", &mut o.dbl_props), ("opt.swap_zoom", &mut o.swap_zoom), ("opt.size_relative", &mut o.size_relative), ("opt.spring_tools", &mut o.spring_tools), ("opt.spring_color", &mut o.spring_color), ("opt.spring_funcs", &mut o.spring_funcs), ("opt.duplex_revert", &mut o.duplex_revert)] {
             s.read_bool(k, v);
@@ -1653,6 +1674,12 @@ impl PaintApp {
         for (i, k) in SHOW_KEYS.iter().enumerate() {
             s.set(k, w.show[i] as u8);
         }
+        s.set("viewer.always", self.always_viewer as u8);
+        s.set("viewer.marks", self.viewer_marks.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\u{1f}"));
+        if let Some(d) = &self.viewer_dir {
+            s.set("viewer.dir", d.display());
+        }
+        s.set("viewer.view", ((self.viewer_view.0 as u16) << 8) | self.viewer_view.1 as u16);
         let o = self.opts;
         for (k, v) in [("opt.dbl_props", o.dbl_props), ("opt.swap_zoom", o.swap_zoom), ("opt.size_relative", o.size_relative), ("opt.spring_tools", o.spring_tools), ("opt.spring_color", o.spring_color), ("opt.spring_funcs", o.spring_funcs), ("opt.duplex_revert", o.duplex_revert)] {
             s.set(k, v as u8);
@@ -2581,13 +2608,59 @@ impl PaintApp {
             base.with_extension(layered_ext(&base).unwrap_or("sai2"))
         };
         self.save_path = suggested.display().to_string();
+        if self.always_viewer {
+            self.open_viewer(file_viewer::Mode::Save);
+            return;
+        }
         if !self.native_dialog(files::Ask::SaveAs, &suggested) {
             self.show_save_as = true;
         }
     }
 
     /// «Открыть…»: системное окно, без него — встроенное.
+    /// Открыть свой обозреватель файлов.
+    fn open_viewer(&mut self, mode: file_viewer::Mode) {
+        let dir = self
+            .file
+            .as_ref()
+            .and_then(|f| f.parent().map(|p| p.to_path_buf()))
+            .or_else(|| self.viewer_dir.clone())
+            .unwrap_or_else(file_viewer::home);
+        let name = if mode == file_viewer::Mode::Save {
+            self.file.as_ref().and_then(|f| f.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| tr("НовыйХолст1.sai2").to_string())
+        } else {
+            String::new()
+        };
+        let mut v = file_viewer::FileViewer::new(mode, dir, name, self.viewer_marks.clone());
+        (v.view, v.sort) = self.viewer_view;
+        self.viewer = Some(v);
+    }
+
+    /// Окно обозревателя и его ответ.
+    fn viewer_window(&mut self, ctx: &egui::Context) {
+        let Some(v) = self.viewer.as_mut() else { return };
+        let out = v.show(ctx).or_else(|| v.overwrite_window(ctx));
+        let Some(out) = out else { return };
+        let v = self.viewer.take().unwrap();
+        self.viewer_marks = v.bookmarks.clone();
+        self.viewer_dir = Some(v.dir.clone());
+        self.viewer_view = (v.view, v.sort);
+        self.save_settings();
+        match out {
+            file_viewer::Outcome::Open(p) => {
+                self.open_path = p.display().to_string();
+                self.open(p);
+            }
+            file_viewer::Outcome::Save(p) => self.save_to(p),
+            file_viewer::Outcome::Cancel => {}
+        }
+    }
+
     fn ask_open(&mut self) {
+        if self.always_viewer {
+            self.open_viewer(file_viewer::Mode::Open);
+            return;
+        }
         let base = self
             .file
             .clone()
@@ -4107,6 +4180,19 @@ impl PaintApp {
                     self.ask_save_as();
                     ui.close_menu();
                 }
+                ui.separator();
+                if ui.checkbox(&mut self.always_viewer, tr("Всегда использовать обозреватель файлов")).changed() {
+                    self.save_settings();
+                }
+                if ui.button(tr("Открыть через обозреватель…")).clicked() {
+                    self.open_viewer(file_viewer::Mode::Open);
+                    ui.close_menu();
+                }
+                if ui.button(tr("Сохранить через обозреватель…")).clicked() {
+                    self.open_viewer(file_viewer::Mode::Save);
+                    ui.close_menu();
+                }
+                ui.separator();
                 icons::submenu(ui, "export", tr("Экспорт"), |ui| {
                     for (label, ext) in EXPORTS {
                         if ext == "psd" {
@@ -8008,6 +8094,9 @@ impl PaintApp {
         if self.opts_edit.is_some() {
             self.options_window(ctx);
         }
+        if self.viewer.is_some() {
+            self.viewer_window(ctx);
+        }
     }
 
     /// Черновик: рисование текущей кистью, Alt + щелчок или правая кнопка — взять цвет.
@@ -8554,7 +8643,7 @@ impl eframe::App for PaintApp {
         if self.text_edit.is_some() && !ctx.wants_keyboard_input() {
             self.text_keys(ctx);
         }
-        let typing = ctx.wants_keyboard_input() || self.text_edit.is_some();
+        let typing = ctx.wants_keyboard_input() || self.text_edit.is_some() || self.viewer.is_some();
         // запасные сочетания: Shift+Ctrl+Z — повтор, Ctrl+Plus — приблизить
         let redo_alt = ctx.input(|i| i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::Z));
         let zoom_alt = ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Plus));

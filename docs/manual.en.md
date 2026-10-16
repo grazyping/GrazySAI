@@ -349,6 +349,13 @@ keys by a quarter, temporary tool, color and function switching while a key is h
 ms), returning to the previous tool by pressing its key again, protection from accidental layer
 moves after Ctrl/Alt shortcuts, history memory and the recovery copy interval.
 
+**File viewer**, as in SAI: “File → Open/Save by File Viewer…”, and with “Always use the file
+viewer” ticked also the usual Open and Save As. The path as a chain of folders, Explorer and
+Bookmarks on the left, picture thumbnails on the right (`.sai2`, `.psd`, `.ora` and images; cached
+in the settings folder). Buttons: up (Backspace), refresh, new folder, rename, delete (to the trash
+on Linux), bookmark the current folder; View (thumbnails or list), Order (name, date, size), Type.
+Double-click opens; Enter is OK, Esc cancels.
+
 “File → Recent” lists the last 10 files opened or saved.
 
 “Open”, “Save As” and “Export” show the system window: File Explorer on Windows, the desktop's
