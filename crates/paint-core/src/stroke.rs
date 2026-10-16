@@ -70,7 +70,7 @@ pub struct Grain {
     pub blot: Option<(Arc<PaperTexture>, f32, u16)>,
     /// Текстура кисти (`brushtex` или бумага слоя): текстура, сила 0..=1, масштаб %.
     pub texture: Option<(Arc<PaperTexture>, f32, u16)>,
-    /// Текстура — бумага слоя: значения берутся обратными (как `FUN_1400e941e`).
+    /// Текстура — бумага слоя: значения берутся обратными (как в SAI).
     pub paper: bool,
     /// «Affect by MinDens»: сила текстуры зависит от размера и минимальной плотности.
     pub by_min_density: bool,
@@ -78,10 +78,10 @@ pub struct Grain {
     pub bristle: Option<Bristle>,
 }
 
-/// Щетина, как форма вида 3 в SAI 2017 (`FUN_1400e1a30`, `FUN_1400e20a0`, `FUN_1400e2600`): каждый
+/// Щетина, как форма вида 3 в SAI 2017: каждый
 /// волосок — свой ряд отпечатков. Волосок смещён от точки штриха на (−y, x)·радиус кисти,
-/// повёрнутое по направлению штриха (сглаживание — среднее по 16 последним поворотам, как
-/// `FUN_1400417d0`); диаметр волоска — 0,4·Hair Size·размер (при 50 — 0,2 размера, так ширина
+/// повёрнутое по направлению штриха (сглаживание — среднее по 16 последним поворотам, как в
+/// SAI); диаметр волоска — 0,4·Hair Size·размер (при 50 — 0,2 размера, так ширина
 /// полосы совпала с живой SAI: 47 px при размере 50).
 #[derive(Clone, Debug)]
 pub struct Bristle {
@@ -160,7 +160,7 @@ impl DabGrain {
             cov = (cov * b - t.at(x, y) as f32 * a - c).clamp(0.0, 1.0);
         }
         if let Some((t, s)) = &self.tex {
-            // FUN_1400e8c12: 0x4000 - ((t·257/2 + 1)/2), умножить на силу, вычесть с насыщением
+            // 0x4000 - ((t·257/2 + 1)/2), умножить на силу, вычесть с насыщением
             let g = t.at(x, y);
             let v = 0x4000 - ((((g * 257) >> 1) + 1) >> 1);
             let sub = ((v * s) >> 8).min(0xffff);
@@ -264,7 +264,7 @@ impl Placed {
                 } else {
                     let mut cov = self.shape.coverage(d2.sqrt());
                     if masked {
-                        // FUN_1400e83d4: не больше маски штриха (в 1/16384)
+                        // не больше маски штриха (в 1/16384)
                         let m = mask.map_or(0, |t| t.0[(row + x) as usize]) as f32 / 16384.0;
                         cov = cov.min(m);
                     }
@@ -407,7 +407,7 @@ impl Stroke {
         };
         let tex = match &g.texture {
             Some((_, strength, _)) => {
-                // FUN_1400e0160
+                // как в SAI
                 let mut s = *strength as f64;
                 if g.by_min_density {
                     let p = if self.params.density_by_pressure { p.pressure.clamp(0.0, 1.0) } else { 1.0 };
@@ -519,7 +519,7 @@ impl Stroke {
         self.last = Some(p);
     }
 
-    /// Двоичное перо SAI 2017 (`FUN_1400e3690`): от прошлой точки к текущей берутся пересечения
+    /// Двоичное перо SAI 2017: от прошлой точки к текущей берутся пересечения
     /// с ближайшими линиями сетки x = round(x) и y = round(y); ставится то, что ближе к текущей
     /// точке (если пересечение одно — только не дальше 1 px). Отпечаток — в целом пикселе:
     /// размер округляется, у нечётного центр в середине пикселя.
@@ -1072,7 +1072,7 @@ fn water_blur(
     BUF.with(|b| *b.borrow_mut() = buf);
 }
 
-/// Самая жёсткая ступень от 20 px: форма отпечатка в маску штриха — максимумом (`FUN_1400e820e`).
+/// Самая жёсткая ступень от 20 px: форма отпечатка в маску штриха — максимумом.
 fn add_to_hard_mask(mask: &mut MaskMap, px: f32, py: f32, shape: &Shape) {
     let Some((inner, edge, a)) = shape.mask() else { return };
     let reach = inner + edge + 1.0;
@@ -1093,7 +1093,7 @@ fn add_to_hard_mask(mask: &mut MaskMap, px: f32, py: f32, shape: &Shape) {
 }
 
 /// Строки отпечатка: `f(y, x_from, x_to, покрытие(x))`. `mask` — маска штриха самой жёсткой
-/// ступени от 20 px: покрытие не больше её (`FUN_1400e83d4`).
+/// ступени от 20 px: покрытие не больше её.
 fn for_rows(d: &Pending, mask: &MaskMap, mut f: impl FnMut(i32, i32, i32, &dyn Fn(i32) -> f32)) {
     let masked = d.shape.mask().is_some();
     let reach = d.shape.outer() + 1.0;

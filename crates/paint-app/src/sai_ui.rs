@@ -891,7 +891,7 @@ pub fn color_wheel(ui: &mut Ui, hsv: &mut [f32; 3], size: f32) -> bool {
 /// число справа. `color(t)` — цвет полосы в доле `t` (0..1). Значение — 0..=`max`.
 /// Насыщенность и яркость (или светлота) ползунков HSV в режиме SAI 2017 из обычных HSV (s, v),
 /// всё 0..=1. `mode`: 0 — V-HSV (по умолчанию в SAI), 1 — HSL, 2 — HSV. В V-HSV хрома
-/// C = max − min связана с насыщенностью как C = s′ + (v − 1)/2 · s′² (`FUN_140013e00`).
+/// C = max − min связана с насыщенностью как C = s′ + (v − 1)/2 · s′².
 pub fn sliders_from_hsv(mode: u8, s: f32, v: f32) -> (f32, f32) {
     let c = s * v;
     match mode {

@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.38)
+### 0.8 — linework and shapes (current version 0.8.39)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -109,7 +109,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 
 ### 1.0 — finished
 - [x] `.sai2` read and written without loss for every kind of layer: checked by resaving the user's files — same flattened picture (difference 0), text and linework byte for byte, masks, effects, paper, background and resolution kept
-- [ ] The `thum` thumbnail in `.sai2` (SAI's own JPEG-like `jssf` format) — for SAI's file browser
+- [x] The `thum` thumbnail in `.sai2` (SAI's own JPEG-like `jssf` format) — for SAI's file browser; size and layout as in SAI 2017 (0.8.39)
 - [x] Undo history on disk (for very large canvases): beyond 1 GB, steps go to temporary files and all 100 steps are kept
 - [x] Gradient: linear and radial, main colour → background or transparent, S-curve — checked against the live SAI (`docs/31-gradient-selection.md`)
 - [x] Polygonal lasso and anti-aliasing switch

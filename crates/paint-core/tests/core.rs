@@ -1073,7 +1073,7 @@ fn rotate_layer_and_merge_visible_like_sai() {
 #[test]
 fn binary_pen_steps_like_sai() {
     // живая SAI 2017, двоичное перо 1 px, наклон 0,2: в каждом ряду ровно 5 точек, ряды не
-    // перекрываются (правило точек — FUN_1400e3690)
+    // перекрываются (правило точек)
     let mut s = Stroke::new(BrushParams { binary: true, size: 1.0, size_by_pressure: false, ..Default::default() });
     for i in 0..=100 {
         s.add_point(InputPoint { x: 10.3 + i as f32 * 0.5, y: 10.2 + i as f32 * 0.1, pressure: 1.0 });

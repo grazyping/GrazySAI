@@ -1,9 +1,9 @@
 //! Запись `.sai2` — обратная сторона чтения (docs/03-sai2-format.md). Раскладка повторяет файлы,
-//! которые пишет сама программа-образец: заголовок, оглавление, сведённое изображение `intg`,
-//! описания слоёв `layr` сверху вниз, пиксели `lpix`.
+//! которые пишет сама программа-образец: заголовок, оглавление, миниатюра `thum` (у холстов от
+//! 512 px), сведённое изображение `intg`, описания слоёв `layr` сверху вниз, пиксели `lpix`.
 //!
 //! Пишутся растровые слои и папки. Слои контура и фигур пишутся растровыми (их кривые пока не
-//! сохраняются), миниатюра `thum` не пишется.
+//! сохраняются).
 
 use paint_core::blend::BlendMode;
 use paint_core::pixel::Px;
@@ -410,7 +410,14 @@ pub fn save(doc: &Document, path: &Path) -> io::Result<()> {
     let ids: Vec<u32> = (0..flat.len()).map(|i| i as u32 + 2).collect();
     let planes = if doc.background.is_some() { 3 } else { 4 };
     let mut blocks: Vec<([u8; 4], u32, Vec<u8>)> = Vec::new();
-    blocks.push((*b"intg", 0, encode_intg(&doc.flatten(), w, h, planes)));
+    let flat_rgba = doc.flatten();
+    // миниатюра — как у SAI 2017: только у холстов от 512 px, уменьшенная вдвое нужное число раз
+    let level = crate::jssf::thumb_level(doc.width, doc.height);
+    if level > 0 {
+        let (tw, th, rgb) = crate::jssf::thumbnail(&flat_rgba, doc.width, doc.height, level);
+        blocks.push((*b"thum", 0, crate::jssf::thum_block(tw, th, &rgb)));
+    }
+    blocks.push((*b"intg", 0, encode_intg(&flat_rgba, w, h, planes)));
     // маски — свои блоки с номерами после слоёв
     let mut mask_ids = vec![None; flat.len()];
     let mut next_id = flat.len() as u32 + 2;

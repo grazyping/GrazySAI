@@ -4,6 +4,10 @@
 set -e
 V=$1; [ -n "$V" ] || { echo "нужна версия"; exit 1; }
 cd "$(dirname "$0")/.."
+# адреса из разбора SAI в открытый репозиторий не попадают — правила описываются своими словами
+if git ls-files -z | xargs -0 grep -l -E '(FUN|DAT|LAB)_14[0-9a-f]{5,}'; then
+  echo "в файлах выше — адреса SAI; убрать перед выпуском"; exit 1
+fi
 cargo build -q --release -p paint-app
 cargo build -q --release -p paint-app --target x86_64-pc-windows-gnullvm
 cd dist/release

@@ -1,7 +1,6 @@
 //! Текстовые слои `.sai2` (блок `text`): разбор, запись и отрисовка (`docs/30-text-layers.md`).
 //!
-//! Блок (файл пользователя из SAI 2 сборки 2017-01-19 и код записи `FUN_14017e540`,
-//! `FUN_140087a20`, `FUN_140087780`, чтения `FUN_1400878b0`):
+//! Блок (файл пользователя из SAI 2 сборки 2017-01-19 и код записи и чтения SAI):
 //! - `text`, f64 x, f64 y (с 4-го байта) — точка привязки (левый верх строки) на холсте;
 //! - два байта флагов слоя (поля 0x789, 0x78a; у образцов 0) и `01 64`;
 //! - вложенный `tvec` (32 байта): матрица 2×2 из f64;
@@ -101,7 +100,7 @@ pub fn parse(raw: &[u8]) -> Option<TextLayer> {
                     q += 2 + 2 * n + 2;
                 }
                 let (_, stream) = sub_blocks(body, q).into_iter().find(|(tag, _)| tag == b"text")?;
-                // атрибуты, как в FUN_1400878b0
+                // атрибуты, как при чтении в SAI
                 let (mut font, mut style, mut size, mut color) = (None::<usize>, 0u16, 0u32, 0u32);
                 for c in stream.as_chunks::<4>().0 {
                     let v = u32::from_le_bytes(*c);
@@ -160,7 +159,7 @@ pub fn to_bytes(layer: &TextLayer) -> Vec<u8> {
                 data.extend(c.to_le_bytes());
             }
         }
-        // поток: атрибут пишется, только когда меняется (FUN_140087780)
+        // поток: атрибут пишется, только когда меняется
         let mut stream = Vec::new();
         let (mut font, mut style, mut size, mut color) = (None::<usize>, 0u32, 0u32, 0u32);
         for r in &layer.runs {
