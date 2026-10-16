@@ -169,10 +169,6 @@ Everything people use in PaintTool SAI 2017 for everyday work is there and check
 
 ## Ahead
 
-### Next — from feedback
-
-- [ ] Stabilizer setting is kept when switching tools
-
 ### First after 1.0 — filters as in Clip Studio Paint
 
 A Filter menu with CSP's submenus; windows with a preview, like our current filters. They only change layer pixels, so `.sai2` compatibility is kept. CSP is closed source: built from its manual's descriptions, checked against Krita and GIMP where they have a match.
