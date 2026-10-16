@@ -239,8 +239,9 @@ Normal layers only (not folders).
 
 ## Move and transform
 
-- **Move**: the Move tool, Ctrl + drag with any tool, or Alt+arrows (by 1 px; with Shift — by
-  10). With a selection only the selected part moves.
+- **Move**: the Move tool, Ctrl + drag with any tool, or the arrow keys, as in SAI: Ctrl+arrows
+  cut the selected part and move it with the outline, Alt+arrows move only the selection outline;
+  without a selection both move the layer (by 1 px; with Shift — by 10).
 - **Transform (Ctrl+T)**:
   - corners and side midpoints — size;
   - Ctrl + corner — free deform (each corner separately);
@@ -389,7 +390,7 @@ rulers from newer SAI versions are not shown but are saved too.
 
 ## Shortcut keys
 
-Keys can be reassigned: “Window → Shortcut Keys…” or “Help → Keys…” (55 actions: files, edit,
+Keys can be reassigned: “Window → Shortcut Keys…” or “Help → Keys…” (95 actions: files, edit,
 clipboard, view, panels, tools; search by name) — click an action's key, then press the new
 combination (Esc — cancel; the key is taken from another action if it was in use); “As in SAI”
 restores all defaults. Assignments are saved in the settings. Any grid tool can also get its own
@@ -411,7 +412,13 @@ one. The defaults are below.
 | Delete / Alt+Delete | Erase / fill (within the selection) |
 | F / Ctrl+E | Transfer down / merge down |
 | Ctrl+T, Enter, Esc | Transform, apply, cancel |
-| Alt+arrows (with Shift — by 10) | Move the layer or the selection |
+| Ctrl+arrows (with Shift — by 10) | Cut the selection and move it (no selection — the layer) |
+| Alt+arrows (with Shift — by 10) | Move the selection outline (no selection — the layer) |
+| Ctrl+`[` / Ctrl+`]` | Bring layer forward / send backward |
+| Shift+Ctrl+`[` / Shift+Ctrl+`]` | Bring layer to front / send to back |
+| Alt+`[` / Alt+`]` | Select the layer above / below |
+| Alt+`\` | Open or close the layer folder |
+| Ctrl + click a folder's eye | Mark the folder: “Change Visibility of Marked Folder” and “Show Marked Folder Alone” (assignable keys) act on it wherever the current layer is inside it |
 | Ctrl + drag | Move the layer or the selection |
 | Ctrl+U | Hue and saturation |
 | Ctrl+R | Show or hide the ruler |

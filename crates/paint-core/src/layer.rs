@@ -53,6 +53,8 @@ pub struct Layer {
     pub effect: Option<crate::effects::Effect>,
     /// Маска слоя.
     pub mask: Option<LayerMask>,
+    /// Папка отмечена для команд видимости (Ctrl + щелчок по глазу, как в SAI); в файл не пишется.
+    pub marked: bool,
     /// Прочие вложенные блоки описания слоя из `.sai2` (эффекты и т. п.) — записываются обратно
     /// как были.
     pub extra: Vec<([u8; 4], Vec<u8>)>,
@@ -71,6 +73,7 @@ impl Layer {
             lock_move: false,
             lock_all: false,
             selection_source: false,
+            marked: false,
             vector: None,
             clipping: false,
             children: None,

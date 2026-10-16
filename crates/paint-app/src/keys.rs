@@ -103,8 +103,14 @@ pub enum Action {
     LayerBelow,
     LayerFront,
     LayerBack,
+    LayerRaise,
+    LayerLower,
+    ToggleFolder,
     ShowAlone,
     ToggleVisible,
+    MarkFolder,
+    ToggleMarkedFolder,
+    ShowAloneMarkedFolder,
     GrowSel1,
     ShrinkSel1,
     Density10,
@@ -123,7 +129,7 @@ pub enum Action {
 
 /// Действие, имя для настроек, подпись в окне, клавиша по умолчанию.
 /// Пустая клавиша — по умолчанию не назначена (в SAI её нет).
-pub const ALL: [(Action, &str, &str, &str); 89] = [
+pub const ALL: [(Action, &str, &str, &str); 95] = [
     (Action::Undo, "undo", "Отменить", "Ctrl+Z"),
     (Action::Redo, "redo", "Повторить", "Ctrl+Y"),
     (Action::Open, "open", "Открыть", "Ctrl+O"),
@@ -193,12 +199,19 @@ pub const ALL: [(Action, &str, &str, &str); 89] = [
     (Action::ScrollRight, "scroll_right", "Прокрутить вид вправо", ""),
     (Action::ZoomInCursor, "zoom_in_cursor", "Приблизить у курсора", ""),
     (Action::ZoomOutCursor, "zoom_out_cursor", "Отдалить у курсора", ""),
-    (Action::LayerAbove, "layer_above", "Выбрать слой выше", ""),
-    (Action::LayerBelow, "layer_below", "Выбрать слой ниже", ""),
-    (Action::LayerFront, "layer_front", "Слой на передний план", ""),
-    (Action::LayerBack, "layer_back", "Слой на задний план", ""),
+    // клавиши слоёв — как в SAI 2017
+    (Action::LayerAbove, "layer_above", "Выбрать слой выше", "Alt+OpenBracket"),
+    (Action::LayerBelow, "layer_below", "Выбрать слой ниже", "Alt+CloseBracket"),
+    (Action::LayerFront, "layer_front", "Слой на передний план", "Ctrl+Shift+OpenBracket"),
+    (Action::LayerBack, "layer_back", "Слой на задний план", "Ctrl+Shift+CloseBracket"),
+    (Action::LayerRaise, "layer_raise", "Поднять слой", "Ctrl+OpenBracket"),
+    (Action::LayerLower, "layer_lower", "Опустить слой", "Ctrl+CloseBracket"),
+    (Action::ToggleFolder, "toggle_folder", "Открыть/закрыть папку слоёв", "Alt+Backslash"),
     (Action::ShowAlone, "show_alone", "Показать только этот слой", ""),
     (Action::ToggleVisible, "toggle_visible", "Показать/скрыть слой", ""),
+    (Action::MarkFolder, "mark_folder", "Отметить папку для видимости", ""),
+    (Action::ToggleMarkedFolder, "toggle_marked_folder", "Показать/скрыть отмеченную папку", ""),
+    (Action::ShowAloneMarkedFolder, "show_alone_marked_folder", "Показать только отмеченную папку", ""),
     (Action::GrowSel1, "grow_sel_1", "Расширить выделение на 1 px", ""),
     (Action::ShrinkSel1, "shrink_sel_1", "Сузить выделение на 1 px", ""),
     (Action::Density10, "density_10", "Плотность кисти 10", ""),

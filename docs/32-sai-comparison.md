@@ -50,15 +50,15 @@
 | Transform Layer (режимы, перспектива 0–100) | то же | ✔ |
 | Reverse Layer, Rotate Layer 90° | то же | ✔ |
 | Layer Property | Свойства слоя | ✔ |
-| Nudge (стрелки) | Alt+стрелки (Shift — на 10) | ≈ (клавиши иные) |
-| Cut & Nudge | — | ✘ |
+| Nudge (Alt+стрелки) | то же: при выделении двигается рамка, без — слой; Shift — на 10 (сверено вживую) | ✔ |
+| Cut & Nudge (Ctrl+стрелки) | то же: выделенное вырезается и едет с рамкой; пусто — «нечего вырезать» (сверено вживую) | ✔ |
 | Preserve Opacity, Protect Painting / Moving / Modifying, Clipping, Selection Source | то же | ✔ |
 | Select Forward/Backward Layer | «Выбрать слой выше/ниже» (клавиши назначаются) | ✔ |
-| Open/Close Layer Folder | стрелка на значке папки; клавиши нет | ≈ |
-| Bring Forward / Send Backward | Поднять / Опустить | ✔ |
+| Open/Close Layer Folder | щелчок по значку папки, Alt+\ | ✔ |
+| Bring Forward / Send Backward | Поднять / Опустить (Ctrl+[ / Ctrl+]) | ✔ |
 | Bring to Front / Send to Back | «Слой на передний/задний план» | ✔ |
 | Change Visibility, Show Alone | глаз, «Показать/скрыть слой», «Показать только этот слой» | ✔ |
-| Mark Layer Folder for Visibility Change | — | ✘ |
+| Mark Layer Folder for Visibility Change, Change Visibility / Show Alone Marked Ancestor Layer Folder | Ctrl + щелчок по глазу папки (уголок-отметка), клавиши «Отметить папку…», «Показать/скрыть / Показать только отмеченную папку»; отметка в файл не пишется | ≈ |
 | Layer Mask: New, Apply | то же | ✔ |
 
 ## Выделение

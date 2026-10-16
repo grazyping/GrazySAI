@@ -1216,6 +1216,8 @@ struct PaintApp {
     frame_stats: Option<std::rc::Rc<std::cell::RefCell<FrameStats>>>,
     /// Точки штриха, ещё не нарисованные (см. `drain_points`).
     pending_points: VecDeque<InputPoint>,
+    /// Область списка слоёв — от неё считаются id «папка открыта» (для клавиши Alt+\).
+    layers_ui: Option<egui::Id>,
     /// Фоновый предпросмотр фильтра; номер последних настроек и номер показанного на слое.
     filter_job: Option<FilterJob>,
     filter_gen: u64,
@@ -1386,6 +1388,7 @@ impl PaintApp {
             filter: None,
             filter_last: None,
             pending_points: VecDeque::new(),
+            layers_ui: None,
             frame_stats: std::env::var_os("PAINT_FRAMES").map(|_| Default::default()),
             filter_job: None,
             filter_gen: 0,
@@ -3625,6 +3628,57 @@ app.open_canvas_dialog(d == "resolution")
 
     /// «Показать только этот слой» (Show Alone в SAI): остальные прячутся; повтор — всё как было.
     fn show_alone(&mut self) {
+        let keep = self.selected.clone();
+        self.show_alone_of(keep);
+    }
+
+    /// «Открыть/закрыть папку слоёв» (Alt+\, как в SAI): текущая папка, а у слоя — его папка.
+    fn toggle_folder(&mut self, ctx: &egui::Context) {
+        let Some(id) = self.layers_ui else { return };
+        let Some(path) = (1..=self.selected.len()).rev().map(|n| self.selected[..n].to_vec()).find(|p| self.doc.layer(p).is_some_and(|l| l.children.is_some())) else { return };
+        let fid = id.with(("folder", path.clone()));
+        let open = ctx.data_mut(|d| {
+            let v = d.get_persisted_mut_or(fid, false);
+            *v = !*v;
+            *v
+        });
+        // папка закрылась, а текущим был слой внутри — текущей становится сама папка
+        if !open && self.selected.len() > path.len() {
+            self.selected = path;
+        }
+    }
+
+    /// Отмеченная папка (Ctrl + щелчок по глазу), в которой лежит текущий слой (или он сам).
+    fn marked_folder(&self) -> Option<Vec<usize>> {
+        (1..=self.selected.len()).rev().map(|n| self.selected[..n].to_vec()).find(|p| self.doc.layer(p).is_some_and(|l| l.children.is_some() && l.marked))
+    }
+
+    /// «Отметить папку для видимости» (Mark Layer Folder for Visibility Change в SAI): текущая
+    /// папка, а у слоя — его папка; повтор снимает отметку.
+    fn mark_folder(&mut self) {
+        let path = (1..=self.selected.len()).rev().map(|n| self.selected[..n].to_vec()).find(|p| self.doc.layer(p).is_some_and(|l| l.children.is_some()));
+        match path.and_then(|p| self.doc.layer_mut(&p)) {
+            Some(l) => l.marked = !l.marked,
+            None => self.status = String::from(tr("Текущий слой не в папке — отмечать нечего")),
+        }
+    }
+
+    /// «Показать/скрыть отмеченную папку» и «Показать только отмеченную папку» (как в SAI).
+    fn marked_folder_visibility(&mut self, alone: bool) {
+        let Some(path) = self.marked_folder() else {
+            self.status = String::from(tr("Нет отмеченной папки над текущим слоем (Ctrl + щелчок по глазу папки)"));
+            return;
+        };
+        if alone {
+            self.show_alone_of(path);
+        } else if let Some(l) = self.doc.layer_mut(&path) {
+            l.visible = !l.visible;
+            self.invalidate_all();
+            self.dirty = true;
+        }
+    }
+
+    fn show_alone_of(&mut self, keep: Vec<usize>) {
         fn walk(layers: &mut [Layer], path: &mut Vec<usize>, keep: &[usize], saved: &mut Vec<(Vec<usize>, bool)>) {
             for (i, l) in layers.iter_mut().enumerate() {
                 path.push(i);
@@ -3645,7 +3699,6 @@ app.open_canvas_dialog(d == "resolution")
             }
         } else {
             let mut saved = Vec::new();
-            let keep = self.selected.clone();
             walk(&mut self.doc.layers, &mut Vec::new(), &keep, &mut saved);
             self.solo = Some(saved);
         }
@@ -4156,9 +4209,20 @@ app.open_canvas_dialog(d == "resolution")
         self.apply_selection(&area, d.mode);
     }
 
-    /// Сдвиг клавишами (Alt+стрелки).
-    fn nudge(&mut self, dx: i32, dy: i32) {
+    /// Сдвиг клавишами, как в SAI 2017 (сверено вживую): Alt+стрелки (Nudge) при выделении
+    /// двигают только его рамку, без выделения — слой; Ctrl+стрелки (Cut & Nudge) вырезают
+    /// выделенное и двигают вместе с рамкой, без выделения — слой. Shift — шаг 10 px.
+    fn nudge(&mut self, dx: i32, dy: i32, cut: bool) {
+        if !cut && !self.doc.selection.is_empty() {
+            self.doc.nudge_selection(dx, dy);
+            self.sel_dirty = true;
+            return;
+        }
         if !self.doc.layer(&self.selected).is_some_and(|l| l.movable()) {
+            return;
+        }
+        if cut && !self.doc.selection.is_empty() && !self.doc.has_pixels_in_selection(&self.selected) {
+            self.status = String::from(tr("В выделении нет рисунка, нечего вырезать"));
             return;
         }
         let keys = self.doc.move_layer_pixels(&self.selected.clone(), dx, dy);
@@ -4591,8 +4655,8 @@ app.open_canvas_dialog(d == "resolution")
                     ("Очистить слой", "Delete", LayerAction::Clear),
                     ("Перенести на нижний", "F", LayerAction::Transfer),
                     ("Слить с нижним", "Ctrl+E", LayerAction::Merge),
-                    ("Поднять слой", "", LayerAction::Up),
-                    ("Опустить слой", "", LayerAction::Down),
+                    ("Поднять слой", "Ctrl+[", LayerAction::Up),
+                    ("Опустить слой", "Ctrl+]", LayerAction::Down),
                 ] {
                     if ui.add(menu_item(item, key)).clicked() {
                         self.layer_action(action);
@@ -5986,6 +6050,7 @@ app.open_canvas_dialog(d == "resolution")
             let opacity = format!("{}%", (layer.opacity * 100.0).round());
             let selected = self.selected == *path;
             let fid = ui.make_persistent_id(("folder", path.clone()));
+            self.layers_ui = Some(ui.id());
             let mut open = ui.data_mut(|d| *d.get_persisted_mut_or(fid, false));
             let (rect, response) =
                 ui.allocate_exact_size(Vec2::new(ui.available_width(), 42.0), egui::Sense::click_and_drag());
@@ -6017,6 +6082,11 @@ app.open_canvas_dialog(d == "resolution")
             p.rect_stroke(eye, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
             if visible {
                 sai_ui::glyph(p, eye.shrink(2.0), sai_ui::INK, "eye");
+            }
+            if is_folder && self.doc.layer(path).is_some_and(|l| l.marked) {
+                // отметка папки — уголок в окошке глаза
+                let c = eye.right_top();
+                p.add(egui::Shape::convex_polygon(vec![c, c + Vec2::new(0.0, 7.0), c + Vec2::new(-7.0, 0.0)], sai_ui::SELECT_EDGE, egui::Stroke::NONE));
             }
             let mark = Rect::from_min_size(Pos2::new(x0, rect.top() + 22.0), Vec2::new(18.0, 17.0));
             p.rect_stroke(mark, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
@@ -6108,7 +6178,12 @@ app.open_canvas_dialog(d == "resolution")
             );
             if response.clicked() {
                 let at = response.interact_pointer_pos().unwrap_or_default();
-                if eye.contains(at) {
+                if eye.contains(at) && is_folder && ui.input(|i| i.modifiers.command) {
+                    // Ctrl + щелчок по глазу папки — отметка для команд видимости (как в SAI)
+                    if let Some(l) = self.doc.layer_mut(path) {
+                        l.marked = !l.marked;
+                    }
+                } else if eye.contains(at) {
                     if let Some(l) = self.doc.layer_mut(path) {
                         l.visible = !l.visible;
                         *changed = true;
@@ -8950,8 +9025,10 @@ impl eframe::App for PaintApp {
                 self.ask_save_as();
             }
         }
+        let nudge_cut = ctx.input(|i| i.modifiers.command && !i.modifiers.alt);
         let nudge = ctx.input(|i| {
-            if !i.modifiers.alt || i.modifiers.command {
+            // Alt — сдвиг, Ctrl — вырезать и сдвинуть (как в SAI)
+            if i.modifiers.alt == i.modifiers.command {
                 return (0, 0);
             }
             let step = if i.modifiers.shift { 10 } else { 1 };
@@ -9058,6 +9135,12 @@ impl eframe::App for PaintApp {
             if hit(A::LayerAbove) || hit(A::LayerBelow) {
                 self.select_neighbor_layer(hit(A::LayerAbove));
             }
+            if hit(A::LayerRaise) || hit(A::LayerLower) {
+                self.layer_action(if hit(A::LayerRaise) { LayerAction::Up } else { LayerAction::Down });
+            }
+            if hit(A::ToggleFolder) {
+                self.toggle_folder(ctx);
+            }
             if hit(A::LayerFront) {
                 self.layer_to_end(true);
             }
@@ -9066,6 +9149,12 @@ impl eframe::App for PaintApp {
             }
             if hit(A::ShowAlone) {
                 self.show_alone();
+            }
+            if hit(A::MarkFolder) {
+                self.mark_folder();
+            }
+            if hit(A::ToggleMarkedFolder) || hit(A::ShowAloneMarkedFolder) {
+                self.marked_folder_visibility(hit(A::ShowAloneMarkedFolder));
             }
             if hit(A::ToggleVisible) {
                 if let Some(l) = self.doc.layer_mut(&self.selected) {
@@ -9132,7 +9221,7 @@ impl eframe::App for PaintApp {
                 self.begin_transform();
             }
             if nudge != (0, 0) && self.move_drag.is_none() {
-                self.nudge(nudge.0, nudge.1);
+                self.nudge(nudge.0, nudge.1, nudge_cut);
             }
         }
         if !typing && self.live.is_none() && self.sel_drag.is_none() {

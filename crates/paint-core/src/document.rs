@@ -994,6 +994,28 @@ impl Document {
         self.perform(vec![Op::Canvas { width: self.width, height: self.height, layers: vec![layer], selection }])
     }
 
+    /// Сдвинуть только рамку выделения (Nudge в SAI при выделении) — одна запись истории.
+    pub fn nudge_selection(&mut self, dx: i32, dy: i32) {
+        if self.selection.is_empty() || (dx, dy) == (0, 0) {
+            return;
+        }
+        let mask = crate::selection::shift_mask(&self.selection.mask, dx, dy);
+        self.perform(vec![Op::Selection { mask }]);
+    }
+
+    /// Есть ли на слое `path` непрозрачные точки внутри выделения (без выделения — на всём слое).
+    pub fn has_pixels_in_selection(&self, path: &[usize]) -> bool {
+        let Some(layer) = self.layer(path) else { return false };
+        let all = self.selection.mask.tiles.is_empty();
+        layer.pixels.tiles.iter().any(|(key, t)| {
+            if all {
+                return t.0.iter().any(|p| p[3] > 0);
+            }
+            let Some(s) = self.selection.mask.tiles.get(key) else { return false };
+            t.0.iter().zip(s.0.iter()).any(|(p, &m)| p[3] > 0 && m > 0)
+        })
+    }
+
     /// Расширить или сузить выделение на 1 px.
     pub fn grow_selection(&mut self, grow: bool) {
         let mut next = self.selection.clone();
