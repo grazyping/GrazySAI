@@ -327,9 +327,9 @@ pub struct Stroke {
     grain: Option<Grain>,
     /// Значения текстур по плиткам холста: пятно и текстура.
     grain_cache: [HashMap<Key, Arc<[u8]>>; 2],
-    /// Акварель: уменьшенная копия слоя по плиткам (плитка → её точки уровня), пока плитка не
-    /// изменилась.
-    level_cache: HashMap<Key, Box<[[f64; 4]]>>,
+    /// Акварель: уменьшенная копия слоя по плиткам ((уровень, плитка) → её точки уровня), пока
+    /// плитка не изменилась. Уровень — в ключе: размер кисти меняется с нажимом, а с ним и уровень.
+    level_cache: HashMap<(u32, Key), Box<[[f64; 4]]>>,
     /// Самая жёсткая ступень от 20 px: максимум «жёстких» форм отпечатков (0..=16384).
     hard_mask: MaskMap,
 }
@@ -777,7 +777,9 @@ impl Stroke {
             if mix.blur {
                 // изменённые плитки пересчитаются в копии при следующей пачке
                 for key in &changed {
-                    self.level_cache.remove(key);
+                    for level in 0..=3 {
+                        self.level_cache.remove(&(level, *key));
+                    }
                 }
             }
         }
@@ -884,7 +886,7 @@ fn water_blur(
     sel: &crate::selection::Selection,
     originals: &mut HashMap<Key, Option<Tile<Px>>>,
     changed: &mut HashSet<Key>,
-    cache: &mut HashMap<Key, Box<[[f64; 4]]>>,
+    cache: &mut HashMap<(u32, Key), Box<[[f64; 4]]>>,
 ) {
     let (level, r1, r2) = crate::mix::water_blur_level(size);
     let k = 1i32 << level;
@@ -952,7 +954,7 @@ fn water_blur(
     let mut missing = Vec::new();
     for ty in fy0.div_euclid(TILE)..=fy1.div_euclid(TILE) {
         for tx in fx0.div_euclid(TILE)..=fx1.div_euclid(TILE) {
-            if !cache.contains_key(&(tx, ty)) {
+            if !cache.contains_key(&(level, (tx, ty))) {
                 missing.push((tx, ty));
             }
         }
@@ -982,7 +984,7 @@ fn water_blur(
             hs.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
         })
     };
-    cache.extend(missing.into_iter().zip(blocks));
+    cache.extend(missing.into_iter().map(|key| (level, key)).zip(blocks));
     // буфер копии переиспользуется между пачками: выделять и обнулять десятки мегабайт на каждую
     // пачку дороже самого счёта
     thread_local!(static BUF: std::cell::RefCell<Vec<[f64; 4]>> = const { std::cell::RefCell::new(Vec::new()) });
@@ -994,7 +996,7 @@ fn water_blur(
         let row = (fy.rem_euclid(TILE) / k) as usize * side;
         for (i, v) in line.iter_mut().enumerate() {
             let fx = (lx0 + i as i32) * k;
-            let block = &cache[&key_of(fx, fy)];
+            let block = &cache[&(level, key_of(fx, fy))];
             *v = block[row + (fx.rem_euclid(TILE) / k) as usize];
         }
     }

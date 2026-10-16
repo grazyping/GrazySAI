@@ -9176,6 +9176,23 @@ fn main() -> eframe::Result {
         std::env::remove_var("WAYLAND_DISPLAY");
         std::env::remove_var("WAYLAND_SOCKET");
     }
+    // Сбой — в crash.log папки настроек (в Windows консоли нет, иначе причину не узнать).
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let log = settings::dir().unwrap_or_else(std::env::temp_dir).join("crash.log");
+        let text = format!(
+            "GrazySAI {} ({} {})\n{info}\n{}\n\n",
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            std::backtrace::Backtrace::force_capture()
+        );
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log) {
+            let _ = f.write_all(text.as_bytes());
+        }
+        default_hook(info);
+    }));
     let path = std::env::args().nth(1).map(PathBuf::from);
     // Язык: PAINT_LANG, иначе выбранный в меню, иначе язык системы.
     let lang = std::env::var("PAINT_LANG")

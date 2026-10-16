@@ -2,7 +2,8 @@
 # tools/ui-check.sh STEPS.sh [OUT_DIR] — запустить GrazySAI на скрытом экране (Xvfb :83, 1400×940)
 # и выполнить шаги из файла (bash): click X Y, stroke X0 Y0 X1 Y1, grab ИМЯ (снимок в OUT_DIR/ИМЯ.png),
 # любые команды xdotool. Переменные: L — язык (en), GS_HOME — подменить домашнюю папку,
-# GS_EXE — другой исполняемый файл. Настройки выключены (PAINT_SETTINGS=off).
+# GS_EXE — другой исполняемый файл; GS_WINE=1 — запустить Windows-сборку (.exe) под Wine
+# (свой префикс ~/.local/share/wineprefixes/grazysai, вывод Wine — в ui.log). Настройки выключены (PAINT_SETTINGS=off).
 export PATH=$HOME/.local/opt/xtools/root/usr/bin:$PATH LD_LIBRARY_PATH=$HOME/.local/opt/xtools/root/usr/lib/x86_64-linux-gnu
 unset WAYLAND_DISPLAY
 STEPS=$1
@@ -10,8 +11,8 @@ OUT=${2:-$(dirname "$STEPS")}
 EXE=${GS_EXE:-$(cd "$(dirname "$0")/.." && pwd)/target/release/GrazySAI}
 Xvfb :83 -screen 0 1400x940x24 -nolisten tcp >/dev/null 2>&1 &
 XV=$!; sleep 1.5
-( [ -n "$GS_HOME" ] && export HOME=$GS_HOME; DISPLAY=:83 LIBGL_ALWAYS_SOFTWARE=1 PAINT_SETTINGS=off PAINT_LANG=${L:-en} timeout 120 "$EXE" >"$OUT/ui.log" 2>&1 ) &
-AP=$!; sleep 5
+( [ -n "$GS_HOME" ] && export HOME=$GS_HOME; DISPLAY=:83 LIBGL_ALWAYS_SOFTWARE=1 PAINT_SETTINGS=off PAINT_LANG=${L:-en} timeout ${GS_TIMEOUT:-120} ${GS_WINE:+env WINEPREFIX=$HOME/.local/share/wineprefixes/grazysai WINEDLLOVERRIDES=mscoree,mshtml= wine} "$EXE" >"$OUT/ui.log" 2>&1 ) &
+AP=$!; sleep ${GS_WAIT:-5}
 export DISPLAY=:83
 W=$(xdotool search --name GrazySAI | head -1); xdotool windowactivate --sync $W 2>/dev/null; xdotool windowfocus $W
 grab(){ python3 -I -c "from PIL import ImageGrab; ImageGrab.grab(xdisplay=':83').save('$OUT/$1.png')"; }

@@ -1155,3 +1155,26 @@ fn effect_colors_against_live_sai() {
         eprintln!("{}: точно {:.2}%, средняя {:.3}, наибольшая {worst}; край у нас {:?} у SAI {:?}", String::from_utf8_lossy(&tag), exact as f64 * 100.0 / n as f64, sum as f64 / n as f64, &ours[(200 * w as usize + 100) * 4..][..3], &sai[(200 * w as usize + 100) * 4..][..3]);
     }
 }
+
+/// Акварель с пером: нажим меняет размер через границу уровня уменьшенной копии (16, 32, 64,
+/// 128 px) в обе стороны. Раньше кэш копии не знал уровня — программа падала (0.9.5, Windows Ink).
+#[test]
+fn watercolor_pressure_crosses_levels() {
+    use paint_core::mix::MixParams;
+    use paint_core::{BrushParams, InputPoint, LiveStroke, Stroke};
+    let mut doc = paint_core::Document::new(600, 300);
+    for y in 0..300 {
+        for x in 0..600 {
+            doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([(x / 3) as u8, y as u8, 90, 255]));
+        }
+    }
+    let params = BrushParams { size: 300.0, hardness: 1.0, min_size: 0.0, density_by_pressure: true, mix: Some(MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }), ..Default::default() };
+    let mut live = LiveStroke::new(vec![0], Stroke::new(params), [10, 20, 200]);
+    for i in 0..=120 {
+        let t = i as f32 / 120.0;
+        let pressure = 0.5 + 0.5 * (t * 12.0).cos();
+        live.stroke.add_point(InputPoint { x: 20.0 + i as f32 * 4.5, y: 150.0, pressure });
+        let _ = doc.live_update(&mut live);
+    }
+    doc.live_finish(live);
+}

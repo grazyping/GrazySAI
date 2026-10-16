@@ -380,7 +380,9 @@ rulers from newer SAI versions are not shown but are saved too.
   - Linux: `~/.config/GrazySAI/`.
 - **Recovery**:
   - every 3 minutes, if there were edits, GrazySAI saves a copy of the canvas in the background;
-  - if the program closed abnormally, on the next start it offers to recover the work.
+  - if the program closed abnormally, on the next start it offers to recover the work;
+  - the cause of a crash is written to `crash.log` in the same folder — attach it to a bug report
+    on GitHub.
 
 ## Shortcut keys
 
