@@ -74,7 +74,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
 - [x] Curves of linework and shape layers from `.sai2` are saved as they were (byte for byte); brushes do not paint on such layers, “Rasterize Layer” makes them normal
 
-### 0.9 — brushes in full, text and rulers (current version 0.9.1)
+### 0.9 — brushes in full, text and rulers (current version 0.9.2)
 - [x] Brush forms and textures (`blotmap`, `brushtex`) — from SAI's code, checked against live SAI
 - [x] Bristle brush form (`bristle`) after SAI's code; band width and stroke ends checked against the live SAI
 - [x] Marker at light pressure — as in SAI: its own compositing from SAI's code, paint amount from live SAI
@@ -151,7 +151,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] View: close all views, previous and next view, scrolling and zoom at the cursor by keys (0.8.48)
 - [x] Window: show and hide each panel separately; scratch pad (0.9.1)
 - [ ] Floating panels
-- [ ] Options window (memory, history, pen)
+- [x] Options window, as in SAI, plus history memory and recovery copy interval (0.9.2)
 - [x] Transparent color; keys for the pickers and brush density 10…100 (0.8.48)
 - [x] “Save changes?” question on exit (0.8.48)
 - [ ] Own file viewer with thumbnails
@@ -180,7 +180,7 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 - [ ] PSD: layer masks and 16 bits on export; “Keep the exact look” for SAI-only modes
 - [x] OpenRaster (`.ora`): open and save with layers (0.8.43)
 - [ ] “Save incremental” (picture_002.sai2)
-- [ ] History memory and recovery copy interval in a settings window
+- [x] History memory and recovery copy interval in a settings window (0.9.2)
 - [ ] Wrap-around mode (the canvas repeats at its edges) and a pixel grid at high zoom
 - [ ] Filters: levels, curves, median
 - [ ] Colouring by line art (like Krita's colorize mask); the result is plain pixels

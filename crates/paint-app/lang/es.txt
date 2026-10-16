@@ -740,3 +740,25 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, con capas)
 Строка состояния = Barra de estado
 Черновик = Borrador
 Черновик: рисуйте текущей кистью; Alt + щелчок или правая кнопка — взять цвет = Borrador: pinta con el pincel actual; Alt + clic o clic derecho toma un color
+
+# Окно «Настройки» (0.9.2)
+(*) Зеркало вида, «Не замечать линейку», «Прямая линия» = (*) Espejo de la vista, «Ignorar regla», «Línea recta»
+Двойной щелчок по слою открывает свойства = Doble clic en una capa abre sus propiedades
+Защита от случайного сдвига слоя = Protección contra mover la capa por accidente
+Клавиши инструментов и функций = Teclas de herramientas y funciones
+Клавиши размера кисти меняют его на четверть, а не по списку = Las teclas de tamaño cambian un cuarto en vez de por la lista
+Колесо мыши масштабирует наоборот = La rueda del ratón hace zoom al revés
+Копия для восстановления после сбоя — раз в, мин: = Copia de recuperación tras un fallo — cada, min:
+Настройки = Opciones
+Настройки… = Opciones…
+Общие = Generales
+Память и восстановление = Memoria y recuperación
+Память истории до переноса на диск, МБ: = Memoria del historial antes del disco, MB:
+По умолчанию = Por defecto
+Повторное нажатие клавиши инструмента возвращает прежний = Pulsar otra vez la tecla de herramienta vuelve a la anterior
+После сочетания с Ctrl или Alt Ctrl + перетаскивание не двигает слой, мс: = Tras un atajo con Ctrl o Alt, Ctrl + arrastrar no mueve la capa durante, ms:
+Прямая линия = Línea recta
+То же для смены основного цвета (X) = Igual al cambiar el color principal (X)
+То же для функций (*) = Igual para funciones (*)
+Удержание клавиши инструмента — временный выбор до отпускания = Mantener la tecla de herramienta la elige hasta soltarla
+Удержание считается с, мс: = Se considera mantener desde, ms:

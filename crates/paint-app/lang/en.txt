@@ -741,3 +741,25 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, with layers)
 Строка состояния = Status bar
 Черновик = Scratch pad
 Черновик: рисуйте текущей кистью; Alt + щелчок или правая кнопка — взять цвет = Scratch pad: paint with the current brush; Alt + click or right click picks a color
+
+# Окно «Настройки» (0.9.2)
+(*) Зеркало вида, «Не замечать линейку», «Прямая линия» = (*) View mirror, “Ignore Ruler”, “Straight line”
+Двойной щелчок по слою открывает свойства = Double-click on a layer opens its properties
+Защита от случайного сдвига слоя = Suppression of accidental layer move
+Клавиши инструментов и функций = Keys for tools and functions
+Клавиши размера кисти меняют его на четверть, а не по списку = Brush size keys change it by a quarter instead of the list
+Колесо мыши масштабирует наоборот = Mouse wheel zooms the other way
+Копия для восстановления после сбоя — раз в, мин: = Recovery copy after a crash — every, min:
+Настройки = Options
+Настройки… = Options…
+Общие = Common
+Память и восстановление = Memory and recovery
+Память истории до переноса на диск, МБ: = History memory before moving to disk, MB:
+По умолчанию = Defaults
+Повторное нажатие клавиши инструмента возвращает прежний = Pressing the same tool key again returns the previous tool
+После сочетания с Ctrl или Alt Ctrl + перетаскивание не двигает слой, мс: = After a Ctrl or Alt shortcut, Ctrl + drag does not move the layer for, ms:
+Прямая линия = Straight line
+То же для смены основного цвета (X) = Same for switching the main color (X)
+То же для функций (*) = Same for functions (*)
+Удержание клавиши инструмента — временный выбор до отпускания = Holding a tool key selects it only until release
+Удержание считается с, мс: = Counts as holding after, ms:

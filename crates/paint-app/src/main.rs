@@ -281,6 +281,46 @@ struct FilterDialog {
     dirty: bool,
 }
 
+/// «Помощь → Настройки…», как Options в SAI 2017, плюс память истории и копия для восстановления.
+#[derive(Clone, Copy, PartialEq)]
+struct Options {
+    /// Двойной щелчок по слою открывает его свойства.
+    dbl_props: bool,
+    /// Колесо мыши масштабирует наоборот.
+    swap_zoom: bool,
+    /// Клавиши размера кисти меняют его на четверть, а не по списку размеров.
+    size_relative: bool,
+    /// Удержание клавиши инструмента, цвета или функции (зеркало вида, «не замечать линейку»,
+    /// прямая линия) дольше `spring_ms` — временное переключение до отпускания (shift behavior).
+    spring_tools: bool,
+    spring_color: bool,
+    spring_funcs: bool,
+    spring_ms: u32,
+    /// Повторное нажатие клавиши того же инструмента возвращает прежний.
+    duplex_revert: bool,
+    /// Ctrl + перетаскивание не двигает слой столько мс после сочетания с модификатором.
+    move_guard_ms: u32,
+    /// Память истории до переноса шагов на диск, МБ; копия для восстановления — раз в N минут.
+    history_mb: u32,
+    recovery_min: u32,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3 }
+    }
+}
+
+/// Что вернуть, когда отпустят удерживаемую клавишу (временное переключение).
+#[derive(Clone, Copy)]
+enum SpringUndo {
+    Tool(Tool, usize),
+    Color,
+    Flip,
+    IgnoreRuler,
+    Straight,
+}
+
 /// Черновик (Scratch Pad в SAI): маленький белый холст на панели цвета — рисовать текущей
 /// кистью, чтобы смешать цвет, и брать с него цвет (Alt + щелчок или правая кнопка).
 struct ScratchPad {
@@ -895,6 +935,15 @@ struct PaintApp {
     color_views: [bool; 6],
     /// Черновик панели цвета (Scratch Pad в SAI).
     scratch: ScratchPad,
+    /// «Настройки»: действующие и окно правки (копия до OK).
+    opts: Options,
+    opts_edit: Option<Options>,
+    /// Удерживаемая клавиша: какая, когда нажата, что вернуть.
+    spring: Option<(egui::Key, Instant, SpringUndo)>,
+    /// Инструмент до последнего переключения клавишей (для повторного нажатия).
+    prev_tool: (Tool, usize),
+    /// Когда было последнее сочетание с Ctrl или Alt (защита от случайного сдвига слоя).
+    last_mod_key: Option<Instant>,
     /// Смеситель цвета: четыре строки — два края и метка взятого цвета.
     mixer: [[Color32; 2]; 4],
     mixer_pos: [Option<f32>; 4],
@@ -1097,6 +1146,11 @@ impl PaintApp {
             ruler_drag: None,
             color_views: [true, false, true, false, false, false],
             scratch: ScratchPad::new(),
+            opts: Options::default(),
+            opts_edit: None,
+            spring: None,
+            prev_tool: (Tool::Brush, 0),
+            last_mod_key: None,
             mixer: [[Color32::WHITE; 2]; 4],
             mixer_pos: [None; 4],
             swatches: vec![None; SWATCHES],
@@ -1444,6 +1498,16 @@ impl PaintApp {
         for (i, k) in SHOW_KEYS.iter().enumerate() {
             s.read_bool(k, &mut self.win.show[i]);
         }
+        let o = &mut self.opts;
+        for (k, v) in [("opt.dbl_props", &mut o.dbl_props), ("opt.swap_zoom", &mut o.swap_zoom), ("opt.size_relative", &mut o.size_relative), ("opt.spring_tools", &mut o.spring_tools), ("opt.spring_color", &mut o.spring_color), ("opt.spring_funcs", &mut o.spring_funcs), ("opt.duplex_revert", &mut o.duplex_revert)] {
+            s.read_bool(k, v);
+        }
+        for (k, v) in [("opt.spring_ms", &mut o.spring_ms), ("opt.move_guard_ms", &mut o.move_guard_ms), ("opt.history_mb", &mut o.history_mb), ("opt.recovery_min", &mut o.recovery_min)] {
+            if let Some(n) = s.str(k).and_then(|t| t.parse().ok()) {
+                *v = n;
+            }
+        }
+        paint_core::history_disk::set_ram_budget(self.opts.history_mb as usize * (1 << 20));
         s.read_bool("layers_right", &mut self.win.layers_right);
         s.read_bool("dot_cursor", &mut self.win.dot_cursor);
         s.read_bool("brush_circle", &mut self.win.brush_circle);
@@ -1498,7 +1562,7 @@ impl PaintApp {
             self.recovery_dirty = true;
         }
         // PAINT_AUTOSAVE_SECS — другой промежуток (для проверок)
-        let every = std::env::var("PAINT_AUTOSAVE_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180);
+        let every = std::env::var("PAINT_AUTOSAVE_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(self.opts.recovery_min.max(1) as u64 * 60);
         if !self.recovery_dirty || self.recovery_at.elapsed() < Duration::from_secs(every) {
             return;
         }
@@ -1588,6 +1652,13 @@ impl PaintApp {
         s.set("tools_right", w.tools_right as u8);
         for (i, k) in SHOW_KEYS.iter().enumerate() {
             s.set(k, w.show[i] as u8);
+        }
+        let o = self.opts;
+        for (k, v) in [("opt.dbl_props", o.dbl_props), ("opt.swap_zoom", o.swap_zoom), ("opt.size_relative", o.size_relative), ("opt.spring_tools", o.spring_tools), ("opt.spring_color", o.spring_color), ("opt.spring_funcs", o.spring_funcs), ("opt.duplex_revert", o.duplex_revert)] {
+            s.set(k, v as u8);
+        }
+        for (k, v) in [("opt.spring_ms", o.spring_ms), ("opt.move_guard_ms", o.move_guard_ms), ("opt.history_mb", o.history_mb), ("opt.recovery_min", o.recovery_min)] {
+            s.set(k, v);
         }
         s.set("layers_right", w.layers_right as u8);
         s.set("dot_cursor", w.dot_cursor as u8);
@@ -4614,6 +4685,10 @@ impl PaintApp {
                     self.show_keys = true;
                     ui.close_menu();
                 }
+                if ui.button(tr("Настройки…")).clicked() {
+                    self.opts_edit = Some(self.opts);
+                    ui.close_menu();
+                }
                 ui.separator();
                 if ui.button(tr("GrazySAI на GitHub")).clicked() {
                     update::open_url(update::REPO);
@@ -5764,7 +5839,7 @@ impl PaintApp {
             if response.double_clicked() && is_folder {
                 open = !open;
                 ui.data_mut(|d| d.insert_persisted(fid, open));
-            } else if response.double_clicked() {
+            } else if response.double_clicked() && self.opts.dbl_props {
                 // двойной щелчок по слою — «Свойства слоя» (имя), как в SAI
                 self.layer_props = self.doc.layer(path).map(|l| (path.clone(), l.name.clone()));
             }
@@ -6527,7 +6602,8 @@ impl PaintApp {
             let factor = if zoom_delta != 1.0 {
                 zoom_delta
             } else if scroll != 0.0 {
-                (scroll / 240.0).exp()
+                // «Настройки → колесо наоборот»
+                (if self.opts.swap_zoom { -scroll } else { scroll } / 240.0).exp()
             } else {
                 1.0
             };
@@ -6611,7 +6687,7 @@ impl PaintApp {
             if released || !ui.input(|i| i.pointer.primary_down()) {
                 self.ruler_drag = None;
             }
-        } else if self.move_drag.is_some() || (!panning && self.live.is_none() && pressed && response.hovered() && (self.tool == Tool::Move || ctrl)) {
+        } else if self.move_drag.is_some() || (!panning && self.live.is_none() && pressed && response.hovered() && (self.tool == Tool::Move || (ctrl && !self.move_guarded()))) {
             // Перемещение: инструмент «Перемещение» или Ctrl + перетаскивание (как в SAI).
             if self.move_drag.is_none() {
                 if let Some(pos) = pointer {
@@ -7929,6 +8005,9 @@ impl PaintApp {
         if self.exit_ask {
             self.exit_window(ctx);
         }
+        if self.opts_edit.is_some() {
+            self.options_window(ctx);
+        }
     }
 
     /// Черновик: рисование текущей кистью, Alt + щелчок или правая кнопка — взять цвет.
@@ -7993,6 +8072,70 @@ impl PaintApp {
         ui.painter().text(clear.center(), egui::Align2::CENTER_CENTER, "×", egui::FontId::proportional(12.0), sai_ui::INK);
         if cr.clicked() {
             self.scratch = ScratchPad::new();
+        }
+    }
+
+    /// Только что было сочетание с Ctrl/Alt — Ctrl + перетаскивание слой пока не двигает.
+    fn move_guarded(&self) -> bool {
+        self.last_mod_key.is_some_and(|t| t.elapsed() < Duration::from_millis(self.opts.move_guard_ms as u64))
+    }
+
+    /// Окно «Настройки» (как Options в SAI 2017).
+    fn options_window(&mut self, ctx: &egui::Context) {
+        let Some(mut o) = self.opts_edit else { return };
+        let (mut ok, mut cancel) = (false, false);
+        egui::Window::new(tr("Настройки")).collapsible(false).resizable(false).default_width(460.0).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
+            let head = |ui: &mut egui::Ui, t: &str| {
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(t).color(Color32::from_rgb(160, 70, 20)));
+                ui.separator();
+            };
+            head(ui, tr("Общие"));
+            ui.checkbox(&mut o.dbl_props, tr("Двойной щелчок по слою открывает свойства"));
+            ui.checkbox(&mut o.swap_zoom, tr("Колесо мыши масштабирует наоборот"));
+            ui.checkbox(&mut o.size_relative, tr("Клавиши размера кисти меняют его на четверть, а не по списку"));
+            head(ui, tr("Клавиши инструментов и функций"));
+            ui.checkbox(&mut o.spring_tools, tr("Удержание клавиши инструмента — временный выбор до отпускания"));
+            ui.checkbox(&mut o.spring_color, tr("То же для смены основного цвета (X)"));
+            ui.checkbox(&mut o.spring_funcs, tr("То же для функций (*)"));
+            ui.horizontal(|ui| {
+                ui.label(tr("Удержание считается с, мс:"));
+                ui.add(egui::DragValue::new(&mut o.spring_ms).range(50..=2000));
+            });
+            ui.checkbox(&mut o.duplex_revert, tr("Повторное нажатие клавиши инструмента возвращает прежний"));
+            ui.weak(tr("(*) Зеркало вида, «Не замечать линейку», «Прямая линия»"));
+            head(ui, tr("Защита от случайного сдвига слоя"));
+            ui.horizontal(|ui| {
+                ui.label(tr("После сочетания с Ctrl или Alt Ctrl + перетаскивание не двигает слой, мс:"));
+                ui.add(egui::DragValue::new(&mut o.move_guard_ms).range(0..=2000));
+            });
+            head(ui, tr("Память и восстановление"));
+            ui.horizontal(|ui| {
+                ui.label(tr("Память истории до переноса на диск, МБ:"));
+                ui.add(egui::DragValue::new(&mut o.history_mb).range(64..=65536).speed(16));
+            });
+            ui.horizontal(|ui| {
+                ui.label(tr("Копия для восстановления после сбоя — раз в, мин:"));
+                ui.add(egui::DragValue::new(&mut o.recovery_min).range(1..=60));
+            });
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ok = ui.button("OK").clicked();
+                cancel = ui.button(tr("Отмена")).clicked();
+                if ui.button(tr("По умолчанию")).clicked() {
+                    o = Options::default();
+                }
+            });
+        });
+        if ok {
+            self.opts = o;
+            paint_core::history_disk::set_ram_budget(o.history_mb as usize * (1 << 20));
+            self.save_settings();
+            self.opts_edit = None;
+        } else if cancel {
+            self.opts_edit = None;
+        } else {
+            self.opts_edit = Some(o);
         }
     }
 
@@ -8374,6 +8517,30 @@ impl eframe::App for PaintApp {
         let km = self.keymap.clone();
         let hit = |a: keys::Action| ctx.input(|i| km.get(&a).copied().flatten().is_some_and(|b| b.pressed(i)));
         use keys::Action as A;
+        // нажатая в этом кадре клавиша (для временного переключения) и время сочетаний с Ctrl/Alt
+        let pressed_key = ctx.input(|i| {
+            i.events.iter().find_map(|e| match e {
+                egui::Event::Key { key, pressed: true, repeat: false, .. } => Some(*key),
+                _ => None,
+            })
+        });
+        if ctx.input(|i| (i.modifiers.command || i.modifiers.alt) && i.events.iter().any(|e| matches!(e, egui::Event::Key { pressed: true, .. }))) {
+            self.last_mod_key = Some(Instant::now());
+        }
+        if let Some((k, at, undo)) = self.spring {
+            if !ctx.input(|i| i.key_down(k)) {
+                self.spring = None;
+                if at.elapsed() >= Duration::from_millis(self.opts.spring_ms as u64) {
+                    match undo {
+                        SpringUndo::Tool(t, b) => (self.tool, self.brush) = (t, b),
+                        SpringUndo::Color => self.swap_colors(),
+                        SpringUndo::Flip => self.view_flip = !self.view_flip,
+                        SpringUndo::IgnoreRuler => self.ruler.ignore = !self.ruler.ignore,
+                        SpringUndo::Straight => self.straight = !self.straight,
+                    }
+                }
+            }
+        }
         // выбрали цвет — «прозрачный цвет» снимается, как в SAI
         if self.hsv != self.prev_hsv {
             self.prev_hsv = self.hsv;
@@ -8466,8 +8633,22 @@ impl eframe::App for PaintApp {
             if hit(A::Ruler) {
                 self.toggle_ruler();
             }
+            let func_spring = |app: &mut Self, undo: SpringUndo| {
+                if let (true, Some(k)) = (app.opts.spring_funcs, pressed_key) {
+                    app.spring = Some((k, Instant::now(), undo));
+                }
+            };
             if hit(A::FlipView) {
                 self.view_flip = !self.view_flip;
+                func_spring(self, SpringUndo::Flip);
+            }
+            if hit(A::IgnoreRuler) {
+                self.ruler.ignore = !self.ruler.ignore;
+                func_spring(self, SpringUndo::IgnoreRuler);
+            }
+            if hit(A::StraightLine) {
+                self.straight = !self.straight;
+                func_spring(self, SpringUndo::Straight);
             }
             // как в SAI: Tab — спрятать панели, F11 и Shift+Tab — полный экран
             // Tab egui забирает до нас (raw_input_hook): если «панели» оставлены на Tab — по флагу
@@ -8575,6 +8756,9 @@ impl eframe::App for PaintApp {
         if !typing && self.live.is_none() {
             if hit(A::SwapColors) {
                 self.swap_colors();
+                if let (true, Some(k)) = (self.opts.spring_color, pressed_key) {
+                    self.spring = Some((k, Instant::now(), SpringUndo::Color));
+                }
             }
             if hit(A::HueSaturation) {
                 self.open_filter(FilterKind::HueSaturation);
@@ -8620,6 +8804,8 @@ impl eframe::App for PaintApp {
             if hit(A::HideSelection) {
                 self.show_selection = !self.show_selection;
             }
+            let before = (self.tool, self.brush);
+            let mut tool_hit = false;
             for (a, t) in [
                 (A::Marquee, Tool::Marquee),
                 (A::Lasso, Tool::Lasso),
@@ -8634,6 +8820,7 @@ impl eframe::App for PaintApp {
             ] {
                 if hit(a) {
                     self.tool = t;
+                    tool_hit = true;
                 }
             }
             // на слое контура карандаш и ластик — перо и ластик контура; узлы и нажим — свои
@@ -8661,6 +8848,7 @@ impl eframe::App for PaintApp {
                 if let Some(i) = i.filter(|_| hit(a) && !(liwk && matches!(k, ToolKind::Pencil | ToolKind::Eraser))) {
                     self.brush = i;
                     self.tool = Tool::Brush;
+                    tool_hit = true;
                 }
             }
             // своя клавиша инструмента сетки («Свойства…», как Shortcut Key в SAI) — важнее общей
@@ -8668,6 +8856,24 @@ impl eframe::App for PaintApp {
             if let Some(i) = own {
                 self.brush = i;
                 self.tool = Tool::Brush;
+                tool_hit = true;
+            }
+            // как в SAI («Настройки»): повторное нажатие — прежний инструмент; удержание —
+            // временное переключение до отпускания
+            if tool_hit {
+                if (self.tool, self.brush) == before {
+                    if self.opts.duplex_revert {
+                        (self.tool, self.brush) = self.prev_tool;
+                        self.prev_tool = before;
+                    }
+                } else {
+                    self.prev_tool = before;
+                    if self.opts.spring_tools {
+                        if let Some(k) = pressed_key {
+                            self.spring = Some((k, Instant::now(), SpringUndo::Tool(before.0, before.1)));
+                        }
+                    }
+                }
             }
             if hit(A::Clear) {
                 self.layer_action(LayerAction::Clear);
@@ -8682,11 +8888,12 @@ impl eframe::App for PaintApp {
         if !typing {
             let (bigger, smaller) = (hit(A::SizeUp), hit(A::SizeDown));
             let size = &mut self.brushes[self.brush].params.size;
+            let relative = self.opts.size_relative;
             if bigger {
-                *size = SIZES.iter().copied().find(|s| *s > *size + 0.01).unwrap_or(*size);
+                *size = if relative { (*size * 1.25 * 10.0).round() / 10.0 } else { SIZES.iter().copied().find(|s| *s > *size + 0.01).unwrap_or(*size) }.min(5000.0);
             }
             if smaller {
-                *size = SIZES.iter().rev().copied().find(|s| *s < *size - 0.01).unwrap_or(*size);
+                *size = if relative { (*size / 1.25 * 10.0).round() / 10.0 } else { SIZES.iter().rev().copied().find(|s| *s < *size - 0.01).unwrap_or(*size) }.max(0.1);
             }
             if hit(A::ZoomIn) || zoom_alt {
                 self.set_zoom(self.zoom * 1.25);

@@ -740,3 +740,25 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, avec calques)
 Строка состояния = Barre d'état
 Черновик = Brouillon
 Черновик: рисуйте текущей кистью; Alt + щелчок или правая кнопка — взять цвет = Brouillon : peignez avec le pinceau actuel ; Alt + clic ou clic droit prélève une couleur
+
+# Окно «Настройки» (0.9.2)
+(*) Зеркало вида, «Не замечать линейку», «Прямая линия» = (*) Miroir de la vue, « Ignorer la règle », « Ligne droite »
+Двойной щелчок по слою открывает свойства = Un double-clic sur un calque ouvre ses propriétés
+Защита от случайного сдвига слоя = Protection contre le déplacement accidentel du calque
+Клавиши инструментов и функций = Touches des outils et fonctions
+Клавиши размера кисти меняют его на четверть, а не по списку = Les touches de taille changent d'un quart au lieu de la liste
+Колесо мыши масштабирует наоборот = La molette zoome dans l'autre sens
+Копия для восстановления после сбоя — раз в, мин: = Copie de récupération après plantage — toutes les, min :
+Настройки = Options
+Настройки… = Options…
+Общие = Général
+Память и восстановление = Mémoire et récupération
+Память истории до переноса на диск, МБ: = Mémoire de l'historique avant le disque, Mo :
+По умолчанию = Par défaut
+Повторное нажатие клавиши инструмента возвращает прежний = Rappuyer sur la touche d'outil revient à l'outil précédent
+После сочетания с Ctrl или Alt Ctrl + перетаскивание не двигает слой, мс: = Après un raccourci Ctrl ou Alt, Ctrl + glisser ne déplace pas le calque pendant, ms :
+Прямая линия = Ligne droite
+То же для смены основного цвета (X) = Idem pour changer la couleur principale (X)
+То же для функций (*) = Idem pour les fonctions (*)
+Удержание клавиши инструмента — временный выбор до отпускания = Maintenir une touche d'outil le choisit jusqu'au relâchement
+Удержание считается с, мс: = Maintien compté à partir de, ms :

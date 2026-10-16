@@ -14,7 +14,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Сколько памяти держит история, прежде чем выгружать на диск.
 pub fn ram_budget() -> usize {
-    std::env::var("PAINT_HISTORY_RAM").ok().and_then(|v| v.parse().ok()).unwrap_or(1 << 30)
+    std::env::var("PAINT_HISTORY_RAM").ok().and_then(|v| v.parse().ok()).unwrap_or_else(|| RAM_BUDGET.load(Ordering::Relaxed))
+}
+
+static RAM_BUDGET: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1 << 30);
+
+/// Сколько памяти держит история до переноса шагов на диск (окно «Настройки»).
+pub fn set_ram_budget(bytes: usize) {
+    RAM_BUDGET.store(bytes.max(64 << 20), Ordering::Relaxed);
 }
 
 /// Предел истории на диске.

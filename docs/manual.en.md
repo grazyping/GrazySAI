@@ -344,6 +344,11 @@ Canvas from Clipboard” open a new tab (an untouched empty canvas is replaced).
 switch to it; the cross, the middle button or Ctrl+W (“File → Close”) closes it, asking first if
 there are unsaved changes. Crash recovery keeps a copy of the active canvas.
 
+“Help → Options…”, as in SAI: layer properties on double-click, reversed wheel zoom, brush size
+keys by a quarter, temporary tool, color and function switching while a key is held (threshold in
+ms), returning to the previous tool by pressing its key again, protection from accidental layer
+moves after Ctrl/Alt shortcuts, history memory and the recovery copy interval.
+
 “File → Recent” lists the last 10 files opened or saved.
 
 “Open”, “Save As” and “Export” show the system window: File Explorer on Windows, the desktop's

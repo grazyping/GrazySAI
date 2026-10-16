@@ -740,3 +740,25 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, mit Ebenen)
 Строка состояния = Statusleiste
 Черновик = Notizblock
 Черновик: рисуйте текущей кистью; Alt + щелчок или правая кнопка — взять цвет = Notizblock: mit dem aktuellen Pinsel malen; Alt + Klick oder Rechtsklick nimmt eine Farbe auf
+
+# Окно «Настройки» (0.9.2)
+(*) Зеркало вида, «Не замечать линейку», «Прямая линия» = (*) Ansicht spiegeln, „Lineal ignorieren“, „Gerade Linie“
+Двойной щелчок по слою открывает свойства = Doppelklick auf eine Ebene öffnet ihre Eigenschaften
+Защита от случайного сдвига слоя = Schutz vor versehentlichem Verschieben der Ebene
+Клавиши инструментов и функций = Tasten für Werkzeuge und Funktionen
+Клавиши размера кисти меняют его на четверть, а не по списку = Pinselgrößen-Tasten ändern um ein Viertel statt nach Liste
+Колесо мыши масштабирует наоборот = Mausrad zoomt umgekehrt
+Копия для восстановления после сбоя — раз в, мин: = Wiederherstellungskopie nach Absturz — alle, min:
+Настройки = Optionen
+Настройки… = Optionen…
+Общие = Allgemein
+Память и восстановление = Speicher und Wiederherstellung
+Память истории до переноса на диск, МБ: = Verlaufsspeicher vor Auslagerung, MB:
+По умолчанию = Standard
+Повторное нажатие клавиши инструмента возвращает прежний = Erneutes Drücken der Werkzeugtaste kehrt zum vorherigen zurück
+После сочетания с Ctrl или Alt Ctrl + перетаскивание не двигает слой, мс: = Nach Strg/Alt-Kürzel verschiebt Strg + Ziehen die Ebene nicht für, ms:
+Прямая линия = Gerade Linie
+То же для смены основного цвета (X) = Ebenso beim Wechsel der Hauptfarbe (X)
+То же для функций (*) = Ebenso für Funktionen (*)
+Удержание клавиши инструмента — временный выбор до отпускания = Gedrückte Werkzeugtaste wählt nur bis zum Loslassen
+Удержание считается с, мс: = Als Halten gilt ab, ms:

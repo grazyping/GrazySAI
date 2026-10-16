@@ -85,6 +85,8 @@ pub enum Action {
     TextTool,
     HandTool,
     RotateTool,
+    IgnoreRuler,
+    StraightLine,
     TransparentColor,
     PickMerged,
     PickLayer,
@@ -121,7 +123,7 @@ pub enum Action {
 
 /// Действие, имя для настроек, подпись в окне, клавиша по умолчанию.
 /// Пустая клавиша — по умолчанию не назначена (в SAI её нет).
-pub const ALL: [(Action, &str, &str, &str); 87] = [
+pub const ALL: [(Action, &str, &str, &str); 89] = [
     (Action::Undo, "undo", "Отменить", "Ctrl+Z"),
     (Action::Redo, "redo", "Повторить", "Ctrl+Y"),
     (Action::Open, "open", "Открыть", "Ctrl+O"),
@@ -177,6 +179,8 @@ pub const ALL: [(Action, &str, &str, &str); 87] = [
     (Action::TextTool, "text_tool", "Текст", ""),
     (Action::HandTool, "hand_tool", "Рука", ""),
     (Action::RotateTool, "rotate_tool", "Поворот вида", ""),
+    (Action::IgnoreRuler, "ignore_ruler", "Не замечать линейку", ""),
+    (Action::StraightLine, "straight_line", "Прямая линия", ""),
     (Action::TransparentColor, "transparent", "Прозрачный цвет", ""),
     (Action::PickMerged, "pick_merged", "Пипетка по сведённому", ""),
     (Action::PickLayer, "pick_layer", "Пипетка по текущему слою", ""),
