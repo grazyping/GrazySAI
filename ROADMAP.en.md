@@ -68,11 +68,25 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.48)
+### 0.8 — linework and shapes
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
 - [x] Curves of linework and shape layers from `.sai2` are saved as they were (byte for byte); brushes do not paint on such layers, “Rasterize Layer” makes them normal
+
+### 0.9 — brushes in full, text and rulers (current version 0.9.0)
+- [x] Brush forms and textures (`blotmap`, `brushtex`) — from SAI's code, checked against live SAI
+- [x] Bristle brush form (`bristle`) after SAI's code; band width and stroke ends checked against the live SAI
+- [x] Marker at light pressure — as in SAI: its own compositing from SAI's code, paint amount from live SAI
+- [x] Water with Amplify Density — closer to SAI, fitted to measurements (0.8.47)
+- [x] The hardest edge step by SAI's code: its own renderer and a stroke mask from 20 px — lines match live SAI to 0.0–0.3 levels
+- [x] Text layers and perspective rulers (reading and writing): text is drawn with the system font, both are saved byte for byte
+- [x] Text tool: creating and editing text (font, size, color, several lines); bold, italic and vertical text — from the user's sample, look checked against SAI under Wine; font list as in SAI (GDI)
+- [x] Rulers: straight line and ellipse, as in SAI 2017
+- [x] The mask moves and transforms with its layer; Merge Down for a layer with a mask
+- [x] Color mixer and swatches in the color panel — as in SAI 2017
+- [x] Large Water brush: blur over a reduced copy of the layer, as in SAI — 350 px: 7.4 → 2.0 s per 1000 px of line
+- [x] Perspective rulers: display and drawing along them (reference: Krita's perspective and vanishing point assistants); our own version, not written to the file (0.8.38)
 
 ### Beyond the plan
 - [x] Filters: hue and saturation, brightness and contrast, Gaussian blur — by SAI's rules, compared with live SAI; the other filters do not work in SAI itself
@@ -92,20 +106,6 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Shortcut keys in menus and tooltips can be hidden (“Window → Show shortcut keys”)
 
 ## Ahead
-
-### 0.9 — brushes in full, text and rulers
-- [x] Brush forms and textures (`blotmap`, `brushtex`) — from SAI's code, checked against live SAI
-- [x] Bristle brush form (`bristle`) after SAI's code; band width and stroke ends checked against the live SAI
-- [x] Marker at light pressure — as in SAI: its own compositing from SAI's code, paint amount from live SAI
-- [x] Water with Amplify Density — closer to SAI, fitted to measurements (0.8.47)
-- [x] The hardest edge step by SAI's code: its own renderer and a stroke mask from 20 px — lines match live SAI to 0.0–0.3 levels
-- [x] Text layers and perspective rulers (reading and writing): text is drawn with the system font, both are saved byte for byte
-- [x] Text tool: creating and editing text (font, size, color, several lines); bold, italic and vertical text — from the user's sample, look checked against SAI under Wine; font list as in SAI (GDI)
-- [x] Rulers: straight line and ellipse, as in SAI 2017
-- [x] The mask moves and transforms with its layer; Merge Down for a layer with a mask
-- [x] Color mixer and swatches in the color panel — as in SAI 2017
-- [x] Large Water brush: blur over a reduced copy of the layer, as in SAI — 350 px: 7.4 → 2.0 s per 1000 px of line
-- [x] Perspective rulers: display and drawing along them (reference: Krita's perspective and vanishing point assistants); our own version, not written to the file (0.8.38)
 
 ### 1.0 — finished
 - [x] `.sai2` read and written without loss for every kind of layer: checked by resaving the user's files — same flattened picture (difference 0), text and linework byte for byte, masks, effects, paper, background and resolution kept
@@ -141,7 +141,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Text is typed right on the canvas, settings on the tool panel, as in SAI (0.8.45)
 - [x] Tools get their useful buttons on the panel; Straight line, rotate view as a tool and in the navigator (0.8.46)
 
-### More from SAI 2017 (found by comparison, `docs/32-sai-comparison.md`)
+### For 1.0 — more from SAI 2017 (found by comparison, `docs/32-sai-comparison.md`)
 
 - [ ] Layer effect color (Canvas → Layer Effect Color)
 - [x] Layers: show alone, bring to front and send to back, select the layer above/below by key (0.8.48)

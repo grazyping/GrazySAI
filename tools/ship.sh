@@ -11,6 +11,8 @@ old=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 sed -i "s/^version = \"$old\"/version = \"$V\"/" Cargo.toml
 sed -i "s/(текущая версия $old)/(текущая версия $V)/" ROADMAP.md
 sed -i "s/(current version $old)/(current version $V)/" ROADMAP.en.md
+sed -i -E "s/Version [0-9]+\.[0-9]+\.[0-9]+\./Version $V./" README.md
+sed -i -E "s/Версия [0-9]+\.[0-9]+\.[0-9]+\./Версия $V./" README.ru.md
 grep -q "^version = \"$V\"" Cargo.toml
 export GIT_SSH_COMMAND="ssh -i ~/.ssh/github_ed25519 -o IdentitiesOnly=yes"
 R=grazyping/GrazySAI
