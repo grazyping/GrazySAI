@@ -738,29 +738,47 @@ impl Stroke {
             let batch: Vec<Pending> = self.pending.drain(..n).collect();
             let mask = &self.hard_mask;
             // Средний цвет холста под пачкой — по всем пикселям, которых она касается.
-            let mut seen = Grid::over(&batch, false);
-            let mut sample = Sample::default();
+            // Полосы строк — параллельно; сумма целая (точка — доли 2^-15), поэтому порядок
+            // сложения не важен и итог тот же, что при обходе по очереди.
+            let tiles = &*pixels;
+            let (_, parts) = Bands::run(&batch, false, |ya, yb, part: &mut [bool]| -> ([u64; 4], u32) {
+                let gw = part.len() / (yb - ya).max(1) as usize;
+                let gx0 = batch_bounds(&batch).0;
+                let (mut sum, mut count) = ([0u64; 4], 0u32);
+                for d in &batch {
+                    for_rows(d, mask, ya..yb, i32::MIN..i32::MAX, |y, ra, rb, covs| {
+                        let row = (y - ya) as usize * gw;
+                        let mut cached: (Key, Option<&Tile<Px>>) = ((i32::MIN, 0), None);
+                        for x in ra..=rb {
+                            if covs[(x - ra) as usize] <= 0.0 {
+                                continue;
+                            }
+                            let first = &mut part[row + (x - gx0) as usize];
+                            if *first {
+                                continue;
+                            }
+                            *first = true;
+                            let key = key_of(x, y);
+                            if cached.0 != key {
+                                cached = (key, tiles.tiles.get(&key));
+                            }
+                            let px = cached.1.map_or([0; 4], |t| t.0[(y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize]);
+                            for c in 0..4 {
+                                sum[c] += px[c] as u64;
+                            }
+                            count += 1;
+                        }
+                    });
+                }
+                (sum, count)
+            });
             let k = 1.0 / ONE as f64;
-            for d in &batch {
-                for_rows(d, mask, |y, ra, rb, cov_at| {
-                    let mut cached: (Key, Option<&Tile<Px>>) = ((i32::MIN, 0), None);
-                    for x in ra..=rb {
-                        if cov_at(x) <= 0.0 {
-                            continue;
-                        }
-                        let first = seen.at(x, y);
-                        if *first {
-                            continue;
-                        }
-                        *first = true;
-                        let key = key_of(x, y);
-                        if cached.0 != key {
-                            cached = (key, pixels.tiles.get(&key));
-                        }
-                        let px = cached.1.map_or([0; 4], |t| t.0[(y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize]);
-                        sample.add(px.map(|v| v as f64 * k));
-                    }
-                });
+            let mut sample = Sample::default();
+            for (sum, count) in parts {
+                for (acc, v) in sample.sum.iter_mut().zip(sum) {
+                    *acc += v as f64 * k;
+                }
+                sample.count += count;
             }
             let paint = mixer.paint(sample, n, batch[0].pressure);
             if mix.blur {
@@ -824,26 +842,29 @@ fn lay_batch(
         let ((tx, ty), tile, list) = job;
         let (tx0, ty0) = (*tx * TILE, *ty * TILE);
         let mut hit = false;
+        // выделение — плиткой (как `sel.amount`, без поиска на каждую точку)
+        let sel_all = sel.mask.tiles.is_empty();
+        let sel_tile = if sel_all { None } else { sel.mask.tiles.get(&(*tx, *ty)) };
         for &n in list.iter() {
             let d = &batch[n];
             let opacity = d.shape.opacity() * if marker.is_some() { marker_dab_scale() } else { 1.0 };
-            for_rows(d, mask, |y, ra, rb, cov_at| {
+            for_rows(d, mask, ty0..ty0 + TILE, tx0..tx0 + TILE, |y, ra, rb, covs| {
                 if y < ty0 || y >= ty0 + TILE {
                     return;
                 }
                 for x in ra.max(tx0)..=rb.min(tx0 + TILE - 1) {
-                    let cov = cov_at(x);
+                    let cov = covs[(x - ra) as usize];
                     if cov <= 0.0 {
                         continue;
                     }
-                    let s = sel.amount(x, y);
+                    let i = ((y - ty0) * TILE + x - tx0) as usize;
+                    let s = if sel_all { ONE } else { sel_tile.map_or(0, |t| t.0[i] as u32) };
                     if s == 0 {
                         continue;
                     }
                     let cov = cov * s as f32 / ONE as f32;
                     hit = true;
                     let t = tile.get_or_insert_with(|| Tile::filled([0; 4]));
-                    let i = ((y - ty0) * TILE + x - tx0) as usize;
                     t.0[i] = match marker {
                         Some(brush) => lay_marker(t.0[i], paint, brush, (cov * opacity) as f64),
                         None => lay(t.0[i], paint, (cov * opacity) as f64, preserve_opacity),
@@ -892,25 +913,16 @@ fn water_blur(
     let k = 1i32 << level;
     // Доля размытия в каждом пикселе: отпечатки пачки накладываются «поверх».
     // вес < 0 — точку не задел ни один отпечаток
-    let mut weight = Grid::over(batch, -1.0f64);
-    // полосы строк считаются параллельно: в каждой точке отпечатки идут в прежнем порядке
-    let (gx0, gy0, gw) = (weight.x0, weight.y0, weight.w);
-    let gh = weight.v.len().checked_div(gw).unwrap_or(0);
+    let (gx0, _, gw, _) = batch_bounds(batch);
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
-    let bands = if gw * gh < 40_000 || threads < 2 { 1 } else { threads };
-    let per = gh.div_ceil(bands).max(1);
-    let band = |n: usize, part: &mut [f64]| -> (i32, i32, i32, i32) {
-        let (ya, yb) = (gy0 + (n * per) as i32, gy0 + (n * per + part.len() / gw.max(1)) as i32);
+    let (weight, parts) = Bands::run(batch, -1.0f64, |ya, yb, part: &mut [f64]| -> (i32, i32, i32, i32) {
         let mut r = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
         for d in batch {
             let o = d.shape.opacity();
-            for_rows(d, mask, |y, ra, rb, cov_at| {
-                if y < ya || y >= yb {
-                    return;
-                }
+            for_rows(d, mask, ya..yb, i32::MIN..i32::MAX, |y, ra, rb, covs| {
                 let row = (y - ya) as usize * gw;
                 for x in ra..=rb {
-                    let cov = cov_at(x);
+                    let cov = covs[(x - ra) as usize];
                     if cov <= 0.0 {
                         continue;
                     }
@@ -924,16 +936,7 @@ fn water_blur(
             });
         }
         r
-    };
-    let parts: Vec<(i32, i32, i32, i32)> = if bands == 1 {
-        vec![band(0, &mut weight.v)]
-    } else {
-        std::thread::scope(|scope| {
-            let band = &band;
-            let hs: Vec<_> = weight.v.chunks_mut(per * gw).enumerate().map(|(n, c)| scope.spawn(move || band(n, c))).collect();
-            hs.into_iter().map(|h| h.join().unwrap_or((i32::MAX, i32::MAX, i32::MIN, i32::MIN))).collect()
-        })
-    };
+    });
     let (mut x0, mut y0, mut x1, mut y1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
     for r in parts {
         (x0, y0, x1, y1) = (x0.min(r.0), y0.min(r.1), x1.max(r.2), y1.max(r.3));
@@ -991,14 +994,32 @@ fn water_blur(
     let mut buf = BUF.with(|b| std::mem::take(&mut *b.borrow_mut()));
     buf.resize(w * h, [0.0; 4]);
     buf.truncate(w * h);
-    for (j, line) in buf.chunks_mut(w).enumerate() {
-        let fy = (ly0 + j as i32) * k;
-        let row = (fy.rem_euclid(TILE) / k) as usize * side;
-        for (i, v) in line.iter_mut().enumerate() {
-            let fx = (lx0 + i as i32) * k;
-            let block = &cache[&(level, key_of(fx, fy))];
-            *v = block[row + (fx.rem_euclid(TILE) / k) as usize];
+    // строки копии — отрезками по плиткам (плитка из таблицы — раз на отрезок), строки параллельно
+    let fill = |j0: usize, lines: &mut [[f64; 4]]| {
+        for (dj, line) in lines.chunks_mut(w).enumerate() {
+            let fy = (ly0 + (j0 + dj) as i32) * k;
+            let row = (fy.rem_euclid(TILE) / k) as usize * side;
+            let mut i = 0;
+            while i < w {
+                let fx = (lx0 + i as i32) * k;
+                let cx = (fx.rem_euclid(TILE) / k) as usize;
+                let n = (side - cx).min(w - i);
+                let block = &cache[&(level, key_of(fx, fy))];
+                line[i..i + n].copy_from_slice(&block[row + cx..row + cx + n]);
+                i += n;
+            }
         }
+    };
+    if w * h < 40_000 || threads < 2 {
+        fill(0, &mut buf);
+    } else {
+        let per = h.div_ceil(threads);
+        std::thread::scope(|scope| {
+            for (n, part) in buf.chunks_mut(per * w).enumerate() {
+                let fill = &fill;
+                scope.spawn(move || fill(n * per, part));
+            }
+        });
     }
     for r in [r1, r2] {
         crate::mix::box_blur(&mut buf, w, h, r, false);
@@ -1034,19 +1055,23 @@ fn water_blur(
         let ((tx, ty), tile) = job;
         let (tx0, ty0) = (*tx * TILE, *ty * TILE);
         let mut hit = false;
+        // выделение — плиткой (как `sel.amount`, без поиска на каждую точку)
+        let sel_all = sel.mask.tiles.is_empty();
+        let sel_tile = if sel_all { None } else { sel.mask.tiles.get(&(*tx, *ty)) };
         for y in y0.max(ty0)..=y1.min(ty0 + TILE - 1) {
             for x in x0.max(tx0)..=x1.min(tx0 + TILE - 1) {
                 let a = weight.get(x, y);
                 if a < 0.0 {
                     continue;
                 }
-                let a = a * sel.amount(x, y) as f64 / ONE as f64;
+                let i = ((y - ty0) * TILE + x - tx0) as usize;
+                let s = if sel_all { ONE } else { sel_tile.map_or(0, |t| t.0[i] as u32) };
+                let a = a * s as f64 / ONE as f64;
                 if a <= 0.0 {
                     continue;
                 }
                 hit = true;
                 let t = tile.get_or_insert_with(|| Tile::filled([0; 4]));
-                let i = ((y - ty0) * TILE + x - tx0) as usize;
                 t.0[i] = lay(t.0[i], at(x, y), a, false);
             }
         }
@@ -1079,32 +1104,94 @@ fn water_blur(
 fn add_to_hard_mask(mask: &mut MaskMap, px: f32, py: f32, shape: &Shape) {
     let Some((inner, edge, a)) = shape.mask() else { return };
     let reach = inner + edge + 1.0;
-    for y in (py - reach).floor() as i32..=(py + reach).ceil() as i32 {
-        let cy = y as f32 + 0.5 - py;
-        for x in (px - reach).floor() as i32..=(px + reach).ceil() as i32 {
-            let cx = x as f32 + 0.5 - px;
-            let e = ((cx * cx + cy * cy).sqrt() - inner).max(0.0);
-            let f = (1.0 - e / edge).max(0.0);
-            let v = (((f * f * f - f) * a + f) * 16384.0) as i32;
-            if v > 0 {
-                let (k, i) = (key_of(x, y), (y.rem_euclid(TILE) * TILE + x.rem_euclid(TILE)) as usize);
-                let t = mask.tiles.entry(k).or_insert_with(|| Tile::filled(0));
-                t.0[i] = t.0[i].max(v as u16);
+    let (x0, x1) = ((px - reach).floor() as i32, (px + reach).ceil() as i32);
+    let (y0, y1) = ((py - reach).floor() as i32, (py + reach).ceil() as i32);
+    // по плиткам: плитка берётся из таблицы один раз, строка — только в пределах круга (с
+    // запасом); значения те же, что при обходе по точкам
+    let paint = |key: Key, t: &mut Tile<u16>| -> bool {
+        let (bx, by) = (key.0 * TILE, key.1 * TILE);
+        let mut hit = false;
+        for y in y0.max(by)..=y1.min(by + TILE - 1) {
+            let cy = y as f32 + 0.5 - py;
+            let w2 = (reach + 1.0) * (reach + 1.0) - cy * cy;
+            if w2 < 0.0 {
+                continue;
             }
+            let w = w2.sqrt() + 1.0;
+            let (ra, rb) = (x0.max(bx).max((px - w).floor() as i32), x1.min(bx + TILE - 1).min((px + w).ceil() as i32));
+            let row = ((y - by) * TILE) as usize;
+            for x in ra..=rb {
+                let cx = x as f32 + 0.5 - px;
+                let e = ((cx * cx + cy * cy).sqrt() - inner).max(0.0);
+                let f = (1.0 - e / edge).max(0.0);
+                let v = (((f * f * f - f) * a + f) * 16384.0) as i32;
+                if v > 0 {
+                    let i = row + (x - bx) as usize;
+                    t.0[i] = t.0[i].max(v as u16);
+                    hit = true;
+                }
+            }
+        }
+        hit
+    };
+    let keys: Vec<Key> = (y0.div_euclid(TILE)..=y1.div_euclid(TILE)).flat_map(|ty| (x0.div_euclid(TILE)..=x1.div_euclid(TILE)).map(move |tx| (tx, ty))).collect();
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    if keys.len() < 64 || threads < 2 {
+        for key in keys {
+            match mask.tiles.get_mut(&key) {
+                Some(t) => {
+                    paint(key, t);
+                }
+                None => {
+                    let mut t = Tile::filled(0);
+                    if paint(key, &mut t) {
+                        mask.tiles.insert(key, t);
+                    }
+                }
+            }
+        }
+        return;
+    }
+    // большой отпечаток: плитки — параллельно
+    let mut jobs: Vec<(Key, Option<Tile<u16>>, bool)> = keys.into_iter().map(|k| { let t = mask.tiles.remove(&k); let had = t.is_some(); (k, t, had) }).collect();
+    let chunk = jobs.len().div_ceil(threads);
+    std::thread::scope(|scope| {
+        for part in jobs.chunks_mut(chunk) {
+            let paint = &paint;
+            scope.spawn(move || {
+                for (key, tile, keep) in part.iter_mut() {
+                    let t = tile.get_or_insert_with(|| Tile::filled(0));
+                    // оставить плитку: была раньше или отпечаток её задел
+                    *keep |= paint(*key, t);
+                }
+            });
+        }
+    });
+    for (key, tile, keep) in jobs {
+        // новая плитка, которую отпечаток не задел, не нужна (как раньше)
+        if let Some(t) = tile.filter(|_| keep) {
+            mask.tiles.insert(key, t);
         }
     }
 }
 
-/// Строки отпечатка: `f(y, x_from, x_to, покрытие(x))`. `mask` — маска штриха самой жёсткой
+/// Строки отпечатка в пределах `rows` и столбцов `cols`: `f(y, x_from, x_to, покрытия)`,
+/// покрытие точки x — `покрытия[x - x_from]`. `mask` — маска штриха самой жёсткой
 /// ступени от 20 px: покрытие не больше её.
-fn for_rows(d: &Pending, mask: &MaskMap, mut f: impl FnMut(i32, i32, i32, &dyn Fn(i32) -> f32)) {
+fn for_rows(d: &Pending, mask: &MaskMap, rows: std::ops::Range<i32>, cols: std::ops::Range<i32>, mut f: impl FnMut(i32, i32, i32, &[f32])) {
     let masked = d.shape.mask().is_some();
     let reach = d.shape.outer() + 1.0;
     let (x0, x1) = ((d.x - reach).floor() as i32, (d.x + reach).ceil() as i32);
     let (y0, y1) = ((d.y - reach).floor() as i32, (d.y + reach).ceil() as i32);
+    // только строки из `rows`: полосы потоков и плитки не перебирают чужие строки
+    let (y0, y1) = (y0.max(rows.start), y1.min(rows.end - 1));
     let round = d.shape.coverage(reach - 1.0) <= 0.0;
     let flat_cov = d.shape.coverage(0.0);
-    let flat_r2 = if d.grain.is_some() || masked { -1.0 } else { d.shape.flat_r2() };
+    // внутри этого круга покрытие постоянно — без корня; маска и текстура — всё равно после
+    let flat_r2 = d.shape.flat_r2();
+    // покрытие строки — одним плотным циклом в буфер (без вызова на каждую точку)
+    let mut covs: Vec<f32> = Vec::new();
+    let mut mrow: Vec<u16> = Vec::new();
     for y in y0..=y1 {
         let cy = y as f32 + 0.5 - d.y;
         let (mut ra, mut rb) = (x0, x1);
@@ -1117,53 +1204,99 @@ fn for_rows(d: &Pending, mask: &MaskMap, mut f: impl FnMut(i32, i32, i32, &dyn F
             ra = ra.max((d.x - 0.5 - w).floor() as i32);
             rb = rb.min((d.x - 0.5 + w).ceil() as i32);
         }
-        let cov_at = |x: i32| {
+        let (ra, rb) = (ra.max(cols.start), rb.min(cols.end - 1));
+        if ra > rb {
+            continue;
+        }
+        if masked {
+            // строка маски: плитка из таблицы — раз на TILE точек, а не на каждую
+            mrow.clear();
+            let mut x = ra;
+            while x <= rb {
+                let end = rb.min((x.div_euclid(TILE) + 1) * TILE - 1);
+                match mask.tiles.get(&key_of(x, y)) {
+                    Some(t) => {
+                        let i = crate::tile::index_of(x, y);
+                        mrow.extend_from_slice(&t.0[i..i + (end - x + 1) as usize]);
+                    }
+                    None => mrow.resize(mrow.len() + (end - x + 1) as usize, 0),
+                }
+                x = end + 1;
+            }
+        }
+        covs.clear();
+        covs.extend((ra..=rb).map(|x| {
             let cx = x as f32 + 0.5 - d.x;
             let d2 = cx * cx + cy * cy;
-            if d2 < flat_r2 {
-                return flat_cov;
-            }
-            let mut cov = d.shape.coverage(d2.sqrt());
+            let mut cov = if d2 < flat_r2 { flat_cov } else { d.shape.coverage(d2.sqrt()) };
             if masked {
-                cov = cov.min(mask.get(x, y) as f32 / 16384.0);
+                cov = cov.min(mrow[(x - ra) as usize] as f32 / 16384.0);
             }
             match &d.grain {
                 Some(g) => g.apply(cov, x, y),
                 None => cov,
             }
-        };
-        f(y, ra, rb, &cov_at);
+        }));
+        f(y, ra, rb, &covs);
     }
 }
 
-/// Плоская сетка флажков/весов над прямоугольником (вместо хеш-таблиц по точкам).
-struct Grid<T> {
+/// Сетка над пачкой по полосам строк: каждая полоса выделяется, заполняется и считается в своём
+/// потоке (у огромных кистей сетка — сотни мегабайт, выделять её одним куском в одном потоке
+/// дороже самого счёта). Полосы — по `per` строк, последняя короче.
+struct Bands<T> {
     x0: i32,
     y0: i32,
     w: usize,
-    v: Vec<T>,
+    per: usize,
+    parts: Vec<Vec<T>>,
 }
 
-impl<T: Copy> Grid<T> {
-    fn over(batch: &[Pending], fill: T) -> Self {
-        let mut b = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
-        for d in batch {
-            let reach = d.shape.outer() + 1.0;
-            b.0 = b.0.min((d.x - reach).floor() as i32);
-            b.1 = b.1.min((d.y - reach).floor() as i32);
-            b.2 = b.2.max((d.x + reach).ceil() as i32);
-            b.3 = b.3.max((d.y + reach).ceil() as i32);
-        }
-        let w = (b.2 - b.0 + 1).max(0) as usize;
-        let h = (b.3 - b.1 + 1).max(0) as usize;
-        Grid { x0: b.0, y0: b.1, w, v: vec![fill; w * h] }
-    }
-    fn at(&mut self, x: i32, y: i32) -> &mut T {
-        &mut self.v[(y - self.y0) as usize * self.w + (x - self.x0) as usize]
+impl<T: Copy + Send + Sync> Bands<T> {
+    /// `f(ya, yb, полоса)` для строк `ya..yb`; полоса — `(yb - ya) × w`, начало — `x0`.
+    fn run<R: Send>(batch: &[Pending], fill: T, f: impl Fn(i32, i32, &mut [T]) -> R + Sync) -> (Self, Vec<R>) {
+        let (x0, y0, w, h) = batch_bounds(batch);
+        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let bands = if w * h < 40_000 || threads < 2 { 1 } else { threads };
+        let per = h.div_ceil(bands).max(1);
+        let count = if w == 0 { 0 } else { h.div_ceil(per) };
+        let job = |n: usize| {
+            let rows = per.min(h - n * per);
+            let ya = y0 + (n * per) as i32;
+            let mut v = vec![fill; rows * w];
+            let r = f(ya, ya + rows as i32, &mut v);
+            (v, r)
+        };
+        let out: Vec<(Vec<T>, R)> = if count <= 1 {
+            (0..count).map(job).collect()
+        } else {
+            std::thread::scope(|scope| {
+                let job = &job;
+                let hs: Vec<_> = (0..count).map(|n| scope.spawn(move || job(n))).collect();
+                hs.into_iter().map(|h| h.join().expect("полоса сетки")).collect()
+            })
+        };
+        let (parts, res) = out.into_iter().unzip();
+        (Bands { x0, y0, w, per, parts }, res)
     }
     fn get(&self, x: i32, y: i32) -> T {
-        self.v[(y - self.y0) as usize * self.w + (x - self.x0) as usize]
+        let row = (y - self.y0) as usize;
+        let b = row / self.per;
+        self.parts[b][(row - b * self.per) * self.w + (x - self.x0) as usize]
     }
+}
+
+/// Прямоугольник пачки отпечатков: x0, y0, ширина, высота.
+fn batch_bounds(batch: &[Pending]) -> (i32, i32, usize, usize) {
+    let mut b = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+    for d in batch {
+        let reach = d.shape.outer() + 1.0;
+        b.0 = b.0.min((d.x - reach).floor() as i32);
+        b.1 = b.1.min((d.y - reach).floor() as i32);
+        b.2 = b.2.max((d.x + reach).ceil() as i32);
+        b.3 = b.3.max((d.y + reach).ceil() as i32);
+    }
+    (b.0, b.1, (b.2 - b.0 + 1).max(0) as usize, (b.3 - b.1 + 1).max(0) as usize)
 }
 
 /// Пиксель сдвигается к краске `paint` (предумноженной, 0..=1) на долю `a`.

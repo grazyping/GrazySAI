@@ -295,6 +295,8 @@ wherever it starts.
 ## Filters
 
 The “Filter” menu; with a selection the filter acts only on the selected part.
+A filter window opens with the settings of the last time (even after Cancel); “Reset” restores
+the defaults. The preview is computed in the background, so the window does not freeze.
 
 - **Hue and Saturation** (Ctrl+U), with a “Colorize” mode.
 - **Brightness and Contrast** (and color “Depth”).
@@ -345,6 +347,7 @@ Every canvas has its own tab at the bottom of the window, as in SAI: “New”, 
 Canvas from Clipboard” open a new tab (an untouched empty canvas is replaced). Click a tab to
 switch to it; the cross, the middle button or Ctrl+W (“File → Close”) closes it, asking first if
 there are unsaved changes. Crash recovery keeps a copy of the active canvas.
+The “New” window remembers the last size, also after a restart.
 
 “Help → Options…”, as in SAI: layer properties on double-click, reversed wheel zoom, brush size
 keys by a quarter, temporary tool, color and function switching while a key is held (threshold in

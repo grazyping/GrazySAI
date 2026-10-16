@@ -99,35 +99,8 @@ impl Layer {
     /// Накладывает покрытие штриха на одну плитку слоя.
     /// `sel` — плитка выделения: покрытие штриха умножается на неё (`None` — выделения нет).
     pub fn apply_mask_tile(&mut self, key: Key, mask: &Tile<u16>, erase: bool, rgb: [u8; 3], sel: Option<&Tile<u16>>) {
-        let color = rgb.map(|c| (c as u32 * ONE + 127) / 255);
         let preserve = self.preserve_opacity;
-        let tile = self.pixels.tile_mut(key);
-        for (i, (px, &m)) in tile.0.iter_mut().zip(mask.0.iter()).enumerate() {
-            let m = match sel {
-                Some(s) => crate::selection::limit(m as u32, s.0[i]),
-                None => m as u32,
-            };
-            if m == 0 {
-                continue;
-            }
-            let inv = ONE - m;
-            if erase {
-                for c in px.iter_mut() {
-                    *c = ((*c as u32 * inv + ONE / 2) / ONE) as u16;
-                }
-            } else if preserve {
-                let a = px[3] as u32;
-                for i in 0..3 {
-                    let src = color[i] * a / ONE; // краска с альфой самого пикселя
-                    px[i] = ((src * m + px[i] as u32 * inv + ONE / 2) / ONE) as u16;
-                }
-            } else {
-                for i in 0..3 {
-                    px[i] = ((color[i] * m + px[i] as u32 * inv + ONE / 2) / ONE) as u16;
-                }
-                px[3] = (m + (px[3] as u32 * inv + ONE / 2) / ONE).min(ONE) as u16;
-            }
-        }
+        mask_into_tile(self.pixels.tile_mut(key), mask, erase, rgb, preserve, sel);
     }
 
     /// Переносит готовый штрих на слой цветом `rgb`. Возвращает данные для отмены.
@@ -154,5 +127,37 @@ impl Layer {
             redo.push((key, current));
         }
         redo
+    }
+}
+
+/// Покрытие штриха `mask` (с учётом выделения `sel`) — в плитку цветом `rgb` или ластиком;
+/// `preserve` — сохранять непрозрачность. Плитки независимы — их можно класть параллельно.
+pub fn mask_into_tile(tile: &mut Tile<Px>, mask: &Tile<u16>, erase: bool, rgb: [u8; 3], preserve: bool, sel: Option<&Tile<u16>>) {
+    let color = rgb.map(|c| (c as u32 * ONE + 127) / 255);
+    for (i, (px, &m)) in tile.0.iter_mut().zip(mask.0.iter()).enumerate() {
+        let m = match sel {
+            Some(s) => crate::selection::limit(m as u32, s.0[i]),
+            None => m as u32,
+        };
+        if m == 0 {
+            continue;
+        }
+        let inv = ONE - m;
+        if erase {
+            for c in px.iter_mut() {
+                *c = ((*c as u32 * inv + ONE / 2) / ONE) as u16;
+            }
+        } else if preserve {
+            let a = px[3] as u32;
+            for i in 0..3 {
+                let src = color[i] * a / ONE; // краска с альфой самого пикселя
+                px[i] = ((src * m + px[i] as u32 * inv + ONE / 2) / ONE) as u16;
+            }
+        } else {
+            for i in 0..3 {
+                px[i] = ((color[i] * m + px[i] as u32 * inv + ONE / 2) / ONE) as u16;
+            }
+            px[3] = (m + (px[3] as u32 * inv + ONE / 2) / ONE).min(ONE) as u16;
+        }
     }
 }

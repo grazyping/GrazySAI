@@ -1178,3 +1178,36 @@ fn watercolor_pressure_crosses_levels() {
     }
     doc.live_finish(live);
 }
+
+/// Скорость больших кистей (до 5000 px, как в сетке размеров SAI) и отпечаток результата:
+/// ускорение не должно менять ни одной точки. Запуск: `--ignored --nocapture`.
+#[test]
+#[ignore]
+fn huge_brush_speed() {
+    use paint_core::mix::MixParams;
+    use paint_core::{BrushParams, InputPoint, LiveStroke, Stroke};
+    for (name, mix) in [("Карандаш", None), ("Кисть", Some(MixParams::new(0.0, 0.0, 0.5))), ("Акварель", Some(MixParams { blur: true, ..MixParams::new(0.3, 0.3, 0.5) }))] {
+        for size in [500.0f32, 1500.0, 5000.0] {
+            let mut doc = paint_core::Document::new(4000, 3000);
+            for y in (0..3000).step_by(7) {
+                for x in 0..4000 {
+                    doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([(x / 16) as u8, (y / 12) as u8, 90, 255]));
+                }
+            }
+            let params = BrushParams { size, hardness: 1.0, min_size: 0.5, density_by_pressure: true, mix, ..Default::default() };
+            let t = std::time::Instant::now();
+            let mut live = LiveStroke::new(vec![0], Stroke::new(params), [10, 20, 200]);
+            for i in 0..=300 {
+                live.stroke.add_point(InputPoint { x: 1000.0 + i as f32 * 5.0, y: 1500.0 + 300.0 * (i as f32 / 40.0).sin(), pressure: 0.4 + 0.6 * (i as f32 / 90.0).sin().powi(2) });
+                let _ = doc.live_update(&mut live);
+            }
+            doc.live_finish(live);
+            let el = t.elapsed().as_secs_f32();
+            let mut h: u64 = 0;
+            for v in doc.flatten().iter().step_by(3) {
+                h = h.wrapping_mul(1_000_003).wrapping_add(*v as u64);
+            }
+            eprintln!("HUGE {name} {size}: {el:.2} с, отпечаток {h:x}");
+        }
+    }
+}

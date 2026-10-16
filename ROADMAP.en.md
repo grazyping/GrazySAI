@@ -74,7 +74,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
 - [x] Curves of linework and shape layers from `.sai2` are saved as they were (byte for byte); brushes do not paint on such layers, “Rasterize Layer” makes them normal
 
-### 0.9 — brushes in full, text and rulers (current version 0.9.6)
+### 0.9 — brushes in full, text and rulers (current version 0.9.7)
 - [x] Brush forms and textures (`blotmap`, `brushtex`) — from SAI's code, checked against live SAI
 - [x] Bristle brush form (`bristle`) after SAI's code; band width and stroke ends checked against the live SAI
 - [x] Marker at light pressure — as in SAI: its own compositing from SAI's code, paint amount from live SAI
@@ -144,10 +144,10 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 ### Next — from feedback
 
 - [x] Watercolor with a pen no longer crashes the program; crash causes go to `crash.log` (0.9.6)
-- [ ] The New Canvas window remembers the last choice across restarts
+- [x] The New Canvas window remembers the last choice across restarts (0.9.7)
 - [ ] Stabilizer setting is kept when switching tools
-- [ ] Smoother and faster: filter previews and brush painting without stutter or lag
-- [ ] Filter and tool windows remember the last settings, even after Cancel
+- [x] Smoother and faster: filter previews in the background; brushes up to 5000 px are 5–14 times faster, the window does not freeze (0.9.7)
+- [x] Filter, Dilate/Erode Selection and Canvas Size windows remember the last settings, even after Cancel; “Reset” (0.9.7)
 
 ### For 1.0 — more from SAI 2017 (found by comparison, `docs/32-sai-comparison.md`)
 

@@ -194,19 +194,39 @@ impl Document {
         let touched: Vec<Key> = live.stroke.take_touched().into_iter().collect();
         let sel: HashMap<Key, Option<Tile<u16>>> = touched.iter().map(|k| (*k, self.selection.tile(*k))).collect();
         let Some(layer) = self.layer_mut(&live.path) else { return Vec::new() };
-        for key in &touched {
-            // Плитку возвращаем к исходному виду и накладываем покрытие штриха заново целиком.
-            let original = live.originals.entry(*key).or_insert_with(|| layer.pixels.tiles.get(key).cloned());
-            match original {
+        // Плитку возвращаем к исходному виду и накладываем покрытие штриха заново целиком;
+        // плитки независимы — у огромных кистей их тысячи, считаются параллельно.
+        let mut jobs: Vec<(Key, Option<Tile<Px>>)> = touched
+            .iter()
+            .map(|key| (*key, live.originals.entry(*key).or_insert_with(|| layer.pixels.tiles.get(key).cloned()).clone()))
+            .collect();
+        let (erase, rgb, preserve, mask) = (live.stroke.params.erase, live.rgb, layer.preserve_opacity, &live.stroke.mask);
+        let run = |job: &mut (Key, Option<Tile<Px>>)| {
+            if let Some(m) = mask.tiles.get(&job.0) {
+                let t = job.1.get_or_insert_with(|| Tile::filled(Px::default()));
+                crate::layer::mask_into_tile(t, m, erase, rgb, preserve, sel[&job.0].as_ref());
+            }
+        };
+        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        if jobs.len() < 32 || threads < 2 {
+            jobs.iter_mut().for_each(run);
+        } else {
+            let chunk = jobs.len().div_ceil(threads);
+            std::thread::scope(|scope| {
+                for part in jobs.chunks_mut(chunk) {
+                    let run = &run;
+                    scope.spawn(move || part.iter_mut().for_each(run));
+                }
+            });
+        }
+        for (key, tile) in jobs {
+            match tile {
                 Some(t) => {
-                    layer.pixels.tiles.insert(*key, t.clone());
+                    layer.pixels.tiles.insert(key, t);
                 }
                 None => {
-                    layer.pixels.tiles.remove(key);
+                    layer.pixels.tiles.remove(&key);
                 }
-            }
-            if let Some(mask) = live.stroke.mask.tiles.get(key) {
-                layer.apply_mask_tile(*key, mask, live.stroke.params.erase, live.rgb, sel[key].as_ref());
             }
         }
         touched

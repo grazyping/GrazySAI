@@ -803,3 +803,6 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, with layers)
 Глубокий = Deep
 Яркий = Vivid
 Как в версии 1 = Ver.1 Like
+Сбросить = Reset
+Вернуть настройки фильтра по умолчанию = Restore the default filter settings
+Считается предпросмотр… = Computing the preview…

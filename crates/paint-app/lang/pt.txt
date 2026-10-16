@@ -802,3 +802,6 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, com camadas)
 Глубокий = Profundo
 Яркий = Vívido
 Как в версии 1 = Como a versão 1
+Сбросить = Redefinir
+Вернуть настройки фильтра по умолчанию = Restaurar as configurações padrão do filtro
+Считается предпросмотр… = Calculando a pré-visualização…

@@ -2,7 +2,7 @@
 # tools/ui-check.sh STEPS.sh [OUT_DIR] — запустить GrazySAI на скрытом экране (Xvfb :83, 1400×940)
 # и выполнить шаги из файла (bash): click X Y, stroke X0 Y0 X1 Y1, grab ИМЯ (снимок в OUT_DIR/ИМЯ.png),
 # любые команды xdotool. Переменные: L — язык (en), GS_HOME — подменить домашнюю папку,
-# GS_EXE — другой исполняемый файл; GS_WINE=1 — запустить Windows-сборку (.exe) под Wine
+# GS_TIMEOUT, GS_WAIT — сколько жить и ждать запуска (с); GS_EXE — другой исполняемый файл; GS_WINE=1 — запустить Windows-сборку (.exe) под Wine
 # (свой префикс ~/.local/share/wineprefixes/grazysai, вывод Wine — в ui.log). Настройки выключены (PAINT_SETTINGS=off).
 export PATH=$HOME/.local/opt/xtools/root/usr/bin:$PATH LD_LIBRARY_PATH=$HOME/.local/opt/xtools/root/usr/lib/x86_64-linux-gnu
 unset WAYLAND_DISPLAY

@@ -25,6 +25,7 @@ use paint_core::{
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Плитка показа: 256×256 точек, то есть 4×4 плитки ядра. Одна текстура на плитку.
@@ -236,7 +237,68 @@ enum FilterKind {
     Distort(paint_core::filters::DistortKind),
 }
 
+/// Пиксели слоя после фильтра (с учётом выделения); `color` — основной цвет (для «Удаления пыли»).
+fn filter_result(f: &FilterDialog, w: u32, h: u32, color: Color32) -> paint_core::tile::ColorMap {
+    use paint_core::filters::{gaussian_blur, map_pixels};
+    let sel = &*f.sel;
+    let amount = |x: i32, y: i32| sel.amount(x, y);
+    match f.kind {
+        FilterKind::HueSaturation => {
+            let hs = f.hs;
+            map_pixels(&f.original, &amount, &|p| hs.apply(p))
+        }
+        FilterKind::BrightnessContrast => {
+            let bc = f.bc;
+            map_pixels(&f.original, &amount, &|p| bc.apply(p))
+        }
+        FilterKind::GaussianBlur => gaussian_blur(&f.original, w, h, f.radius, &amount),
+        FilterKind::Sharpen | FilterKind::SharpenMore => {
+            let s = if f.kind == FilterKind::Sharpen { 0.5 } else { 1.0 };
+            paint_core::filters::sharpen(&f.original, w, h, s, &amount)
+        }
+        FilterKind::Unsharp => paint_core::filters::unsharp_mask(&f.original, w, h, f.radius, f.amount, f.threshold, &amount),
+        FilterKind::LineWidth => paint_core::filters::adjust_line_width(&f.original, w, h, f.width_px, f.thicken, &amount),
+        FilterKind::Dust => {
+            use paint_core::filters::DustMode;
+            let c = color;
+            let mode = match f.dust_mode {
+                1 => DustMode::FromWhite,
+                2 => DustMode::GapsSurrounding,
+                3 => DustMode::GapsColor([c.r(), c.g(), c.b()]),
+                _ => DustMode::FromTransparency,
+            };
+            paint_core::filters::remove_dust(&f.original, w, h, f.dust_size, mode, &amount)
+        }
+        FilterKind::Aberration => paint_core::filters::chromatic_aberration(&f.original, w, h, f.ca_radial, f.ca_px, f.ca_angle, &amount),
+        FilterKind::Noise => paint_core::filters::noise(&f.original, w, h, f.noise_color, f.noise_amount, &amount),
+        FilterKind::Mosaic => paint_core::filters::mosaic(&f.original, w, h, f.tile, &amount),
+        FilterKind::Crystallize => paint_core::filters::crystallize(&f.original, w, h, f.cell, f.randomness, f.tiling, &amount),
+        FilterKind::RetroFilm => paint_core::filters::retro_film(&f.original, w, h, f.retro, &amount),
+        FilterKind::Perlin => paint_core::filters::perlin_noise(&f.original, w, h, f.perlin, &amount),
+        FilterKind::Average => paint_core::filters::average(&f.original, w, h, &amount),
+        FilterKind::Blur | FilterKind::BlurStrong => {
+            paint_core::filters::box_blur(&f.original, w, h, if f.kind == FilterKind::Blur { 1 } else { 2 }, &amount)
+        }
+        FilterKind::Motion => paint_core::filters::motion_blur(&f.original, w, h, f.motion, &amount),
+        FilterKind::Radial => {
+            let c = paint_core::filters::content_center(&f.original, w, h);
+            paint_core::filters::radial_blur(&f.original, w, h, c, f.radial, &amount)
+        }
+        FilterKind::Spin => {
+            let c = paint_core::filters::content_center(&f.original, w, h);
+            paint_core::filters::spin_blur(&f.original, w, h, c, f.spin_angle, f.spin_dir, &amount)
+        }
+        FilterKind::Smoothing => paint_core::filters::smoothing(&f.original, w, h, &amount),
+        FilterKind::Lens => paint_core::filters::lens_blur(&f.original, w, h, f.lens_radius, f.lens_sides, f.lens_highlight, &amount),
+        FilterKind::Pencil => paint_core::filters::pencil_drawing(&f.original, w, h, f.pencil, &amount),
+        FilterKind::Artistic => paint_core::filters::artistic(&f.original, w, h, f.artistic, &amount),
+        FilterKind::Distort(_) => paint_core::filters::distort(&f.original, w, h, &f.distort, &amount),
+    }
+}
+
 /// Открытый фильтр: настройки, слой и его исходные пиксели (для предпросмотра и отмены).
+/// Копия дешёвая (пиксели и выделение — общие): её считает фоновый поток предпросмотра.
+#[derive(Clone)]
 struct FilterDialog {
     kind: FilterKind,
     hs: paint_core::filters::HueSaturation,
@@ -277,9 +339,42 @@ struct FilterDialog {
     artistic: paint_core::filters::Artistic,
     preview: bool,
     path: Vec<usize>,
-    original: paint_core::tile::ColorMap,
+    original: Arc<paint_core::tile::ColorMap>,
+    /// Выделение на момент открытия (фильтр действует по нему).
+    sel: Arc<paint_core::selection::Selection>,
     /// Настройки изменились — пересчитать предпросмотр.
     dirty: bool,
+}
+
+/// Замер кадров во время штриха (`PAINT_FRAMES`): длительность кадров и счёта штриха, мс.
+#[derive(Default)]
+struct FrameStats {
+    frames: Vec<f32>,
+    paint: Vec<f32>,
+    cur_paint: f32,
+    moves: usize,
+    /// Сумма за штрих: пересчёт плиток и подготовка текстур, мс.
+    render: f32,
+    upload: f32,
+    add: f32,
+}
+
+/// Кадр идёт, пока жив: при выходе из `update` пишет длительность, если рисуется штрих.
+struct FrameTimer(std::rc::Rc<std::cell::RefCell<FrameStats>>, Instant);
+
+impl Drop for FrameTimer {
+    fn drop(&mut self) {
+        let mut s = self.0.borrow_mut();
+        let paint = std::mem::take(&mut s.cur_paint);
+        s.frames.push(self.1.elapsed().as_secs_f32() * 1000.0);
+        s.paint.push(paint);
+    }
+}
+
+/// Предпросмотр фильтра, который считается в фоне: номер настроек и ответ потока.
+struct FilterJob {
+    gen: u64,
+    rx: std::sync::mpsc::Receiver<paint_core::tile::ColorMap>,
 }
 
 /// «Помощь → Настройки…», как Options в SAI 2017, плюс память истории и копия для восстановления.
@@ -909,7 +1004,8 @@ const ZOOMS: [f32; 14] = [
 ];
 
 struct DisplayTile {
-    pixels: Vec<u8>,
+    /// Готовые для текстуры точки (перевод из RGBA — в потоках пересчёта, не в кадре).
+    pixels: Vec<Color32>,
     texture: Option<egui::TextureHandle>,
     stale: bool,
 }
@@ -1059,6 +1155,9 @@ struct PaintApp {
     outline_dialog: Option<OutlineDialog>,
     /// Последние ширина и положение обводки (окно открывается с ними, как в SAI).
     outline_last: (u32, u8, bool),
+    /// Прошлые «Расширить/Сузить выделение» (px) и окно холста (пропорции, пересчёт, привязка).
+    grow_last: u32,
+    canvas_last: (bool, paint_core::resample::Mode, (u8, u8)),
     gradient: Option<GradientEdit>,
     grad_opts: GradientOpts,
     transform_kind: TransformKind,
@@ -1112,6 +1211,15 @@ struct PaintApp {
     /// способ пересэмплирования, привязка.
     canvas_dialog: Option<CanvasDialog>,
     filter: Option<FilterDialog>,
+    /// Настройки последнего закрытого фильтра (без пикселей) — следующее окно открывается с ними.
+    filter_last: Option<FilterDialog>,
+    frame_stats: Option<std::rc::Rc<std::cell::RefCell<FrameStats>>>,
+    /// Точки штриха, ещё не нарисованные (см. `drain_points`).
+    pending_points: VecDeque<InputPoint>,
+    /// Фоновый предпросмотр фильтра; номер последних настроек и номер показанного на слое.
+    filter_job: Option<FilterJob>,
+    filter_gen: u64,
+    filter_shown: Option<u64>,
     /// Свои клавиши, окно «Клавиши» и действие, которому сейчас назначают клавишу.
     keymap: keys::Keymap,
     show_keys: bool,
@@ -1242,6 +1350,8 @@ impl PaintApp {
             grow_dialog: None,
             outline_dialog: None,
             outline_last: (1, 0, false),
+            grow_last: 1,
+            canvas_last: (true, paint_core::resample::Mode::Bicubic, (1, 1)),
             gradient: None,
             grad_opts: GradientOpts::default(),
             transform_kind: TransformKind::Free,
@@ -1274,6 +1384,12 @@ impl PaintApp {
             shape_drag: None,
             canvas_dialog: None,
             filter: None,
+            filter_last: None,
+            pending_points: VecDeque::new(),
+            frame_stats: std::env::var_os("PAINT_FRAMES").map(|_| Default::default()),
+            filter_job: None,
+            filter_gen: 0,
+            filter_shown: None,
             keymap: keys::defaults(),
             show_keys: false,
             key_capture: None,
@@ -1318,13 +1434,7 @@ impl PaintApp {
             Ok("about") => app.show_about = true,
             Ok("update") => app.show_update = true,
             Ok(d @ ("resolution" | "size")) => {
-                app.canvas_dialog = Some(CanvasDialog {
-                    resample: d == "resolution",
-                    size: [app.doc.width, app.doc.height],
-                    keep_ratio: true,
-                    mode: paint_core::resample::Mode::Bicubic,
-                    anchor: (1, 1),
-                })
+app.open_canvas_dialog(d == "resolution")
             }
             Ok("blur") => app.open_filter(FilterKind::GaussianBlur),
             Ok("bc") => app.open_filter(FilterKind::BrightnessContrast),
@@ -1338,6 +1448,14 @@ impl PaintApp {
         }
         // Для проверок: PAINT_TOOL=move|marquee|lasso|wand — инструмент при запуске;
         // PAINT_SELECT=x0,y0,x1,y1 — готовое выделение прямоугольником.
+        // для замеров: размер кисти (PAINT_BRUSH_SIZE) и новый холст ШxВ (PAINT_CANVAS)
+        if let Some(v) = std::env::var("PAINT_BRUSH_SIZE").ok().and_then(|v| v.parse::<f32>().ok()) {
+            let b = app.brush;
+            app.brushes[b].params.size = v.clamp(0.1, 5000.0);
+        }
+        if let Some((w, h)) = std::env::var("PAINT_CANVAS").ok().and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))) {
+            app.new_canvas(w, h);
+        }
         app.tool = match std::env::var("PAINT_TOOL").as_deref() {
             Ok("move") => Tool::Move,
             Ok("fill") => Tool::Fill,
@@ -1538,6 +1656,9 @@ impl PaintApp {
         if let Some(v) = s.f32("swatch_size") {
             self.win.swatch_size = (v as u8).min(2);
         }
+        if let (Some(w), Some(h)) = (s.f32("new_width"), s.f32("new_height")) {
+            self.new_size = [(w as u32).clamp(1, 16000), (h as u32).clamp(1, 16000)];
+        }
         if let Some(v) = s.f32("transform_perspective") {
             self.transform_perspective = v.clamp(0.0, 100.0) as u8;
         }
@@ -1692,6 +1813,8 @@ impl PaintApp {
         s.set("brush_circle", w.brush_circle as u8);
         s.set("hsv_mode", w.hsv_mode);
         s.set("swatch_size", w.swatch_size);
+        s.set("new_width", self.new_size[0]);
+        s.set("new_height", self.new_size[1]);
         s.set("lasso_polygon", self.lasso_polygon);
         s.set("lasso_aa", self.lasso_aa);
         s.set("gradient_circle", self.grad_opts.circle);
@@ -2770,7 +2893,9 @@ impl PaintApp {
         }
         self.sel_dirty = true;
         self.transform = None;
-        self.filter = None;
+        if let Some(f) = self.filter.take() {
+            self.filter_last = Some(FilterDialog { original: Default::default(), sel: Default::default(), ..f });
+        }
         self.move_drag = None;
         self.thumbs.clear();
         self.display.clear();
@@ -2831,22 +2956,31 @@ impl PaintApp {
             }
             let doc = &self.doc;
             let chunk = batch.len().div_ceil(threads);
-            let rendered: Vec<(Key, Vec<u8>)> = std::thread::scope(|scope| {
-                let handles: Vec<_> = batch.chunks(chunk).map(|keys| scope.spawn(move || keys.iter().map(|k| (*k, doc.render_tile(*k))).collect::<Vec<_>>())).collect();
+            let rendered: Vec<(Key, Vec<Color32>)> = std::thread::scope(|scope| {
+                let handles: Vec<_> = batch
+                    .chunks(chunk)
+                    .map(|keys| {
+                        scope.spawn(move || {
+                            keys.iter()
+                                .map(|k| (*k, doc.render_tile(*k).as_chunks::<4>().0.iter().map(|p| Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3])).collect::<Vec<_>>()))
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
                 handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
             });
             for (key, rgba) in rendered {
                 let dkey = (key.0 * TILE / DT, key.1 * TILE / DT);
                 let tile = self.display.entry(dkey).or_insert_with(|| DisplayTile {
-                    pixels: vec![0u8; (DT * DT * 4) as usize],
+                    pixels: vec![Color32::TRANSPARENT; (DT * DT) as usize],
                     texture: None,
                     stale: true,
                 });
                 let (ox, oy) = (key.0 * TILE - dkey.0 * DT, key.1 * TILE - dkey.1 * DT);
                 for y in 0..TILE {
-                    let dst = (((oy + y) * DT + ox) * 4) as usize;
-                    let src = (y * TILE * 4) as usize;
-                    tile.pixels[dst..dst + (TILE * 4) as usize].copy_from_slice(&rgba[src..src + (TILE * 4) as usize]);
+                    let dst = ((oy + y) * DT + ox) as usize;
+                    let src = (y * TILE) as usize;
+                    tile.pixels[dst..dst + TILE as usize].copy_from_slice(&rgba[src..src + TILE as usize]);
                 }
                 tile.stale = true;
             }
@@ -2930,6 +3064,8 @@ impl PaintApp {
     }
 
     fn begin_stroke(&mut self, p: InputPoint, eraser_end: bool) {
+        // точки прошлого штриха (если его сбросили без `end_stroke`) — не в этот
+        self.pending_points.clear();
         self.stroke_by_touch = self.touch_down;
         let shap = self.doc.layer(&self.selected).is_some_and(|l| {
             l.visible && !l.lock_paint && !l.lock_all && l.vector.as_ref().is_some_and(|v| &v.kind == b"shap")
@@ -3123,16 +3259,88 @@ impl PaintApp {
             self.straight_to(p);
             return;
         }
+        if self.live.is_none() {
+            return;
+        }
+        // точка — в очередь: рисуется в `drain_points` столько, сколько успевается за кадр
+        let q = self.smoother.push(p);
+        self.pending_points.push_back(q);
+    }
+
+    /// Нарисовать точки из очереди штриха; `budget` — не дольше (окно не замирает на огромных
+    /// кистях: штрих догоняет перо за несколько кадров, как в SAI), `None` — все.
+    fn drain_points(&mut self, budget: Option<Duration>) {
+        if self.pending_points.is_empty() {
+            return;
+        }
         let Some(mut live) = self.live.take() else {
+            self.pending_points.clear();
             return;
         };
-        live.stroke.add_point(self.smoother.push(p));
-        let keys = self.doc.live_update(&mut live);
+        let started = Instant::now();
+        // смешивающей кисти — после каждой точки, как прежде (маска жёсткости зависит от того,
+        // сколько отпечатков уже известно); обычной — пачкой, плитки накладываются один раз
+        let per = if live.stroke.is_mixing() { 1 } else { 8 };
+        let mut keys = Vec::new();
+        while !self.pending_points.is_empty() {
+            let t0 = Instant::now();
+            let mut n = 0;
+            while n < per {
+                let Some(p) = self.pending_points.pop_front() else { break };
+                live.stroke.add_point(p);
+                n += 1;
+            }
+            let t = Instant::now();
+            keys.extend(self.doc.live_update(&mut live));
+            if let Some(s) = &self.frame_stats {
+                let mut s = s.borrow_mut();
+                s.add += (t - t0).as_secs_f32() * 1000.0;
+                s.cur_paint += t.elapsed().as_secs_f32() * 1000.0;
+                s.moves += n;
+            }
+            if budget.is_some_and(|b| started.elapsed() > b) {
+                break;
+            }
+        }
         self.invalidate(keys);
         self.live = Some(live);
+        if !self.pending_points.is_empty() {
+            if let Some(ctx) = &self.ctx {
+                ctx.request_repaint();
+            }
+        }
+    }
+
+    /// `PAINT_FRAMES`: итог штриха в stderr — кадры, среднее, 95 % и худший, доля счёта штриха.
+    fn report_frames(&mut self) {
+        let Some(s) = &self.frame_stats else { return };
+        let mut s = s.borrow_mut();
+        if s.frames.is_empty() {
+            return;
+        }
+        let mut f = s.frames.clone();
+        f.sort_by(|a, b| a.total_cmp(b));
+        let n = f.len();
+        let avg = f.iter().sum::<f32>() / n as f32;
+        let paint = s.paint.iter().sum::<f32>() / n as f32;
+        let slow = f.iter().filter(|v| **v > 33.0).count();
+        eprintln!(
+            "FRAMES n={n} moves={} avg={avg:.1} p95={:.1} max={:.1} >33ms={slow} paint_avg={paint:.1} paint_max={:.1} render_avg={:.1} upload_avg={:.1} add_avg={:.1}",
+            s.moves,
+            f[(n * 95 / 100).min(n - 1)],
+            f[n - 1],
+            s.paint.iter().cloned().fold(0.0, f32::max),
+            s.render / n as f32,
+            s.upload / n as f32,
+            s.add / n as f32
+        );
+        *s = FrameStats::default();
     }
 
     fn end_stroke(&mut self) {
+        // перо поднято — остаток очереди дорисовать
+        self.drain_points(None);
+        self.report_frames();
         if let Some((a, b)) = self.shape_drag.take() {
             self.commit_shape(a, b);
             return;
@@ -3750,96 +3958,104 @@ impl PaintApp {
             artistic: paint_core::filters::Artistic { radius: 4, levels: 6, edges: 0.6 },
             preview: true,
             path: self.selected.clone(),
-            original: layer.pixels.clone(),
+            original: Arc::new(layer.pixels.clone()),
+            sel: Arc::new(self.doc.selection.clone()),
             dirty: true,
         });
-    }
-
-    /// Пиксели слоя после фильтра (с учётом выделения).
-    fn filter_result(&self, f: &FilterDialog) -> paint_core::tile::ColorMap {
-        use paint_core::filters::{gaussian_blur, map_pixels};
-        let sel = &self.doc.selection;
-        let amount = |x: i32, y: i32| sel.amount(x, y);
-        match f.kind {
-            FilterKind::HueSaturation => {
-                let hs = f.hs;
-                map_pixels(&f.original, &amount, &|p| hs.apply(p))
-            }
-            FilterKind::BrightnessContrast => {
-                let bc = f.bc;
-                map_pixels(&f.original, &amount, &|p| bc.apply(p))
-            }
-            FilterKind::GaussianBlur => gaussian_blur(&f.original, self.doc.width, self.doc.height, f.radius, &amount),
-            FilterKind::Sharpen | FilterKind::SharpenMore => {
-                let s = if f.kind == FilterKind::Sharpen { 0.5 } else { 1.0 };
-                paint_core::filters::sharpen(&f.original, self.doc.width, self.doc.height, s, &amount)
-            }
-            FilterKind::Unsharp => paint_core::filters::unsharp_mask(&f.original, self.doc.width, self.doc.height, f.radius, f.amount, f.threshold, &amount),
-            FilterKind::LineWidth => paint_core::filters::adjust_line_width(&f.original, self.doc.width, self.doc.height, f.width_px, f.thicken, &amount),
-            FilterKind::Dust => {
-                use paint_core::filters::DustMode;
-                let c = self.color();
-                let mode = match f.dust_mode {
-                    1 => DustMode::FromWhite,
-                    2 => DustMode::GapsSurrounding,
-                    3 => DustMode::GapsColor([c.r(), c.g(), c.b()]),
-                    _ => DustMode::FromTransparency,
-                };
-                paint_core::filters::remove_dust(&f.original, self.doc.width, self.doc.height, f.dust_size, mode, &amount)
-            }
-            FilterKind::Aberration => paint_core::filters::chromatic_aberration(&f.original, self.doc.width, self.doc.height, f.ca_radial, f.ca_px, f.ca_angle, &amount),
-            FilterKind::Noise => paint_core::filters::noise(&f.original, self.doc.width, self.doc.height, f.noise_color, f.noise_amount, &amount),
-            FilterKind::Mosaic => paint_core::filters::mosaic(&f.original, self.doc.width, self.doc.height, f.tile, &amount),
-            FilterKind::Crystallize => paint_core::filters::crystallize(&f.original, self.doc.width, self.doc.height, f.cell, f.randomness, f.tiling, &amount),
-            FilterKind::RetroFilm => paint_core::filters::retro_film(&f.original, self.doc.width, self.doc.height, f.retro, &amount),
-            FilterKind::Perlin => paint_core::filters::perlin_noise(&f.original, self.doc.width, self.doc.height, f.perlin, &amount),
-            FilterKind::Average => paint_core::filters::average(&f.original, self.doc.width, self.doc.height, &amount),
-            FilterKind::Blur | FilterKind::BlurStrong => {
-                paint_core::filters::box_blur(&f.original, self.doc.width, self.doc.height, if f.kind == FilterKind::Blur { 1 } else { 2 }, &amount)
-            }
-            FilterKind::Motion => paint_core::filters::motion_blur(&f.original, self.doc.width, self.doc.height, f.motion, &amount),
-            FilterKind::Radial => {
-                let c = paint_core::filters::content_center(&f.original, self.doc.width, self.doc.height);
-                paint_core::filters::radial_blur(&f.original, self.doc.width, self.doc.height, c, f.radial, &amount)
-            }
-            FilterKind::Spin => {
-                let c = paint_core::filters::content_center(&f.original, self.doc.width, self.doc.height);
-                paint_core::filters::spin_blur(&f.original, self.doc.width, self.doc.height, c, f.spin_angle, f.spin_dir, &amount)
-            }
-            FilterKind::Smoothing => paint_core::filters::smoothing(&f.original, self.doc.width, self.doc.height, &amount),
-            FilterKind::Lens => paint_core::filters::lens_blur(&f.original, self.doc.width, self.doc.height, f.lens_radius, f.lens_sides, f.lens_highlight, &amount),
-            FilterKind::Pencil => paint_core::filters::pencil_drawing(&f.original, self.doc.width, self.doc.height, f.pencil, &amount),
-            FilterKind::Artistic => paint_core::filters::artistic(&f.original, self.doc.width, self.doc.height, f.artistic, &amount),
-            FilterKind::Distort(_) => paint_core::filters::distort(&f.original, self.doc.width, self.doc.height, &f.distort, &amount),
+        // прошлые настройки фильтров (окно открывается с ними, как в SAI)
+        if let Some(last) = self.filter_last.take() {
+            let Some(f) = self.filter.take() else { return };
+            let distort = paint_core::filters::Distort {
+                kind: f.distort.kind,
+                // середина — от прежнего холста, если на этом она вне его
+                ..if last.distort.center.0 <= self.doc.width as f64 && last.distort.center.1 <= self.doc.height as f64 { last.distort } else { f.distort }
+            };
+            self.filter = Some(FilterDialog { kind: f.kind, distort, preview: last.preview, path: f.path, original: f.original, sel: f.sel, dirty: true, ..last });
         }
     }
 
-    /// Пересчитать предпросмотр (или вернуть исходное, если предпросмотр выключен).
-    fn update_filter(&mut self) {
+
+    /// Пересчитать предпросмотр (или вернуть исходное, если предпросмотр выключен). Счёт идёт в
+    /// фоновом потоке — окно не замирает; пока он идёт, новые настройки ждут (берутся последние).
+    fn update_filter(&mut self, ctx: &egui::Context) {
+        if self.filter_job.is_some() {
+            return;
+        }
         let Some(f) = self.filter.as_mut() else { return };
         f.dirty = false;
-        let (path, preview) = (f.path.clone(), f.preview);
-        let pixels = if preview {
-            let f = self.filter.as_ref().unwrap();
-            self.filter_result(f)
-        } else {
-            self.filter.as_ref().unwrap().original.clone()
+        self.filter_gen += 1;
+        if !f.preview {
+            let (path, pixels) = (f.path.clone(), (*f.original).clone());
+            let keys = self.doc.set_layer_pixels(&path, pixels);
+            self.invalidate(keys);
+            self.filter_shown = None;
+            return;
+        }
+        let (job, w, h, color, ctx) = (f.clone(), self.doc.width, self.doc.height, self.color(), ctx.clone());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(filter_result(&job, w, h, color));
+            ctx.request_repaint();
+        });
+        self.filter_job = Some(FilterJob { gen: self.filter_gen, rx });
+    }
+
+    /// Готов ли фоновый предпросмотр: показать его, если настройки с тех пор не менялись.
+    fn poll_filter(&mut self) {
+        let Some(job) = &self.filter_job else { return };
+        let pixels = match job.rx.try_recv() {
+            Ok(p) => p,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.filter_job = None;
+                return;
+            }
         };
-        let keys = self.doc.set_layer_pixels(&path, pixels);
-        self.invalidate(keys);
+        let gen = job.gen;
+        self.filter_job = None;
+        let Some(f) = self.filter.as_ref() else { return };
+        if f.preview {
+            let path = f.path.clone();
+            let keys = self.doc.set_layer_pixels(&path, pixels);
+            self.invalidate(keys);
+            self.filter_shown = Some(gen);
+        }
+    }
+
+    /// «Изменить разрешение / размер…»: размер — холста, остальное — как в прошлый раз.
+    fn open_canvas_dialog(&mut self, resample: bool) {
+        let (keep_ratio, mode, anchor) = self.canvas_last;
+        self.canvas_dialog = Some(CanvasDialog { resample, size: [self.doc.width, self.doc.height], keep_ratio, mode, anchor });
     }
 
     fn finish_filter(&mut self, apply: bool) {
         let Some(f) = self.filter.take() else { return };
-        let pixels = if apply { self.filter_result(&f) } else { f.original.clone() };
-        let keys = self.doc.set_layer_pixels(&f.path, pixels);
-        self.invalidate(keys);
+        let mut f = f;
+        let job = self.filter_job.take();
+        let current = !f.dirty && f.preview;
+        if apply && current && job.is_none() && self.filter_shown == Some(self.filter_gen) {
+            // на слое уже последний предпросмотр — второй раз не считать
+        } else {
+            let pixels = match job {
+                // фоновый счёт последних настроек — дождаться его
+                Some(j) if apply && current && j.gen == self.filter_gen => j.rx.recv().unwrap_or_else(|_| filter_result(&f, self.doc.width, self.doc.height, self.color())),
+                _ if apply => filter_result(&f, self.doc.width, self.doc.height, self.color()),
+                _ => (*f.original).clone(),
+            };
+            let keys = self.doc.set_layer_pixels(&f.path, pixels);
+            self.invalidate(keys);
+        }
+        self.filter_shown = None;
+        let original = Arc::try_unwrap(std::mem::take(&mut f.original)).unwrap_or_else(|a| (*a).clone());
+        f.sel = Default::default();
         if apply {
             let sel = self.doc.selection.clone();
-            self.doc.move_commit(&f.path, f.original, None, sel);
+            self.doc.move_commit(&f.path, original, None, sel);
             self.dirty = true;
             self.thumbs.clear();
         }
+        // настройки — для следующего открытия, и после «Отмены» тоже
+        self.filter_last = Some(f);
     }
 
     /// Градиент с текущими настройками и цветами.
@@ -4280,13 +4496,7 @@ impl PaintApp {
             ui.menu_button(keys::hint(tr("Холст(C)")), |ui| {
                 for (item, resample) in [(tr("Изменить разрешение…"), true), (tr("Изменить размер…"), false)] {
                     if ui.button(item).clicked() {
-                        self.canvas_dialog = Some(CanvasDialog {
-                            resample,
-                            size: [self.doc.width, self.doc.height],
-                            keep_ratio: true,
-                            mode: paint_core::resample::Mode::Bicubic,
-                            anchor: (1, 1),
-                        });
+                        self.open_canvas_dialog(resample);
                         ui.close_menu();
                     }
                 }
@@ -4499,7 +4709,7 @@ impl PaintApp {
                 ui.separator();
                 for (grow, name) in [(true, tr("Расширить выделение…")), (false, tr("Сузить выделение…"))] {
                     if ui.add_enabled(has && self.grow_dialog.is_none(), egui::Button::new(name)).clicked() {
-                        self.grow_dialog = Some(GrowDialog { grow, n: 1, preview: true, original: self.doc.selection.clone(), dirty: true });
+                        self.grow_dialog = Some(GrowDialog { grow, n: self.grow_last, preview: true, original: self.doc.selection.clone(), dirty: true });
                         ui.close_menu();
                     }
                 }
@@ -6977,6 +7187,7 @@ impl PaintApp {
                     self.continue_stroke(point(pos, self.zoom, self.offset));
                 }
             }
+            self.drain_points(Some(Duration::from_millis(25)));
             if released {
                 self.end_stroke();
             }
@@ -7004,10 +7215,8 @@ impl PaintApp {
                 continue;
             }
             if tile.stale || tile.texture.is_none() {
-                let image = egui::ColorImage::from_rgba_unmultiplied(
-                    [DT as usize, DT as usize],
-                    &tile.pixels,
-                );
+                let t0 = Instant::now();
+                let image = egui::ColorImage { size: [DT as usize, DT as usize], pixels: tile.pixels.clone() };
                 match &mut tile.texture {
                     Some(t) => t.set(image, options),
                     None => {
@@ -7019,6 +7228,9 @@ impl PaintApp {
                     }
                 }
                 tile.stale = false;
+                if let Some(s) = &self.frame_stats {
+                    s.borrow_mut().upload += t0.elapsed().as_secs_f32() * 1000.0;
+                }
             }
             if let Some(t) = &tile.texture {
                 // Край холста внутри плитки: показываем только часть до границы.
@@ -7516,6 +7728,7 @@ impl PaintApp {
         }
         if let Some(apply) = grow_finish {
             let d = self.grow_dialog.take().unwrap();
+            self.grow_last = d.n;
             self.doc.selection = d.original;
             if apply {
                 self.doc.grow_selection_by(d.n, d.grow);
@@ -7531,6 +7744,8 @@ impl PaintApp {
             self.sel_dirty = true;
         }
         let mut finish = None;
+        let mut reset = false;
+        let busy = self.filter_job.is_some();
         if let Some(f) = self.filter.as_mut() {
             let title = match f.kind {
                 FilterKind::HueSaturation => tr("Тон и насыщенность"),
@@ -7893,6 +8108,12 @@ impl PaintApp {
                     if ui.button(tr("Отмена")).clicked() {
                         finish = Some(false);
                     }
+                    if ui.button(tr("Сбросить")).on_hover_text(tr("Вернуть настройки фильтра по умолчанию")).clicked() {
+                        reset = true;
+                    }
+                    if busy {
+                        ui.spinner().on_hover_text(tr("Считается предпросмотр…"));
+                    }
                 });
                 if ch || before != (f.hs, f.bc, f.radius, f.preview, f.amount, f.threshold, (f.width_px, f.thicken, f.dust_size, f.dust_mode)) {
                     f.dirty = true;
@@ -7904,8 +8125,18 @@ impl PaintApp {
         }
         if let Some(apply) = finish {
             self.finish_filter(apply);
-        } else if self.filter.as_ref().is_some_and(|f| f.dirty) {
-            self.update_filter();
+        } else if reset {
+            // окно открывается заново без прошлых настроек; слой — исходный
+            if let Some(kind) = self.filter.as_ref().map(|f| f.kind) {
+                self.finish_filter(false);
+                self.filter_last = None;
+                self.open_filter(kind);
+            }
+        } else {
+            self.poll_filter();
+            if self.filter.as_ref().is_some_and(|f| f.dirty) {
+                self.update_filter(ctx);
+            }
         }
         let mut apply = None;
         let mut close = false;
@@ -7984,6 +8215,9 @@ impl PaintApp {
             if !open {
                 close = true;
             }
+        }
+        if let Some(d) = &self.canvas_dialog {
+            self.canvas_last = (d.keep_ratio, d.mode, d.anchor);
         }
         if let Some((resample, [nw, nh], mode, anchor)) = apply {
             self.canvas_dialog = None;
@@ -8561,6 +8795,7 @@ impl eframe::App for PaintApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let _frame_timer = self.frame_stats.clone().filter(|_| self.live.is_some()).map(|s| FrameTimer(s, Instant::now()));
         self.ctx = Some(ctx.clone());
         self.poll_file_dialog();
         self.check_exit(ctx);
@@ -9142,7 +9377,11 @@ impl eframe::App for PaintApp {
         }
         self.dialogs(ctx);
 
+        let t = Instant::now();
         self.render_pending(Duration::from_millis(12));
+        if let Some(s) = &self.frame_stats {
+            s.borrow_mut().render += t.elapsed().as_secs_f32() * 1000.0;
+        }
         if !self.queue.is_empty() {
             ctx.request_repaint();
         }
