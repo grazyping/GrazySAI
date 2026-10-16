@@ -1015,3 +1015,285 @@ mod effect_tests {
         assert!(g[0] == g[1] && g[3] == 255);
     }
 }
+
+// ---------- «Размытие» как в Clip Studio Paint (0.8.34) ----------
+
+/// Середина рисунка слоя (для радиального размытия, вращения и искажений), иначе холста.
+pub fn content_center(src: &ColorMap, w: u32, h: u32) -> (f64, f64) {
+    crate::selection::content_bounds(src).map_or((w as f64 / 2.0, h as f64 / 2.0), |(x0, y0, x1, y1)| ((x0 + x1) as f64 / 2.0, (y0 + y1) as f64 / 2.0))
+}
+
+/// «Среднее»: выделенное (или весь рисунок слоя) — одним средним цветом.
+pub fn average(src: &ColorMap, w: u32, h: u32, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let Some(b) = canvas_bounds(src, w, h, 0) else { return src.clone() };
+    let k = 1.0 / ONE as f64;
+    let (mut sum, mut n) = ([0f64; 4], 0f64);
+    for y in b.1..b.3 {
+        for x in b.0..b.2 {
+            let s = sel(x, y) as f64 * k;
+            if s > 0.0 {
+                let p = src.get(x, y);
+                for c in 0..4 {
+                    sum[c] += p[c] as f64 * k * s;
+                }
+                n += s;
+            }
+        }
+    }
+    if n <= 0.0 {
+        return src.clone();
+    }
+    let avg = sum.map(|v| v / n);
+    per_pixel(src, b, sel, &|_, _| avg)
+}
+
+/// Размытие по линиям выборки: точка — среднее (или с весом «плавно») по `n` точкам `pts(x, y, t)`,
+/// t от 0 до 1.
+fn line_blur(src: &ColorMap, b: (i32, i32, i32, i32), samples: usize, smooth: bool, sel: &(dyn Fn(i32, i32) -> u32 + Sync), at: &(dyn Fn(f64, f64, f64) -> (f64, f64) + Sync)) -> ColorMap {
+    let n = samples.max(1);
+    per_pixel(src, b, sel, &|x, y| {
+        let (mut acc, mut wsum) = ([0f64; 4], 0f64);
+        for i in 0..n {
+            let t = if n == 1 { 0.5 } else { i as f64 / (n - 1) as f64 };
+            // «плавно» — треугольный вес к середине выборки
+            let wt = if smooth { 1.0 - (2.0 * t - 1.0).abs() * 0.9 } else { 1.0 };
+            let (sx, sy) = at(x as f64 + 0.5, y as f64 + 0.5, t);
+            let p = sample(src, sx, sy);
+            for c in 0..4 {
+                acc[c] += p[c] * wt;
+            }
+            wsum += wt;
+        }
+        acc.map(|v| v / wsum)
+    })
+}
+
+/// Направленное размытие: сила (px для движения, доля для радиального), угол (градусы, только
+/// движение), направление (0 — в обе стороны, 1 — вперёд/наружу, 2 — назад/внутрь), «плавно».
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Streak {
+    pub strength: f64,
+    pub angle: f64,
+    pub dir: u8,
+    pub smooth: bool,
+}
+
+/// «Размытие в движении»: длина `strength` px под углом.
+pub fn motion_blur(src: &ColorMap, w: u32, h: u32, st: Streak, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let Streak { strength: len, angle, dir, smooth } = st;
+    let Some(b) = canvas_bounds(src, w, h, len.ceil() as i32 + 1) else { return src.clone() };
+    let (ux, uy) = (angle.to_radians().cos(), angle.to_radians().sin());
+    let (a, z) = match dir {
+        1 => (0.0, len),
+        2 => (-len, 0.0),
+        _ => (-len / 2.0, len / 2.0),
+    };
+    line_blur(src, b, (len.ceil() as usize).clamp(1, 400), smooth, sel, &|x, y, t| {
+        let d = a + (z - a) * t;
+        (x - ux * d, y - uy * d)
+    })
+}
+
+/// «Радиальное размытие»: вдоль луча от центра на долю `strength` расстояния.
+pub fn radial_blur(src: &ColorMap, w: u32, h: u32, center: (f64, f64), st: Streak, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let Streak { strength, dir, smooth, .. } = st;
+    let Some(b) = canvas_bounds(src, w, h, 0).map(|_| (0, 0, w as i32, h as i32)) else { return src.clone() };
+    let (a, z) = match dir {
+        1 => (0.0, strength),
+        2 => (-strength, 0.0),
+        _ => (-strength / 2.0, strength / 2.0),
+    };
+    let far = (w as f64).hypot(h as f64);
+    line_blur(src, b, ((strength * far).ceil() as usize).clamp(1, 200), smooth, sel, &|x, y, t| {
+        let k = 1.0 - (a + (z - a) * t);
+        (center.0 + (x - center.0) * k, center.1 + (y - center.1) * k)
+    })
+}
+
+/// «Размытие вращением»: по дуге вокруг центра на `angle` градусов; `dir` 0 — в обе стороны,
+/// 1 — по часовой, 2 — против.
+pub fn spin_blur(src: &ColorMap, w: u32, h: u32, center: (f64, f64), angle: f64, dir: u8, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let b = (0, 0, w as i32, h as i32);
+    if crate::selection::content_bounds(src).is_none() {
+        return src.clone();
+    }
+    let ang = angle.to_radians();
+    let (a, z) = match dir {
+        1 => (0.0, ang),
+        2 => (-ang, 0.0),
+        _ => (-ang / 2.0, ang / 2.0),
+    };
+    let far = (w as f64).hypot(h as f64) / 2.0;
+    line_blur(src, b, ((ang * far).ceil() as usize).clamp(1, 360), true, sel, &|x, y, t| {
+        let r = -(a + (z - a) * t);
+        let (dx, dy) = (x - center.0, y - center.1);
+        let (s, c) = r.sin_cos();
+        (center.0 + dx * c - dy * s, center.1 + dx * s + dy * c)
+    })
+}
+
+/// «Размытие» и «Сильное размытие»: квадрат `2r + 1` (r = 1 и 2), дважды — мягче, как у CSP.
+pub fn box_blur(src: &ColorMap, w: u32, h: u32, r: i32, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let Some((x0, y0, bw, bh, mut buf)) = dense(src, w, h, 2 * r + 1) else { return src.clone() };
+    for _ in 0..2 {
+        for horizontal in [true, false] {
+            let prev = buf.clone();
+            let at = |x: isize, y: isize| prev[y.clamp(0, bh as isize - 1) as usize * bw + x.clamp(0, bw as isize - 1) as usize];
+            for (i, o) in buf.iter_mut().enumerate() {
+                let (x, y) = ((i % bw) as isize, (i / bw) as isize);
+                let mut acc = [0f64; 4];
+                for d in -(r as isize)..=r as isize {
+                    let p = if horizontal { at(x + d, y) } else { at(x, y + d) };
+                    for c in 0..4 {
+                        acc[c] += p[c];
+                    }
+                }
+                *o = acc.map(|v| v / (2 * r + 1) as f64);
+            }
+        }
+    }
+    write_back(src, x0, y0, bw, &buf, sel)
+}
+
+/// «Сглаживание»: размытие 3×3 только там, где край — разница с соседями больше порога (ступеньки
+/// линий), ровные места не трогаются.
+pub fn smoothing(src: &ColorMap, w: u32, h: u32, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let Some((x0, y0, bw, bh, buf)) = dense(src, w, h, 1) else { return src.clone() };
+    let at = |x: isize, y: isize| buf[y.clamp(0, bh as isize - 1) as usize * bw + x.clamp(0, bw as isize - 1) as usize];
+    let res: Vec<[f64; 4]> = (0..bw * bh)
+        .map(|i| {
+            let (x, y) = ((i % bw) as isize, (i / bw) as isize);
+            let c = at(x, y);
+            let edge = [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().any(|&(dx, dy)| {
+                let n = at(x + dx, y + dy);
+                (0..4).any(|k| (n[k] - c[k]).abs() > 0.25)
+            });
+            if !edge {
+                return c;
+            }
+            let mut acc = [0f64; 4];
+            for (dy, wy) in [(-1isize, 1.0), (0, 2.0), (1, 1.0)] {
+                for (dx, wx) in [(-1isize, 1.0), (0, 2.0), (1, 1.0)] {
+                    let p = at(x + dx, y + dy);
+                    for k in 0..4 {
+                        acc[k] += p[k] * wx * wy;
+                    }
+                }
+            }
+            acc.map(|v| v / 16.0)
+        })
+        .collect();
+    write_back(src, x0, y0, bw, &res, sel)
+}
+
+/// «Размытие линзы»: усреднение по кругу (или многоугольнику с `sides` ≥ 3 углами) радиуса
+/// `radius`; светлые места усиливаются (блики) в доле `highlight`. Круг считается полосами строк
+/// с накопленными суммами — быстро и для больших радиусов.
+pub fn lens_blur(src: &ColorMap, w: u32, h: u32, radius: f64, sides: u32, highlight: f64, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let r = radius.max(0.5).ceil() as i32;
+    let Some((x0, y0, bw, bh, buf)) = dense(src, w, h, r) else { return src.clone() };
+    // блики: значения поднимаются в степень перед усреднением и возвращаются после
+    let gamma = 1.0 + 2.0 * highlight.clamp(0.0, 1.0);
+    let lin: Vec<[f64; 4]> = buf.iter().map(|p| {
+        if p[3] <= 0.0 {
+            return [0.0; 4];
+        }
+        let f = |c: f64| (c / p[3]).clamp(0.0, 1.0).powf(gamma) * p[3];
+        [f(p[0]), f(p[1]), f(p[2]), p[3]]
+    }).collect();
+    // ширина фигуры в строке dy: круг или правильный многоугольник
+    let half = |dy: i32| -> f64 {
+        let y = dy as f64;
+        if sides < 3 {
+            return (radius * radius - y * y).max(0.0).sqrt();
+        }
+        // наибольшее |x| точки многоугольника на высоте y (вершина сверху)
+        let n = sides as f64;
+        let mut best = -1.0f64;
+        for i in 0..sides {
+            let a0 = std::f64::consts::FRAC_PI_2 + i as f64 * std::f64::consts::TAU / n;
+            let a1 = a0 + std::f64::consts::TAU / n;
+            let (p0, p1) = ((radius * a0.cos(), radius * a0.sin()), (radius * a1.cos(), radius * a1.sin()));
+            if (p0.1 - y) * (p1.1 - y) <= 0.0 && (p1.1 - p0.1).abs() > 1e-9 {
+                let t = (y - p0.1) / (p1.1 - p0.1);
+                best = best.max((p0.0 + (p1.0 - p0.0) * t).abs());
+            }
+        }
+        best.max(0.0)
+    };
+    let spans: Vec<(i32, i32)> = (-r..=r).map(|dy| (dy, half(dy).floor() as i32)).filter(|s| s.1 >= 0 || s.0 == 0).collect();
+    // накопленные суммы по строкам
+    let mut pre = vec![[0f64; 4]; (bw + 1) * bh];
+    for y in 0..bh {
+        for x in 0..bw {
+            let (a, p) = (pre[y * (bw + 1) + x], lin[y * bw + x]);
+            pre[y * (bw + 1) + x + 1] = [a[0] + p[0], a[1] + p[1], a[2] + p[2], a[3] + p[3]];
+        }
+    }
+    let res: Vec<[f64; 4]> = (0..bw * bh)
+        .map(|i| {
+            let (x, y) = ((i % bw) as i32, (i / bw) as i32);
+            let (mut acc, mut n) = ([0f64; 4], 0f64);
+            for &(dy, hw) in &spans {
+                let yy = y + dy;
+                if yy < 0 || yy >= bh as i32 {
+                    continue;
+                }
+                let (a, z) = ((x - hw).max(0) as usize, ((x + hw + 1) as usize).min(bw));
+                if a >= z {
+                    continue;
+                }
+                let row = yy as usize * (bw + 1);
+                for c in 0..4 {
+                    acc[c] += pre[row + z][c] - pre[row + a][c];
+                }
+                n += (z - a) as f64;
+            }
+            let p = acc.map(|v| v / n.max(1.0));
+            if p[3] <= 0.0 {
+                return [0.0; 4];
+            }
+            let f = |c: f64| (c / p[3]).clamp(0.0, 1.0).powf(1.0 / gamma) * p[3];
+            [f(p[0]), f(p[1]), f(p[2]), p[3]]
+        })
+        .collect();
+    write_back(src, x0, y0, bw, &res, sel)
+}
+
+#[cfg(test)]
+mod blur_tests {
+    use super::*;
+    use crate::pixel::{from_rgba8, to_rgba8};
+
+    #[test]
+    fn blurs_spread_and_keep_flat_areas() {
+        let all = |_: i32, _: i32| ONE;
+        let mut m = ColorMap::new();
+        for y in 0..60 {
+            for x in 0..60 {
+                let v = if x >= 30 { 220 } else { 30 };
+                m.set(x, y, from_rgba8([v, v, v, 255]));
+            }
+        }
+        let g = |c: &ColorMap, x, y| to_rgba8(c.get(x, y))[0] as i32;
+        // движение по горизонтали размывает край, по вертикали — нет
+        let st = |angle| Streak { strength: 10.0, angle, dir: 0, smooth: false };
+        let mh = motion_blur(&m, 60, 60, st(0.0), &all);
+        let mv = motion_blur(&m, 60, 60, st(90.0), &all);
+        assert!(g(&mh, 30, 30) < 200 && g(&mh, 30, 30) > 60);
+        assert_eq!(g(&mv, 30, 30), 220);
+        // среднее — один цвет
+        let av = average(&m, 60, 60, &all);
+        assert_eq!(g(&av, 2, 2), g(&av, 58, 58));
+        // линза и квадрат: край размыт, середина половин прежняя
+        for out in [lens_blur(&m, 60, 60, 5.0, 0, 0.0, &all), lens_blur(&m, 60, 60, 5.0, 6, 0.5, &all), box_blur(&m, 60, 60, 2, &all)] {
+            assert!(g(&out, 29, 30) > 30 && g(&out, 30, 30) < 220);
+            assert_eq!((g(&out, 5, 30), g(&out, 55, 30)), (30, 220));
+        }
+        // сглаживание трогает только край
+        let sm = smoothing(&m, 60, 60, &all);
+        assert_eq!(g(&sm, 10, 10), 30);
+        assert!(g(&sm, 30, 10) < 220);
+        let _ = (radial_blur(&m, 60, 60, (30.0, 30.0), Streak { strength: 0.2, angle: 0.0, dir: 0, smooth: true }, &all), spin_blur(&m, 60, 60, (30.0, 30.0), 20.0, 0, &all));
+    }
+}

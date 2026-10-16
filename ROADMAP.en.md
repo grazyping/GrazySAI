@@ -135,7 +135,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 
 A Filter menu with CSP's submenus; windows with a preview, like our current filters. They only change layer pixels, so `.sai2` compatibility is kept. CSP is closed source: built from its manual's descriptions, checked against Krita and GIMP where they have a match.
 
-- [ ] Blur filters: average, blur and strong blur, motion, radial, spin, smoothing, lens blur (bokeh)
+- [x] (0.8.34) Blur filters: average, blur and strong blur, motion, radial, spin, smoothing, lens blur (bokeh)
 - [x] Sharpen filters: sharpen, sharpen more, unsharp mask (0.8.33)
 - [x] Effect filters: chromatic aberration, noise, mosaic, crystallize, retro film (0.8.33)
 - [ ] Distort filters: pinch, ripple, fish-eye lens, polar coordinates, wave, twirl

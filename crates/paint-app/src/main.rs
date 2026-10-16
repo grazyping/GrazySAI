@@ -188,6 +188,15 @@ enum FilterKind {
     Crystallize,
     RetroFilm,
     Perlin,
+    /// «Размытие» как в CSP.
+    Average,
+    Blur,
+    BlurStrong,
+    Motion,
+    Radial,
+    Spin,
+    Smoothing,
+    Lens,
 }
 
 /// Открытый фильтр: настройки, слой и его исходные пиксели (для предпросмотра и отмены).
@@ -217,6 +226,14 @@ struct FilterDialog {
     tiling: bool,
     retro: paint_core::filters::RetroFilm,
     perlin: paint_core::filters::Perlin,
+    /// Размытие: в движении, радиальное, вращением (угол и направление), линза (радиус, углы, блики).
+    motion: paint_core::filters::Streak,
+    radial: paint_core::filters::Streak,
+    spin_angle: f64,
+    spin_dir: u8,
+    lens_radius: f64,
+    lens_sides: u32,
+    lens_highlight: f64,
     preview: bool,
     path: Vec<usize>,
     original: paint_core::tile::ColorMap,
@@ -2914,6 +2931,13 @@ impl PaintApp {
             tiling: false,
             retro: paint_core::filters::RetroFilm { preset: 0, effect: 0, intensity: 0.6, noise: 0.15 },
             perlin: paint_core::filters::Perlin { scale: 64.0, amplitude: 0.7, attenuation: 0.5, repetition: 4, offset: [0.0, 0.0] },
+            motion: paint_core::filters::Streak { strength: 20.0, angle: 0.0, dir: 0, smooth: true },
+            radial: paint_core::filters::Streak { strength: 0.1, angle: 0.0, dir: 0, smooth: true },
+            spin_angle: 10.0,
+            spin_dir: 0,
+            lens_radius: 10.0,
+            lens_sides: 0,
+            lens_highlight: 0.3,
             preview: true,
             path: self.selected.clone(),
             original: layer.pixels.clone(),
@@ -2959,6 +2983,21 @@ impl PaintApp {
             FilterKind::Crystallize => paint_core::filters::crystallize(&f.original, self.doc.width, self.doc.height, f.cell, f.randomness, f.tiling, &amount),
             FilterKind::RetroFilm => paint_core::filters::retro_film(&f.original, self.doc.width, self.doc.height, f.retro, &amount),
             FilterKind::Perlin => paint_core::filters::perlin_noise(&f.original, self.doc.width, self.doc.height, f.perlin, &amount),
+            FilterKind::Average => paint_core::filters::average(&f.original, self.doc.width, self.doc.height, &amount),
+            FilterKind::Blur | FilterKind::BlurStrong => {
+                paint_core::filters::box_blur(&f.original, self.doc.width, self.doc.height, if f.kind == FilterKind::Blur { 1 } else { 2 }, &amount)
+            }
+            FilterKind::Motion => paint_core::filters::motion_blur(&f.original, self.doc.width, self.doc.height, f.motion, &amount),
+            FilterKind::Radial => {
+                let c = paint_core::filters::content_center(&f.original, self.doc.width, self.doc.height);
+                paint_core::filters::radial_blur(&f.original, self.doc.width, self.doc.height, c, f.radial, &amount)
+            }
+            FilterKind::Spin => {
+                let c = paint_core::filters::content_center(&f.original, self.doc.width, self.doc.height);
+                paint_core::filters::spin_blur(&f.original, self.doc.width, self.doc.height, c, f.spin_angle, f.spin_dir, &amount)
+            }
+            FilterKind::Smoothing => paint_core::filters::smoothing(&f.original, self.doc.width, self.doc.height, &amount),
+            FilterKind::Lens => paint_core::filters::lens_blur(&f.original, self.doc.width, self.doc.height, f.lens_radius, f.lens_sides, f.lens_highlight, &amount),
         }
     }
 
@@ -3655,9 +3694,21 @@ impl PaintApp {
                 }
                 // подменю — как в Clip Studio Paint
                 ui.menu_button(tr("Размытие"), |ui| {
-                    if ui.button(tr("Размытие по Гауссу…")).clicked() {
-                        self.open_filter(FilterKind::GaussianBlur);
-                        ui.close_menu();
+                    for (item, kind) in [
+                        ("Среднее", FilterKind::Average),
+                        ("Размытие", FilterKind::Blur),
+                        ("Сильное размытие", FilterKind::BlurStrong),
+                        ("Размытие по Гауссу…", FilterKind::GaussianBlur),
+                        ("Размытие линзы…", FilterKind::Lens),
+                        ("Размытие в движении…", FilterKind::Motion),
+                        ("Радиальное размытие…", FilterKind::Radial),
+                        ("Размытие вращением…", FilterKind::Spin),
+                        ("Сглаживание краёв", FilterKind::Smoothing),
+                    ] {
+                        if ui.button(tr(item)).clicked() {
+                            self.open_filter(kind);
+                            ui.close_menu();
+                        }
                     }
                 });
                 ui.menu_button(tr("Эффекты"), |ui| {
@@ -6456,6 +6507,14 @@ impl PaintApp {
                 FilterKind::Crystallize => tr("Кристаллизация"),
                 FilterKind::RetroFilm => tr("Ретро-плёнка"),
                 FilterKind::Perlin => tr("Шум Перлина"),
+                FilterKind::Average => tr("Среднее"),
+                FilterKind::Blur => tr("Размытие"),
+                FilterKind::BlurStrong => tr("Сильное размытие"),
+                FilterKind::Motion => tr("Размытие в движении"),
+                FilterKind::Radial => tr("Радиальное размытие"),
+                FilterKind::Spin => tr("Размытие вращением"),
+                FilterKind::Smoothing => tr("Сглаживание краёв"),
+                FilterKind::Lens => tr("Размытие линзы"),
             };
             let mut open = true;
             egui::Window::new(title).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
@@ -6491,6 +6550,64 @@ impl PaintApp {
                         FilterKind::GaussianBlur => {
                             ui.label(tr("Радиус:"));
                             ui.add(egui::Slider::new(&mut f.radius, 0.1..=40.0).step_by(0.1));
+                            ui.end_row();
+                        }
+                        FilterKind::Average | FilterKind::Blur | FilterKind::BlurStrong | FilterKind::Smoothing => {
+                            ui.label(tr("Без настроек — OK применяет."));
+                            ui.end_row();
+                        }
+                        FilterKind::Motion | FilterKind::Radial => {
+                            let st = if f.kind == FilterKind::Motion { &mut f.motion } else { &mut f.radial };
+                            ui.label(tr("Сила:"));
+                            if f.kind == FilterKind::Motion {
+                                ch |= ui.add(egui::Slider::new(&mut st.strength, 1.0..=300.0).suffix(" px")).changed();
+                            } else {
+                                ch |= ui.add(egui::Slider::new(&mut st.strength, 0.01..=1.0)).changed();
+                            }
+                            ui.end_row();
+                            if f.kind == FilterKind::Motion {
+                                ui.label(tr("Угол:"));
+                                ch |= ui.add(egui::Slider::new(&mut st.angle, 0.0..=360.0).suffix("°")).changed();
+                                ui.end_row();
+                            }
+                            ui.label(tr("Направление:"));
+                            ui.horizontal(|ui| {
+                                let names = if f.kind == FilterKind::Motion { [tr("В обе стороны"), tr("Вперёд"), tr("Назад")] } else { [tr("В обе стороны"), tr("Наружу"), tr("Внутрь")] };
+                                for (i, n) in names.iter().enumerate() {
+                                    ch |= ui.radio_value(&mut st.dir, i as u8, *n).changed();
+                                }
+                            });
+                            ui.end_row();
+                            ui.label("");
+                            ch |= ui.checkbox(&mut st.smooth, tr("Плавно")).changed();
+                            ui.end_row();
+                        }
+                        FilterKind::Spin => {
+                            ui.label(tr("Угол:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.spin_angle, 1.0..=180.0).suffix("°")).changed();
+                            ui.end_row();
+                            ui.label(tr("Направление:"));
+                            ui.horizontal(|ui| {
+                                for (i, n) in [tr("В обе стороны"), tr("По часовой"), tr("Против часовой")].iter().enumerate() {
+                                    ch |= ui.radio_value(&mut f.spin_dir, i as u8, *n).changed();
+                                }
+                            });
+                            ui.end_row();
+                        }
+                        FilterKind::Lens => {
+                            ui.label(tr("Радиус:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.lens_radius, 1.0..=100.0).suffix(" px")).changed();
+                            ui.end_row();
+                            ui.label(tr("Форма бликов:"));
+                            egui::ComboBox::from_id_salt("lens_shape").selected_text(if f.lens_sides < 3 { tr("Круг").to_string() } else { trf("{0} угла", &[&f.lens_sides]) }).show_ui(ui, |ui| {
+                                ch |= ui.selectable_value(&mut f.lens_sides, 0, tr("Круг")).changed();
+                                for n in 3..=8u32 {
+                                    ch |= ui.selectable_value(&mut f.lens_sides, n, trf("{0} угла", &[&n])).changed();
+                                }
+                            });
+                            ui.end_row();
+                            ui.label(tr("Яркость бликов:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.lens_highlight, 0.0..=1.0)).changed();
                             ui.end_row();
                         }
                         FilterKind::Sharpen | FilterKind::SharpenMore => {
