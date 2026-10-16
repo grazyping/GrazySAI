@@ -1,8 +1,8 @@
-# SOsai roadmap
+# GrazySAI roadmap
 
 **English** | [Русский](ROADMAP.md)
 
-The version number shows readiness: **1.0.0** means SOsai has everything people use in
+The version number shows readiness: **1.0.0** means GrazySAI has everything people use in
 PaintTool SAI 2 for everyday work, and `.sai2` files open and save without loss. The second
 number is the last stage in which everything is done; fixes and features within a stage are the
 third number.
@@ -11,8 +11,8 @@ Revised on 15 October 2026: stages 0.5–0.8 turned out to be done except for a 
 Those items moved to 0.9, so the version is now **0.8**.
 
 On GitHub every stage is a milestone with a progress bar
-([Milestones](https://github.com/grazyping/SOsai/milestones)) and every item is an issue
-([Issues](https://github.com/grazyping/SOsai/issues), written in Russian); finished items are closed.
+([Milestones](https://github.com/grazyping/GrazySAI/milestones)) and every item is an issue
+([Issues](https://github.com/grazyping/GrazySAI/issues), written in Russian); finished items are closed.
 The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 
 ## Done
@@ -135,7 +135,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 
 - [x] Layer panel buttons “New Linework Layer” and “Perspective Ruler” work (they were placeholders) (0.8.40)
 - [x] Brush size grid — SAI 2017's whole table, up to 5000 (0.8.40)
-- [ ] New name — **GrazySAI** (SOsai is taken on GitHub); old versions still find the update at the old address
+- [ ] New name — **GrazySAI** (GrazySAI is taken on GitHub); old versions still find the update at the old address
 - [ ] More save and export formats (as in similar programs)
 - [ ] Icons for new menu items and windows; layout checked in every language
 - [ ] More right on the canvas and panels, fewer extra windows: text is typed straight on the canvas as in SAI; tools get their useful buttons on the panel (after Krita, GIMP and others), keeping SAI's look

@@ -1,4 +1,4 @@
-# SOsai — English. Format: Russian key = translation; {0}, {1}… are substituted values.
+# GrazySAI — English. Format: Russian key = translation; {0}, {1}… are substituted values.
 # Terms follow the English PaintTool SAI 2 where it has one.
 
 # Menus
@@ -250,7 +250,7 @@ PSD (со слоями) = PSD (with layers)
 В открытом файле есть слои контура или фигур: их кривые пока сохраняются\nрастром. Поэтому предложен новый файл — исходный останется нетронутым. = The open file has linework or shape layers: their curves are saved\nas pixels for now. So a new file is suggested — the original stays untouched.
 Такой файл уже есть — он будет заменён. = This file already exists — it will be replaced.
 Заменить = Replace
-SOsai {0} — редактор по образцу PaintTool SAI 2, личный проект. = SOsai {0} — a painting program modelled on PaintTool SAI 2, a personal project.
+GrazySAI {0} — редактор по образцу PaintTool SAI 2, личный проект. = GrazySAI {0} — a painting program modelled on PaintTool SAI 2, a personal project.
 Открывает .sai2 (растровые слои, папки, контур, фигуры), рисует кистью образца. = Opens .sai2 (raster layers, folders, linework, shapes) and paints with SAI's brush.
 
 # Shortcut actions
@@ -332,7 +332,7 @@ Ctrl + перетаскивание полосы поворачивает лин
 Показать/скрыть линейку = Show/hide ruler
 
 # Обновление / Update
-SOsai на GitHub = SOsai on GitHub
+GrazySAI на GitHub = GrazySAI on GitHub
 Проверить обновления… = Check for Updates…
 Проверять обновления при запуске = Check for updates at startup
 Вышла версия {0} = Version {0} is out

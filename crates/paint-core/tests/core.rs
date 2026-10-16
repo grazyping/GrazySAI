@@ -568,7 +568,7 @@ fn luminance_to_alpha_and_selection_source() {
 
 #[test]
 fn jpeg_and_png_round_trip_through_document() {
-    let dir = std::env::temp_dir().join(format!("sosai-img-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("grazysai-img-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let mut rgba = Vec::new();
     for y in 0..32u32 {

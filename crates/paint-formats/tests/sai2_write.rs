@@ -75,7 +75,7 @@ fn vector_layers_survive_save() {
             continue;
         }
         let a = paint_formats::sai2_doc::load(&path).unwrap();
-        let out = std::env::temp_dir().join(format!("sosai-vec-{}-{name}", std::process::id()));
+        let out = std::env::temp_dir().join(format!("grazysai-vec-{}-{name}", std::process::id()));
         paint_formats::sai2_write::save(&a.document, &out).unwrap();
         let b = paint_formats::sai2_doc::load(&out).unwrap();
         let vec_of = |d: &paint_core::Document| -> Vec<(String, Option<Vec<u8>>)> {
@@ -107,7 +107,7 @@ fn paper_effect_and_unknown_layer_blocks_survive_save() {
     doc.layers[0].paper = Some(paint_core::paper::Paper::new("Water Color 2", 30, 120, 1));
     doc.layers[0].effect = Some(paint_core::effects::Effect::Fringe { kind: *b"watr", width: 3, strength: 50 });
     doc.layers[0].extra = vec![(*b"zzzz", vec![1, 2, 3, 4])];
-    let out = std::env::temp_dir().join(format!("sosai-paper-{}.sai2", std::process::id()));
+    let out = std::env::temp_dir().join(format!("grazysai-paper-{}.sai2", std::process::id()));
     paint_formats::sai2_write::save(&doc, &out).unwrap();
     let info = paint_formats::sai2::read_info(&out).unwrap();
     let l = &info.layers[0];
@@ -123,7 +123,7 @@ fn paper_effect_and_unknown_layer_blocks_survive_save() {
 /// Фон холста (байт 0x11, цвет 0x38) и «Layer Effect Color» (0x3C) — как у SAI 2017.
 #[test]
 fn canvas_background_survives_save() {
-    let dir = std::env::temp_dir().join(format!("sosai-bg-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("grazysai-bg-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     for (code, color) in [(0x01, [0x80, 0x80, 0x80]), (0x10, [1, 2, 3]), (0x21, [200, 100, 50]), (0x40, [9, 9, 9])] {
         let mut doc = Document::new(64, 48);

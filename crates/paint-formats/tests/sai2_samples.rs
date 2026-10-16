@@ -92,14 +92,14 @@ fn every_layer_of_real_drawing_decodes() {
 
 use paint_formats::sai2_doc;
 
-/// Текстуры бумаги SAI (в проект не входят): `SOSAI_PAPERTEX` или папка разбора на машине автора.
+/// Текстуры бумаги SAI (в проект не входят): `GRAZYSAI_PAPERTEX` или папка разбора на машине автора.
 fn paper_dir() -> bool {
-    if std::env::var_os("SOSAI_PAPERTEX").is_none() {
+    if std::env::var_os("GRAZYSAI_PAPERTEX").is_none() {
         let local = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../sai2-analysis/run2017/papertex");
         if !local.is_dir() {
             return false;
         }
-        std::env::set_var("SOSAI_PAPERTEX", local);
+        std::env::set_var("GRAZYSAI_PAPERTEX", local);
     }
     true
 }
@@ -271,7 +271,7 @@ fn layer_mask_flattens_like_the_reference() {
 fn layer_mask_survives_save() {
     let Some(p) = sample("маска.sai2") else { return };
     let a = sai2_doc::load(&p).unwrap();
-    let out = std::env::temp_dir().join(format!("sosai-mask-{}.sai2", std::process::id()));
+    let out = std::env::temp_dir().join(format!("grazysai-mask-{}.sai2", std::process::id()));
     paint_formats::sai2_write::save(&a.document, &out).unwrap();
     let b = sai2_doc::load(&out).unwrap();
     std::fs::remove_file(&out).ok();
@@ -306,7 +306,7 @@ fn text_layers_round_trip() {
     assert_eq!(texts, 6);
     let painted = loaded.document.layers.iter().filter(|l| !l.pixels.tiles.is_empty()).count();
     assert!(painted >= 5, "нарисовано текстовых слоёв: {painted}");
-    let out = std::env::temp_dir().join(format!("sosai-text-{}.sai2", std::process::id()));
+    let out = std::env::temp_dir().join(format!("grazysai-text-{}.sai2", std::process::id()));
     paint_formats::sai2_write::save(&loaded.document, &out).unwrap();
     let (a, b) = (blocks(&p), blocks(&out));
     let _ = std::fs::remove_file(&out);

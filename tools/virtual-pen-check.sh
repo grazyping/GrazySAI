@@ -4,7 +4,7 @@
 #   tools/virtual-pen-check.sh [путь к paint-app]
 # Нужны Xvfb (~/.local/opt/xtools или системный) и python3 с PIL.
 set -e
-APP=${1:-$(dirname "$0")/../target/release/SOsai}
+APP=${1:-$(dirname "$0")/../target/release/GrazySAI}
 OUT=$(mktemp --suffix=.png)
 export PATH=$HOME/.local/opt/xtools/root/usr/bin:$PATH LD_LIBRARY_PATH=$HOME/.local/opt/xtools/root/usr/lib/x86_64-linux-gnu
 unset WAYLAND_DISPLAY

@@ -1,11 +1,11 @@
-//! Мазки щетиной в PNG для сверки на глаз с живой SAI (SOSAI_PAPERTEX — папка papertex SAI,
-//! рядом папка bristle; SOSAI_BRISTLE_OUT — куда писать). Без них тест пропускается.
+//! Мазки щетиной в PNG для сверки на глаз с живой SAI (GRAZYSAI_PAPERTEX — папка papertex SAI,
+//! рядом папка bristle; GRAZYSAI_BRISTLE_OUT — куда писать). Без них тест пропускается.
 use paint_core::stroke::{Bristle, Grain};
 use paint_core::{BrushParams, Document, InputPoint, Stroke};
 
 #[test]
 fn bristle_strokes_to_png() {
-    let (Some(_), Some(out)) = (std::env::var_os("SOSAI_PAPERTEX"), std::env::var_os("SOSAI_BRISTLE_OUT")) else { return };
+    let (Some(_), Some(out)) = (std::env::var_os("GRAZYSAI_PAPERTEX"), std::env::var_os("GRAZYSAI_BRISTLE_OUT")) else { return };
     let hairs = paint_core::paper::bristle_of("Bristle").expect("Bristle.bmp");
     let mut doc = Document::new(520, 380);
     let params = BrushParams { size: 50.0, min_size: 0.5, density_by_pressure: true, hardness: 0.0, ..Default::default() };

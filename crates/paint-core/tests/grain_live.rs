@@ -2,7 +2,7 @@
 //! Карандаш 20 px, плотность 100, мышью (нажим 1) — горизонтальные линии x 40..560 шагом 4:
 //! y 50 — текстура Canvas 100; y 110 — Canvas 56; y 200, 280, 360 — форма Blots 100 % на самой
 //! жёсткой, самой мягкой и средней ступени. Текстуры — файлы SAI, в репозиторий не входят:
-//! тест ищет их в `SOSAI_SAI_DIR` (папка с `blotmap` и `brushtex`) и без них пропускается.
+//! тест ищет их в `GRAZYSAI_SAI_DIR` (папка с `blotmap` и `brushtex`) и без них пропускается.
 
 use paint_core::paper::PaperTexture;
 use paint_core::stroke::Grain;
@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 fn sai_dir() -> Option<PathBuf> {
-    let d = std::env::var_os("SOSAI_SAI_DIR").map(PathBuf::from)?;
+    let d = std::env::var_os("GRAZYSAI_SAI_DIR").map(PathBuf::from)?;
     d.join("brushtex").is_dir().then_some(d)
 }
 
@@ -68,7 +68,7 @@ fn row_diff(a: &[u8], b: &[u8], y: usize) -> f32 {
 #[test]
 fn form_and_texture_like_the_reference_program() {
     let Some(dir) = sai_dir() else {
-        eprintln!("SOSAI_SAI_DIR не задана — пропуск");
+        eprintln!("GRAZYSAI_SAI_DIR не задана — пропуск");
         return;
     };
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/brush/sai-grain.png");

@@ -42,7 +42,7 @@ fn make_probes() {
     save("8-курсив.sai2", vec![Layer::new("Слой1"), styled(f, "abc", [0, 38, 58], sai2_text::STYLE_ITALIC, false)]);
     save("9-вертикально.sai2", vec![Layer::new("Слой1"), styled(f, "abc", [0, 38, 58], 0, true)]);
     save("10-жирный-курсив-вертикально.sai2", vec![Layer::new("Слой1"), styled(f, "abc", [180, 25, 47], sai2_text::STYLE_BOLD | sai2_text::STYLE_ITALIC, true)]);
-    // файл пользователя из SAI, прочитанный и записанный SOsai
+    // файл пользователя из SAI, прочитанный и записанный GrazySAI
     let home = std::env::var("HOME").unwrap();
     if let Ok(l) = paint_formats::sai2_doc::load(&PathBuf::from(home).join("SAI2/НовыйХолст1.sai2")) {
         paint_formats::sai2_write::save(&l.document, &dir.join("6-ваш-файл-пересохранён.sai2")).unwrap();

@@ -1,19 +1,19 @@
-# SOsai — user manual
+# GrazySAI — user manual
 
 **English** | [Русский](manual.md)
 
-SOsai is a painting program modelled on PaintTool SAI 2: brushes, layers, selection, transform,
+GrazySAI is a painting program modelled on PaintTool SAI 2: brushes, layers, selection, transform,
 linework and shape layers, opening and saving `.sai2` files. It runs on Windows and Linux and
 works with a graphics tablet pen.
 
 ## Installing and running
 
-Ready builds are on the [Releases](https://github.com/grazyping/SOsai/releases) page.
+Ready builds are on the [Releases](https://github.com/grazyping/GrazySAI/releases) page.
 
-- **Windows**: download `SOsai-…-windows-x86_64.zip`, unpack it, run `SOsai.exe`. No
+- **Windows**: download `GrazySAI-…-windows-x86_64.zip`, unpack it, run `GrazySAI.exe`. No
   installation is needed.
-- **Linux**: download `SOsai-…-linux-x86_64.tar.gz`, unpack it, run `./SOsai` (you can pass a
-  file: `./SOsai drawing.sai2`).
+- **Linux**: download `GrazySAI-…-linux-x86_64.tar.gz`, unpack it, run `./GrazySAI` (you can pass a
+  file: `./GrazySAI drawing.sai2`).
 
 A file can also be opened by dropping it onto the window.
 
@@ -28,7 +28,7 @@ release page so you can download it by hand.
 
 The startup check can be turned off: “Help → Check for updates at startup”. To check by hand —
 “Help → Check for Updates…”. The project page is “GitHub” at the right of the menu bar or
-“Help → SOsai on GitHub”. On Windows this needs Windows 10 (1803) or newer.
+“Help → GrazySAI on GitHub”. On Windows this needs Windows 10 (1803) or newer.
 
 ### Tablet
 
@@ -42,7 +42,7 @@ The startup check can be turned off: “Help → Check for updates at startup”
 ## Language
 
 The interface is translated into 10 languages: English, Русский, Українська, Deutsch,
-Français, Español, Português (Brasil), 日本語, 简体中文, 한국어. On first start SOsai uses the
+Français, Español, Português (Brasil), 日本語, 简体中文, 한국어. On first start GrazySAI uses the
 system language (English if it is not in the list). To change it: “Window → Language” — it
 switches at once, without a restart, and the choice is remembered. Japanese, Chinese and Korean
 need a system font with CJK characters (always present on Windows; the Noto CJK package on
@@ -177,7 +177,7 @@ evenly from start to end; the ends can be moved and the settings changed until y
 In layer properties, the “Texture” section: choose a texture, scale (10–500 %) and strength
 (0–100). The layer's paint becomes uneven, as on paper; works for folders too.
 
-Textures are taken from SAI's `papertex` folder (SOsai does not ship them). If the list is
+Textures are taken from SAI's `papertex` folder (GrazySAI does not ship them). If the list is
 empty, type the path to that folder in the field above the list and press OK; the path is
 remembered. `.sai2` files with paper open and save with it.
 
@@ -346,10 +346,10 @@ rulers from newer SAI versions are not shown but are saved too.
 
 - **Settings** are saved on exit and restored on start: brushes, colors, stabilizer, magic
   wand tolerance, interface language. Where they are:
-  - Windows: `%APPDATA%\SOsai\`;
-  - Linux: `~/.config/SOsai/`.
+  - Windows: `%APPDATA%\GrazySAI\`;
+  - Linux: `~/.config/GrazySAI/`.
 - **Recovery**:
-  - every 3 minutes, if there were edits, SOsai saves a copy of the canvas in the background;
+  - every 3 minutes, if there were edits, GrazySAI saves a copy of the canvas in the background;
   - if the program closed abnormally, on the next start it offers to recover the work.
 
 ## Shortcut keys
@@ -394,10 +394,10 @@ The full list is in [ROADMAP.en.md](../ROADMAP.en.md). The main points:
 
 ## If something is wrong
 
-Report a bug on the [Issues](https://github.com/grazyping/SOsai/issues) page (English or
+Report a bug on the [Issues](https://github.com/grazyping/GrazySAI/issues) page (English or
 Russian):
 - what you did;
 - what you expected and what happened;
-- the SOsai version (in the window title) and the system (Windows or Linux).
+- the GrazySAI version (in the window title) and the system (Windows or Linux).
 
 If you can, attach the file or a screenshot.

@@ -4,7 +4,7 @@
 //! раз за запуск с запасом). Загрузка и распаковка — системными `curl` и `tar`: они есть в
 //! Windows 10 (1803 и новее) и почти в любом Linux, так что TLS и архиваторы в программу не
 //! тянем. Скачанный архив сверяется с SHA-256 из ответа API, затем новый исполняемый файл встаёт
-//! на место старого: в Windows работающий `SOsai.exe` можно переименовать (в `SOsai.exe.old`,
+//! на место старого: в Windows работающий `GrazySAI.exe` можно переименовать (в `GrazySAI.exe.old`,
 //! удаляется при следующем запуске), в Linux файл заменяется переименованием поверх. Новая
 //! версия начинает работать после перезапуска. Нет прав на папку программы, нет `curl` —
 //! предлагается страница выпуска.
@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
-pub const REPO: &str = "https://github.com/grazyping/SOsai";
-const API: &str = "https://api.github.com/repos/grazyping/SOsai/releases/latest";
+pub const REPO: &str = "https://github.com/grazyping/GrazySAI";
+const API: &str = "https://api.github.com/repos/grazyping/GrazySAI/releases/latest";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Release {
@@ -64,9 +64,9 @@ fn suffix() -> &'static str {
 
 fn exe_name() -> &'static str {
     if cfg!(windows) {
-        "SOsai.exe"
+        "GrazySAI.exe"
     } else {
-        "SOsai"
+        "GrazySAI"
     }
 }
 
@@ -141,7 +141,7 @@ pub fn parse_release(body: &str) -> Option<Release> {
     let version = tag.trim_start_matches('v').to_string();
     let page = json_str(body, "html_url", 0).map(|v| v.0).unwrap_or_else(|| format!("{REPO}/releases"));
     let notes = json_str(body, "body", 0).map(|v| v.0).unwrap_or_default();
-    let name = format!("SOsai-{version}-{}", suffix());
+    let name = format!("GrazySAI-{version}-{}", suffix());
     let asset = body.find(&format!("\"name\":\"{name}\"")).or_else(|| body.find(&format!("\"name\": \"{name}\""))).and_then(|at| {
         let (url, end) = json_str(body, "browser_download_url", at)?;
         let digest = json_str(&body[..end], "digest", at)
@@ -222,7 +222,7 @@ fn target_exe() -> Result<PathBuf, String> {
         return Ok(p.into());
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    // в Linux после замены файла путь работающей программы — «…/SOsai (deleted)»
+    // в Linux после замены файла путь работающей программы — «…/GrazySAI (deleted)»
     let exe = match exe.to_str().and_then(|s| s.strip_suffix(" (deleted)")) {
         Some(s) => PathBuf::from(s),
         None => exe,
@@ -235,7 +235,7 @@ fn download_and_replace(rel: &Release) -> Result<(), String> {
     let exe = target_exe()?;
     let dir = exe.parent().ok_or("no program folder")?.to_path_buf();
     // рабочая папка рядом с программой: заодно проверка, что в папку можно писать
-    let work = dir.join(".sosai-update");
+    let work = dir.join(".grazysai-update");
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", dir.display()))?;
     let r = (|| {
@@ -253,7 +253,7 @@ fn download_and_replace(rel: &Release) -> Result<(), String> {
         let mut c = tool("tar");
         c.arg(if cfg!(windows) { "-xf" } else { "-xzf" }).arg(&archive).arg("-C").arg(&work);
         run(c)?;
-        let folder = work.join(format!("SOsai-{}-{}", rel.version, suffix().split('.').next().unwrap_or("")));
+        let folder = work.join(format!("GrazySAI-{}-{}", rel.version, suffix().split('.').next().unwrap_or("")));
         let new_exe = folder.join(exe_name());
         if !new_exe.is_file() {
             return Err(format!("{} not in archive", exe_name()));
@@ -302,7 +302,7 @@ fn old_exe(exe: &Path) -> PathBuf {
     exe.with_file_name(format!("{}.old", exe_name()))
 }
 
-/// После обновления в Windows остаётся `SOsai.exe.old` — убрать при следующем запуске.
+/// После обновления в Windows остаётся `GrazySAI.exe.old` — убрать при следующем запуске.
 pub fn cleanup() {
     #[cfg(windows)]
     if let Ok(exe) = target_exe() {
@@ -386,16 +386,16 @@ mod tests {
 
     #[test]
     fn parses_github_answer() {
-        let n = format!("SOsai-0.9.0-{}", suffix());
+        let n = format!("GrazySAI-0.9.0-{}", suffix());
         let body = format!(
-            r#"{{"html_url":"https://github.com/grazyping/SOsai/releases/tag/v0.9.0","tag_name":"v0.9.0",
+            r#"{{"html_url":"https://github.com/grazyping/GrazySAI/releases/tag/v0.9.0","tag_name":"v0.9.0",
             "assets":[{{"name":"other.zip","digest":null,"browser_download_url":"https://x/other.zip"}},
             {{"name":"{n}","digest":"sha256:abc","browser_download_url":"https://x/{n}"}}],
-            "body":"**SOsai 0.9.0**\r\n\r\n## English\r\n- \u0022New\u0022 \u2014 thing\r\n\r\n## Русский\r\n- Новое\r\n\r\n### Download"}}"#
+            "body":"**GrazySAI 0.9.0**\r\n\r\n## English\r\n- \u0022New\u0022 \u2014 thing\r\n\r\n## Русский\r\n- Новое\r\n\r\n### Download"}}"#
         );
         let r = parse_release(&body).unwrap();
         assert_eq!(r.version, "0.9.0");
-        assert_eq!(r.page, "https://github.com/grazyping/SOsai/releases/tag/v0.9.0");
+        assert_eq!(r.page, "https://github.com/grazyping/GrazySAI/releases/tag/v0.9.0");
         assert_eq!(r.asset, Some((format!("https://x/{n}"), Some("abc".into()))));
         assert_eq!(notes_for(&r.notes, "en"), "- \"New\" — thing");
         assert_eq!(notes_for(&r.notes, "ru"), "- Новое");

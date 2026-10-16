@@ -1,8 +1,9 @@
 //! Настройки между запусками: простой текст `ключ=значение`, по строке на настройку.
 //!
 //! Где лежит: `PAINT_SETTINGS` (путь к файлу; `off` — не читать и не писать), иначе в Windows
-//! `%APPDATA%\SOsai\settings.txt`, в Linux `$XDG_CONFIG_HOME/SOsai/settings.txt` или
-//! `~/.config/SOsai/settings.txt`. При проверках виртуальным пером (`PAINT_VIRTUAL_PEN`) без
+//! `%APPDATA%\GrazySAI\settings.txt`, в Linux `$XDG_CONFIG_HOME/GrazySAI/settings.txt` или
+//! `~/.config/GrazySAI/settings.txt` (папка прежнего имени `SOsai` переезжает сюда при первом
+//! запуске). При проверках виртуальным пером (`PAINT_VIRTUAL_PEN`) без
 //! `PAINT_SETTINGS` настройки не используются, чтобы прогоны не зависели от прошлых запусков.
 
 use std::collections::BTreeMap;
@@ -30,7 +31,15 @@ pub fn dir() -> Option<PathBuf> {
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
     };
-    base.map(|b| b.join("SOsai"))
+    let base = base?;
+    let dir = base.join("GrazySAI");
+    // до 0.8.41 программа звалась SOsai: её папка (настройки, недавние файлы, копии для
+    // восстановления) переезжает под новое имя один раз; не вышло переименовать — берётся старая
+    let old = base.join(concat!("SO", "sai"));
+    if !dir.exists() && old.is_dir() && std::fs::rename(&old, &dir).is_err() {
+        return Some(old);
+    }
+    Some(dir)
 }
 
 fn file() -> Option<PathBuf> {

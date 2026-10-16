@@ -4,7 +4,7 @@
 //! далеко пиксель уходит к этим двум крайним значениям (не больше чем на половину пути).
 //!
 //! Сами текстуры — файлы BMP из папки `papertex` программы SAI; в проект они не входят. Где
-//! искать: `SOSAI_PAPERTEX` (папка), иначе `papertex` рядом с программой.
+//! искать: `GRAZYSAI_PAPERTEX` (папка), иначе `papertex` рядом с программой.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -242,7 +242,8 @@ fn dirs(kind: &str) -> Vec<PathBuf> {
             out.push(parent.join(kind));
         }
     }
-    if let Some(d) = std::env::var_os("SOSAI_PAPERTEX") {
+    // прежнее имя переменной (до 0.8.41) тоже понимается
+    if let Some(d) = std::env::var_os("GRAZYSAI_PAPERTEX").or_else(|| std::env::var_os(concat!("SO", "SAI_PAPERTEX"))) {
         let d = PathBuf::from(d);
         if kind == "papertex" {
             out.push(d.clone());

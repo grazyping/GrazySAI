@@ -654,7 +654,7 @@ pub fn load(path: &Path) -> Res<Document> {
     Ok(doc)
 }
 
-/// Маска слоя PSD (255 — видно) в маску SOsai (0x4000 — скрыто); за прямоугольником маски —
+/// Маска слоя PSD (255 — видно) в маску GrazySAI (0x4000 — скрыто); за прямоугольником маски —
 /// цвет `default` по всему холсту `w`×`h`.
 fn mask_hide(m: &[u16], rect: [i32; 4], default: u8, w: usize, h: usize) -> paint_core::tile::MaskMap {
     let [top, left, bottom, right] = rect;

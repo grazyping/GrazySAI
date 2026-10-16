@@ -83,7 +83,7 @@ SAI 2017 на скрытом экране (Xvfb) — клавиши без ок�
 - «Шум Перлина»: градиентный шум с плавной кривой 6t⁵ − 15t⁴ + 10t³, октавы удваивают частоту и
   ослабляются на «ослабление»; серый непрозрачный узор заменяет содержимое слоя.
 - Тест `effects_do_what_they_say`; картинки для глаза — `tests/filters_look.rs`
-  (`SOSAI_FILTERS_OUT`).
+  (`GRAZYSAI_FILTERS_OUT`).
 
 ## Размытие (0.8.34, как в Clip Studio Paint)
 
@@ -132,4 +132,4 @@ SAI 2017 на скрытом экране (Xvfb) — клавиши без ок�
   уровни яркости (цвет масштабируется к квантованной яркости — оттенок не уходит, как при
   поканальном плакате) и тёмный контур по Собелю на яркости.
 - Тест `pencil_whitens_flat_areas_and_artistic_posterizes`; своя картинка —
-  `SOSAI_FILTERS_IN=<png>` в `tests/filters_look.rs`.
+  `GRAZYSAI_FILTERS_IN=<png>` в `tests/filters_look.rs`.

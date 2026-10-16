@@ -1,10 +1,11 @@
-# SOsai
+# GrazySAI
 
 **English** | [Русский](README.ru.md)
 
-A painting program in Rust modelled on PaintTool SAI 2 — a personal project. Version 0.8.33.
+A painting program in Rust modelled on PaintTool SAI 2 — a personal project. Version 0.8.41.
+Formerly called **SOsai** (renamed in 0.8.41; older versions update to GrazySAI by themselves).
 How to use it is in the [manual](docs/manual.en.md); what is done and what comes next is in
-[ROADMAP.en.md](ROADMAP.en.md) and on the [Milestones](https://github.com/grazyping/SOsai/milestones)
+[ROADMAP.en.md](ROADMAP.en.md) and on the [Milestones](https://github.com/grazyping/GrazySAI/milestones)
 tab; ready builds are under Releases. Linux and Windows, tablet pen (XPPen Artist 24 Pro),
 opens `.sai2` files.
 
@@ -48,7 +49,7 @@ The documents in `docs/` other than the manual are written in Russian.
 ## Building
 
 ```bash
-cargo build --release -p paint-app      # editor: target/release/SOsai [file.sai2]
+cargo build --release -p paint-app      # editor: target/release/GrazySAI [file.sai2]
 cargo build --release -p paint-cli      # command line: comparisons, rendering, .sai2 inspection
 cargo test --workspace --release
 ```
@@ -81,7 +82,7 @@ translation in every file. Corrections and new languages are welcome as pull req
 
 ## License
 
-MIT — see [LICENSE](LICENSE). SOsai is an independent project and is not affiliated with
+MIT — see [LICENSE](LICENSE). GrazySAI is an independent project and is not affiliated with
 SYSTEMAX Software Development, the author of PaintTool SAI; the names SAI and PaintTool SAI
 belong to their owner. The code is written from scratch based on the program's observed
 behaviour and file format; there is no PaintTool SAI code in this repository.

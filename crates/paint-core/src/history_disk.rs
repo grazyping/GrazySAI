@@ -2,7 +2,7 @@
 //! больших холстах держать все 100 шагов (как в SAI, который пишет историю на диск).
 //!
 //! Файл на шаг — подряд плитки 64×64 по 8 байт на точку (u16 LE ×4). Папка —
-//! `<временная>/SOsai-history/<номер процесса>`; файл удаляется вместе с шагом, папки прошлых
+//! `<временная>/GrazySAI-history/<номер процесса>`; файл удаляется вместе с шагом, папки прошлых
 //! запусков старше суток убираются при первой выгрузке. `PAINT_HISTORY_RAM` — сколько байт
 //! истории держать в памяти (по умолчанию 1 ГБ).
 
@@ -38,7 +38,7 @@ impl Drop for Spill {
 }
 
 fn dir() -> std::io::Result<PathBuf> {
-    let root = std::env::temp_dir().join("SOsai-history");
+    let root = std::env::temp_dir().join("GrazySAI-history");
     let d = root.join(std::process::id().to_string());
     if !d.exists() {
         // папки прошлых запусков (программа могла закрыться аварийно)
@@ -112,5 +112,5 @@ pub fn load(s: &Spill) -> Option<Vec<(Key, Option<Tile<Px>>)>> {
 
 /// Убрать папку истории этого запуска (при выходе из программы).
 pub fn cleanup() {
-    let _ = std::fs::remove_dir_all(std::env::temp_dir().join("SOsai-history").join(std::process::id().to_string()));
+    let _ = std::fs::remove_dir_all(std::env::temp_dir().join("GrazySAI-history").join(std::process::id().to_string()));
 }

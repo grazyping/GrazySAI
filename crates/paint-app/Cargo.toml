@@ -5,7 +5,7 @@ version.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "SOsai"
+name = "GrazySAI"
 path = "src/main.rs"
 
 [dependencies]

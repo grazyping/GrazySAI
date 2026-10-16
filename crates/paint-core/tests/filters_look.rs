@@ -1,11 +1,11 @@
-//! Эффекты фильтров в PNG для просмотра глазами (SOSAI_FILTERS_OUT — папка). Без неё пропускается.
+//! Эффекты фильтров в PNG для просмотра глазами (GRAZYSAI_FILTERS_OUT — папка). Без неё пропускается.
 use paint_core::filters::*;
 use paint_core::pixel::{from_rgba8, ONE};
 use paint_core::tile::ColorMap;
 
 #[test]
 fn filters_to_png() {
-    let Some(dir) = std::env::var_os("SOSAI_FILTERS_OUT") else { return };
+    let Some(dir) = std::env::var_os("GRAZYSAI_FILTERS_OUT") else { return };
     let dir = std::path::PathBuf::from(dir);
     let (w, h) = (160u32, 120u32);
     let mut src = ColorMap::new();
@@ -47,8 +47,8 @@ fn filters_to_png() {
         ("pencil-color", pencil_drawing(&grid, w, h, Pencil { thickness: 2.0, darkness: 0.3, hatching: 0.0, color: true }, &all)),
         ("artistic", artistic(&src, w, h, Artistic { radius: 4, levels: 5, edges: 0.6 }, &all)),
     ]);
-    // своя картинка (SOSAI_FILTERS_IN, PNG) — для стилизации
-    let mine = std::env::var_os("SOSAI_FILTERS_IN").map(|p| {
+    // своя картинка (GRAZYSAI_FILTERS_IN, PNG) — для стилизации
+    let mine = std::env::var_os("GRAZYSAI_FILTERS_IN").map(|p| {
         let (iw, ih, rgba) = paint_core::io::load_png(std::path::Path::new(&p)).unwrap();
         let mut m = ColorMap::new();
         for (i, c) in rgba.as_chunks::<4>().0.iter().enumerate() {

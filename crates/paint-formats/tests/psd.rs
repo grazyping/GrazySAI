@@ -31,7 +31,7 @@ fn sample() -> Document {
 #[test]
 fn psd_round_trip_keeps_layers_and_picture() {
     let doc = sample();
-    let dir = std::env::temp_dir().join(format!("sosai-psd-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("grazysai-psd-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("проба.psd");
     paint_formats::psd::save(&doc, &path).unwrap();
@@ -86,7 +86,7 @@ fn reads_krita_psd_with_mask_and_16_bits() {
         assert_eq!((w, h), (doc.width, doc.height));
         let got = doc.flatten();
         // 16 бит у Krita по умолчанию — линейный профиль: цвета переводятся в sRGB, но слои Krita
-        // смешивает в линейном свете, а SOsai (как SAI) — в sRGB; поэтому для 16 бит сверяются
+        // смешивает в линейном свете, а GrazySAI (как SAI) — в sRGB; поэтому для 16 бит сверяются
         // точки вне полупрозрачного слоя top (8..48 × 8..38)
         let skip = |i: usize| bits == 16 && (8..48).contains(&(i / 4 % w as usize)) && (8..38).contains(&(i / 4 / w as usize));
         let worst = got.iter().zip(&want).enumerate().filter(|(i, _)| !skip(*i)).map(|(_, (a, b))| (*a as i32 - *b as i32).abs()).max().unwrap();

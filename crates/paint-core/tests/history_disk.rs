@@ -6,7 +6,7 @@ use paint_core::{BrushParams, Document, InputPoint, LiveStroke, Stroke};
 #[test]
 fn undo_from_disk_restores_every_step() {
     std::env::set_var("PAINT_HISTORY_RAM", "1");
-    let dir = std::env::temp_dir().join("SOsai-history").join(std::process::id().to_string());
+    let dir = std::env::temp_dir().join("GrazySAI-history").join(std::process::id().to_string());
     let mut doc = Document::new(300, 200);
     let mut shots = vec![doc.flatten()];
     for i in 0..10 {

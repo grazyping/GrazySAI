@@ -2327,7 +2327,7 @@ impl PaintApp {
     fn export_default(&self, ext: &str) -> PathBuf {
         match &self.file {
             Some(f) => f.with_extension(format!("export.{ext}")),
-            None => std::env::current_dir().unwrap_or_default().join(format!("sosai-export.{ext}")),
+            None => std::env::current_dir().unwrap_or_default().join(format!("grazysai-export.{ext}")),
         }
     }
 
@@ -4052,7 +4052,7 @@ impl PaintApp {
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.button(tr("SOsai на GitHub")).clicked() {
+                if ui.button(tr("GrazySAI на GitHub")).clicked() {
                     update::open_url(update::REPO);
                     ui.close_menu();
                 }
@@ -7280,10 +7280,10 @@ impl PaintApp {
         if self.show_about {
             let mut open = true;
             egui::Window::new(tr("О программе")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
-                ui.label(trf("SOsai {0} — редактор по образцу PaintTool SAI 2, личный проект.", &[&env!("CARGO_PKG_VERSION")]));
+                ui.label(trf("GrazySAI {0} — редактор по образцу PaintTool SAI 2, личный проект.", &[&env!("CARGO_PKG_VERSION")]));
                 ui.horizontal(|ui| {
                     ui.label(tr("Исходный код:"));
-                    if ui.link("github.com/grazyping/SOsai").clicked() {
+                    if ui.link("github.com/grazyping/GrazySAI").clicked() {
                         update::open_url(update::REPO);
                     }
                 });
@@ -7803,7 +7803,7 @@ impl eframe::App for PaintApp {
             ctx.request_repaint_after(Duration::from_millis(200));
         }
         let title = format!(
-            "SOsai {} — {}{}",
+            "GrazySAI {} — {}{}",
             env!("CARGO_PKG_VERSION"),
             self.file_name(),
             if self.dirty { " (*)" } else { "" }
@@ -7965,11 +7965,11 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1360.0, 900.0])
             .with_fullscreen(std::env::var_os("PAINT_FULLSCREEN").is_some())
-            .with_title("SOsai"),
+            .with_title("GrazySAI"),
         ..Default::default()
     };
     eframe::run_native(
-        "SOsai",
+        "GrazySAI",
         options,
         Box::new(move |cc| {
             sai_ui::apply_style(&cc.egui_ctx);

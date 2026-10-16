@@ -1,9 +1,9 @@
-//! Миниатюры `jssf` для проверки глазами (env-gated): SOSAI_JSSF_IN — файл `.sai2` (копия),
-//! SOSAI_JSSF_OUT — папка: `decoded.png` — его миниатюра нашим разбором; `ours.sai2` — тот же
-//! рисунок, сохранённый SOsai (с нашей миниатюрой).
+//! Миниатюры `jssf` для проверки глазами (env-gated): GRAZYSAI_JSSF_IN — файл `.sai2` (копия),
+//! GRAZYSAI_JSSF_OUT — папка: `decoded.png` — его миниатюра нашим разбором; `ours.sai2` — тот же
+//! рисунок, сохранённый GrazySAI (с нашей миниатюрой).
 #[test]
 fn jssf_to_png() {
-    let (Some(src), Some(dir)) = (std::env::var_os("SOSAI_JSSF_IN"), std::env::var_os("SOSAI_JSSF_OUT")) else { return };
+    let (Some(src), Some(dir)) = (std::env::var_os("GRAZYSAI_JSSF_IN"), std::env::var_os("GRAZYSAI_JSSF_OUT")) else { return };
     let dir = std::path::PathBuf::from(dir);
     let data = std::fs::read(&src).unwrap();
     let n = u32::from_le_bytes(data[0x20..0x24].try_into().unwrap()) as usize;
