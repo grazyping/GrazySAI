@@ -1,2 +1,8 @@
 /target
 /dist
+
+# фаззинг: наборы и находки (там могут быть рисунки пользователя)
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/target/
+fuzz-*.log

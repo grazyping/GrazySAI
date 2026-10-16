@@ -818,3 +818,4 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, com camadas)
 Выделено узлов: {0} = Pontos de controle selecionados: {0}
 Нет выделения = Sem seleção
 Отдельные панели = Painéis separados
+файл повреждён = o arquivo está danificado

@@ -199,9 +199,7 @@ pub fn save(doc: &Document, path: &Path) -> Res<()> {
     entries.extend(files);
     entries.push(("mergedimage.png".to_string(), paint_core::io::encode_png(doc.width, doc.height, &flat)?));
     entries.push(("Thumbnails/thumbnail.png".to_string(), paint_core::io::encode_png(tw, th, &thumb)?));
-    let tmp = path.with_extension("ora.tmp");
-    std::fs::write(&tmp, zip(&entries))?;
-    std::fs::rename(&tmp, path)?;
+    paint_core::io::write_atomic(path, &zip(&entries))?;
     Ok(())
 }
 
@@ -253,12 +251,14 @@ fn parse_xml(s: &str) -> Res<Node> {
             let key = a[..eq].trim().to_string();
             let after = a[eq + 1..].trim_start();
             let q = after.chars().next().ok_or("stack.xml: атрибут без значения")?;
-            let close = after[1..].find(q).ok_or("stack.xml: незакрытая кавычка")?;
-            node.attrs.push((key, unesc(&after[1..1 + close])));
-            a = &after[close + 2..];
+            // кавычка может оказаться многобайтной буквой (испорченный файл) — режем по её длине
+            let ql = q.len_utf8();
+            let close = after[ql..].find(q).ok_or("stack.xml: незакрытая кавычка")?;
+            node.attrs.push((key, unesc(&after[ql..ql + close])));
+            a = &after[ql + close + ql..];
         }
         if selfclose {
-            stack.last_mut().unwrap().children.push(node);
+            stack.last_mut().ok_or("stack.xml: лишний закрывающий тег")?.children.push(node);
         } else {
             stack.push(node);
         }

@@ -326,6 +326,15 @@ fn filter_result(f: &FilterDialog, w: u32, h: u32, color: Color32) -> paint_core
     }
 }
 
+/// Чтение файла: сбой разбора (испорченный файл) — ошибка, а не падение программы со всеми
+/// вкладками.
+fn read_guarded<T>(f: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>) -> Result<T, String> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(r) => r.map_err(|e| e.to_string()),
+        Err(_) => Err(String::from(tr("файл повреждён"))),
+    }
+}
+
 /// Открытый фильтр: настройки, слой и его исходные пиксели (для предпросмотра и отмены).
 /// Копия дешёвая (пиксели и выделение — общие): её считает фоновый поток предпросмотра.
 #[derive(Clone)]
@@ -2598,13 +2607,15 @@ app.open_canvas_dialog(d == "resolution")
         let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
         if ext == "psd" || ext == "ora" || paint_core::io::IMAGE_EXTS.contains(&ext.as_str()) {
             let started = Instant::now();
-            let loaded = if ext == "psd" {
-                paint_formats::psd::load(&path)
-            } else if ext == "ora" {
-                paint_formats::ora::load(&path)
-            } else {
-                paint_core::io::load_image(&path).map(|(w, h, rgba)| Document::from_rgba(w, h, &rgba))
-            };
+            let loaded = read_guarded(|| {
+                if ext == "psd" {
+                    paint_formats::psd::load(&path)
+                } else if ext == "ora" {
+                    paint_formats::ora::load(&path)
+                } else {
+                    paint_core::io::load_image(&path).map(|(w, h, rgba)| Document::from_rgba(w, h, &rgba))
+                }
+            });
             match loaded {
                 Ok(doc) => {
                     self.prepare_tab();
@@ -2629,7 +2640,7 @@ app.open_canvas_dialog(d == "resolution")
             return;
         }
         let started = Instant::now();
-        match paint_formats::sai2_doc::load(&path) {
+        match read_guarded(|| paint_formats::sai2_doc::load(&path).map_err(Into::into)) {
             Ok(loaded) => {
                 self.prepare_tab();
                 // кривые слоёв контура и фигур теперь сохраняются как были

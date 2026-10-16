@@ -9,7 +9,6 @@ use paint_core::blend::BlendMode;
 use paint_core::pixel::to_rgba8;
 use paint_core::tile::ColorMap;
 use paint_core::{Document, Layer};
-use std::io::Write;
 use std::path::Path;
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
@@ -301,9 +300,7 @@ pub fn save(doc: &Document, path: &Path) -> Res<()> {
     }
     out.extend(counts);
     out.extend(rows);
-    let tmp = path.with_extension("psd.tmp");
-    std::fs::File::create(&tmp)?.write_all(&out)?;
-    std::fs::rename(tmp, path)?;
+    paint_core::io::write_atomic(path, &out)?;
     Ok(())
 }
 
@@ -337,6 +334,11 @@ impl Reader<'_> {
 /// лежат в `counts`), 2 — ZIP, 3 — ZIP с предсказанием (разность соседних отсчётов в строке).
 fn unpack(comp: u16, body: &[u8], counts: &[usize], rows: usize, row_bytes: usize, depth: u16) -> Res<Vec<u8>> {
     let need = rows * row_bytes;
+    // данные не могут развернуться больше, чем позволяет сжатие (Deflate — до ~1032:1, PackBits —
+    // до 64:1): иначе файл испорчен, а память под заявленный размер — гигабайты
+    if need > body.len().saturating_mul(EXPAND_MAX).saturating_add(1 << 16) {
+        return Err("PSD: размер канала не сходится с данными".into());
+    }
     let mut out = match comp {
         0 => body.get(..need).ok_or("PSD: короткий канал")?.to_vec(),
         1 => {
@@ -454,6 +456,11 @@ fn from_rgba16(c: [u16; 4]) -> paint_core::pixel::Px {
 }
 
 /// Открыть PSD: RGB или оттенки серого, 8 или 16 бит; слои, папки, маски слоя.
+/// Наибольшая сторона документа и слоя PSD (спецификация Adobe; у PSB больше — не читаем).
+const MAX_SIDE: usize = 30_000;
+/// Во сколько раз данные канала могут развернуться при распаковке (Deflate — до ~1032:1).
+const EXPAND_MAX: usize = 1100;
+
 pub fn load(path: &Path) -> Res<Document> {
     let d = std::fs::read(path)?;
     let mut r = Reader { d: &d, p: 0 };
@@ -466,6 +473,10 @@ pub fn load(path: &Path) -> Res<Document> {
     let w = r.u32()? as usize;
     let depth = r.u16()?;
     let mode = r.u16()?;
+    // по спецификации PSD стороны — 1…30000; больше — испорченный файл (иначе гигабайты памяти)
+    if !(1..=MAX_SIDE).contains(&w) || !(1..=MAX_SIDE).contains(&h) {
+        return Err(format!("PSD: неверный размер {w}×{h}").into());
+    }
     if !matches!(depth, 8 | 16) || !matches!(mode, 1 | 3) {
         return Err(format!("PSD: поддерживаются RGB и оттенки серого по 8 и 16 бит (глубина {depth}, режим {mode})").into());
     }
@@ -550,7 +561,15 @@ pub fn load(path: &Path) -> Res<Document> {
             }
             for rec in recs {
                 let [top, left, bottom, right] = rec.rect;
-                let (lw, lh) = ((right - left).max(0) as usize, (bottom - top).max(0) as usize);
+                let (lw, lh) = ((right as i64 - left as i64).max(0) as usize, (bottom as i64 - top as i64).max(0) as usize);
+                if lw > MAX_SIDE || lh > MAX_SIDE {
+                    return Err(format!("PSD: неверный размер слоя {lw}×{lh}").into());
+                }
+                // каналы слоя (не маски) должны быть способны дать столько точек
+                let bytes = lw * lh * depth as usize / 8;
+                if rec.chans.iter().any(|&(id, len)| id >= -1 && bytes > len.saturating_mul(EXPAND_MAX).saturating_add(1 << 16)) {
+                    return Err("PSD: размер слоя не сходится с данными".into());
+                }
                 let mut alpha = vec![65535u16; lw * lh];
                 let mut color = [vec![0u16; lw * lh], vec![0u16; lw * lh], vec![0u16; lw * lh]];
                 let mut user_mask = None;
@@ -599,6 +618,9 @@ pub fn load(path: &Path) -> Res<Document> {
                         }
                     }
                     _ => {
+                        if alpha.len() < lw * lh || color.iter().any(|c| c.len() < lw * lh) {
+                            return Err("PSD: у слоя неполные каналы".into());
+                        }
                         for y in 0..lh {
                             for x in 0..lw {
                                 let i = y * lw + x;
@@ -610,7 +632,11 @@ pub fn load(path: &Path) -> Res<Document> {
                         }
                     }
                 }
-                let depth = stack.len().saturating_sub(1);
+                // лишний конец папки в испорченном файле — слои на верхний уровень
+                if stack.is_empty() {
+                    stack.push(Vec::new());
+                }
+                let depth = stack.len() - 1;
                 stack[depth].push(layer);
             }
         }
@@ -641,6 +667,10 @@ pub fn load(path: &Path) -> Res<Document> {
             all.chunks(w * h).take(channels.min(4)).map(|c| c.to_vec()).collect()
         };
         let (ci, ai) = if gray { ([0, 0, 0], 1) } else { ([0, 1, 2], 3) };
+        // все каналы цвета на месте и полные — иначе файл испорчен
+        if planes.len() <= ci[2] || planes.iter().any(|p| p.len() < w * h) {
+            return Err("PSD: в сведённой картинке не хватает каналов".into());
+        }
         let mut layer = Layer::new("Слой 1");
         for i in 0..w * h {
             let a = planes.get(ai).map_or(65535, |p| p[i]);

@@ -496,7 +496,5 @@ pub fn save(doc: &Document, path: &Path) -> io::Result<()> {
     }
     out.extend(toc);
     out.extend(data);
-    let tmp = path.with_extension("sai2.tmp");
-    std::fs::write(&tmp, out)?;
-    std::fs::rename(&tmp, path)
+    paint_core::io::write_atomic(path, &out)
 }

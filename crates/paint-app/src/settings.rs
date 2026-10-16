@@ -69,10 +69,7 @@ impl Settings {
             let _ = std::fs::create_dir_all(d);
         }
         let text: String = self.map.iter().map(|(k, v)| format!("{k}={v}\n")).collect();
-        let tmp = path.with_extension("tmp");
-        if std::fs::write(&tmp, text).is_ok() {
-            let _ = std::fs::rename(tmp, path);
-        }
+        let _ = paint_core::io::write_atomic(&path, text.as_bytes());
     }
 
     pub fn set(&mut self, key: &str, value: impl ToString) {

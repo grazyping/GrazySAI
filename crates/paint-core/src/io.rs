@@ -2,7 +2,36 @@
 
 use std::fs::File;
 use std::io::BufWriter;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Временный файл рядом с `path` (`имя.расширение.tmp`).
+fn tmp_path(path: &Path) -> PathBuf {
+    let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    name.push(".tmp");
+    path.with_file_name(name)
+}
+
+/// Подменить `path` готовым временным файлом: сначала данные — на диск (`sync_all`), потом
+/// переименование. Сбой или пропажа питания посреди записи оставляют прежний файл целым.
+pub fn replace_with(tmp: &Path, path: &Path) -> std::io::Result<()> {
+    File::open(tmp)?.sync_all()?;
+    std::fs::rename(tmp, path)?;
+    #[cfg(unix)]
+    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        // и сама запись о переименовании — тоже на диск
+        let _ = File::open(dir).and_then(|d| d.sync_all());
+    }
+    Ok(())
+}
+
+/// Записать файл целиком так, что прежний не пострадает при сбое (`replace_with`).
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = tmp_path(path);
+    std::fs::write(&tmp, bytes)?;
+    replace_with(&tmp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
+}
 
 pub fn save_png(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let mut enc = png::Encoder::new(BufWriter::new(File::create(path)?), width, height);
@@ -14,13 +43,19 @@ pub fn save_png(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Result<(),
 
 /// Прочитать PNG как RGBA по 8 бит (палитра и серый разворачиваются).
 pub fn load_png(path: &Path) -> Result<(u32, u32, Vec<u8>), Box<dyn std::error::Error>> {
-    let mut dec = png::Decoder::new(File::open(path)?);
-    dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let mut reader = dec.read_info()?;
-    let mut buf = vec![0; reader.output_buffer_size()];
-    let info = reader.next_frame(&mut buf)?;
-    buf.truncate(info.buffer_size());
-    Ok((info.width, info.height, expand(info.color_type, buf)?))
+    decode_png(&std::fs::read(path)?)
+}
+
+/// Буфер под картинку PNG — только если размер правдоподобен: не больше 2^29 точек и не больше,
+/// чем могут дать сжатые данные (Deflate — до ~1032:1). Иначе испорченный заголовок требует
+/// гигабайты (в Windows это сразу падение программы).
+fn png_buffer<R: std::io::Read>(reader: &png::Reader<R>, data_len: usize) -> Res<Vec<u8>> {
+    let info = reader.info();
+    let need = reader.output_buffer_size();
+    if info.width as u64 * info.height as u64 > 1 << 29 || need > data_len.saturating_mul(1100).saturating_add(1 << 16) {
+        return Err(format!("PNG: неверный размер {}×{}", info.width, info.height).into());
+    }
+    Ok(vec![0; need])
 }
 
 /// Прочитать JPEG как RGBA по 8 бит.
@@ -54,7 +89,18 @@ pub fn load_image(path: &Path) -> Res<Image> {
 
 /// Сохранить картинку по расширению: PNG, JPEG (92), BMP, TGA, TIFF, WebP (без потерь), QOI.
 pub fn save_image(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Res<()> {
-    match path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).as_deref() {
+    // пишется во временный файл, потом подменяет прежний (сбой не портит старый экспорт)
+    let tmp = tmp_path(path);
+    let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
+    let r = save_image_as(&tmp, ext.as_deref(), width, height, rgba).and_then(|_| Ok(replace_with(&tmp, path)?));
+    if r.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    r
+}
+
+fn save_image_as(path: &Path, ext: Option<&str>, width: u32, height: u32, rgba: &[u8]) -> Res<()> {
+    match ext {
         Some("jpg") | Some("jpeg") => save_jpeg(path, width, height, rgba, 92),
         Some("bmp") => Ok(std::fs::write(path, encode_bmp(width, height, rgba))?),
         Some("tga") => Ok(std::fs::write(path, encode_tga(width, height, rgba))?),
@@ -80,7 +126,7 @@ pub fn decode_png(data: &[u8]) -> Res<Image> {
     let mut dec = png::Decoder::new(std::io::Cursor::new(data));
     dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut reader = dec.read_info()?;
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let mut buf = png_buffer(&reader, data.len())?;
     let info = reader.next_frame(&mut buf)?;
     buf.truncate(info.buffer_size());
     Ok((info.width, info.height, expand(info.color_type, buf)?))
@@ -154,6 +200,10 @@ pub fn decode_bmp(d: &[u8]) -> Res<Image> {
         d.get(p..p + 3).map_or([0, 0, 0, 255], |c| [c[2], c[1], c[0], 255])
     };
     let row = (w * bpp as usize).div_ceil(32) * 4;
+    // все строки должны быть в файле — до того, как выделять память под картинку
+    if row.checked_mul(h).and_then(|n| n.checked_add(off)).is_none_or(|end| end > d.len()) {
+        return Err("BMP: обрезан".into());
+    }
     let mut out = vec![0u8; w * h * 4];
     let mut any_alpha = false;
     for y in 0..h {
@@ -205,6 +255,12 @@ pub fn decode_tga(d: &[u8]) -> Res<Image> {
         return Err(format!("TGA: такой вид не поддержан (вид {kind}, {bpp} бит)").into());
     }
     let bytes = bpp as usize / 8;
+    // данных должно хватать: без сжатия — на все точки, с RLE — пакет даёт не больше 128 точек
+    let body = d.len().saturating_sub(18 + idlen);
+    let enough = if kind >= 9 { w * h <= body.saturating_mul(128) } else { w * h * bytes <= body };
+    if !enough {
+        return Err("TGA: обрезан".into());
+    }
     let mut px = Vec::with_capacity(w * h * bytes);
     let mut i = 18 + idlen;
     if kind >= 9 {

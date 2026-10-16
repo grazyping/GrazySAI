@@ -140,6 +140,8 @@ unsafe impl Sync for Cols {}
 /// По столбцам: полосы по 16 столбцов копируются в непрерывный кусок, считаются, пишутся назад.
 fn blur_columns(buf: &mut [[f64; 4]], w: usize, h: usize, r: usize) {
     const B: usize = 16;
+    // от этого зависит безопасность записи по указателю ниже
+    assert!(buf.len() >= w * h, "blur_columns: буфер короче {w}×{h}");
     let bands = w.div_ceil(B);
     let ptr = Cols(buf.as_mut_ptr());
     let band = move |k: usize| {
@@ -159,6 +161,7 @@ fn blur_columns(buf: &mut [[f64; 4]], w: usize, h: usize, r: usize) {
         let mut out = vec![[0.0f64; 4]; h];
         for j in 0..bw {
             blur_line(&local[j * h..(j + 1) * h], &mut out, r);
+            // SAFETY: то же — столбец x0 + j этой полосы, индекс < w·h ≤ buf.len()
             unsafe {
                 for (y, v) in out.iter().enumerate() {
                     *p.0.add(y * w + x0 + j) = *v;

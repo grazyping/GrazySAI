@@ -130,7 +130,8 @@ pub fn check(state: &Shared, ctx: &eframe::egui::Context) {
 
 fn fetch_latest() -> Result<Release, String> {
     let mut c = tool("curl");
-    c.args(["-fsSL", "--max-time", "20", "-H", "Accept: application/vnd.github+json", API]);
+    // только HTTPS, и при перенаправлениях тоже
+    c.args(["-fsSL", "--proto", "=https", "--proto-redir", "=https", "--max-time", "20", "-H", "Accept: application/vnd.github+json", API]);
     let body = String::from_utf8_lossy(&run(c)?).into_owned();
     parse_release(&body).ok_or_else(|| "GitHub: unexpected answer".into())
 }
@@ -239,16 +240,21 @@ fn download_and_replace(rel: &Release) -> Result<(), String> {
     let _ = std::fs::remove_dir_all(&work);
     std::fs::create_dir_all(&work).map_err(|e| format!("{}: {e}", dir.display()))?;
     let r = (|| {
-        let archive = work.join(url.rsplit('/').next().unwrap_or("update"));
+        // архив — только из выпусков нашего репозитория и только с суммой SHA-256 от GitHub:
+        // без неё подлинность не проверить, и программа не подменяется
+        if !url.starts_with(&format!("{REPO}/releases/download/")) {
+            return Err(format!("unexpected download address: {url}"));
+        }
+        let want = digest.ok_or("GitHub gave no SHA-256 for the archive")?;
+        // имя файла — своё, не из ответа сервера
+        let archive = work.join(if cfg!(windows) { "update.zip" } else { "update.tar.gz" });
         let mut c = tool("curl");
-        c.args(["-fsSL", "--max-time", "600", "-o"]).arg(&archive).arg(&url);
+        c.args(["-fsSL", "--proto", "=https", "--proto-redir", "=https", "--max-time", "600", "-o"]).arg(&archive).arg(&url);
         run(c)?;
         let data = std::fs::read(&archive).map_err(|e| e.to_string())?;
-        if let Some(want) = digest {
-            let got = sha256_hex(&data);
-            if !got.eq_ignore_ascii_case(&want) {
-                return Err(format!("SHA-256 mismatch: {got}"));
-            }
+        let got = sha256_hex(&data);
+        if !got.eq_ignore_ascii_case(&want) {
+            return Err(format!("SHA-256 mismatch: {got}"));
         }
         let mut c = tool("tar");
         c.arg(if cfg!(windows) { "-xf" } else { "-xzf" }).arg(&archive).arg("-C").arg(&work);
@@ -399,5 +405,20 @@ mod tests {
         assert_eq!(r.asset, Some((format!("https://x/{n}"), Some("abc".into()))));
         assert_eq!(notes_for(&r.notes, "en"), "- \"New\" — thing");
         assert_eq!(notes_for(&r.notes, "ru"), "- Новое");
+    }
+
+    /// Настоящее обновление с GitHub во временный файл (сеть): адрес, SHA-256, распаковка, подмена.
+    #[test]
+    #[ignore]
+    fn real_update_downloads_and_verifies() {
+        let dir = std::env::temp_dir().join(format!("grazysai-upd-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join(exe_name());
+        std::fs::write(&target, b"old").unwrap();
+        std::env::set_var("PAINT_UPDATE_EXE", &target);
+        let rel = fetch_latest().expect("последний выпуск");
+        download_and_replace(&rel).expect("обновление");
+        assert!(std::fs::metadata(&target).unwrap().len() > 1_000_000, "подменён настоящей программой");
+        std::fs::remove_dir_all(dir).ok();
     }
 }

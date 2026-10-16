@@ -1,0 +1,49 @@
+# Фаззинг чтения файлов (cargo-fuzz, libFuzzer): `cargo +nightly fuzz run sai2 corpus/sai2`.
+# Отдельное рабочее пространство — в выпуск не входит.
+[package]
+name = "paint-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+paint-core = { path = "../crates/paint-core" }
+paint-formats = { path = "../crates/paint-formats" }
+
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "sai2"
+path = "fuzz_targets/sai2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "psd"
+path = "fuzz_targets/psd.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ora"
+path = "fuzz_targets/ora.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "image"
+path = "fuzz_targets/image.rs"
+test = false
+doc = false
+bench = false

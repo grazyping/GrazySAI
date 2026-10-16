@@ -124,7 +124,8 @@ impl FileViewer {
                     let job = q.lock().unwrap().pop_front();
                     match job {
                         Some((p, mtime, size)) => {
-                            let img = load_thumb(&p, mtime, size);
+                            // битый файл не должен останавливать поток: у него просто нет миниатюры
+                            let img = std::panic::catch_unwind(|| load_thumb(&p, mtime, size)).ok().flatten();
                             if tx.send((p, img)).is_err() {
                                 break;
                             }

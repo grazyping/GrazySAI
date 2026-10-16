@@ -177,6 +177,11 @@ pub fn read_info(path: &Path) -> io::Result<Sai2Info> {
         let next = offsets.iter().copied().find(|&o| o > e.offset).unwrap_or(size);
         e.len = next - e.offset;
     }
+    // размер холста: испорченный заголовок не должен заставлять выделять гигабайты
+    let (w, h) = (u32_at(&head, 0x14)? as u64, u32_at(&head, 0x18)? as u64);
+    if !(1..=100_000).contains(&w) || !(1..=100_000).contains(&h) || w * h > 1 << 29 {
+        return Err(bad("неверный размер холста"));
+    }
     let mut layers = Vec::new();
     for e in entries.iter().filter(|e| &e.tag == b"layr") {
         if e.len > 1 << 20 {

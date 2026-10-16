@@ -63,11 +63,19 @@ pub fn coverage(polys: &[Vec<Pt>]) -> (i32, i32, usize, usize, Vec<f32>) {
         x1 = x1.max(p[0]);
         y1 = y1.max(p[1]);
     }
-    if x0 > x1 {
+    if x0 > x1 || !(x0.is_finite() && y0.is_finite() && x1.is_finite() && y1.is_finite()) {
         return (0, 0, 0, 0, Vec::new());
     }
-    let (left, top) = (x0.floor() as i32, y0.floor() as i32);
-    let (w, h) = ((x1.ceil() as i32 - left).max(1) as usize, (y1.ceil() as i32 - top).max(1) as usize);
+    // считается только там, где может быть холст (стороны до 100 000 px, с запасом): испорченная
+    // фигура в миллионы пикселей иначе требует сотни гигабайт
+    const LO: f64 = -4096.0;
+    const HI: f64 = 104_096.0;
+    let (left, top) = (x0.clamp(LO, HI).floor() as i32, y0.clamp(LO, HI).floor() as i32);
+    let (right, bottom) = (x1.clamp(LO, HI).ceil() as i32, y1.clamp(LO, HI).ceil() as i32);
+    let (w, h) = ((right - left).max(1) as usize, (bottom - top).max(1) as usize);
+    if w * h > 1 << 29 {
+        return (0, 0, 0, 0, Vec::new());
+    }
     let mut cov = vec![0f32; w * h];
     let mut cross: Vec<(f64, i32)> = Vec::new();
     for row in 0..h {
@@ -217,6 +225,9 @@ pub fn pressure_at(knots: &[Knot], at: f64) -> f64 {
     (u * u * u * a.value + 3.0 * u * u * t * p1 + 3.0 * u * t * t * p2 + t * t * t * b.value).max(0.0)
 }
 
+/// Больше точек на путь не бывает у настоящих рисунков (1 млн px длины при шаге 0,25).
+const MAX_SAMPLES: f64 = 4_000_000.0;
+
 /// Точки вдоль пути через `step` px длины дуги с нажимом. `pressure_points[i]` — точки нажима
 /// отрезка i: (доля длины дуги отрезка, значение); `weights[i]` — нажим узла i.
 pub fn sample_path(nodes: &[Node], closed: bool, weights: &[f64], pressure_points: &[Vec<(f64, f64)>], step: f64) -> Vec<(Pt, f64)> {
@@ -239,6 +250,11 @@ pub fn sample_path(nodes: &[Node], closed: bool, weights: &[f64], pressure_point
         }
     }
     seg_start.push(s);
+    // испорченный путь (координаты не числа или кривая в миллионы пикселей) — не рисуется:
+    // иначе миллиарды точек и вся память
+    if !s.is_finite() || s / step.max(1e-6) > MAX_SAMPLES {
+        return Vec::new();
+    }
     let mut knots = Vec::new();
     for (i, w) in weights.iter().enumerate().take(seg_start.len()) {
         knots.push(Knot { at: seg_start[i], value: *w });

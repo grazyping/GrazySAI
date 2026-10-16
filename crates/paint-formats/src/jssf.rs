@@ -256,7 +256,9 @@ pub fn thumbnail(rgba: &[u8], w: u32, h: u32, level: u32) -> (u32, u32, Vec<u8>)
 pub fn decode(data: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
     let u16_at = |i: usize| data.get(i..i + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
     let (w, h, nc) = (u16_at(0)? as usize, u16_at(2)? as usize, u16_at(4)?);
-    if nc != 3 || w == 0 || h == 0 {
+    // миниатюры SAI — сотни точек; больше 8192 или больше, чем могут дать данные (у блока 8×8
+    // трёх каналов — хотя бы несколько бит), — испорченный поток, а память — гигабайты
+    if nc != 3 || w == 0 || h == 0 || w > 8192 || h > 8192 || w.div_ceil(8) * h.div_ceil(8) > data.len() * 2 {
         return None;
     }
     let mut q = [[0f32; 64]; 2];
