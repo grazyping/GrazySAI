@@ -242,7 +242,7 @@ fn dirs(kind: &str) -> Vec<PathBuf> {
             out.push(parent.join(kind));
         }
     }
-    // прежнее имя переменной (до 0.8.41) тоже понимается
+    // прежнее имя переменной (до 0.8.42) тоже понимается
     if let Some(d) = std::env::var_os("GRAZYSAI_PAPERTEX").or_else(|| std::env::var_os(concat!("SO", "SAI_PAPERTEX"))) {
         let d = PathBuf::from(d);
         if kind == "papertex" {

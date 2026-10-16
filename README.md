@@ -2,8 +2,8 @@
 
 **English** | [Русский](README.ru.md)
 
-A painting program in Rust modelled on PaintTool SAI 2 — a personal project. Version 0.8.41.
-Formerly called **SOsai** (renamed in 0.8.41; older versions update to GrazySAI by themselves).
+A painting program in Rust modelled on PaintTool SAI 2 — a personal project. Version 0.8.42.
+Formerly called **SOsai** (renamed in 0.8.42; older versions update to GrazySAI by themselves).
 How to use it is in the [manual](docs/manual.en.md); what is done and what comes next is in
 [ROADMAP.en.md](ROADMAP.en.md) and on the [Milestones](https://github.com/grazyping/GrazySAI/milestones)
 tab; ready builds are under Releases. Linux and Windows, tablet pen (XPPen Artist 24 Pro),

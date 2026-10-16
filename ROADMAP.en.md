@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.40)
+### 0.8 — linework and shapes (current version 0.8.42)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -135,7 +135,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 
 - [x] Layer panel buttons “New Linework Layer” and “Perspective Ruler” work (they were placeholders) (0.8.40)
 - [x] Brush size grid — SAI 2017's whole table, up to 5000 (0.8.40)
-- [ ] New name — **GrazySAI** (GrazySAI is taken on GitHub); old versions still find the update at the old address
+- [x] New name — **GrazySAI** (the name SOsai is taken on GitHub); old versions still find the update at the old address (0.8.42)
 - [ ] More save and export formats (as in similar programs)
 - [ ] Icons for new menu items and windows; layout checked in every language
 - [ ] More right on the canvas and panels, fewer extra windows: text is typed straight on the canvas as in SAI; tools get their useful buttons on the panel (after Krita, GIMP and others), keeping SAI's look

@@ -25,7 +25,7 @@ cp ../../target/x86_64-pc-windows-gnullvm/release/GrazySAI.exe GrazySAI-$V-windo
 rm -f GrazySAI-$V-*.tar.gz GrazySAI-$V-*.zip
 tar czf GrazySAI-$V-linux-x86_64.tar.gz GrazySAI-$V-linux-x86_64
 zip -qr GrazySAI-$V-windows-x86_64.zip GrazySAI-$V-windows-x86_64
-# переход со старого имени: версии до 0.8.41 (SOsai) ищут архив SOsai-…, в нём папку SOsai-…
+# переход со старого имени: версии до 0.8.42 (SOsai) ищут архив SOsai-…, в нём папку SOsai-…
 # и файл SOsai(.exe) — кладём туда новую программу под старым именем
 for os in linux windows; do
   o=SOsai-$V-$os-x86_64; rm -rf $o; cp -r GrazySAI-$V-$os-x86_64 $o

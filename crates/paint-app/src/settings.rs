@@ -33,7 +33,7 @@ pub fn dir() -> Option<PathBuf> {
     };
     let base = base?;
     let dir = base.join("GrazySAI");
-    // до 0.8.41 программа звалась SOsai: её папка (настройки, недавние файлы, копии для
+    // до 0.8.42 программа звалась SOsai: её папка (настройки, недавние файлы, копии для
     // восстановления) переезжает под новое имя один раз; не вышло переименовать — берётся старая
     let old = base.join(concat!("SO", "sai"));
     if !dir.exists() && old.is_dir() && std::fs::rename(&old, &dir).is_err() {
