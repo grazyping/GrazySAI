@@ -616,3 +616,26 @@ S-кривая = Courbe en S
 Форма бликов: = Forme des reflets :
 {0} угла = {0} côtés
 Яркость бликов: = Intensité des reflets :
+
+# Фильтры «Искажение» (0.8.35)
+Искажение = Déformation
+Щипок… = Pincement…
+Рябь… = Ondulation…
+Рыбий глаз… = Fisheye…
+Полярные координаты… = Coordonnées polaires…
+Волна… = Onde…
+Скручивание… = Tourbillon…
+Щипок = Pincement
+Рябь = Ondulation
+Рыбий глаз = Fisheye
+Полярные координаты = Coordonnées polaires
+Волна = Onde
+Скручивание = Tourbillon
+Середина X: = Centre X :
+Середина Y: = Centre Y :
+Размах: = Amplitude :
+Длина волны: = Longueur d'onde :
+Форма: = Forme :
+Синус = Sinus
+Прямоугольные → полярные = Rectangulaires → polaires
+Полярные → прямоугольные = Polaires → rectangulaires

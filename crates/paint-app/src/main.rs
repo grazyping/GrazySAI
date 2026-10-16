@@ -197,6 +197,8 @@ enum FilterKind {
     Spin,
     Smoothing,
     Lens,
+    /// «Искажение» как в CSP.
+    Distort(paint_core::filters::DistortKind),
 }
 
 /// Открытый фильтр: настройки, слой и его исходные пиксели (для предпросмотра и отмены).
@@ -234,6 +236,8 @@ struct FilterDialog {
     lens_radius: f64,
     lens_sides: u32,
     lens_highlight: f64,
+    /// Искажение: середина, радиус, сила, волна, полярный режим.
+    distort: paint_core::filters::Distort,
     preview: bool,
     path: Vec<usize>,
     original: paint_core::tile::ColorMap,
@@ -2938,6 +2942,16 @@ impl PaintApp {
             lens_radius: 10.0,
             lens_sides: 0,
             lens_highlight: 0.3,
+            distort: {
+                use paint_core::filters::DistortKind as D;
+                let (w, h) = (self.doc.width as f64, self.doc.height as f64);
+                let k = if let FilterKind::Distort(k) = kind { k } else { D::Pinch };
+                let amount = match k {
+                    D::Twirl => 90.0,
+                    _ => 0.5,
+                };
+                paint_core::filters::Distort { kind: k, center: (w / 2.0, h / 2.0), radius: w.min(h) * 0.4, amount, amplitude: 10.0, wavelength: 40.0, angle: 0.0, shape: 0, to_polar: true }
+            },
             preview: true,
             path: self.selected.clone(),
             original: layer.pixels.clone(),
@@ -2998,6 +3012,7 @@ impl PaintApp {
             }
             FilterKind::Smoothing => paint_core::filters::smoothing(&f.original, self.doc.width, self.doc.height, &amount),
             FilterKind::Lens => paint_core::filters::lens_blur(&f.original, self.doc.width, self.doc.height, f.lens_radius, f.lens_sides, f.lens_highlight, &amount),
+            FilterKind::Distort(_) => paint_core::filters::distort(&f.original, self.doc.width, self.doc.height, &f.distort, &amount),
         }
     }
 
@@ -3721,6 +3736,22 @@ impl PaintApp {
                     ] {
                         if ui.button(tr(item)).clicked() {
                             self.open_filter(kind);
+                            ui.close_menu();
+                        }
+                    }
+                });
+                ui.menu_button(tr("Искажение"), |ui| {
+                    use paint_core::filters::DistortKind as D;
+                    for (item, kind) in [
+                        ("Щипок…", D::Pinch),
+                        ("Рябь…", D::Ripple),
+                        ("Рыбий глаз…", D::Fisheye),
+                        ("Полярные координаты…", D::Polar),
+                        ("Волна…", D::Wave),
+                        ("Скручивание…", D::Twirl),
+                    ] {
+                        if ui.button(tr(item)).clicked() {
+                            self.open_filter(FilterKind::Distort(kind));
                             ui.close_menu();
                         }
                     }
@@ -6515,6 +6546,17 @@ impl PaintApp {
                 FilterKind::Spin => tr("Размытие вращением"),
                 FilterKind::Smoothing => tr("Сглаживание краёв"),
                 FilterKind::Lens => tr("Размытие линзы"),
+                FilterKind::Distort(k) => {
+                    use paint_core::filters::DistortKind as D;
+                    tr(match k {
+                        D::Pinch => "Щипок",
+                        D::Ripple => "Рябь",
+                        D::Fisheye => "Рыбий глаз",
+                        D::Polar => "Полярные координаты",
+                        D::Wave => "Волна",
+                        D::Twirl => "Скручивание",
+                    })
+                }
             };
             let mut open = true;
             egui::Window::new(title).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
@@ -6593,6 +6635,65 @@ impl PaintApp {
                                 }
                             });
                             ui.end_row();
+                        }
+                        FilterKind::Distort(k) => {
+                            use paint_core::filters::DistortKind as D;
+                            let (w, h) = (self.doc.width as f64, self.doc.height as f64);
+                            let d = &mut f.distort;
+                            if k != D::Wave {
+                                ui.label(tr("Середина X:"));
+                                ch |= ui.add(egui::Slider::new(&mut d.center.0, 0.0..=w).suffix(" px")).changed();
+                                ui.end_row();
+                                ui.label(tr("Середина Y:"));
+                                ch |= ui.add(egui::Slider::new(&mut d.center.1, 0.0..=h).suffix(" px")).changed();
+                                ui.end_row();
+                            }
+                            if !matches!(k, D::Wave | D::Polar) {
+                                ui.label(tr("Радиус:"));
+                                ch |= ui.add(egui::Slider::new(&mut d.radius, 1.0..=w.max(h)).suffix(" px")).changed();
+                                ui.end_row();
+                            }
+                            match k {
+                                D::Pinch | D::Fisheye => {
+                                    ui.label(tr("Сила:"));
+                                    let lo = if k == D::Pinch { -1.0 } else { 0.0 };
+                                    ch |= ui.add(egui::Slider::new(&mut d.amount, lo..=if k == D::Pinch { 1.0 } else { 0.95 })).changed();
+                                    ui.end_row();
+                                }
+                                D::Twirl => {
+                                    ui.label(tr("Угол:"));
+                                    ch |= ui.add(egui::Slider::new(&mut d.amount, -720.0..=720.0).suffix("°")).changed();
+                                    ui.end_row();
+                                }
+                                D::Ripple | D::Wave => {
+                                    ui.label(tr("Размах:"));
+                                    ch |= ui.add(egui::Slider::new(&mut d.amplitude, 0.0..=100.0).suffix(" px")).changed();
+                                    ui.end_row();
+                                    ui.label(tr("Длина волны:"));
+                                    ch |= ui.add(egui::Slider::new(&mut d.wavelength, 2.0..=400.0).suffix(" px")).changed();
+                                    ui.end_row();
+                                    if k == D::Wave {
+                                        ui.label(tr("Угол:"));
+                                        ch |= ui.add(egui::Slider::new(&mut d.angle, 0.0..=360.0).suffix("°")).changed();
+                                        ui.end_row();
+                                        ui.label(tr("Форма:"));
+                                        ui.horizontal(|ui| {
+                                            for (i, n) in [tr("Синус"), tr("Треугольник"), tr("Прямоугольник")].iter().enumerate() {
+                                                ch |= ui.radio_value(&mut d.shape, i as u8, *n).changed();
+                                            }
+                                        });
+                                        ui.end_row();
+                                    }
+                                }
+                                D::Polar => {
+                                    ui.label(tr("Режим:"));
+                                    ui.vertical(|ui| {
+                                        ch |= ui.radio_value(&mut d.to_polar, true, tr("Прямоугольные → полярные")).changed();
+                                        ch |= ui.radio_value(&mut d.to_polar, false, tr("Полярные → прямоугольные")).changed();
+                                    });
+                                    ui.end_row();
+                                }
+                            }
                         }
                         FilterKind::Lens => {
                             ui.label(tr("Радиус:"));

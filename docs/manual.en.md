@@ -285,6 +285,8 @@ The “Filter” menu; with a selection the filter acts only on the selected par
   1–20 px) in the Correction submenu.
 - Effect: chromatic aberration, noise, mosaic, crystallize, retro film; Render: Perlin noise (the
   pattern replaces the layer content).
+- Distort: Pinch, Ripple, Fish-eye Lens, Polar Coordinates, Wave, Twirl; the center and radius are
+  set with sliders.
 
 Changes show on the canvas at once. OK applies, “Cancel” reverts.
 

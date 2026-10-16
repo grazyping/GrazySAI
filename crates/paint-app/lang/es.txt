@@ -616,3 +616,26 @@ S-кривая = Curva en S
 Форма бликов: = Forma de los brillos:
 {0} угла = {0} lados
 Яркость бликов: = Intensidad de los brillos:
+
+# Фильтры «Искажение» (0.8.35)
+Искажение = Distorsionar
+Щипок… = Pellizcar…
+Рябь… = Rizo…
+Рыбий глаз… = Ojo de pez…
+Полярные координаты… = Coordenadas polares…
+Волна… = Onda…
+Скручивание… = Remolino…
+Щипок = Pellizcar
+Рябь = Rizo
+Рыбий глаз = Ojo de pez
+Полярные координаты = Coordenadas polares
+Волна = Onda
+Скручивание = Remolino
+Середина X: = Centro X:
+Середина Y: = Centro Y:
+Размах: = Amplitud:
+Длина волны: = Longitud de onda:
+Форма: = Forma:
+Синус = Seno
+Прямоугольные → полярные = Rectangulares → polares
+Полярные → прямоугольные = Polares → rectangulares

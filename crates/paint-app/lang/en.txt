@@ -617,3 +617,26 @@ S-кривая = S-Curve Gradation
 Форма бликов: = Highlight shape:
 {0} угла = {0} sides
 Яркость бликов: = Highlight intensity:
+
+# Фильтры «Искажение» (0.8.35)
+Искажение = Distort
+Щипок… = Pinch…
+Рябь… = Ripple…
+Рыбий глаз… = Fish-eye Lens…
+Полярные координаты… = Polar Coordinates…
+Волна… = Wave…
+Скручивание… = Twirl…
+Щипок = Pinch
+Рябь = Ripple
+Рыбий глаз = Fish-eye Lens
+Полярные координаты = Polar Coordinates
+Волна = Wave
+Скручивание = Twirl
+Середина X: = Center X:
+Середина Y: = Center Y:
+Размах: = Amplitude:
+Длина волны: = Wavelength:
+Форма: = Shape:
+Синус = Sine
+Прямоугольные → полярные = Rectangular → polar
+Полярные → прямоугольные = Polar → rectangular

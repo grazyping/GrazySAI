@@ -138,7 +138,7 @@ A Filter menu with CSP's submenus; windows with a preview, like our current filt
 - [x] (0.8.34) Blur filters: average, blur and strong blur, motion, radial, spin, smoothing, lens blur (bokeh)
 - [x] Sharpen filters: sharpen, sharpen more, unsharp mask (0.8.33)
 - [x] Effect filters: chromatic aberration, noise, mosaic, crystallize, retro film (0.8.33)
-- [ ] Distort filters: pinch, ripple, fish-eye lens, polar coordinates, wave, twirl
+- [x] (0.8.35) Distort filters: pinch, ripple, fish-eye lens, polar coordinates, wave, twirl
 - [x] Render filter: Perlin noise (0.8.33)
 - [x] Correction filters: remove dust, adjust line width (0.8.33)
 - [ ] Stylizing filters “Pencil drawing” and “Artistic” (our own take — CSP's method is closed)

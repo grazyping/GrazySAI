@@ -616,3 +616,26 @@ S-кривая = S-Kurve
 Форма бликов: = Glanzlichtform:
 {0} угла = {0} Ecken
 Яркость бликов: = Glanzlichtstärke:
+
+# Фильтры «Искажение» (0.8.35)
+Искажение = Verzerren
+Щипок… = Zusammenziehen…
+Рябь… = Kräuseln…
+Рыбий глаз… = Fischauge…
+Полярные координаты… = Polarkoordinaten…
+Волна… = Welle…
+Скручивание… = Strudel…
+Щипок = Zusammenziehen
+Рябь = Kräuseln
+Рыбий глаз = Fischauge
+Полярные координаты = Polarkoordinaten
+Волна = Welle
+Скручивание = Strudel
+Середина X: = Mitte X:
+Середина Y: = Mitte Y:
+Размах: = Amplitude:
+Длина волны: = Wellenlänge:
+Форма: = Form:
+Синус = Sinus
+Прямоугольные → полярные = Rechteckig → polar
+Полярные → прямоугольные = Polar → rechteckig

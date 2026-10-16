@@ -767,7 +767,19 @@ fn sample(src: &ColorMap, x: f64, y: f64) -> [f64; 4] {
 fn per_pixel(src: &ColorMap, b: (i32, i32, i32, i32), sel: &(dyn Fn(i32, i32) -> u32 + Sync), f: &(dyn Fn(i32, i32) -> [f64; 4] + Sync)) -> ColorMap {
     let (x0, y0, x1, y1) = b;
     let bw = (x1 - x0) as usize;
-    let res: Vec<[f64; 4]> = (0..bw * (y1 - y0) as usize).map(|i| f(x0 + (i % bw) as i32, y0 + (i / bw) as i32)).collect();
+    let mut res = vec![[0f64; 4]; bw * (y1 - y0) as usize];
+    let parts = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let chunk = res.len().div_ceil(parts).max(1);
+    std::thread::scope(|scope| {
+        for (k, part) in res.chunks_mut(chunk).enumerate() {
+            scope.spawn(move || {
+                for (j, o) in part.iter_mut().enumerate() {
+                    let i = k * chunk + j;
+                    *o = f(x0 + (i % bw) as i32, y0 + (i / bw) as i32);
+                }
+            });
+        }
+    });
     write_back(src, x0, y0, bw, &res, sel)
 }
 
@@ -1258,6 +1270,154 @@ pub fn lens_blur(src: &ColorMap, w: u32, h: u32, radius: f64, sides: u32, highli
         })
         .collect();
     write_back(src, x0, y0, bw, &res, sel)
+}
+
+/// Вид искажения (подменю «Искажение» как в Clip Studio Paint).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DistortKind {
+    Pinch,
+    Ripple,
+    Fisheye,
+    Polar,
+    Wave,
+    Twirl,
+}
+
+/// Настройки искажения.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Distort {
+    pub kind: DistortKind,
+    /// Середина (точки холста) и радиус действия (px): щипок, рябь, «рыбий глаз», скручивание;
+    /// у полярных координат — только середина.
+    pub center: (f64, f64),
+    pub radius: f64,
+    /// Щипок −1…1 (плюс — к середине), «рыбий глаз» 0…1, скручивание — угол в градусах.
+    pub amount: f64,
+    /// Рябь и волна: размах и длина волны (px); волна: угол сдвига (градусы) и форма
+    /// (0 — синус, 1 — треугольник, 2 — прямоугольник).
+    pub amplitude: f64,
+    pub wavelength: f64,
+    pub angle: f64,
+    pub shape: u8,
+    /// Полярные координаты: из прямоугольных в полярные (`true`) или обратно.
+    pub to_polar: bool,
+}
+
+/// Откуда взять точку `(px, py)` после искажения; `None` — точка не сдвигается.
+fn distort_source(d: &Distort, w: u32, h: u32, px: f64, py: f64) -> Option<(f64, f64)> {
+    use std::f64::consts::{FRAC_PI_2, TAU};
+    let (cx, cy) = d.center;
+    let (dx, dy) = (px - cx, py - cy);
+    let r = dx.hypot(dy);
+    let t = r / d.radius.max(1.0);
+    let scaled = |k: f64| Some((cx + dx * k, cy + dy * k));
+    let local = t < 1.0 && r > 0.0;
+    match d.kind {
+        // щипок: множитель sin(π/2·t)^(−a) — на краю круга 1, к середине растёт (сжатие) или падает
+        DistortKind::Pinch if local => scaled((t * FRAC_PI_2).sin().powf(-0.75 * d.amount.clamp(-1.0, 1.0))),
+        // «рыбий глаз»: r' = r·(1 − s + s·t²) — середина увеличена в 1/(1 − s) раз
+        DistortKind::Fisheye if local => {
+            let s = d.amount.clamp(0.0, 0.95);
+            scaled(1.0 - s + s * t * t)
+        }
+        // скручивание: поворот на угол·(1 − t)², к краю круга сходит на нет
+        DistortKind::Twirl if local => {
+            let (sn, cs) = (-d.amount.to_radians() * (1.0 - t) * (1.0 - t)).sin_cos();
+            Some((cx + dx * cs - dy * sn, cy + dx * sn + dy * cs))
+        }
+        // рябь: сдвиг вдоль луча на размах·sin(2πr/λ); затухает к краю круга и в первые
+        // полволны у середины (иначе середина выворачивается)
+        DistortKind::Ripple if local => {
+            let lam = d.wavelength.max(1.0);
+            scaled((r + d.amplitude * (TAU * r / lam).sin() * (1.0 - t) * (2.0 * r / lam).min(1.0)) / r)
+        }
+        DistortKind::Wave => {
+            let (sn, cs) = d.angle.to_radians().sin_cos();
+            let q = (-px * sn + py * cs) / d.wavelength.max(1.0);
+            let f = match d.shape {
+                1 => 4.0 * ((q - 0.25).rem_euclid(1.0) - 0.5).abs() - 1.0,
+                2 => {
+                    if q.rem_euclid(1.0) < 0.5 {
+                        1.0
+                    } else {
+                        -1.0
+                    }
+                }
+                _ => (TAU * q).sin(),
+            };
+            Some((px - cs * d.amplitude * f, py - sn * d.amplitude * f))
+        }
+        // полярные: верх прямоугольника — середина круга, ширина — оборот по часовой от 12 часов;
+        // радиус круга — половина меньшей стороны холста
+        DistortKind::Polar => {
+            let rm = w.min(h) as f64 / 2.0;
+            if d.to_polar {
+                let turn = (dx.atan2(-dy) / TAU).rem_euclid(1.0);
+                Some((turn * w as f64, r / rm * h as f64))
+            } else {
+                let (sn, cs) = (px / w as f64 * TAU).sin_cos();
+                let rr = py / h as f64 * rm;
+                Some((cx + rr * sn, cy - rr * cs))
+            }
+        }
+        _ => None,
+    }
+}
+
+/// «Искажение»: каждая точка холста берётся из места, которое даёт `distort_source`
+/// (двулинейно; за краем холста — край).
+pub fn distort(src: &ColorMap, w: u32, h: u32, d: &Distort, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    if crate::selection::content_bounds(src).is_none() {
+        return src.clone();
+    }
+    let k = 1.0 / ONE as f64;
+    per_pixel(src, (0, 0, w as i32, h as i32), sel, &|x, y| {
+        let (px, py) = (x as f64 + 0.5, y as f64 + 0.5);
+        match distort_source(d, w, h, px, py) {
+            Some((sx, sy)) => sample(src, sx.clamp(0.5, w as f64 - 0.5), sy.clamp(0.5, h as f64 - 0.5)),
+            None => src.get(x, y).map(|c| c as f64 * k),
+        }
+    })
+}
+
+#[cfg(test)]
+mod distort_tests {
+    use super::*;
+    use crate::pixel::{from_rgba8, to_rgba8};
+
+    #[test]
+    fn distortions_move_points_and_keep_identity_at_zero() {
+        let all = |_: i32, _: i32| ONE;
+        let mut m = ColorMap::new();
+        for y in 0..100 {
+            for x in 0..100 {
+                m.set(x, y, from_rgba8([(x * 2) as u8, (y * 2) as u8, 100, 255]));
+            }
+        }
+        let base = Distort { kind: DistortKind::Pinch, center: (50.0, 50.0), radius: 40.0, amount: 0.0, amplitude: 0.0, wavelength: 20.0, angle: 0.0, shape: 0, to_polar: true };
+        let px = |c: &ColorMap, x, y| to_rgba8(c.get(x, y));
+        let close = |a: [u8; 4], b: [u8; 4], tol: i32| a.iter().zip(b).all(|(p, q)| (*p as i32 - q as i32).abs() <= tol);
+        // нулевая сила — ничего не меняется
+        for kind in [DistortKind::Pinch, DistortKind::Fisheye, DistortKind::Twirl, DistortKind::Ripple, DistortKind::Wave] {
+            let out = distort(&m, 100, 100, &Distort { kind, ..base }, &all);
+            assert!(close(px(&out, 37, 61), px(&m, 37, 61), 1), "{kind:?}");
+        }
+        // щипок к середине: точка в круге берёт цвет дальше от середины; вне круга — без изменений
+        let p = distort(&m, 100, 100, &Distort { amount: 1.0, ..base }, &all);
+        assert!(px(&p, 60, 50)[0] > px(&m, 60, 50)[0] + 4);
+        assert_eq!(px(&p, 95, 5), px(&m, 95, 5));
+        // «рыбий глаз» увеличивает середину: цвет ближе к середине
+        let f = distort(&m, 100, 100, &Distort { kind: DistortKind::Fisheye, amount: 0.5, ..base }, &all);
+        assert!(px(&f, 70, 50)[0] < px(&m, 70, 50)[0] - 4);
+        // волна вдоль x: сдвиг по x меняется с y
+        let wv = distort(&m, 100, 100, &Distort { kind: DistortKind::Wave, amplitude: 5.0, ..base }, &all);
+        assert_ne!(px(&wv, 50, 5)[0], px(&m, 50, 5)[0]);
+        assert_eq!(px(&wv, 50, 5)[1], px(&m, 50, 5)[1]);
+        // полярные туда и обратно — почти исходное (вдали от середины круга)
+        let pol = distort(&m, 100, 100, &Distort { kind: DistortKind::Polar, ..base }, &all);
+        let back = distort(&pol, 100, 100, &Distort { kind: DistortKind::Polar, to_polar: false, ..base }, &all);
+        assert!(close(px(&back, 50, 30), px(&m, 50, 30), 8), "{:?} {:?}", px(&back, 50, 30), px(&m, 50, 30));
+    }
 }
 
 #[cfg(test)]
