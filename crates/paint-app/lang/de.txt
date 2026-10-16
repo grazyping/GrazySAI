@@ -685,3 +685,46 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, mit Ebenen)
 Слой: = Ebene:
 Снять = Aufheben
 Только текущий слой = Nur aktuelle Ebene
+
+# Команды SAI: виды, слои, клавиши (0.8.48)
+Выбрать слой выше = Ebene darüber wählen
+Выбрать слой ниже = Ebene darunter wählen
+Вычесть = Abziehen
+Добавить = Hinzufügen
+Задать = Setzen
+Закрыть все виды = Alle Ansichten schließen
+Область по непрозрачности слоя = Bereich aus Ebenendeckkraft
+Отдалить у курсора = Am Cursor verkleinern
+Пересечь = Schnittmenge
+Пипетка по сведённому = Farbe aus Gesamtbild aufnehmen
+Пипетка по текущему слою = Farbe aus aktueller Ebene aufnehmen
+Показать только этот слой = Nur diese Ebene zeigen
+Показать/скрыть слой = Ebene ein-/ausblenden
+Предыдущий вид = Vorherige Ansicht
+Приблизить у курсора = Am Cursor vergrößern
+Прозрачный цвет = Transparente Farbe
+Прокрутить вид вверх = Ansicht nach oben scrollen
+Прокрутить вид влево = Ansicht nach links scrollen
+Прокрутить вид вниз = Ansicht nach unten scrollen
+Прокрутить вид вправо = Ansicht nach rechts scrollen
+Расширить выделение на 1 px = Auswahl um 1 px erweitern
+Следующий вид = Nächste Ansicht
+Слой на задний план = Ebene ganz nach hinten
+Слой на передний план = Ebene ganz nach vorne
+Стрелка — поменять цвета; клетка — прозрачный цвет (кисть стирает) = Pfeil — Farben tauschen; Karo — transparente Farbe (Pinsel radiert)
+Сузить выделение на 1 px = Auswahl um 1 px verkleinern
+Плотность кисти 10 = Pinseldichte 10
+Плотность кисти 20 = Pinseldichte 20
+Плотность кисти 30 = Pinseldichte 30
+Плотность кисти 40 = Pinseldichte 40
+Плотность кисти 50 = Pinseldichte 50
+Плотность кисти 60 = Pinseldichte 60
+Плотность кисти 70 = Pinseldichte 70
+Плотность кисти 80 = Pinseldichte 80
+Плотность кисти 90 = Pinseldichte 90
+Плотность кисти 100 = Pinseldichte 100
+
+# Вопрос при выходе (0.8.48)
+Выход отменён: холст не сохранён = Beenden abgebrochen: Leinwand nicht gespeichert
+Не сохранять = Nicht speichern
+Сохранить изменения в рисунках? = Änderungen an den Bildern speichern?

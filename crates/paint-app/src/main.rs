@@ -915,11 +915,23 @@ struct PaintApp {
     /// В открытом файле были слои контура или фигур (их кривые при сохранении станут растром).
     had_vectors: bool,
     show_save_as: bool,
+    /// Выход: окно вопроса, сохранение по очереди (какой холст ждём), выход разрешён.
+    exit_ask: bool,
+    exit_saving: bool,
+    exit_waiting: Option<usize>,
+    exit_ok: bool,
     /// Инструмент «Текст»: шрифт и размер по умолчанию, открытая правка, строка поиска шрифта.
     text_font: String,
     text_size: f32,
     /// «Прямая линия» на быстрой панели: каждый штрих — прямая (как в SAI).
     straight: bool,
+    /// Идёт «Закрыть все виды».
+    closing_all: bool,
+    /// «Прозрачный цвет» (клетка у квадратов цвета): кисть стирает. Выбор цвета его снимает.
+    transparent: bool,
+    prev_hsv: [f32; 3],
+    /// «Показать только этот слой»: видимость слоёв до него.
+    solo: Option<Vec<(Vec<usize>, bool)>>,
     /// Режим выделения с панели (Shift/Alt его перебивают) и пипетка только по текущему слою.
     sel_mode: Combine,
     pick_layer: bool,
@@ -1096,9 +1108,17 @@ impl PaintApp {
             dirty: false,
             had_vectors: false,
             show_save_as: false,
+            exit_ask: false,
+            exit_saving: false,
+            exit_waiting: None,
+            exit_ok: false,
             text_font: String::new(),
             text_size: 20.0,
             straight: false,
+            closing_all: false,
+            transparent: false,
+            prev_hsv: [0.0; 3],
+            solo: None,
             sel_mode: Combine::Replace,
             pick_layer: false,
             rot_last: None,
@@ -2829,11 +2849,16 @@ impl PaintApp {
             };
             return;
         }
-        let params = if eraser_end {
+        let mut params = if eraser_end {
             self.brushes[self.eraser_index()].params
         } else {
             self.brushes[self.brush].params
         };
+        // «прозрачный цвет», как в SAI: кисть стирает своей формой
+        if self.transparent && !eraser_end {
+            params.erase = true;
+            params.mix = None;
+        }
         self.stroke_by_touch = self.touch_down;
         self.smoother = Stabilizer::with_level(self.stabilizer);
         let c = self.color();
@@ -2866,7 +2891,11 @@ impl PaintApp {
         let (Some((a, eraser)), Some(old)) = (self.line_from, self.live.take()) else { return };
         let keys = self.doc.live_cancel(old);
         self.invalidate(keys);
-        let params = self.brushes[if eraser { self.eraser_index() } else { self.brush }].params;
+        let mut params = self.brushes[if eraser { self.eraser_index() } else { self.brush }].params;
+        if self.transparent && !eraser {
+            params.erase = true;
+            params.mix = None;
+        }
         let mut stroke = Stroke::new(params);
         stroke.set_grain(self.grain_for(if eraser { self.eraser_index() } else { self.brush }));
         let c = self.color();
@@ -3172,6 +3201,93 @@ impl PaintApp {
     fn deselect(&mut self) {
         self.doc.deselect();
         self.sel_dirty = true;
+    }
+
+    /// Выбрать слой выше или ниже в списке (как «Select Forward/Backward Layer» в SAI).
+    fn select_neighbor_layer(&mut self, up: bool) {
+        let mut flat = Vec::new();
+        fn walk(layers: &[Layer], path: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+            for (i, l) in layers.iter().enumerate() {
+                path.push(i);
+                out.push(path.clone());
+                if let Some(ch) = &l.children {
+                    walk(ch, path, out);
+                }
+                path.pop();
+            }
+        }
+        walk(&self.doc.layers, &mut Vec::new(), &mut flat);
+        // в списке сверху вниз — обратный порядок обхода
+        flat.reverse();
+        let Some(i) = flat.iter().position(|p| *p == self.selected) else { return };
+        let j = if up { i.checked_sub(1) } else { (i + 1 < flat.len()).then_some(i + 1) };
+        if let Some(j) = j {
+            self.selected = flat[j].clone();
+        }
+    }
+
+    /// Слой на передний (`front`) или задний план своей стопки.
+    fn layer_to_end(&mut self, front: bool) {
+        let Some((&last, parent)) = self.selected.split_last() else { return };
+        let len = if parent.is_empty() { self.doc.layers.len() } else { self.doc.layer(parent).and_then(|l| l.children.as_ref()).map_or(0, Vec::len) };
+        let delta = if front { len as isize - 1 - last as isize } else { -(last as isize) };
+        if let Some((p, keys)) = self.doc.move_layer(&self.selected.clone(), delta) {
+            self.selected = p;
+            self.after_structure(keys);
+        }
+    }
+
+    /// «Показать только этот слой» (Show Alone в SAI): остальные прячутся; повтор — всё как было.
+    fn show_alone(&mut self) {
+        fn walk(layers: &mut [Layer], path: &mut Vec<usize>, keep: &[usize], saved: &mut Vec<(Vec<usize>, bool)>) {
+            for (i, l) in layers.iter_mut().enumerate() {
+                path.push(i);
+                saved.push((path.clone(), l.visible));
+                // видны сам слой, его папки-родители и всё внутри него
+                l.visible = keep.starts_with(path) || path.starts_with(keep);
+                if let Some(ch) = l.children.as_mut() {
+                    walk(ch, path, keep, saved);
+                }
+                path.pop();
+            }
+        }
+        if let Some(saved) = self.solo.take() {
+            for (p, v) in saved {
+                if let Some(l) = self.doc.layer_mut(&p) {
+                    l.visible = v;
+                }
+            }
+        } else {
+            let mut saved = Vec::new();
+            let keep = self.selected.clone();
+            walk(&mut self.doc.layers, &mut Vec::new(), &keep, &mut saved);
+            self.solo = Some(saved);
+        }
+        self.invalidate_all();
+    }
+
+    /// «Закрыть все виды» (Close All Views в SAI): закрываются все вкладки по очереди; о
+    /// несохранённом спрашивается, «Отмена» останавливает. Остаётся пустой холст.
+    fn close_all_views(&mut self) {
+        self.closing_all = true;
+        self.close_all_step();
+    }
+
+    /// Следующий шаг «Закрыть все виды» (пока окно вопроса закрыто).
+    fn close_all_step(&mut self) {
+        while self.closing_all && self.close_ask.is_none() {
+            let pristine = self.views.len() == 1 && self.file.is_none() && !self.dirty && !self.doc.can_undo();
+            if pristine {
+                self.closing_all = false;
+                break;
+            }
+            let before = (self.views.len(), self.tabs.len());
+            self.request_close_view(self.active_view);
+            // последний холст закрывается в новый пустой — дальше закрывать нечего
+            if self.close_ask.is_none() && (self.views.len(), self.tabs.len()) == before {
+                self.closing_all = false;
+            }
+        }
     }
 
     /// Повернуть слой на 90° (`cw`) или отразить (`horizontal`) — из меню «Слой» и с панели.
@@ -4065,6 +4181,19 @@ impl PaintApp {
                         ui.close_menu();
                     }
                 }
+                if ui.button(tr("Слой на передний план")).clicked() {
+                    self.layer_to_end(true);
+                    ui.close_menu();
+                }
+                if ui.button(tr("Слой на задний план")).clicked() {
+                    self.layer_to_end(false);
+                    ui.close_menu();
+                }
+                let mut alone = self.solo.is_some();
+                if ui.checkbox(&mut alone, tr("Показать только этот слой")).clicked() {
+                    self.show_alone();
+                    ui.close_menu();
+                }
                 ui.separator();
                 for (item, cw) in [(tr("Повернуть слой на 90° против часовой"), false), (tr("Повернуть слой на 90° по часовой"), true)] {
                     if ui.button(item).clicked() {
@@ -4176,6 +4305,17 @@ impl PaintApp {
                     self.sel_dirty = true;
                     ui.close_menu();
                 }
+                ui.separator();
+                // «Region Created from Pixel Opacity» в SAI
+                ui.menu_button(tr("Область по непрозрачности слоя"), |ui| {
+                    for (mode, name) in [(Combine::Replace, tr("Задать")), (Combine::Add, tr("Добавить")), (Combine::Subtract, tr("Вычесть")), (Combine::Intersect, tr("Пересечь"))] {
+                        if ui.button(name).clicked() {
+                            let path = self.selected.clone();
+                            self.select_by_opacity(&path, mode);
+                            ui.close_menu();
+                        }
+                    }
+                });
             });
             ui.menu_button(keys::hint(tr("Линейка(R)")), |ui| {
                 let mut shown = self.ruler.visible;
@@ -4337,6 +4477,19 @@ impl PaintApp {
                 }
                 if ui.add(egui::Button::image_and_text(icons::image(ui.ctx(), "view_float"), tr("Новый плавающий вид"))).clicked() {
                     self.float_view = Some(FloatView { zoom: self.zoom, offset: self.offset, angle: self.view_angle, flip: self.view_flip });
+                    ui.close_menu();
+                }
+                let many = self.views.len() > 1;
+                if ui.add_enabled(many, egui::Button::new(tr("Предыдущий вид"))).clicked() {
+                    self.switch_view((self.active_view + self.views.len() - 1) % self.views.len());
+                    ui.close_menu();
+                }
+                if ui.add_enabled(many, egui::Button::new(tr("Следующий вид"))).clicked() {
+                    self.switch_view((self.active_view + 1) % self.views.len());
+                    ui.close_menu();
+                }
+                if ui.add_enabled(many, egui::Button::new(tr("Закрыть все виды"))).clicked() {
+                    self.close_all_views();
                     ui.close_menu();
                 }
                 ui.separator();
@@ -4799,22 +4952,28 @@ impl PaintApp {
             p.rect_filled(back, 0.0, self.back);
             p.rect_stroke(back, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
             let fore = Rect::from_min_size(rect.min + Vec2::new(2.0, 2.0), Vec2::splat(26.0));
-            p.rect_filled(fore, 0.0, self.color());
+            if self.transparent {
+                sai_ui::checker(p, fore, 6.5);
+            } else {
+                p.rect_filled(fore, 0.0, self.color());
+            }
             p.rect_stroke(fore, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
             let swap = Rect::from_min_size(rect.min + Vec2::new(34.0, 2.0), Vec2::splat(14.0));
             sai_ui::glyph(p, swap, sai_ui::INK, "cw");
-            sai_ui::checker(
-                p,
-                Rect::from_min_size(rect.min + Vec2::new(2.0, 34.0), Vec2::splat(12.0)),
-                3.0,
-            );
-            if response.clicked()
-                && response
-                    .interact_pointer_pos()
-                    .is_some_and(|q| swap.expand(2.0).contains(q))
-            {
+            let clear = Rect::from_min_size(rect.min + Vec2::new(2.0, 34.0), Vec2::splat(12.0));
+            sai_ui::checker(p, clear, 3.0);
+            if self.transparent {
+                p.rect_stroke(clear.expand(1.0), 0.0, egui::Stroke::new(1.0_f32, sai_ui::SELECT_EDGE));
+            }
+            let at = response.interact_pointer_pos();
+            if response.clicked() && at.is_some_and(|q| swap.expand(2.0).contains(q)) {
                 self.swap_colors();
             }
+            // клетка — «прозрачный цвет» (как в SAI)
+            if response.clicked() && at.is_some_and(|q| clear.expand(2.0).contains(q)) {
+                self.transparent = !self.transparent;
+            }
+            response.on_hover_text(tr("Стрелка — поменять цвета; клетка — прозрачный цвет (кисть стирает)"));
         });
         ui.add_space(2.0);
         // Кисти слоя: 4 в ряд, имя сверху, значок снизу справа. Как в SAI: правый щелчок по пустой
@@ -6880,8 +7039,12 @@ impl PaintApp {
                 Some(true) => {
                     self.close_ask = None;
                     self.close_tab(i);
+                    self.close_all_step();
                 }
-                Some(false) => self.close_ask = None,
+                Some(false) => {
+                    self.close_ask = None;
+                    self.closing_all = false;
+                }
                 None => {}
             }
         }
@@ -7697,7 +7860,102 @@ impl PaintApp {
         if self.show_update {
             self.update_window(ctx);
         }
+        if self.exit_ask {
+            self.exit_window(ctx);
+        }
+    }
 
+    /// Есть ли несохранённое хоть в одном холсте.
+    fn any_dirty(&self) -> bool {
+        self.dirty || self.tabs.iter().flatten().any(|t| t.dirty)
+    }
+
+    /// Закрытие окна программы: при несохранённом — вопрос (как у SAI при выходе).
+    fn check_exit(&mut self, ctx: &egui::Context) {
+        if ctx.input(|i| i.viewport().close_requested()) && !self.exit_ok {
+            if self.any_dirty() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                self.exit_ask = true;
+            } else {
+                self.exit_ok = true;
+            }
+        }
+        if !self.exit_saving {
+            return;
+        }
+        // «Сохранить»: холсты по очереди; окно имени ещё открыто — ждём
+        if self.file_dialog.is_some() || self.show_save_as {
+            return;
+        }
+        if let Some(c) = self.exit_waiting.take() {
+            let still = if c == self.active_tab { self.dirty } else { self.tabs.get(c).and_then(|t| t.as_ref()).is_some_and(|t| t.dirty) };
+            if still {
+                // сохранение отменили — программа остаётся открытой
+                self.exit_saving = false;
+                self.status = String::from(tr("Выход отменён: холст не сохранён"));
+                return;
+            }
+        }
+        if self.dirty {
+            self.exit_waiting = Some(self.active_tab);
+            self.save();
+            return;
+        }
+        if let Some(c) = (0..self.tabs.len()).find(|&c| self.tabs[c].as_ref().is_some_and(|t| t.dirty)) {
+            if let Some(v) = self.views.iter().position(|v| v.canvas == c) {
+                self.switch_view(v);
+                return;
+            }
+        }
+        self.exit_saving = false;
+        self.exit_ok = true;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    /// Окно «Сохранить изменения?» при выходе.
+    fn exit_window(&mut self, ctx: &egui::Context) {
+        let mut names = Vec::new();
+        for (i, v) in self.views.iter().enumerate() {
+            let (name, dirty) = match &self.tabs[v.canvas] {
+                Some(t) => (t.title(), t.dirty),
+                None => (self.file_name(), self.dirty),
+            };
+            if dirty && !names.contains(&name) && i < 1000 {
+                names.push(name);
+            }
+        }
+        let mut choice = None;
+        egui::Window::new(tr("Выход")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
+            ui.label(tr("Сохранить изменения в рисунках?"));
+            for n in &names {
+                ui.label(format!("• {n}"));
+            }
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui.button(tr("Сохранить")).clicked() {
+                    choice = Some(0);
+                }
+                if ui.button(tr("Не сохранять")).clicked() {
+                    choice = Some(1);
+                }
+                if ui.button(tr("Отмена")).clicked() {
+                    choice = Some(2);
+                }
+            });
+        });
+        match choice {
+            Some(0) => {
+                self.exit_ask = false;
+                self.exit_saving = true;
+            }
+            Some(1) => {
+                self.exit_ask = false;
+                self.exit_ok = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Some(2) => self.exit_ask = false,
+            _ => {}
+        }
     }
 }
 
@@ -7915,6 +8173,7 @@ impl eframe::App for PaintApp {
                 if let Ok(out) = std::env::var("PAINT_VIRTUAL_PEN_OUT") {
                     let r = paint_core::io::save_png(std::path::Path::new(&out), self.doc.width, self.doc.height, &self.doc.flatten());
                     eprintln!("virtual pen: {} -> {out}", if r.is_ok() { "saved" } else { "save failed" });
+                    self.exit_ok = true;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
@@ -7924,6 +8183,7 @@ impl eframe::App for PaintApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.ctx = Some(ctx.clone());
         self.poll_file_dialog();
+        self.check_exit(ctx);
         self.autosave();
         let dropped = ctx.input(|i| i.raw.dropped_files.iter().find_map(|f| f.path.clone()));
         if let Some(path) = dropped {
@@ -7983,6 +8243,11 @@ impl eframe::App for PaintApp {
         let km = self.keymap.clone();
         let hit = |a: keys::Action| ctx.input(|i| km.get(&a).copied().flatten().is_some_and(|b| b.pressed(i)));
         use keys::Action as A;
+        // выбрали цвет — «прозрачный цвет» снимается, как в SAI
+        if self.hsv != self.prev_hsv {
+            self.prev_hsv = self.hsv;
+            self.transparent = false;
+        }
         // сменили инструмент — набор закончен
         if self.text_edit.is_some() && self.tool != Tool::Text {
             self.finish_text(true);
@@ -8094,6 +8359,76 @@ impl eframe::App for PaintApp {
             }
             if hit(A::NewView) {
                 self.new_view();
+            }
+            // команды SAI, у которых по умолчанию нет клавиш (назначаются в «Быстрых клавишах»)
+            let cursor = ctx.input(|i| i.pointer.hover_pos()).filter(|p| self.view.contains(*p));
+            let at_cursor = |app: &Self| cursor.map(|p| ViewXf::new(app.view, app.zoom, app.offset, app.view_angle, app.view_flip).to_canvas(p));
+            if hit(A::TransparentColor) {
+                self.transparent = !self.transparent;
+            }
+            if hit(A::PickMerged) || hit(A::PickLayer) {
+                if let Some(c) = at_cursor(self) {
+                    let only = self.pick_layer;
+                    self.pick_layer = hit(A::PickLayer);
+                    self.pick_color(c.x, c.y);
+                    self.pick_layer = only;
+                    self.transparent = false;
+                }
+            }
+            if hit(A::PrevView) && !self.views.is_empty() {
+                self.switch_view((self.active_view + self.views.len() - 1) % self.views.len());
+            }
+            if hit(A::NextView) && !self.views.is_empty() {
+                self.switch_view((self.active_view + 1) % self.views.len());
+            }
+            if hit(A::CloseAllViews) {
+                self.close_all_views();
+            }
+            let step = self.view.size() * 0.125 / self.zoom;
+            for (a, d) in [(A::ScrollUp, Vec2::new(0.0, -step.y)), (A::ScrollDown, Vec2::new(0.0, step.y)), (A::ScrollLeft, Vec2::new(-step.x, 0.0)), (A::ScrollRight, Vec2::new(step.x, 0.0))] {
+                if hit(a) {
+                    self.offset += d;
+                }
+            }
+            for (a, k) in [(A::ZoomInCursor, 1.25f32), (A::ZoomOutCursor, 0.8)] {
+                if hit(a) {
+                    match (cursor, at_cursor(self)) {
+                        (Some(p), Some(anchor)) => {
+                            self.zoom = (self.zoom * k).clamp(0.02, 32.0);
+                            let now = ViewXf::new(self.view, self.zoom, self.offset, self.view_angle, self.view_flip).to_canvas(p);
+                            self.offset += anchor - now;
+                        }
+                        _ => self.set_zoom(self.zoom * k),
+                    }
+                }
+            }
+            if hit(A::LayerAbove) || hit(A::LayerBelow) {
+                self.select_neighbor_layer(hit(A::LayerAbove));
+            }
+            if hit(A::LayerFront) {
+                self.layer_to_end(true);
+            }
+            if hit(A::LayerBack) {
+                self.layer_to_end(false);
+            }
+            if hit(A::ShowAlone) {
+                self.show_alone();
+            }
+            if hit(A::ToggleVisible) {
+                if let Some(l) = self.doc.layer_mut(&self.selected) {
+                    l.visible = !l.visible;
+                    self.invalidate_all();
+                    self.dirty = true;
+                }
+            }
+            if hit(A::GrowSel1) || hit(A::ShrinkSel1) {
+                self.doc.grow_selection(hit(A::GrowSel1));
+                self.sel_dirty = true;
+            }
+            for (i, a) in [A::Density10, A::Density20, A::Density30, A::Density40, A::Density50, A::Density60, A::Density70, A::Density80, A::Density90, A::Density100].into_iter().enumerate() {
+                if hit(a) {
+                    self.brushes[self.brush].params.density = (i + 1) as f32 / 10.0;
+                }
             }
             if hit(A::RotateCcw) {
                 self.rotate_view(-15.0);
@@ -8233,6 +8568,7 @@ impl eframe::App for PaintApp {
 
         if let Some(secs) = std::env::var("PAINT_EXIT_AFTER").ok().and_then(|v| v.parse::<f32>().ok()) {
             if self.started.elapsed().as_secs_f32() > secs {
+                self.exit_ok = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             ctx.request_repaint_after(Duration::from_millis(200));

@@ -685,3 +685,46 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, com camadas)
 Слой: = Camada:
 Снять = Remover
 Только текущий слой = Só a camada atual
+
+# Команды SAI: виды, слои, клавиши (0.8.48)
+Выбрать слой выше = Selecionar camada acima
+Выбрать слой ниже = Selecionar camada abaixo
+Вычесть = Subtrair
+Добавить = Adicionar
+Задать = Definir
+Закрыть все виды = Fechar todas as vistas
+Область по непрозрачности слоя = Região pela opacidade da camada
+Отдалить у курсора = Afastar no cursor
+Пересечь = Interseção
+Пипетка по сведённому = Conta-gotas da imagem combinada
+Пипетка по текущему слою = Conta-gotas da camada atual
+Показать только этот слой = Mostrar só esta camada
+Показать/скрыть слой = Mostrar/ocultar camada
+Предыдущий вид = Vista anterior
+Приблизить у курсора = Aproximar no cursor
+Прозрачный цвет = Cor transparente
+Прокрутить вид вверх = Rolar vista para cima
+Прокрутить вид влево = Rolar vista para a esquerda
+Прокрутить вид вниз = Rolar vista para baixo
+Прокрутить вид вправо = Rolar vista para a direita
+Расширить выделение на 1 px = Expandir seleção 1 px
+Следующий вид = Próxima vista
+Слой на задний план = Camada para trás
+Слой на передний план = Camada para frente
+Стрелка — поменять цвета; клетка — прозрачный цвет (кисть стирает) = Seta — trocar cores; xadrez — cor transparente (o pincel apaga)
+Сузить выделение на 1 px = Contrair seleção 1 px
+Плотность кисти 10 = Densidade do pincel 10
+Плотность кисти 20 = Densidade do pincel 20
+Плотность кисти 30 = Densidade do pincel 30
+Плотность кисти 40 = Densidade do pincel 40
+Плотность кисти 50 = Densidade do pincel 50
+Плотность кисти 60 = Densidade do pincel 60
+Плотность кисти 70 = Densidade do pincel 70
+Плотность кисти 80 = Densidade do pincel 80
+Плотность кисти 90 = Densidade do pincel 90
+Плотность кисти 100 = Densidade do pincel 100
+
+# Вопрос при выходе (0.8.48)
+Выход отменён: холст не сохранён = Saída cancelada: a tela não foi salva
+Не сохранять = Não salvar
+Сохранить изменения в рисунках? = Salvar as alterações nos desenhos?

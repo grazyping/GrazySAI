@@ -685,3 +685,46 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, avec calques)
 Слой: = Calque :
 Снять = Aucune
 Только текущий слой = Calque actuel seulement
+
+# Команды SAI: виды, слои, клавиши (0.8.48)
+Выбрать слой выше = Sélectionner le calque au-dessus
+Выбрать слой ниже = Sélectionner le calque en dessous
+Вычесть = Soustraire
+Добавить = Ajouter
+Задать = Définir
+Закрыть все виды = Fermer toutes les vues
+Область по непрозрачности слоя = Zone d'après l'opacité du calque
+Отдалить у курсора = Dézoomer au curseur
+Пересечь = Intersection
+Пипетка по сведённому = Pipette sur l'image fusionnée
+Пипетка по текущему слою = Pipette sur le calque actuel
+Показать только этот слой = Afficher ce calque seul
+Показать/скрыть слой = Afficher/masquer le calque
+Предыдущий вид = Vue précédente
+Приблизить у курсора = Zoomer au curseur
+Прозрачный цвет = Couleur transparente
+Прокрутить вид вверх = Faire défiler la vue vers le haut
+Прокрутить вид влево = Faire défiler la vue vers la gauche
+Прокрутить вид вниз = Faire défiler la vue vers le bas
+Прокрутить вид вправо = Faire défiler la vue vers la droite
+Расширить выделение на 1 px = Dilater la sélection de 1 px
+Следующий вид = Vue suivante
+Слой на задний план = Calque à l'arrière-plan
+Слой на передний план = Calque au premier plan
+Стрелка — поменять цвета; клетка — прозрачный цвет (кисть стирает) = Flèche — échanger les couleurs ; damier — couleur transparente (le pinceau efface)
+Сузить выделение на 1 px = Éroder la sélection de 1 px
+Плотность кисти 10 = Densité du pinceau 10
+Плотность кисти 20 = Densité du pinceau 20
+Плотность кисти 30 = Densité du pinceau 30
+Плотность кисти 40 = Densité du pinceau 40
+Плотность кисти 50 = Densité du pinceau 50
+Плотность кисти 60 = Densité du pinceau 60
+Плотность кисти 70 = Densité du pinceau 70
+Плотность кисти 80 = Densité du pinceau 80
+Плотность кисти 90 = Densité du pinceau 90
+Плотность кисти 100 = Densité du pinceau 100
+
+# Вопрос при выходе (0.8.48)
+Выход отменён: холст не сохранён = Sortie annulée : le canevas n'a pas été enregistré
+Не сохранять = Ne pas enregistrer
+Сохранить изменения в рисунках? = Enregistrer les modifications des dessins ?

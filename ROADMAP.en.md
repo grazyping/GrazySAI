@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.47)
+### 0.8 — linework and shapes (current version 0.8.48)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -144,12 +144,15 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 ### More from SAI 2017 (found by comparison, `docs/32-sai-comparison.md`)
 
 - [ ] Layer effect color (Canvas → Layer Effect Color)
-- [ ] Layers: show alone, collapse and expand folders, bring to front and send to back, select the layer above/below by key, cut and nudge
-- [ ] Selection: dilate and erode by 1 px at once; selection from opacity in the menu; linework points and strokes in the selection
-- [ ] View: close all views, previous and next view, scrolling and zoom at the cursor by keys
+- [x] Layers: show alone, bring to front and send to back, select the layer above/below by key (0.8.48)
+- [ ] Layers: cut and nudge, marking folders for visibility
+- [x] Selection from layer opacity in the menu (0.8.48)
+- [ ] Linework points and strokes in the selection
+- [x] View: close all views, previous and next view, scrolling and zoom at the cursor by keys (0.8.48)
 - [ ] Window: show and hide each panel separately; scratch pad; floating panels
 - [ ] Options window (memory, history, pen)
-- [ ] Keys: transparent color, pick from merged image or layer, brush density 10…100
+- [x] Transparent color; keys for the pickers and brush density 10…100 (0.8.48)
+- [x] “Save changes?” question on exit (0.8.48)
 - [ ] Own file viewer with thumbnails
 
 ### First after 1.0 — filters as in Clip Studio Paint

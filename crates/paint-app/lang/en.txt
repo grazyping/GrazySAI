@@ -686,3 +686,46 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, with layers)
 Слой: = Layer:
 Снять = None
 Только текущий слой = Current layer only
+
+# Команды SAI: виды, слои, клавиши (0.8.48)
+Выбрать слой выше = Select layer above
+Выбрать слой ниже = Select layer below
+Вычесть = Subtract
+Добавить = Add
+Задать = Set
+Закрыть все виды = Close all views
+Область по непрозрачности слоя = Region from layer opacity
+Отдалить у курсора = Zoom out at cursor
+Пересечь = Intersect
+Пипетка по сведённому = Pick color from merged image
+Пипетка по текущему слою = Pick color from current layer
+Показать только этот слой = Show this layer alone
+Показать/скрыть слой = Show/hide layer
+Предыдущий вид = Previous view
+Приблизить у курсора = Zoom in at cursor
+Прозрачный цвет = Transparent color
+Прокрутить вид вверх = Scroll view up
+Прокрутить вид влево = Scroll view left
+Прокрутить вид вниз = Scroll view down
+Прокрутить вид вправо = Scroll view right
+Расширить выделение на 1 px = Dilate selection by 1 px
+Следующий вид = Next view
+Слой на задний план = Send layer to back
+Слой на передний план = Bring layer to front
+Стрелка — поменять цвета; клетка — прозрачный цвет (кисть стирает) = Arrow — swap colors; checker — transparent color (the brush erases)
+Сузить выделение на 1 px = Erode selection by 1 px
+Плотность кисти 10 = Brush density 10
+Плотность кисти 20 = Brush density 20
+Плотность кисти 30 = Brush density 30
+Плотность кисти 40 = Brush density 40
+Плотность кисти 50 = Brush density 50
+Плотность кисти 60 = Brush density 60
+Плотность кисти 70 = Brush density 70
+Плотность кисти 80 = Brush density 80
+Плотность кисти 90 = Brush density 90
+Плотность кисти 100 = Brush density 100
+
+# Вопрос при выходе (0.8.48)
+Выход отменён: холст не сохранён = Exit cancelled: the canvas was not saved
+Не сохранять = Don't Save
+Сохранить изменения в рисунках? = Save changes to the pictures?

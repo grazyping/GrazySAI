@@ -685,3 +685,46 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, con capas)
 Слой: = Capa:
 Снять = Quitar
 Только текущий слой = Solo la capa actual
+
+# Команды SAI: виды, слои, клавиши (0.8.48)
+Выбрать слой выше = Seleccionar capa superior
+Выбрать слой ниже = Seleccionar capa inferior
+Вычесть = Restar
+Добавить = Añadir
+Задать = Establecer
+Закрыть все виды = Cerrar todas las vistas
+Область по непрозрачности слоя = Región por opacidad de la capa
+Отдалить у курсора = Alejar en el cursor
+Пересечь = Intersecar
+Пипетка по сведённому = Cuentagotas de la imagen combinada
+Пипетка по текущему слою = Cuentagotas de la capa actual
+Показать только этот слой = Mostrar solo esta capa
+Показать/скрыть слой = Mostrar/ocultar capa
+Предыдущий вид = Vista anterior
+Приблизить у курсора = Acercar en el cursor
+Прозрачный цвет = Color transparente
+Прокрутить вид вверх = Desplazar vista arriba
+Прокрутить вид влево = Desplazar vista a la izquierda
+Прокрутить вид вниз = Desplazar vista abajo
+Прокрутить вид вправо = Desplazar vista a la derecha
+Расширить выделение на 1 px = Expandir selección 1 px
+Следующий вид = Vista siguiente
+Слой на задний план = Capa al fondo
+Слой на передний план = Capa al frente
+Стрелка — поменять цвета; клетка — прозрачный цвет (кисть стирает) = Flecha — intercambiar colores; cuadros — color transparente (el pincel borra)
+Сузить выделение на 1 px = Contraer selección 1 px
+Плотность кисти 10 = Densidad del pincel 10
+Плотность кисти 20 = Densidad del pincel 20
+Плотность кисти 30 = Densidad del pincel 30
+Плотность кисти 40 = Densidad del pincel 40
+Плотность кисти 50 = Densidad del pincel 50
+Плотность кисти 60 = Densidad del pincel 60
+Плотность кисти 70 = Densidad del pincel 70
+Плотность кисти 80 = Densidad del pincel 80
+Плотность кисти 90 = Densidad del pincel 90
+Плотность кисти 100 = Densidad del pincel 100
+
+# Вопрос при выходе (0.8.48)
+Выход отменён: холст не сохранён = Salida cancelada: el lienzo no se guardó
+Не сохранять = No guardar
+Сохранить изменения в рисунках? = ¿Guardar los cambios en los dibujos?

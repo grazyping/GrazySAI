@@ -17,7 +17,7 @@
 | Export | Экспорт: PNG, JPEG, BMP, TGA, TIFF, WebP, QOI, PSD, OpenRaster | ≈ (у SAI — свой список) |
 | Миниатюра `thum` в файле | пишется, размер — по правилу SAI | ✔ |
 | Always Use FileViewer, Open/Save by FileViewer — свой обозреватель файлов с миниатюрами | системное окно | ✘ |
-| Quit | Выход | ✔ |
+| Quit | Выход; при несохранённом — «Сохранить / Не сохранять / Отмена» | ✔ |
 
 ## Правка
 
@@ -53,11 +53,11 @@
 | Nudge (стрелки) | Alt+стрелки (Shift — на 10) | ≈ (клавиши иные) |
 | Cut & Nudge | — | ✘ |
 | Preserve Opacity, Protect Painting / Moving / Modifying, Clipping, Selection Source | то же | ✔ |
-| Select Forward/Backward Layer | — | ✘ |
-| Open/Close Layer Folder | папки всегда раскрыты | ✘ |
+| Select Forward/Backward Layer | «Выбрать слой выше/ниже» (клавиши назначаются) | ✔ |
+| Open/Close Layer Folder | стрелка на значке папки; клавиши нет | ≈ |
 | Bring Forward / Send Backward | Поднять / Опустить | ✔ |
-| Bring to Front / Send to Back | — | ✘ |
-| Change Visibility, Show Alone | глаз в списке; «показать только этот» нет | ≈ |
+| Bring to Front / Send to Back | «Слой на передний/задний план» | ✔ |
+| Change Visibility, Show Alone | глаз, «Показать/скрыть слой», «Показать только этот слой» | ✔ |
 | Mark Layer Folder for Visibility Change | — | ✘ |
 | Layer Mask: New, Apply | то же | ✔ |
 
@@ -67,8 +67,8 @@
 |---|---|---|
 | Deselect, Invert, Show/Hide Selection | то же | ✔ |
 | Dilate / Erode Selection (окно) | Расширить / Сузить на 1–25 px, углы как у SAI | ✔ |
-| Dilate / Erode Selection 1px (сразу) | — | ✘ |
-| Region from Pixel Opacity: Set / Add / Delete / Cull | по слою с Ctrl/Shift/Alt в списке слоёв | ≈ (нет пунктов меню) |
+| Dilate / Erode Selection 1px (сразу) | «Расширить/Сузить на 1 px» (меню и клавиши) | ✔ |
+| Region from Pixel Opacity: Set / Add / Delete / Cull | «Область по непрозрачности слоя»: задать, добавить, вычесть, пересечь | ✔ |
 | Select CPs in Selection, Select Strokes with Selection, Deselect All CPs | — | ✘ |
 
 ## Линейка
@@ -91,12 +91,12 @@
 |---|---|---|
 | New View, New Floating View | то же | ✔ |
 | Close View | Закрыть (Ctrl+W) закрывает вид | ✔ |
-| Close All Views | — | ✘ |
+| Close All Views | «Закрыть все виды» (о несохранённом спрашивает) | ✔ |
 | Zoom In / Out, Display at 100% | то же | ✔ |
-| Zoom In/Out at Cursor Position | колесо — к курсору; клавиш нет | ≈ |
+| Zoom In/Out at Cursor Position | колесо и клавиши «Приблизить/Отдалить у курсора» | ✔ |
 | Reverse Horizontal, Rotate CCW/CW, Reset Position / Angle | то же | ✔ |
-| Select Previous / Next View | — | ✘ |
-| Scroll View Up/Down/Left/Right | — | ✘ |
+| Select Previous / Next View | «Предыдущий/Следующий вид» | ✔ |
+| Scroll View Up/Down/Left/Right | «Прокрутить вид…» (клавиши назначаются) | ✔ |
 
 ## Окно
 
@@ -121,12 +121,12 @@
 | SAI | GrazySAI | |
 |---|---|---|
 | Exchange FG/BG | X | ✔ |
-| Switch to Transparent | — | ✘ |
-| Pick Color from Merged / Current Layer | Alt + щелчок; «Только текущий слой» у пипетки | ≈ (нет отдельных клавиш) |
+| Switch to Transparent | клетка у квадратов цвета и клавиша; выбор цвета снимает | ✔ |
+| Pick Color from Merged / Current Layer | Alt + щелчок; клавиши «Пипетка по сведённому / по текущему слою» | ✔ |
 | Switch to Straight Line Mode | кнопка «Прямая линия», Shift + нажатие | ✔ |
 | Temporarily Ignore Ruler | «Не замечать линейку» | ✔ |
 | Previous / Next Size in Brush Size List | [ и ] | ✔ |
-| Change Brush Density to 10 … 100 | — | ✘ |
+| Change Brush Density to 10 … 100 | «Плотность кисти 10 … 100» (клавиши назначаются) | ✔ |
 
 ## Кисти
 
