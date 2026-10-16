@@ -223,6 +223,17 @@ pub fn read_layer(file: &mut File, entries: &[Entry], layer: &LayerInfo) -> io::
 /// потоком (те же коды, что у слоёв), выровненным по байту; в конце строки блоков — маркер с
 /// числом блоков. Пиксель: синий, зелёный, красный, альфа по 8 бит; предсказание «слева + сверху −
 /// сверху-слева» в пределах блока.
+/// Разбор `intg` строго с заданным числом каналов (как читает SAI: 4 при прозрачном фоне, 3 при
+/// непрозрачном).
+pub fn decode_intg_planes(data: &[u8], width: u32, height: u32, planes: usize) -> io::Result<Vec<u8>> {
+    if data.get(0..4) != Some(b"dpcm") {
+        return Err(bad("сведённое изображение сохранено неизвестным способом"));
+    }
+    let (w, h) = (width as usize, height as usize);
+    let start = 4 + w.div_ceil(256) * h.div_ceil(256) * 4;
+    decode_intg_with(data, start, w, h, planes)
+}
+
 pub fn decode_intg(data: &[u8], width: u32, height: u32) -> io::Result<Vec<u8>> {
     let (w, h) = (width as usize, height as usize);
     if data.get(0..4) != Some(b"dpcm") {

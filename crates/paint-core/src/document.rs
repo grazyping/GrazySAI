@@ -1241,9 +1241,17 @@ impl Document {
 
     /// Сводит все видимые слои в RGBA по 8 бит на канал (без предумножения).
     pub fn flatten(&self) -> Vec<u8> {
+        self.flatten_on(self.background_f32())
+    }
+
+    /// Сведение без подложки фона (прозрачное остаётся прозрачным).
+    pub fn flatten_clear(&self) -> Vec<u8> {
+        self.flatten_on([0.0; 4])
+    }
+
+    fn flatten_on(&self, bg: [f32; 4]) -> Vec<u8> {
         let (w, h) = (self.width as i32, self.height as i32);
         let mut out = vec![0u8; (w * h * 4) as usize];
-        let bg = self.background_f32();
         let rows = (h + TILE - 1) / TILE;
         let cols = (w + TILE - 1) / TILE;
         let row_bytes = (w * 4 * TILE) as usize;

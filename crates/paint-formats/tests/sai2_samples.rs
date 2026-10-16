@@ -317,3 +317,41 @@ fn text_layers_round_trip() {
         assert_eq!(&paint_formats::sai2_text::to_bytes(&t), raw, "{t:?}");
     }
 }
+
+/// `intg` пишется с тем числом каналов, которое SAI выводит из байта фона в заголовке: 4 при
+/// прозрачном фоне, 3 при непрозрачном (иначе обозреватель файлов SAI пишет «файл повреждён»).
+#[test]
+fn intg_planes_follow_the_header_background() {
+    let dir = std::env::temp_dir().join(format!("grazysai-intg-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for code in [0x00u8, 0x01, 0x10, 0x21] {
+        let mut doc = paint_core::Document::new(300, 40);
+        doc.set_background(code, [10, 20, 30]);
+        doc.layers[0].pixels.set(5, 5, paint_core::pixel::from_rgba8([200, 0, 0, 128]));
+        let p = dir.join(format!("bg{code}.sai2"));
+        paint_formats::sai2_write::save(&doc, &p).unwrap();
+        let info = paint_formats::sai2::read_info(&p).unwrap();
+        assert_eq!(info.bg_code, code);
+        let e = info.entries.iter().find(|e| &e.tag == b"intg").unwrap();
+        let data = std::fs::read(&p).unwrap()[e.offset as usize..(e.offset + e.len) as usize].to_vec();
+        let planes = if code & 0x0F == 0 { 4 } else { 3 };
+        paint_formats::sai2_pixels::decode_intg_planes(&data, 300, 40, planes).unwrap_or_else(|err| panic!("фон {code:#x}: {err}"));
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// Проверка чужих файлов (GRAZYSAI_INTG_CHECK — папка копий): сколько каналов в `intg` и сколько
+/// ждёт SAI по байту фона. Без переменной пропускается.
+#[test]
+fn intg_planes_of_files_in_dir() {
+    let Some(dir) = std::env::var_os("GRAZYSAI_INTG_CHECK") else { return };
+    for e in std::fs::read_dir(dir).unwrap().flatten() {
+        let p = e.path();
+        let Ok(info) = paint_formats::sai2::read_info(&p) else { continue };
+        let Some(t) = info.entries.iter().find(|e| &e.tag == b"intg") else { continue };
+        let data = std::fs::read(&p).unwrap()[t.offset as usize..(t.offset + t.len) as usize].to_vec();
+        let ok = |n| paint_formats::sai2_pixels::decode_intg_planes(&data, info.width, info.height, n).is_ok();
+        let want = if info.bg_code & 0x0F == 0 { 4 } else { 3 };
+        eprintln!("{}: SAI ждёт {want}, разбирается 4={} 3={}", p.file_name().unwrap().to_string_lossy(), ok(4), ok(3));
+    }
+}

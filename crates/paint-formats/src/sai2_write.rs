@@ -408,9 +408,13 @@ pub fn save(doc: &Document, path: &Path) -> io::Result<()> {
     let count = flat.len() as u32;
     // номера слоёв с 2, как у образца; служебный номер — снизу вверх с 1
     let ids: Vec<u32> = (0..flat.len()).map(|i| i as u32 + 2).collect();
-    let planes = if doc.background.is_some() { 3 } else { 4 };
+    // каналов в `intg` — как решает SAI по байту фона в заголовке (младшие 4 бита 0 — прозрачный,
+    // 4 канала с альфой; иначе 3). Обозреватель файлов SAI читает `intg` именно так, и при
+    // расхождении считает файл повреждённым (так было у файлов SOsai до 0.9.3).
+    let opaque = doc.bg_code & 0x0F != 0;
+    let planes = if opaque { 3 } else { 4 };
     let mut blocks: Vec<([u8; 4], u32, Vec<u8>)> = Vec::new();
-    let flat_rgba = doc.flatten();
+    let flat_rgba = if opaque { doc.flatten() } else { doc.flatten_clear() };
     // миниатюра — как у SAI 2017: только у холстов от 512 px, уменьшенная вдвое нужное число раз
     let level = crate::jssf::thumb_level(doc.width, doc.height);
     if level > 0 {

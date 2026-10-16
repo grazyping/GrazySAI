@@ -304,6 +304,17 @@ fn read_stack(node: &Node, files: &[(String, Vec<u8>)], out: &mut Vec<Layer>) ->
     Ok(())
 }
 
+/// Миниатюра OpenRaster (`Thumbnails/thumbnail.png`, иначе `mergedimage.png`).
+pub fn thumbnail(path: &Path) -> Res<(u32, u32, Vec<u8>)> {
+    let files = unzip(&std::fs::read(path)?)?;
+    let png = files
+        .iter()
+        .find(|(n, _)| n == "Thumbnails/thumbnail.png")
+        .or_else(|| files.iter().find(|(n, _)| n == "mergedimage.png"))
+        .ok_or("в архиве нет миниатюры")?;
+    paint_core::io::decode_png(&png.1)
+}
+
 /// Открыть OpenRaster.
 pub fn load(path: &Path) -> Res<Document> {
     let files = unzip(&std::fs::read(path)?)?;
