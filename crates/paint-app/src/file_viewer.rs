@@ -116,7 +116,7 @@ impl FileViewer {
         let alive = Arc::new(AtomicBool::new(true));
         let (tx, rx) = mpsc::channel();
         // миниатюры считаются в фоне, в несколько потоков
-        let workers = std::thread::available_parallelism().map_or(2, |n| n.get()).clamp(2, 6);
+        let workers = paint_core::threads().clamp(2, 6);
         for _ in 0..workers {
             let (q, a, tx) = (queue.clone(), alive.clone(), tx.clone());
             std::thread::spawn(move || {

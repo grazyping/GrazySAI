@@ -207,7 +207,7 @@ impl Document {
                 crate::layer::mask_into_tile(t, m, erase, rgb, preserve, sel[&job.0].as_ref());
             }
         };
-        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let threads = crate::threads();
         if jobs.len() < 32 || threads < 2 {
             jobs.iter_mut().for_each(run);
         } else {
@@ -1303,7 +1303,7 @@ impl Document {
         let cols = (w + TILE - 1) / TILE;
         let row_bytes = (w * 4 * TILE) as usize;
         // полосы по высоте плитки — каждая в своём потоке
-        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let threads = crate::threads();
         let next = std::sync::atomic::AtomicI32::new(0);
         let strips: Vec<std::sync::Mutex<&mut [u8]>> = out.chunks_mut(row_bytes).map(std::sync::Mutex::new).collect();
         std::thread::scope(|scope| {

@@ -201,7 +201,7 @@ pub fn gaussian_blur(src: &ColorMap, w: u32, h: u32, radius: f64, sel: &(dyn Fn(
         let p = src.get(x0 + (i % bw) as i32, y0 + (i / bw) as i32);
         *v = p.map(|c| c as f64 * kf);
     }
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let threads = crate::threads();
     let pass = |buf: &[[f64; 4]], horizontal: bool| -> Vec<[f64; 4]> {
         let mut out = vec![[0f64; 4]; buf.len()];
         let rows = bh.div_ceil(threads).max(1);
@@ -367,7 +367,7 @@ impl Gradient {
 pub fn gradient(src: &ColorMap, w: u32, h: u32, g: &Gradient, sel: &(dyn Fn(i32, i32) -> u32 + Sync), preserve: bool) -> ColorMap {
     use crate::tile::Tile;
     let keys: Vec<(i32, i32)> = (0..h.div_ceil(TILE as u32) as i32).flat_map(|ty| (0..w.div_ceil(TILE as u32) as i32).map(move |tx| (tx, ty))).collect();
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let threads = crate::threads();
     let per = keys.len().div_ceil(threads).max(1);
     let tiles: Vec<((i32, i32), Tile<Px>)> = std::thread::scope(|scope| {
         let jobs: Vec<_> = keys
@@ -768,7 +768,7 @@ fn per_pixel(src: &ColorMap, b: (i32, i32, i32, i32), sel: &(dyn Fn(i32, i32) ->
     let (x0, y0, x1, y1) = b;
     let bw = (x1 - x0) as usize;
     let mut res = vec![[0f64; 4]; bw * (y1 - y0) as usize];
-    let parts = std::thread::available_parallelism().map_or(1, |n| n.get());
+    let parts = crate::threads();
     let chunk = res.len().div_ceil(parts).max(1);
     std::thread::scope(|scope| {
         for (k, part) in res.chunks_mut(chunk).enumerate() {

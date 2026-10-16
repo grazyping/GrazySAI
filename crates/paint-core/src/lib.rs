@@ -28,3 +28,11 @@ pub use document::{Document, LiveStroke};
 pub use layer::Layer;
 pub use stabilizer::Stabilizer;
 pub use stroke::{InputPoint, Stroke};
+
+/// Число потоков для параллельного счёта (ядра машины). Запоминается при первом вызове:
+/// `available_parallelism` в Linux читает cgroup при каждом вызове — это десятки микросекунд,
+/// а горячие места (каждое движение пера) спрашивают его постоянно.
+pub fn threads() -> usize {
+    static N: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *N.get_or_init(|| std::thread::available_parallelism().map_or(4, |n| n.get()))
+}

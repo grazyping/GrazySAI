@@ -692,7 +692,7 @@ impl Stroke {
             }
             hit
         };
-        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let threads = crate::threads();
         let hits: Vec<bool> = if work < 200_000 || threads < 2 || jobs.len() < 2 {
             jobs.iter_mut().map(run).collect()
         } else {
@@ -874,7 +874,7 @@ fn lay_batch(
         }
         hit
     };
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let threads = crate::threads();
     // прежний вид плиток — до правки (для отмены)
     let before: Vec<Option<Tile<Px>>> = jobs.iter().map(|(k, t, _)| if originals.contains_key(k) { None } else { t.clone() }).collect();
     let hits: Vec<bool> = if work < 150_000 || threads < 2 || jobs.len() < 2 {
@@ -914,7 +914,7 @@ fn water_blur(
     // Доля размытия в каждом пикселе: отпечатки пачки накладываются «поверх».
     // вес < 0 — точку не задел ни один отпечаток
     let (gx0, _, gw, _) = batch_bounds(batch);
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let threads = crate::threads();
     let (weight, parts) = Bands::run(batch, -1.0f64, |ya, yb, part: &mut [f64]| -> (i32, i32, i32, i32) {
         let mut r = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
         for d in batch {
@@ -1135,7 +1135,7 @@ fn add_to_hard_mask(mask: &mut MaskMap, px: f32, py: f32, shape: &Shape) {
         hit
     };
     let keys: Vec<Key> = (y0.div_euclid(TILE)..=y1.div_euclid(TILE)).flat_map(|ty| (x0.div_euclid(TILE)..=x1.div_euclid(TILE)).map(move |tx| (tx, ty))).collect();
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let threads = crate::threads();
     if keys.len() < 64 || threads < 2 {
         for key in keys {
             match mask.tiles.get_mut(&key) {
@@ -1256,7 +1256,7 @@ impl<T: Copy + Send + Sync> Bands<T> {
     /// `f(ya, yb, полоса)` для строк `ya..yb`; полоса — `(yb - ya) × w`, начало — `x0`.
     fn run<R: Send>(batch: &[Pending], fill: T, f: impl Fn(i32, i32, &mut [T]) -> R + Sync) -> (Self, Vec<R>) {
         let (x0, y0, w, h) = batch_bounds(batch);
-        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let threads = crate::threads();
         let bands = if w * h < 40_000 || threads < 2 { 1 } else { threads };
         let per = h.div_ceil(bands).max(1);
         let count = if w == 0 { 0 } else { h.div_ceil(per) };

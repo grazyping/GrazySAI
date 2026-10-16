@@ -198,6 +198,36 @@ struct LineEdit {
     start_y: f32,
     start_weight: f32,
     changed: bool,
+    /// Точка нажатия; узел сдвинулся (иначе щелчок по узлу — выделить его или снять).
+    start: [f64; 2],
+    moved: bool,
+    /// Захвачен выделенный узел — едут все выделенные (как в SAI): узел и его место до сдвига.
+    group: Vec<((usize, usize, usize), [f64; 2])>,
+    /// Кривые менялись — слой ещё не перерисован.
+    stale: bool,
+}
+
+/// Выделенные узлы слоя контура (Select CPs in Selection и т. п. в SAI). Действуют, пока
+/// кривые слоя те же (`raw` — отпечаток данных слоя).
+struct CpSelection {
+    path: Vec<usize>,
+    raw: u64,
+    nodes: std::collections::BTreeSet<(usize, usize, usize)>,
+}
+
+/// Отпечаток данных кривых слоя (для кэша показа и проверки выделения узлов).
+fn raw_hash(raw: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    raw.hash(&mut h);
+    h.finish()
+}
+
+/// Узел на холсте (с учётом сдвига пути).
+fn node_pos(shapes: &[paint_formats::sai2_vector::Shape], (si, pi, ni): (usize, usize, usize)) -> Option<[f64; 2]> {
+    let p = shapes.get(si)?.paths.get(pi)?;
+    let c = p.points.get(ni)?;
+    Some([c.point[0] + p.offset[0], c.point[1] + p.offset[1]])
 }
 
 /// Какой фильтр открыт.
@@ -1218,6 +1248,9 @@ struct PaintApp {
     pending_points: VecDeque<InputPoint>,
     /// Область списка слоёв — от неё считаются id «папка открыта» (для клавиши Alt+\).
     layers_ui: Option<egui::Id>,
+    cp_sel: Option<CpSelection>,
+    /// Разобранные кривые текущего слоя контура для показа узлов: слой, отпечаток, кривые.
+    line_view: Option<(Vec<usize>, u64, Vec<paint_formats::sai2_vector::Shape>)>,
     /// Фоновый предпросмотр фильтра; номер последних настроек и номер показанного на слое.
     filter_job: Option<FilterJob>,
     filter_gen: u64,
@@ -1389,6 +1422,8 @@ impl PaintApp {
             filter_last: None,
             pending_points: VecDeque::new(),
             layers_ui: None,
+            cp_sel: None,
+            line_view: None,
             frame_stats: std::env::var_os("PAINT_FRAMES").map(|_| Default::default()),
             filter_job: None,
             filter_gen: 0,
@@ -2013,6 +2048,123 @@ app.open_canvas_dialog(d == "resolution")
             by_min_density: g.by_min_density,
             bristle,
         })
+    }
+
+    /// Кривые текущего слоя контура (разобранные, с кэшем по отпечатку данных).
+    fn line_shapes(&mut self) -> Option<(u64, &[paint_formats::sai2_vector::Shape])> {
+        let layer = self.doc.layer(&self.selected)?;
+        let v = layer.vector.as_ref().filter(|v| &v.kind == b"liwk")?;
+        let h = raw_hash(&v.raw);
+        let fresh = self.line_view.as_ref().is_some_and(|(p, k, _)| *p == self.selected && *k == h);
+        if !fresh {
+            let shapes = paint_formats::sai2_vector::parse(&v.raw, true).ok()?;
+            self.line_view = Some((self.selected.clone(), h, shapes));
+        }
+        self.line_view.as_ref().map(|(_, h, s)| (*h, s.as_slice()))
+    }
+
+    /// Узлы слоя контура поверх холста, как в SAI: кривые тонкой линией, узлы — точками (концы
+    /// — жёлтыми ромбами), выделенные узлы — крупными кружками. Видны с «Правкой» и «Нажимом»
+    /// или когда на слое выделены узлы.
+    fn draw_line_nodes(&mut self, painter: &egui::Painter, xf: ViewXf) {
+        let editing = matches!(self.line_tool, LineTool::Edit | LineTool::Pressure);
+        let live = self.line_edit.as_ref().filter(|e| e.path == self.selected).map(|e| e.shapes.clone());
+        let (hash, shapes) = match live {
+            Some(sh) => (None, sh),
+            None => match self.line_shapes() {
+                Some((h, sh)) => (Some(h), sh.to_vec()),
+                None => return,
+            },
+        };
+        let sel: Vec<(usize, usize, usize)> = match &self.cp_sel {
+            Some(c) if c.path == self.selected && (hash.is_none() || hash == Some(c.raw)) => c.nodes.iter().copied().collect(),
+            _ => Vec::new(),
+        };
+        if !editing && sel.is_empty() {
+            return;
+        }
+        let s = |p: [f64; 2]| xf.to_screen(Vec2::new(p[0] as f32, p[1] as f32));
+        let curve = egui::Stroke::new(1.0_f32, Color32::from_rgb(220, 110, 210));
+        for sh in &shapes {
+            for p in &sh.paths {
+                let o = p.offset;
+                let at = |q: [f64; 2]| s([q[0] + o[0], q[1] + o[1]]);
+                let n = p.points.len();
+                let segs = if p.closed { n } else { n.saturating_sub(1) };
+                for i in 0..segs {
+                    let (a, b) = (&p.points[i], &p.points[(i + 1) % n]);
+                    painter.add(egui::epaint::CubicBezierShape::from_points_stroke([at(a.point), at(a.handle_out), at(b.handle_in), at(b.point)], false, Color32::TRANSPARENT, curve));
+                }
+            }
+        }
+        let green = Color32::from_rgb(40, 200, 60);
+        for (si, sh) in shapes.iter().enumerate() {
+            for (pi, p) in sh.paths.iter().enumerate() {
+                let n = p.points.len();
+                for (ni, c) in p.points.iter().enumerate() {
+                    let q = s([c.point[0] + p.offset[0], c.point[1] + p.offset[1]]);
+                    if sel.contains(&(si, pi, ni)) {
+                        painter.circle_filled(q, 4.5, green);
+                        painter.circle_stroke(q, 4.5, egui::Stroke::new(1.0_f32, Color32::from_gray(40)));
+                    } else if !p.closed && (ni == 0 || ni + 1 == n) {
+                        let d = 3.5;
+                        painter.add(egui::Shape::convex_polygon(vec![q + Vec2::new(0.0, -d), q + Vec2::new(d, 0.0), q + Vec2::new(0.0, d), q + Vec2::new(-d, 0.0)], Color32::from_rgb(250, 215, 0), egui::Stroke::NONE));
+                    } else {
+                        painter.circle_filled(q, 2.5, green);
+                    }
+                }
+            }
+        }
+    }
+
+    /// «Выделить узлы в выделении» (`whole` — «Выделить штрихи по выделению»: пути целиком,
+    /// если выделение задевает их кривую) и «Снять выделение узлов» (`None`), как в SAI. Рамка
+    /// выделения после выбора снимается — так делает SAI.
+    fn select_cps(&mut self, whole: Option<bool>) {
+        let Some(whole) = whole else {
+            self.cp_sel = None;
+            return;
+        };
+        let inside = |sel: &paint_core::selection::Selection, q: [f64; 2]| sel.amount(q[0].floor() as i32, q[1].floor() as i32) * 2 > paint_core::pixel::ONE;
+        let sel_mask = self.doc.selection.clone();
+        if sel_mask.is_empty() {
+            self.status = String::from(tr("Нет выделения"));
+            return;
+        }
+        let path = self.selected.clone();
+        let Some((raw, shapes)) = self.line_shapes().map(|(h, s)| (h, s.to_vec())) else { return };
+        let mut nodes = std::collections::BTreeSet::new();
+        for (si, sh) in shapes.iter().enumerate() {
+            for (pi, p) in sh.paths.iter().enumerate() {
+                let o = p.offset;
+                let abs = |q: [f64; 2]| [q[0] + o[0], q[1] + o[1]];
+                let hit_cp: Vec<usize> = (0..p.points.len()).filter(|&ni| inside(&sel_mask, abs(p.points[ni].point))).collect();
+                if !whole {
+                    nodes.extend(hit_cp.into_iter().map(|ni| (si, pi, ni)));
+                    continue;
+                }
+                // путь целиком, если выделения касается узел или точка кривой
+                let n = p.points.len();
+                let segs = if p.closed { n } else { n.saturating_sub(1) };
+                let touched = !hit_cp.is_empty()
+                    || (0..segs).any(|i| {
+                        let (a, b) = (&p.points[i], &p.points[(i + 1) % n]);
+                        let (p0, p1, p2, p3) = (abs(a.point), abs(a.handle_out), abs(b.handle_in), abs(b.point));
+                        (1..32).any(|k| {
+                            let t = k as f64 / 32.0;
+                            let u = 1.0 - t;
+                            let w = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
+                            inside(&sel_mask, [w[0] * p0[0] + w[1] * p1[0] + w[2] * p2[0] + w[3] * p3[0], w[0] * p0[1] + w[1] * p1[1] + w[2] * p2[1] + w[3] * p3[1]])
+                        })
+                    });
+                if touched {
+                    nodes.extend((0..n).map(|ni| (si, pi, ni)));
+                }
+            }
+        }
+        self.status = trf("Выделено узлов: {0}", &[&nodes.len()]);
+        self.cp_sel = Some(CpSelection { path, raw, nodes });
+        self.deselect();
     }
 
     /// Рамка правящейся надписи и мигающий курсор (как в SAI).
@@ -2939,7 +3091,7 @@ app.open_canvas_dialog(d == "resolution")
     fn render_pending(&mut self, budget: Duration) {
         let started = Instant::now();
         let (w, h) = (self.doc.width as i32, self.doc.height as i32);
-        let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+        let threads = paint_core::threads();
         loop {
             // пачка плиток — по нескольку на поток; свежие правки стоят в начале очереди
             let mut batch = Vec::new();
@@ -3094,6 +3246,13 @@ app.open_canvas_dialog(d == "resolution")
                     let start_weight = node
                         .and_then(|(si, pi, ni)| shapes.get(si)?.paths.get(pi)?.points.get(ni).map(|c| c.weight))
                         .unwrap_or(1.0);
+                    let raw_now = raw_hash(raw);
+                    let group = match (&self.cp_sel, node) {
+                        (Some(sel), Some(n)) if sel.path == self.selected && sel.raw == raw_now && sel.nodes.contains(&n) && tool == LineTool::Edit => {
+                            sel.nodes.iter().filter_map(|&k| Some((k, node_pos(&shapes, k)?))).collect()
+                        }
+                        _ => Vec::new(),
+                    };
                     self.line_edit = Some(LineEdit {
                         path: self.selected.clone(),
                         shapes,
@@ -3102,6 +3261,10 @@ app.open_canvas_dialog(d == "resolution")
                         start_y: p.y,
                         start_weight,
                         changed: false,
+                        start: [p.x as f64, p.y as f64],
+                        moved: false,
+                        group,
+                        stale: false,
                     });
                     self.line_apply(tool, p);
                 }
@@ -3352,8 +3515,25 @@ app.open_canvas_dialog(d == "resolution")
             // показ шёл без истории — вернуть исходные пиксели и записать правку одной записью
             let keys = self.doc.set_layer_pixels(&e.path, e.orig_pixels);
             self.invalidate(keys);
+            if let (Some(n), false, LineTool::Edit) = (e.node, e.moved, self.line_tool) {
+                // щелчок по узлу «Правкой» — выделить его или снять (как режим Select в SAI)
+                let raw = self.doc.layer(&e.path).and_then(|l| l.vector.as_ref()).map(|v| raw_hash(&v.raw)).unwrap_or(0);
+                let sel = match self.cp_sel.take() {
+                    Some(s) if s.path == e.path && s.raw == raw => s,
+                    _ => CpSelection { path: e.path.clone(), raw, nodes: Default::default() },
+                };
+                let mut sel = sel;
+                if !sel.nodes.remove(&n) {
+                    sel.nodes.insert(n);
+                }
+                self.cp_sel = Some(sel);
+            }
             if e.changed {
                 let raw = paint_formats::sai2_vector::write(&e.shapes, true);
+                // узлы только сдвинулись — их выделение остаётся в силе
+                if let Some(sel) = self.cp_sel.as_mut().filter(|s| s.path == e.path && matches!(self.line_tool, LineTool::Edit | LineTool::Pressure)) {
+                    sel.raw = raw_hash(&raw);
+                }
                 let pixels = paint_formats::linework::render_shapes(&e.shapes);
                 let keys = self.doc.set_vector_layer(&e.path, paint_core::layer::VectorData { kind: *b"liwk", raw }, pixels);
                 self.invalidate(keys);
@@ -3435,8 +3615,17 @@ app.open_canvas_dialog(d == "resolution")
                 }
             }
             LineTool::Edit => {
-                if let Some(n) = e.node {
-                    lw::move_node(&mut e.shapes, n, x, y);
+                let (dx, dy) = (x - e.start[0], y - e.start[1]);
+                // дрожь пера при щелчке — не сдвиг (щелчок выделяет узел)
+                e.moved |= dx.hypot(dy) > 2.0 / self.zoom as f64;
+                if let (Some(n), true) = (e.node, e.moved) {
+                    if e.group.is_empty() {
+                        lw::move_node(&mut e.shapes, n, x, y);
+                    } else {
+                        for &(k, at) in &e.group {
+                            lw::move_node(&mut e.shapes, k, at[0] + dx, at[1] + dy);
+                        }
+                    }
                     now = true;
                 }
             }
@@ -3451,12 +3640,18 @@ app.open_canvas_dialog(d == "resolution")
             LineTool::Pen => {}
         }
         e.changed |= now;
-        if now {
-            let pixels = lw::render_shapes(&e.shapes);
-            let path = e.path.clone();
-            let keys = self.doc.set_layer_pixels(&path, pixels);
-            self.invalidate(keys);
-        }
+        // слой перерисуется раз за кадр (`render_line_edit`), а не на каждое движение пера
+        e.stale |= now;
+    }
+
+    /// Показ правки контура: слой — по рабочим кривым, если они менялись с прошлого кадра.
+    fn render_line_edit(&mut self) {
+        let Some(e) = self.line_edit.as_mut().filter(|e| e.stale) else { return };
+        e.stale = false;
+        let pixels = paint_formats::linework::render_shapes(&e.shapes);
+        let path = e.path.clone();
+        let keys = self.doc.set_layer_pixels(&path, pixels);
+        self.invalidate(keys);
     }
 
     /// Фигура в рамке a–b на слое фигур (одна запись истории).
@@ -4786,6 +4981,15 @@ app.open_canvas_dialog(d == "resolution")
                     self.doc.grow_selection(false);
                     self.sel_dirty = true;
                     ui.close_menu();
+                }
+                ui.separator();
+                // узлы слоя контура, как в SAI (Select CPs in Selection и т. п.)
+                let liwk = self.doc.layer(&self.selected).is_some_and(|l| l.vector.as_ref().is_some_and(|v| &v.kind == b"liwk"));
+                for (cmd, name, need) in [(Some(false), tr("Выделить узлы в выделении"), has), (Some(true), tr("Выделить штрихи по выделению"), has), (None, tr("Снять выделение узлов"), self.cp_sel.is_some())] {
+                    if ui.add_enabled(liwk && need, egui::Button::new(name)).clicked() {
+                        self.select_cps(cmd);
+                        ui.close_menu();
+                    }
                 }
                 ui.separator();
                 // «Region Created from Pixel Opacity» в SAI
@@ -7263,6 +7467,7 @@ app.open_canvas_dialog(d == "resolution")
                 }
             }
             self.drain_points(Some(Duration::from_millis(25)));
+            self.render_line_edit();
             if released {
                 self.end_stroke();
             }
@@ -7333,6 +7538,7 @@ app.open_canvas_dialog(d == "resolution")
         }
         self.draw_ruler(&painter, xf, ctrl);
         self.draw_text_box(&painter, xf);
+        self.draw_line_nodes(&painter, xf);
         // Граница выделения («бегущие муравьи») и выделение, которое сейчас тянут.
         if self.sel_dirty {
             self.sel_outline = self.doc.selection.outline();

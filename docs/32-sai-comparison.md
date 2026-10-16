@@ -69,7 +69,7 @@
 | Dilate / Erode Selection (окно) | Расширить / Сузить на 1–25 px, углы как у SAI | ✔ |
 | Dilate / Erode Selection 1px (сразу) | «Расширить/Сузить на 1 px» (меню и клавиши) | ✔ |
 | Region from Pixel Opacity: Set / Add / Delete / Cull | «Область по непрозрачности слоя»: задать, добавить, вычесть, пересечь | ✔ |
-| Select CPs in Selection, Select Strokes with Selection, Deselect All CPs | — | ✘ |
+| Select CPs in Selection, Select Strokes with Selection, Deselect All CPs | то же; щелчок «Узлами» выделяет узел, выделенные тянутся вместе, узлы видны на холсте (сверено вживую) | ✔ |
 
 ## Линейка
 

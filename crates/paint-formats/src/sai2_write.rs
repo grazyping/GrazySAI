@@ -447,7 +447,7 @@ pub fn save(doc: &Document, path: &Path) -> io::Result<()> {
         }
     }
     let raster: Vec<(usize, &Layer)> = flat.iter().enumerate().filter(|(_, f)| f.layer.children.is_none() && f.layer.vector.is_none()).map(|(i, f)| (i, f.layer)).collect();
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let threads = paint_core::threads();
     let next = std::sync::atomic::AtomicUsize::new(0);
     let encoded = std::sync::Mutex::new(vec![Vec::new(); raster.len()]);
     std::thread::scope(|scope| {

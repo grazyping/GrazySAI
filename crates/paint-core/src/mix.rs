@@ -87,7 +87,7 @@ fn workers(cells: usize) -> usize {
     if cells < 40_000 {
         1
     } else {
-        std::thread::available_parallelism().map_or(4, |n| n.get())
+        crate::threads()
     }
 }
 

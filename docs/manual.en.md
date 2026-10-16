@@ -325,7 +325,11 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
   - Eraser (E) — deletes a whole path;
   - Weight — sets the brush size;
   - Color — recolors with the main color;
-  - Edit (I) — drag a control point;
+  - Edit (I) — drag a control point; a click on a point selects it (or deselects). Dragging a
+    selected point moves all selected ones. Curves and points are drawn over the canvas as in SAI:
+    points are green dots, ends are yellow diamonds, selected points are large circles.
+    “Selection → Select CPs in Selection / Select Strokes with Selection” take the points (or whole
+    paths) under the selection outline and drop the outline; “Deselect All CPs” clears them;
   - Pressure (P) — drag a control point up or down.
 - **Shape layer**: pick a rectangle, ellipse or triangle in the panel and drag on the canvas.
 - **Raster tools**: brushes, fill and filters do not edit these layers. “Layer → Rasterize

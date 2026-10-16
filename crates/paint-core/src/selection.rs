@@ -223,7 +223,7 @@ pub fn morph(mut buf: Vec<u16>, bw: usize, bh: usize, n: u32, grow: bool, outsid
             buf[y as usize * bw + x as usize]
         }
     };
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let threads = crate::threads();
     let rows = bh.div_ceil(threads).max(1);
     // один проход: каждая строка результата по `f(x, y)`
     let pass = |f: &(dyn Fn(isize, isize) -> u16 + Sync)| -> Vec<u16> {

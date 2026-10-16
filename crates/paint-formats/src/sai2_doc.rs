@@ -273,7 +273,7 @@ pub fn load(path: &Path) -> io::Result<Loaded> {
     let mut notes = BTreeSet::new();
     let mut pos = 0;
     // пиксели слоёв раскодируются параллельно, у каждого потока свой дескриптор файла
-    let threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let threads = paint_core::threads();
     let next = std::sync::atomic::AtomicUsize::new(0);
     let slots: Vec<std::sync::Mutex<Option<io::Result<paint_core::tile::ColorMap>>>> = info.layers.iter().map(|_| std::sync::Mutex::new(None)).collect();
     std::thread::scope(|scope| {
