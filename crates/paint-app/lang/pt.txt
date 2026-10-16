@@ -102,7 +102,6 @@ PSD (со слоями) = PSD (com camadas)
 Ластик = Borracha
 Выд.К. = Sel.Lápis
 Выд.Л. = Sel.Borr.
-{0} — позже = {0} — mais tarde
 Трансформация = Transformar
 Ближайший = Vizinho mais próximo
 Билинейный = Bilinear
@@ -509,3 +508,15 @@ S-кривая = Curva em S
 Нет = Nenhuma
 Авто = Auto
 По перу = Direção da caneta
+
+# Быстрые клавиши (0.8.29)
+Быстрые клавиши… = Atalhos de teclado…
+Заливка (ведро) = Preenchimento (balde)
+Клавиша: = Tecla:
+Масштаб (инструмент) = Zoom (ferramenta)
+Перемещение = Mover
+Пипетка = Conta-gotas
+Поиск: = Pesquisar:
+Рука = Mão
+Свою клавишу инструмента сетки задают в его «Свойствах…» (правый щелчок по инструменту). = A tecla própria de uma ferramenta é definida em suas “Propriedades…” (clique direito na ferramenta).
+Создать холст = Nova tela

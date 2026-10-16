@@ -64,10 +64,32 @@ pub enum Action {
     HueSaturation,
     Transform,
     Ruler,
+    New,
+    Close,
+    FromClipboard,
+    Copy,
+    Cut,
+    Paste,
+    ResetView,
+    Zoom100,
+    Fullscreen,
+    TogglePanels,
+    InvertSelection,
+    Marker,
+    SelPen,
+    SelEraser,
+    Gradient,
+    Bucket,
+    MoveTool,
+    TextTool,
+    HandTool,
+    Picker,
+    ZoomTool,
 }
 
 /// Действие, имя для настроек, подпись в окне, клавиша по умолчанию.
-pub const ALL: [(Action, &str, &str, &str); 34] = [
+/// Пустая клавиша — по умолчанию не назначена (в SAI её нет).
+pub const ALL: [(Action, &str, &str, &str); 55] = [
     (Action::Undo, "undo", "Отменить", "Ctrl+Z"),
     (Action::Redo, "redo", "Повторить", "Ctrl+Y"),
     (Action::Open, "open", "Открыть", "Ctrl+O"),
@@ -102,6 +124,27 @@ pub const ALL: [(Action, &str, &str, &str); 34] = [
     (Action::HueSaturation, "hue_saturation", "Тон и насыщенность", "Ctrl+U"),
     (Action::Transform, "transform", "Трансформация", "Ctrl+T"),
     (Action::Ruler, "ruler", "Показать/скрыть линейку", "Ctrl+R"),
+    (Action::New, "new", "Создать холст", "Ctrl+N"),
+    (Action::Close, "close", "Закрыть холст", "Ctrl+W"),
+    (Action::FromClipboard, "from_clipboard", "Холст из буфера обмена", "Ctrl+B"),
+    (Action::Copy, "copy", "Копировать", "Ctrl+C"),
+    (Action::Cut, "cut", "Вырезать", "Ctrl+X"),
+    (Action::Paste, "paste", "Вставить", "Ctrl+V"),
+    (Action::ResetView, "reset_view", "Сбросить положение вида", "Home"),
+    (Action::Zoom100, "zoom_100", "Масштаб 100%", "Ctrl+Alt+0"),
+    (Action::Fullscreen, "fullscreen", "Полный экран", "F11"),
+    (Action::TogglePanels, "panels", "Показывать все панели", "Tab"),
+    (Action::InvertSelection, "invert_selection", "Инвертировать", ""),
+    (Action::Marker, "marker", "Маркер", ""),
+    (Action::SelPen, "sel_pen", "Перо выделения", ""),
+    (Action::SelEraser, "sel_eraser", "Ластик выделения", ""),
+    (Action::Gradient, "gradient", "Градиент", ""),
+    (Action::Bucket, "bucket", "Заливка (ведро)", ""),
+    (Action::MoveTool, "move_tool", "Перемещение", ""),
+    (Action::TextTool, "text_tool", "Текст", ""),
+    (Action::HandTool, "hand_tool", "Рука", ""),
+    (Action::Picker, "picker", "Пипетка", ""),
+    (Action::ZoomTool, "zoom_tool", "Масштаб (инструмент)", ""),
 ];
 
 /// Клавиша с модификаторами (Ctrl — это Cmd на macOS).
@@ -182,7 +225,7 @@ mod tests {
 
     #[test]
     fn defaults_parse_and_round_trip() {
-        for (_, id, _, k) in ALL {
+        for (_, id, _, k) in ALL.into_iter().filter(|e| !e.3.is_empty()) {
             let b = Binding::parse(k).unwrap_or_else(|| panic!("{id}: {k}"));
             assert_eq!(Binding::parse(&b.text()), Some(b), "{id}");
         }

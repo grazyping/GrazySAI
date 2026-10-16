@@ -103,7 +103,6 @@ PSD (со слоями) = PSD (with layers)
 Ластик = Eraser
 Выд.К. = SelPen
 Выд.Л. = SelErs
-{0} — позже = {0} — later
 Трансформация = Transform
 Ближайший = Nearest Neighbor
 Билинейный = Bilinear
@@ -510,3 +509,15 @@ S-кривая = S-Curve Gradation
 Нет = None
 Авто = Auto
 По перу = Pen Direction
+
+# Быстрые клавиши (0.8.29)
+Быстрые клавиши… = Shortcut Keys…
+Заливка (ведро) = Bucket
+Клавиша: = Shortcut Key:
+Масштаб (инструмент) = Zoom (tool)
+Перемещение = Move
+Пипетка = Color Picker
+Поиск: = Search:
+Рука = Hand
+Свою клавишу инструмента сетки задают в его «Свойствах…» (правый щелчок по инструменту). = A grid tool's own key is set in its “Property…” (right-click the tool).
+Создать холст = New Canvas

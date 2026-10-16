@@ -518,6 +518,8 @@ struct BrushTool {
     custom: Option<String>,
     /// Вторая строка в ячейке («Additional Name» в SAI).
     extra: String,
+    /// Своя клавиша инструмента («Shortcut Key» в SAI).
+    key: Option<keys::Binding>,
 }
 
 /// Вид инструмента сетки — как в меню SAI 2017 по правому щелчку на пустой ячейке.
@@ -642,7 +644,7 @@ impl ToolKind {
             ToolKind::SelPen => ("Выд.К.", "selpen", BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
             ToolKind::SelErs => ("Выд.Л.", "selers", BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
         };
-        BrushTool { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new() }
+        BrushTool { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), key: None }
     }
 }
 
@@ -861,7 +863,11 @@ struct PaintApp {
     /// Окно «Свойства слоя»: слой и новое имя.
     layer_props: Option<(Vec<usize>, String)>,
     /// Окно «Свойства» инструмента сетки: номер, имя, вторая строка.
-    tool_props: Option<(usize, String, String)>,
+    tool_props: Option<(usize, String, String, Option<keys::Binding>)>,
+    /// Окно «Свойства» инструмента ждёт клавишу.
+    tool_key_capture: bool,
+    /// Поиск в окне «Клавиши».
+    keys_filter: String,
     /// Ползунок «Перспектива» трансформации, 0–100.
     transform_perspective: u8,
     move_drag: Option<MoveDrag>,
@@ -983,6 +989,8 @@ impl PaintApp {
             grad_opts: GradientOpts::default(),
             transform_kind: TransformKind::Free,
             tool_props: None,
+            tool_key_capture: false,
+            keys_filter: String::new(),
             clip: clip::Clip::new(),
             recent: Vec::new(),
             bg_color_edit: None,
@@ -1144,6 +1152,7 @@ impl PaintApp {
                     let mut t = ToolKind::from_key(s.str(&format!("tool.{i}.kind"))?)?.new_tool();
                     t.custom = s.str(&format!("tool.{i}.name")).filter(|v| !v.is_empty()).map(str::to_string);
                     t.extra = s.str(&format!("tool.{i}.extra")).unwrap_or("").to_string();
+                    t.key = s.str(&format!("tool.{i}.key")).and_then(keys::Binding::parse);
                     Some(t)
                 })
                 .collect();
@@ -1319,6 +1328,7 @@ impl PaintApp {
             s.set(&format!("tool.{i}.kind"), b.kind.key());
             s.set(&format!("tool.{i}.name"), b.custom.as_deref().unwrap_or(""));
             s.set(&format!("tool.{i}.extra"), &b.extra);
+            s.set(&format!("tool.{i}.key"), b.key.map_or(String::new(), |k| k.text()));
         }
         for (i, b) in self.brushes.iter().enumerate() {
             let p = &b.params;
@@ -1521,7 +1531,7 @@ impl PaintApp {
             }
             GridAction::Property => {
                 let t = &self.brushes[i];
-                self.tool_props = Some((i, t.title(), t.extra.clone()));
+                self.tool_props = Some((i, t.title(), t.extra.clone(), t.key));
             }
         }
     }
@@ -3632,6 +3642,10 @@ impl PaintApp {
                         }
                     }
                 });
+                if ui.button(tr("Быстрые клавиши…")).clicked() {
+                    self.show_keys = true;
+                    ui.close_menu();
+                }
                 ui.menu_button(tr("Режим ползунков HSV"), |ui| {
                     for (m, name) in [(2u8, "HSV"), (1, "HSL"), (0, "V-HSV")] {
                         if ui.radio(w.hsv_mode == m, name).clicked() {
@@ -4097,7 +4111,10 @@ impl PaintApp {
                                 };
                                 let (title, extra, icon, enabled) = (tool.title(), tool.extra.clone(), tool.icon, tool.enabled);
                                 let selected = self.tool == Tool::Brush && self.brush == i;
-                                let tip = if enabled { title.clone() } else { trf("{0} — позже", &[&title]) };
+                                let tip = match tool.key.filter(|_| keys::hints()) {
+                                    Some(k) => format!("{title} ({})", k.label()),
+                                    None => title.clone(),
+                                };
                                 let r = sai_ui::icon_button(ui, Vec2::new(w, 36.0), selected, enabled, &tip, |p, r, c| {
                                     sai_ui::fit_text(p, r.left_top(), egui::Align2::LEFT_TOP, &title, r.width(), 10.0, c);
                                     if !extra.is_empty() {
@@ -5919,9 +5936,18 @@ impl PaintApp {
             let mut reset = false;
             egui::Window::new(tr("Клавиши")).open(&mut open).resizable(true).default_height(480.0).show(ctx, |ui| {
                 ui.label(tr("Нажмите на клавишу действия, затем новое сочетание (Esc — отмена)."));
-                egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(tr("Поиск:"));
+                    ui.add(egui::TextEdit::singleline(&mut self.keys_filter).desired_width(200.0));
+                });
+                ui.label(egui::RichText::new(tr("Свою клавишу инструмента сетки задают в его «Свойствах…» (правый щелчок по инструменту).")).small().weak());
+                let filter = self.keys_filter.to_lowercase();
+                egui::ScrollArea::vertical().id_salt("keys_list").max_height(420.0).show(ui, |ui| {
                     egui::Grid::new("keys").num_columns(2).striped(true).show(ui, |ui| {
                         for (a, _, name, _) in keys::ALL {
+                            if !filter.is_empty() && !tr(name).to_lowercase().contains(&filter) {
+                                continue;
+                            }
                             ui.label(tr(name));
                             let text = if self.key_capture == Some(a) {
                                 tr("нажмите сочетание…").to_string()
@@ -5932,7 +5958,7 @@ impl PaintApp {
                                 if ui.button(text).clicked() {
                                     self.key_capture = Some(a);
                                 }
-                                if ui.small_button("✕").on_hover_text(tr("Убрать клавишу")).clicked() {
+                                if ui.small_button("×").on_hover_text(tr("Убрать клавишу")).clicked() {
                                     self.keymap.insert(a, None);
                                 }
                             });
@@ -6093,7 +6119,9 @@ impl PaintApp {
             }
         }
         let mut props_done = None;
-        if let Some((_, name, extra)) = self.tool_props.as_mut() {
+        let capturing = self.tool_key_capture;
+        let mut start_capture = false;
+        if let Some((_, name, extra, key)) = self.tool_props.as_mut() {
             let mut open = true;
             egui::Window::new(tr("Свойства инструмента")).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
                 egui::Grid::new("toolprops").num_columns(2).show(ui, |ui| {
@@ -6102,6 +6130,17 @@ impl PaintApp {
                     ui.end_row();
                     ui.label(tr("Вторая строка:"));
                     ui.add(egui::TextEdit::singleline(extra).char_limit(16).desired_width(140.0));
+                    ui.end_row();
+                    ui.label(tr("Клавиша:"));
+                    ui.horizontal(|ui| {
+                        let text = if capturing { tr("нажмите сочетание…").to_string() } else { key.map_or_else(|| "—".to_string(), |b| b.label()) };
+                        if ui.button(text).clicked() {
+                            start_capture = true;
+                        }
+                        if ui.small_button("×").on_hover_text(tr("Убрать клавишу")).clicked() {
+                            *key = None;
+                        }
+                    });
                     ui.end_row();
                 });
                 ui.label(egui::RichText::new(tr("Имя — до 8 знаков, как в SAI; вторая строка видна под ним.")).small().weak());
@@ -6118,12 +6157,27 @@ impl PaintApp {
                 props_done = Some(false);
             }
         }
+        if start_capture {
+            self.tool_key_capture = true;
+        }
         if let Some(ok) = props_done {
-            let (i, name, extra) = self.tool_props.take().unwrap();
+            self.tool_key_capture = false;
+            let (i, name, extra, key) = self.tool_props.take().unwrap();
             if let (true, Some(t)) = (ok, self.brushes.get_mut(i)) {
                 let name = name.trim().to_string();
                 t.custom = (!name.is_empty() && name != tr(t.name)).then_some(name);
                 t.extra = extra.trim().to_string();
+                t.key = key;
+            }
+            if ok {
+                // клавиша снимается с других инструментов (как у действий)
+                if let Some(k) = key {
+                    for (j, b) in self.brushes.iter_mut().enumerate() {
+                        if j != i && b.key == Some(k) {
+                            b.key = None;
+                        }
+                    }
+                }
             }
         }
         let mut outline_finish = None;
@@ -6709,6 +6763,26 @@ impl eframe::App for PaintApp {
             self.open(path);
         }
         'shortcuts: {
+        // клавиша для инструмента сетки (окно «Свойства»)
+        if self.tool_key_capture {
+            let got = ctx.input(|i| {
+                i.events.iter().find_map(|e| match e {
+                    egui::Event::Key { key, pressed: true, modifiers, .. } if *key != egui::Key::Escape => {
+                        Some(keys::Binding { key: *key, ctrl: modifiers.command, shift: modifiers.shift, alt: modifiers.alt })
+                    }
+                    _ => None,
+                })
+            });
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.tool_key_capture = false;
+            } else if let Some(b) = got {
+                if let Some(p) = self.tool_props.as_mut() {
+                    p.3 = Some(b);
+                }
+                self.tool_key_capture = false;
+            }
+            break 'shortcuts;
+        }
         // назначение клавиши в окне «Клавиши»: следующее нажатие с модификаторами
         if let Some(action) = self.key_capture {
             let got = ctx.input(|i| {
@@ -6722,10 +6796,15 @@ impl eframe::App for PaintApp {
             if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
                 self.key_capture = None;
             } else if let Some(b) = got {
-                // клавиша снимается с другого действия
+                // клавиша снимается с другого действия и с инструментов сетки
                 for v in self.keymap.values_mut() {
                     if *v == Some(b) {
                         *v = None;
+                    }
+                }
+                for t in &mut self.brushes {
+                    if t.key == Some(b) {
+                        t.key = None;
                     }
                 }
                 self.keymap.insert(action, Some(b));
@@ -6745,25 +6824,33 @@ impl eframe::App for PaintApp {
             let has = |f: &dyn Fn(&egui::Event) -> bool| i.events.iter().any(f);
             (has(&|e| matches!(e, egui::Event::Copy)), has(&|e| matches!(e, egui::Event::Cut)), has(&|e| matches!(e, egui::Event::Paste(_))))
         });
+        // Ctrl+C/X/V egui забирает себе: если действию оставлено обычное сочетание — по событию
+        let is_default = |a: keys::Action, d: &str| km.get(&a).copied().flatten() == keys::Binding::parse(d);
         let ctrl_down = ctx.input(|i| i.modifiers.command);
-        let paste = self.clip.paste_pressed(ctrl_down && !typing, ev_paste);
-        let ctrl_b = ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::B));
-        let ctrl_w = ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::W));
-        if !typing && self.live.is_none() && ctrl_w {
-            self.request_close_tab(self.active_tab);
-        }
+        let paste = if is_default(A::Paste, "Ctrl+V") { self.clip.paste_pressed(ctrl_down && !typing, ev_paste) } else { hit(A::Paste) };
+        let copy = hit(A::Copy) || (ev_copy && is_default(A::Copy, "Ctrl+C"));
+        let cut = hit(A::Cut) || (ev_cut && is_default(A::Cut, "Ctrl+X"));
         if !typing && self.live.is_none() {
-            if ev_copy {
+            if hit(A::Close) {
+                self.request_close_tab(self.active_tab);
+            }
+            if hit(A::New) {
+                self.show_new = true;
+            }
+            if copy {
                 self.copy(false, false);
             }
-            if ev_cut {
+            if cut {
                 self.copy(true, false);
             }
             if paste {
                 self.paste();
             }
-            if ctrl_b {
+            if hit(A::FromClipboard) {
                 self.canvas_from_clipboard();
+            }
+            if hit(A::InvertSelection) {
+                self.invert_selection();
             }
         }
         if !typing {
@@ -6811,9 +6898,10 @@ impl eframe::App for PaintApp {
                 self.view_flip = !self.view_flip;
             }
             // как в SAI: Tab — спрятать панели, F11 и Shift+Tab — полный экран
+            // Tab egui забирает до нас (raw_input_hook): если «панели» оставлены на Tab — по флагу
             let shift_tab = self.tab_pressed.take();
-            let tab = shift_tab == Some(false);
-            let full = ctx.input(|i| i.key_pressed(egui::Key::F11)) || shift_tab == Some(true);
+            let tab = hit(A::TogglePanels) || (shift_tab == Some(false) && is_default(A::TogglePanels, "Tab"));
+            let full = hit(A::Fullscreen) || shift_tab == Some(true);
             if tab {
                 self.win.panels_hidden = !self.win.panels_hidden;
             }
@@ -6822,14 +6910,10 @@ impl eframe::App for PaintApp {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(self.win.fullscreen));
             }
             // как в SAI: Home — положение вида, Ctrl+Alt+0 — масштаб 100 %
-            let (home, zoom100) = ctx.input(|i| {
-                let m = i.modifiers;
-                (i.key_pressed(egui::Key::Home) && !m.shift && !m.command && !m.alt, i.key_pressed(egui::Key::Num0) && m.command && m.alt)
-            });
-            if home {
+            if hit(A::ResetView) {
                 self.reset_view_position();
             }
-            if zoom100 {
+            if hit(A::Zoom100) {
                 self.set_zoom(1.0);
             }
             if hit(A::RotateCcw) {
@@ -6891,7 +6975,17 @@ impl eframe::App for PaintApp {
             if hit(A::HideSelection) {
                 self.show_selection = !self.show_selection;
             }
-            for (a, t) in [(A::Marquee, Tool::Marquee), (A::Lasso, Tool::Lasso), (A::Wand, Tool::Wand)] {
+            for (a, t) in [
+                (A::Marquee, Tool::Marquee),
+                (A::Lasso, Tool::Lasso),
+                (A::Wand, Tool::Wand),
+                (A::MoveTool, Tool::Move),
+                (A::TextTool, Tool::Text),
+                (A::HandTool, Tool::Hand),
+                (A::Picker, Tool::Picker),
+                (A::ZoomTool, Tool::Zoom),
+                (A::Bucket, Tool::Fill),
+            ] {
                 if hit(a) {
                     self.tool = t;
                 }
@@ -6906,12 +7000,28 @@ impl eframe::App for PaintApp {
                     }
                 }
             }
-            for (a, k) in [(A::Pencil, ToolKind::Pencil), (A::AirBrush, ToolKind::AirBrush), (A::Brush, ToolKind::Brush), (A::Water, ToolKind::Water), (A::Eraser, ToolKind::Eraser)] {
+            for (a, k) in [
+                (A::Pencil, ToolKind::Pencil),
+                (A::AirBrush, ToolKind::AirBrush),
+                (A::Brush, ToolKind::Brush),
+                (A::Water, ToolKind::Water),
+                (A::Eraser, ToolKind::Eraser),
+                (A::Marker, ToolKind::Marker),
+                (A::SelPen, ToolKind::SelPen),
+                (A::SelEraser, ToolKind::SelErs),
+                (A::Gradient, ToolKind::Gradient),
+            ] {
                 let i = self.brushes.iter().position(|b| b.kind == k);
                 if let Some(i) = i.filter(|_| hit(a) && !(liwk && matches!(k, ToolKind::Pencil | ToolKind::Eraser))) {
                     self.brush = i;
                     self.tool = Tool::Brush;
                 }
+            }
+            // своя клавиша инструмента сетки («Свойства…», как Shortcut Key в SAI) — важнее общей
+            let own = self.brushes.iter().position(|b| b.key.is_some_and(|k| ctx.input(|i| k.pressed(i))));
+            if let Some(i) = own {
+                self.brush = i;
+                self.tool = Tool::Brush;
             }
             if hit(A::Clear) {
                 self.layer_action(LayerAction::Clear);

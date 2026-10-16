@@ -102,7 +102,6 @@ PSD (со слоями) = PSD (mit Ebenen)
 Ластик = Radierer
 Выд.К. = Ausw.Stift
 Выд.Л. = Ausw.Rad.
-{0} — позже = {0} — später
 Трансформация = Transformieren
 Ближайший = Nächster Nachbar
 Билинейный = Bilinear
@@ -509,3 +508,15 @@ S-кривая = S-Kurve
 Нет = Keine
 Авто = Auto
 По перу = Stiftrichtung
+
+# Быстрые клавиши (0.8.29)
+Быстрые клавиши… = Tastenkürzel…
+Заливка (ведро) = Füllen (Eimer)
+Клавиша: = Taste:
+Масштаб (инструмент) = Zoom (Werkzeug)
+Перемещение = Verschieben
+Пипетка = Pipette
+Поиск: = Suche:
+Рука = Hand
+Свою клавишу инструмента сетки задают в его «Свойствах…» (правый щелчок по инструменту). = Die eigene Taste eines Werkzeugs stellt man in seinen „Eigenschaften…“ ein (Rechtsklick aufs Werkzeug).
+Создать холст = Neue Leinwand

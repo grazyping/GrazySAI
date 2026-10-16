@@ -334,9 +334,12 @@ rulers from newer SAI versions are not shown but are saved too.
 
 ## Shortcut keys
 
-Keys can be reassigned: “Help → Shortcut Keys…” — click an action's key, then press the new
+Keys can be reassigned: “Window → Shortcut Keys…” or “Help → Keys…” (55 actions: files, edit,
+clipboard, view, panels, tools; search by name) — click an action's key, then press the new
 combination (Esc — cancel; the key is taken from another action if it was in use); “As in SAI”
-restores all defaults. Assignments are saved in the settings. The defaults are below.
+restores all defaults. Assignments are saved in the settings. Any grid tool can also get its own
+key in its “Property…” (right-click the tool), like SAI's Shortcut Key; it wins over the general
+one. The defaults are below.
 
 | Keys | Action |
 |---|---|

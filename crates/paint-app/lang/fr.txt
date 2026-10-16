@@ -102,7 +102,6 @@ PSD (со слоями) = PSD (avec calques)
 Ластик = Gomme
 Выд.К. = Sél.Crayon
 Выд.Л. = Sél.Gomme
-{0} — позже = {0} — plus tard
 Трансформация = Transformation
 Ближайший = Plus proche voisin
 Билинейный = Bilinéaire
@@ -509,3 +508,15 @@ S-кривая = Courbe en S
 Нет = Aucune
 Авто = Auto
 По перу = Direction du stylet
+
+# Быстрые клавиши (0.8.29)
+Быстрые клавиши… = Raccourcis clavier…
+Заливка (ведро) = Remplissage (pot)
+Клавиша: = Touche :
+Масштаб (инструмент) = Zoom (outil)
+Перемещение = Déplacer
+Пипетка = Pipette
+Поиск: = Recherche :
+Рука = Main
+Свою клавишу инструмента сетки задают в его «Свойствах…» (правый щелчок по инструменту). = La touche propre d'un outil de la grille se règle dans ses « Propriétés… » (clic droit sur l'outil).
+Создать холст = Nouveau canevas
