@@ -326,6 +326,17 @@ fn filter_result(f: &FilterDialog, w: u32, h: u32, color: Color32) -> paint_core
     }
 }
 
+/// Ноутбуки с двумя видеокартами (Windows): драйверы NVIDIA и AMD находят эти имена в таблице
+/// экспорта программы (её задаёт `build.rs`) и рисуют на дискретной карте, а не на встроенной.
+#[cfg(windows)]
+#[no_mangle]
+#[used]
+pub static NvOptimusEnablement: u32 = 1;
+#[cfg(windows)]
+#[no_mangle]
+#[used]
+pub static AmdPowerXpressRequestHighPerformance: u32 = 1;
+
 /// Чтение файла: сбой разбора (испорченный файл) — ошибка, а не падение программы со всеми
 /// вкладками.
 fn read_guarded<T>(f: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>) -> Result<T, String> {

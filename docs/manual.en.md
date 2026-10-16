@@ -384,6 +384,14 @@ list with search; they change the text immediately. The whole edit is one undo s
 (“Layer → Rasterize Layer”). Perspective
 rulers from newer SAI versions are not shown but are saved too.
 
+## Graphics card
+
+On laptops with two GPUs Windows picks the integrated one for new programs. GrazySAI asks for
+the discrete one (NVIDIA or AMD), so the canvas and big brushes are faster. You can override it in
+the driver settings or in “Settings → Display → Graphics”. On Linux choose the discrete GPU at
+launch: `DRI_PRIME=1 GrazySAI` (Intel/AMD), `__NV_PRIME_RENDER_OFFLOAD=1
+__GLX_VENDOR_LIBRARY_NAME=nvidia GrazySAI` (NVIDIA).
+
 ## Settings and recovery
 
 - **Settings** are saved on exit and restored on start: brushes, colors, stabilizer, magic
