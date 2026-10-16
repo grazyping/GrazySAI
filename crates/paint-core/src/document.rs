@@ -212,6 +212,23 @@ impl Document {
         touched
     }
 
+    /// Убрать штрих, который ещё рисуется: плитки слоя — как до него, в историю ничего.
+    pub fn live_cancel(&mut self, live: LiveStroke) -> Vec<Key> {
+        let Some(layer) = self.layer_mut(&live.path) else { return Vec::new() };
+        let keys: Vec<Key> = live.originals.keys().copied().collect();
+        for (key, original) in live.originals {
+            match original {
+                Some(t) => {
+                    layer.pixels.tiles.insert(key, t);
+                }
+                None => {
+                    layer.pixels.tiles.remove(&key);
+                }
+            }
+        }
+        keys
+    }
+
     /// Перо поднято: записывает штрих в историю.
     pub fn live_finish(&mut self, mut live: LiveStroke) -> Vec<Key> {
         let keys = self.live_paint(&mut live, true);

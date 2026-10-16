@@ -80,7 +80,6 @@ PSD (со слоями) = PSD (mit Ebenen)
 Сбросить поворот (Shift+Home) = Drehung zurücksetzen (Shift+Home)
 Отразить вид (H) = Ansicht spiegeln (H)
 Сглаживание = Stabilisator
-Прямая линия = Gerade Linie
 Цветовой круг = Farbkreis
 Ползунки RGB = RGB-Regler
 Ползунки HSV = HSV-Regler
@@ -181,7 +180,6 @@ PSD (со слоями) = PSD (mit Ebenen)
 # Navigator und Ebenen
 Масштаб = Zoom
 Угол = Winkel
-Поворот вида — позже = Ansichtsdrehung — später
 Эффекты слоя = Ebeneneffekte
 Непроз. = Deckkr.
 Замок = Sperre
@@ -670,3 +668,20 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, mit Ebenen)
 # Текст на холсте (0.8.45)
 Раскладка = Layout
 Начертание = Schriftschnitt
+
+# Поворот вида и прямая линия (0.8.46)
+Поворот вида: тянуть по холсту, двойной щелчок — сброс = Ansicht drehen: auf der Leinwand ziehen, Doppelklick setzt zurück
+Прямая линия: каждый штрих — прямая (Shift + нажатие — прямая от конца прошлого штриха) = Gerade Linie: jeder Strich ist gerade (Umschalt + Drücken — Linie vom Ende des letzten Strichs)
+
+# Кнопки инструментов на панели (0.8.46)
+Всё = Alles
+Вычесть (Alt) = Abziehen (Alt)
+Добавить (Shift) = Hinzufügen (Umschalt)
+Крупнее = Vergrößern
+Мельче = Verkleinern
+Пересечь (Shift+Alt) = Schnittmenge (Umschalt+Alt)
+По окну = Einpassen
+Сбросить положение = Position zurücksetzen
+Слой: = Ebene:
+Снять = Aufheben
+Только текущий слой = Nur aktuelle Ebene

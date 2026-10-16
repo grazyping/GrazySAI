@@ -81,7 +81,6 @@ PSD (со слоями) = PSD (with layers)
 Сбросить поворот (Shift+Home) = Reset Rotation (Shift+Home)
 Отразить вид (H) = Flip View (H)
 Сглаживание = Stabilizer
-Прямая линия = Straight Line
 Цветовой круг = Color Wheel
 Ползунки RGB = RGB Sliders
 Ползунки HSV = HSV Sliders
@@ -182,7 +181,6 @@ PSD (со слоями) = PSD (with layers)
 # Navigator and layer panel
 Масштаб = Zoom
 Угол = Angle
-Поворот вида — позже = View rotation — later
 Эффекты слоя = Layer Effects
 Непроз. = Opacity
 Замок = Lock
@@ -671,3 +669,20 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, with layers)
 # Текст на холсте (0.8.45)
 Раскладка = Layout
 Начертание = Styles
+
+# Поворот вида и прямая линия (0.8.46)
+Поворот вида: тянуть по холсту, двойной щелчок — сброс = Rotate view: drag on the canvas, double-click to reset
+Прямая линия: каждый штрих — прямая (Shift + нажатие — прямая от конца прошлого штриха) = Straight line: every stroke is a straight line (Shift + press — a line from the end of the last stroke)
+
+# Кнопки инструментов на панели (0.8.46)
+Всё = All
+Вычесть (Alt) = Subtract (Alt)
+Добавить (Shift) = Add (Shift)
+Крупнее = Zoom in
+Мельче = Zoom out
+Пересечь (Shift+Alt) = Intersect (Shift+Alt)
+По окну = Fit
+Сбросить положение = Reset position
+Слой: = Layer:
+Снять = None
+Только текущий слой = Current layer only

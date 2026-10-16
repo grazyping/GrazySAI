@@ -80,7 +80,6 @@ PSD (со слоями) = PSD (avec calques)
 Сбросить поворот (Shift+Home) = Réinitialiser la rotation (Shift+Home)
 Отразить вид (H) = Retourner la vue (H)
 Сглаживание = Stabilisateur
-Прямая линия = Ligne droite
 Цветовой круг = Roue chromatique
 Ползунки RGB = Curseurs RVB
 Ползунки HSV = Curseurs TSV
@@ -181,7 +180,6 @@ PSD (со слоями) = PSD (avec calques)
 # Navigateur et calques
 Масштаб = Zoom
 Угол = Angle
-Поворот вида — позже = Rotation de la vue — plus tard
 Эффекты слоя = Effets de calque
 Непроз. = Opacité
 Замок = Verrou
@@ -670,3 +668,20 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, avec calques)
 # Текст на холсте (0.8.45)
 Раскладка = Disposition
 Начертание = Styles
+
+# Поворот вида и прямая линия (0.8.46)
+Поворот вида: тянуть по холсту, двойной щелчок — сброс = Rotation de la vue : glisser sur le canevas, double-clic pour réinitialiser
+Прямая линия: каждый штрих — прямая (Shift + нажатие — прямая от конца прошлого штриха) = Ligne droite : chaque trait est droit (Maj + appui — ligne depuis la fin du trait précédent)
+
+# Кнопки инструментов на панели (0.8.46)
+Всё = Tout
+Вычесть (Alt) = Soustraire (Alt)
+Добавить (Shift) = Ajouter (Maj)
+Крупнее = Agrandir
+Мельче = Réduire
+Пересечь (Shift+Alt) = Intersection (Maj+Alt)
+По окну = Ajuster
+Сбросить положение = Réinitialiser la position
+Слой: = Calque :
+Снять = Aucune
+Только текущий слой = Calque actuel seulement

@@ -127,7 +127,14 @@ Water also blurs the layer under the stroke.
   the current one) or “Delete Color”. Two rows are visible, scroll for the rest. The mixer and
   swatches are kept between runs.
 - The arrow by the main and background color squares (or the X key) swaps them.
-- Color picker: Alt + click (or the Color Picker tool).
+- Color picker: Alt + click (or the Color Picker tool; its panel has “Current layer only”).
+- **Straight line** (quick bar button, as in SAI): every stroke is a straight line from where it
+  starts. Shift + press draws a line from the end of the last stroke.
+- **Rotate view** is a tool: drag on the canvas, double-click to reset; the angle and rotate
+  buttons are in the navigator too.
+- Tools have their own buttons on the panel: selection — mode (replace, add, subtract,
+  intersect; Shift and Alt still work), All, None, Invert; move — flip and rotate the layer;
+  zoom, hand and rotate — zoom, Fit, rotate, mirror, reset position.
 
 ### Fill
 

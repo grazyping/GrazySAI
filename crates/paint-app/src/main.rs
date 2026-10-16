@@ -105,6 +105,8 @@ enum Tool {
     Fill,
     /// Перемещение слоя или выделенного (то же — Ctrl + перетаскивание).
     Move,
+    /// Поворот вида перетаскиванием вокруг середины окна (как инструмент SAI).
+    RotateView,
     /// Текст: щелчок — новая надпись, по текстовому слою — правка (docs/30-text-layers.md).
     Text,
 }
@@ -916,6 +918,18 @@ struct PaintApp {
     /// Инструмент «Текст»: шрифт и размер по умолчанию, открытая правка, строка поиска шрифта.
     text_font: String,
     text_size: f32,
+    /// «Прямая линия» на быстрой панели: каждый штрих — прямая (как в SAI).
+    straight: bool,
+    /// Режим выделения с панели (Shift/Alt его перебивают) и пипетка только по текущему слою.
+    sel_mode: Combine,
+    pick_layer: bool,
+    /// Инструмент «Поворот вида»: прошлая точка перетаскивания.
+    rot_last: Option<Pos2>,
+    /// Прямой штрих: откуда и ластиком ли; последняя точка штриха и конец прошлого (Shift +
+    /// нажатие ведёт прямую от него).
+    line_from: Option<(InputPoint, bool)>,
+    last_point: Option<InputPoint>,
+    last_end: Option<InputPoint>,
     text_bold: bool,
     text_italic: bool,
     text_vertical: bool,
@@ -1084,6 +1098,13 @@ impl PaintApp {
             show_save_as: false,
             text_font: String::new(),
             text_size: 20.0,
+            straight: false,
+            sel_mode: Combine::Replace,
+            pick_layer: false,
+            rot_last: None,
+            line_from: None,
+            last_point: None,
+            last_end: None,
             text_bold: false,
             text_italic: false,
             text_vertical: false,
@@ -2818,8 +2839,42 @@ impl PaintApp {
         let c = self.color();
         let mut stroke = Stroke::new(params);
         stroke.set_grain(self.grain_for(if eraser_end { self.eraser_index() } else { self.brush }));
+        // прямая, как в SAI: кнопка «Прямая линия» — весь штрих прямой от точки нажатия;
+        // Shift + нажатие — прямая от конца прошлого штриха
+        let shift = self.ctx.as_ref().is_some_and(|c| c.input(|i| i.modifiers.shift));
+        self.line_from = match self.last_end {
+            Some(e) if shift => Some((e, eraser_end)),
+            _ if self.straight => Some((p, eraser_end)),
+            _ => None,
+        };
+        self.last_point = Some(p);
+        if self.line_from.is_some() {
+            self.live = Some(LiveStroke::new(self.selected.clone(), stroke, [c.r(), c.g(), c.b()]));
+            self.straight_to(p);
+            return;
+        }
         let mut live = LiveStroke::new(self.selected.clone(), stroke, [c.r(), c.g(), c.b()]);
         live.stroke.add_point(self.smoother.push(p));
+        let keys = self.doc.live_update(&mut live);
+        self.invalidate(keys);
+        self.live = Some(live);
+    }
+
+    /// Прямой штрих: убрать прежний вид и провести заново от начала до `p` (нажим — плавно от
+    /// нажима в начале к текущему).
+    fn straight_to(&mut self, p: InputPoint) {
+        let (Some((a, eraser)), Some(old)) = (self.line_from, self.live.take()) else { return };
+        let keys = self.doc.live_cancel(old);
+        self.invalidate(keys);
+        let params = self.brushes[if eraser { self.eraser_index() } else { self.brush }].params;
+        let mut stroke = Stroke::new(params);
+        stroke.set_grain(self.grain_for(if eraser { self.eraser_index() } else { self.brush }));
+        let c = self.color();
+        let mut live = LiveStroke::new(self.selected.clone(), stroke, [c.r(), c.g(), c.b()]);
+        live.stroke.add_point(a);
+        if (p.x - a.x).hypot(p.y - a.y) > 0.01 {
+            live.stroke.add_point(p);
+        }
         let keys = self.doc.live_update(&mut live);
         self.invalidate(keys);
         self.live = Some(live);
@@ -2852,6 +2907,13 @@ impl PaintApp {
             let path = self.selected.clone();
             let keys = self.doc.mask_stroke_preview(&path, &orig.hide, &st.mask, *target);
             self.invalidate(keys);
+            return;
+        }
+        if self.live.is_some() {
+            self.last_point = Some(p);
+        }
+        if self.line_from.is_some() {
+            self.straight_to(p);
             return;
         }
         let Some(mut live) = self.live.take() else {
@@ -2914,9 +2976,13 @@ impl PaintApp {
         };
         self.thumbs.clear();
         self.dirty = true;
-        for p in self.smoother.finish() {
-            live.stroke.add_point(p);
+        // прямой штрих сглаживателю не отдавался
+        if self.line_from.take().is_none() {
+            for p in self.smoother.finish() {
+                live.stroke.add_point(p);
+            }
         }
+        self.last_end = self.last_point;
         let keys = self.doc.live_finish(live);
         self.invalidate(keys);
     }
@@ -3106,6 +3172,107 @@ impl PaintApp {
     fn deselect(&mut self) {
         self.doc.deselect();
         self.sel_dirty = true;
+    }
+
+    /// Повернуть слой на 90° (`cw`) или отразить (`horizontal`) — из меню «Слой» и с панели.
+    fn layer_turn(&mut self, cw: Option<bool>, horizontal: Option<bool>) {
+        if self.transform.is_some() {
+            self.finish_transform(true);
+        }
+        let path = self.selected.clone();
+        let keys = match (cw, horizontal) {
+            (Some(cw), _) => self.doc.rotate_layer(&path, cw),
+            (_, Some(h)) => self.doc.flip_layer(&path, h),
+            _ => return,
+        };
+        self.invalidate(keys);
+        self.sel_dirty = true;
+        self.thumbs.clear();
+        self.dirty = true;
+    }
+
+    /// Кнопки на панели для инструментов выделения, перемещения, вида и пипетки (по образцу
+    /// параметров инструментов Krita и GIMP; в SAI этих кнопок нет — только сочетания клавиш).
+    fn tool_buttons(&mut self, ui: &mut egui::Ui) {
+        let b = Vec2::splat(22.0);
+        match self.tool {
+            Tool::Marquee | Tool::Lasso | Tool::Wand => {
+                ui.horizontal(|ui| {
+                    ui.label(tr("Режим:"));
+                    for (m, g, tip) in [
+                        (Combine::Replace, "sel_replace", tr("Заменить")),
+                        (Combine::Add, "sel_add", tr("Добавить (Shift)")),
+                        (Combine::Subtract, "sel_sub", tr("Вычесть (Alt)")),
+                        (Combine::Intersect, "sel_int", tr("Пересечь (Shift+Alt)")),
+                    ] {
+                        if sai_ui::icon_button(ui, b, self.sel_mode == m, true, tip, |p, r, c| sai_ui::glyph(p, r, c, g)).clicked() {
+                            self.sel_mode = m;
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    if ui.small_button(tr("Всё")).on_hover_text(tr("Выделить всё")).clicked() {
+                        self.select_all();
+                    }
+                    if ui.small_button(tr("Снять")).on_hover_text(tr("Снять выделение")).clicked() {
+                        self.deselect();
+                    }
+                    if ui.small_button(tr("Инвертировать")).clicked() {
+                        self.invert_selection();
+                    }
+                });
+            }
+            Tool::Move => {
+                ui.horizontal(|ui| {
+                    ui.label(tr("Слой:"));
+                    let tips = [tr("Отразить слой по горизонтали"), tr("Отразить слой по вертикали"), tr("Повернуть слой на 90° против часовой"), tr("Повернуть слой на 90° по часовой")];
+                    for (i, (g, tip)) in ["flip_h", "flip_v", "ccw", "cw"].into_iter().zip(tips).enumerate() {
+                        if sai_ui::icon_button(ui, b, false, true, tip, |p, r, c| sai_ui::glyph(p, r, c, g)).clicked() {
+                            match i {
+                                0 => self.layer_turn(None, Some(true)),
+                                1 => self.layer_turn(None, Some(false)),
+                                2 => self.layer_turn(Some(false), None),
+                                _ => self.layer_turn(Some(true), None),
+                            }
+                        }
+                    }
+                });
+            }
+            Tool::Zoom | Tool::Hand | Tool::RotateView => {
+                ui.horizontal(|ui| {
+                    if sai_ui::icon_button(ui, b, false, true, tr("Мельче"), |p, r, c| sai_ui::glyph(p, r, c, "minus")).clicked() {
+                        self.set_zoom(self.zoom / 1.5);
+                    }
+                    if sai_ui::icon_button(ui, b, false, true, tr("Крупнее"), |p, r, c| sai_ui::glyph(p, r, c, "plus")).clicked() {
+                        self.set_zoom(self.zoom * 1.5);
+                    }
+                    if ui.small_button("100%").clicked() {
+                        self.set_zoom(1.0);
+                    }
+                    if ui.small_button(tr("По окну")).clicked() {
+                        self.fit_pending = true;
+                    }
+                });
+                ui.horizontal(|ui| {
+                    for (g, tip, step) in [("ccw", tr("Повернуть вид против часовой"), -15.0), ("cw", tr("Повернуть вид по часовой"), 15.0), ("reset", tr("Сбросить угол вида"), 0.0)] {
+                        if sai_ui::icon_button(ui, b, false, true, tip, |p, r, c| sai_ui::glyph(p, r, c, g)).clicked() {
+                            self.rotate_view(step);
+                        }
+                    }
+                    if sai_ui::icon_button(ui, b, self.view_flip, true, tr("Зеркало вида"), |p, r, c| sai_ui::glyph(p, r, c, "flip")).clicked() {
+                        self.view_flip = !self.view_flip;
+                    }
+                    if ui.small_button(tr("Сбросить положение")).clicked() {
+                        self.reset_view_position();
+                    }
+                });
+            }
+            Tool::Picker => {
+                ui.checkbox(&mut self.pick_layer, tr("Только текущий слой"));
+            }
+            _ => return,
+        }
+        ui.add_space(4.0);
     }
 
     fn select_all(&mut self) {
@@ -3537,6 +3704,16 @@ impl PaintApp {
     }
 
     fn pick_color(&mut self, x: f32, y: f32) {
+        if self.pick_layer {
+            // только текущий слой: прозрачное не берётся
+            if let Some(l) = self.doc.layer(&self.selected) {
+                let [r, g, b, a] = paint_core::pixel::to_rgba8(l.pixels.get(x.floor() as i32, y.floor() as i32));
+                if a > 0 {
+                    self.hsv = sai_ui::rgb_to_hsv(Color32::from_rgb(r, g, b));
+                }
+            }
+            return;
+        }
         let key = ((x as i32).div_euclid(TILE), (y as i32).div_euclid(TILE));
         let rgba = self.doc.render_tile(key);
         let i = (((y as i32).rem_euclid(TILE) * TILE + (x as i32).rem_euclid(TILE)) * 4) as usize;
@@ -3891,27 +4068,13 @@ impl PaintApp {
                 ui.separator();
                 for (item, cw) in [(tr("Повернуть слой на 90° против часовой"), false), (tr("Повернуть слой на 90° по часовой"), true)] {
                     if ui.button(item).clicked() {
-                        if self.transform.is_some() {
-                            self.finish_transform(true);
-                        }
-                        let keys = self.doc.rotate_layer(&self.selected.clone(), cw);
-                        self.invalidate(keys);
-                        self.sel_dirty = true;
-                        self.thumbs.clear();
-                        self.dirty = true;
+                        self.layer_turn(Some(cw), None);
                         ui.close_menu();
                     }
                 }
                 for (item, horizontal) in [(tr("Отразить слой по горизонтали"), true), (tr("Отразить слой по вертикали"), false)] {
                     if ui.button(item).clicked() {
-                        if self.transform.is_some() {
-                            self.finish_transform(true);
-                        }
-                        let keys = self.doc.flip_layer(&self.selected.clone(), horizontal);
-                        self.invalidate(keys);
-                        self.sel_dirty = true;
-                        self.thumbs.clear();
-                        self.dirty = true;
+                        self.layer_turn(None, Some(horizontal));
                         ui.close_menu();
                     }
                 }
@@ -4424,9 +4587,9 @@ impl PaintApp {
                         ui.selectable_value(&mut self.stabilizer, v, v.label());
                     }
                 });
-            sai_ui::icon_button(ui, b, false, false, tr("Прямая линия"), |p, r, c| {
-                sai_ui::glyph(p, r, c, "line")
-            });
+            if sai_ui::icon_button(ui, b, self.straight, true, tr("Прямая линия: каждый штрих — прямая (Shift + нажатие — прямая от конца прошлого штриха)"), |p, r, c| sai_ui::glyph(p, r, c, "line")).clicked() {
+                self.straight = !self.straight;
+            }
             if sai_ui::icon_button(ui, b, self.ruler.ignore, self.ruler.visible, tr("Не замечать линейку"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "ruler")
             })
@@ -4599,14 +4762,9 @@ impl PaintApp {
                     {
                         self.tool = Tool::Zoom;
                     }
-                    sai_ui::icon_button(
-                        ui,
-                        b,
-                        false,
-                        false,
-                        tr("Поворот вида"),
-                        |p, r, c| sai_ui::glyph(p, r, c, "rotate"),
-                    );
+                    if sai_ui::icon_button(ui, b, self.tool == Tool::RotateView, true, tr("Поворот вида: тянуть по холсту, двойной щелчок — сброс"), |p, r, c| sai_ui::glyph(p, r, c, "rotate")).clicked() {
+                        self.tool = Tool::RotateView;
+                    }
                     if sai_ui::icon_button(
                         ui,
                         b,
@@ -4825,6 +4983,7 @@ impl PaintApp {
             });
             ui.add_space(4.0);
         }
+        self.tool_buttons(ui);
         if self.tool == Tool::Lasso {
             ui.label(tr("Режим выделения:"));
             ui.radio_value(&mut self.lasso_polygon, false, tr("Свободно"));
@@ -4851,6 +5010,10 @@ impl PaintApp {
                     *tol = v.round().clamp(0.0, 255.0) as u8;
                 }
             });
+            return;
+        }
+        // настройки кисти — только у кистей (как в SAI: у выделения, перемещения, вида их нет)
+        if self.tool != Tool::Brush {
             return;
         }
         if self.grain_names.is_none() {
@@ -5488,19 +5651,17 @@ impl PaintApp {
                 self.set_zoom(1.0);
             }
         });
-        sai_ui::row(ui, tr("Угол"), lw, false, |ui| {
+        sai_ui::row(ui, tr("Угол"), lw, true, |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
-            let mut a = 0.0;
-            sai_ui::bar(ui, &mut a, -180.0, 180.0, "+0°".into(), w, false);
-            for g in ["ccw", "cw", "reset"] {
-                sai_ui::icon_button(
-                    ui,
-                    b,
-                    false,
-                    false,
-                    tr("Поворот вида — позже"),
-                    |p, r, c| sai_ui::glyph(p, r, c, g),
-                );
+            let mut a = self.view_angle.to_degrees();
+            let text = format!("{a:+.0}°");
+            if sai_ui::bar(ui, &mut a, -180.0, 180.0, text, w, true).changed() {
+                self.view_angle = a.round().to_radians();
+            }
+            for (g, tip, step) in [("ccw", tr("Повернуть вид против часовой"), -15.0), ("cw", tr("Повернуть вид по часовой"), 15.0), ("reset", tr("Сбросить угол вида"), 0.0)] {
+                if sai_ui::icon_button(ui, b, false, true, tip, |p, r, c| sai_ui::glyph(p, r, c, g)).clicked() {
+                    self.rotate_view(step);
+                }
             }
         });
         ui.add_space(3.0);
@@ -6242,6 +6403,34 @@ impl PaintApp {
         } else if panning && (response.dragged() || middle) {
             let delta = ui.input(|i| i.pointer.delta());
             self.offset -= ViewXf::new(rect, self.zoom, self.offset, vang, vflip).vec_to_canvas(delta);
+        } else if self.tool == Tool::RotateView {
+            if response.double_clicked() {
+                self.rotate_view(0.0);
+            } else if response.dragged() {
+                if let Some(pos) = pointer {
+                    let c = rect.center();
+                    if let Some(prev) = self.rot_last {
+                        let (from, to) = (prev - c, pos - c);
+                        if from.length() > 4.0 && to.length() > 4.0 {
+                            let mut da = to.angle() - from.angle();
+                            if da > std::f32::consts::PI {
+                                da -= std::f32::consts::TAU;
+                            } else if da < -std::f32::consts::PI {
+                                da += std::f32::consts::TAU;
+                            }
+                            // в зеркальном виде поворот идёт в обратную сторону
+                            let da = if self.view_flip { -da } else { da };
+                            // не через rotate_view: шаг 0 там значит «сбросить»
+                            if da != 0.0 {
+                                self.rotate_view(da.to_degrees());
+                            }
+                        }
+                    }
+                    self.rot_last = Some(pos);
+                }
+            } else {
+                self.rot_last = None;
+            }
         } else if self.tool == Tool::Zoom {
             if response.clicked() {
                 if let Some(pos) = response.interact_pointer_pos() {
@@ -6309,7 +6498,8 @@ impl PaintApp {
                 self.close_polygon();
             }
             let mods = ui.input(|i| i.modifiers);
-            let mode = Combine::from_modifiers(mods.shift, mods.alt);
+            // Shift/Alt — как в SAI, без них — режим кнопок панели
+            let mode = if mods.shift || mods.alt { Combine::from_modifiers(mods.shift, mods.alt) } else { self.sel_mode };
             if pressed && !closed && response.hovered() {
                 if let Some(pos) = pointer {
                     let c = to_canvas(pos, self.zoom, self.offset);
@@ -7971,6 +8161,7 @@ impl eframe::App for PaintApp {
                 (A::MoveTool, Tool::Move),
                 (A::TextTool, Tool::Text),
                 (A::HandTool, Tool::Hand),
+                (A::RotateTool, Tool::RotateView),
                 (A::Picker, Tool::Picker),
                 (A::ZoomTool, Tool::Zoom),
                 (A::Bucket, Tool::Fill),

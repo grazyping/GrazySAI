@@ -84,13 +84,14 @@ pub enum Action {
     MoveTool,
     TextTool,
     HandTool,
+    RotateTool,
     Picker,
     ZoomTool,
 }
 
 /// Действие, имя для настроек, подпись в окне, клавиша по умолчанию.
 /// Пустая клавиша — по умолчанию не назначена (в SAI её нет).
-pub const ALL: [(Action, &str, &str, &str); 56] = [
+pub const ALL: [(Action, &str, &str, &str); 57] = [
     (Action::Undo, "undo", "Отменить", "Ctrl+Z"),
     (Action::Redo, "redo", "Повторить", "Ctrl+Y"),
     (Action::Open, "open", "Открыть", "Ctrl+O"),
@@ -145,6 +146,7 @@ pub const ALL: [(Action, &str, &str, &str); 56] = [
     (Action::MoveTool, "move_tool", "Перемещение", ""),
     (Action::TextTool, "text_tool", "Текст", ""),
     (Action::HandTool, "hand_tool", "Рука", ""),
+    (Action::RotateTool, "rotate_tool", "Поворот вида", ""),
     (Action::Picker, "picker", "Пипетка", ""),
     (Action::ZoomTool, "zoom_tool", "Масштаб (инструмент)", ""),
 ];

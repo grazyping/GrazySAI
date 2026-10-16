@@ -80,7 +80,6 @@ PSD (со слоями) = PSD (com camadas)
 Сбросить поворот (Shift+Home) = Redefinir rotação (Shift+Home)
 Отразить вид (H) = Espelhar vista (H)
 Сглаживание = Estabilizador
-Прямая линия = Linha reta
 Цветовой круг = Roda de cores
 Ползунки RGB = Controles RGB
 Ползунки HSV = Controles HSV
@@ -181,7 +180,6 @@ PSD (со слоями) = PSD (com camadas)
 # Navegador e camadas
 Масштаб = Zoom
 Угол = Ângulo
-Поворот вида — позже = Rotação da vista — mais tarde
 Эффекты слоя = Efeitos de camada
 Непроз. = Opacidade
 Замок = Bloqueio
@@ -670,3 +668,20 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, com camadas)
 # Текст на холсте (0.8.45)
 Раскладка = Disposição
 Начертание = Estilos
+
+# Поворот вида и прямая линия (0.8.46)
+Поворот вида: тянуть по холсту, двойной щелчок — сброс = Girar vista: arrastar na tela, clique duplo para redefinir
+Прямая линия: каждый штрих — прямая (Shift + нажатие — прямая от конца прошлого штриха) = Linha reta: cada traço é reto (Shift + pressionar — linha a partir do fim do traço anterior)
+
+# Кнопки инструментов на панели (0.8.46)
+Всё = Tudo
+Вычесть (Alt) = Subtrair (Alt)
+Добавить (Shift) = Adicionar (Shift)
+Крупнее = Aproximar
+Мельче = Afastar
+Пересечь (Shift+Alt) = Interseção (Shift+Alt)
+По окну = Ajustar
+Сбросить положение = Redefinir posição
+Слой: = Camada:
+Снять = Remover
+Только текущий слой = Só a camada atual

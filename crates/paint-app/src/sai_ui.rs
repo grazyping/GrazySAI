@@ -790,6 +790,38 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
             p.line_segment([ctr + Vec2::new(-k * 0.3, k * 0.3), ctr + Vec2::new(k * 0.9, -k * 0.9)], s);
             p.add(Shape::line(vec![ctr + Vec2::new(k * 0.2, -k * 0.9), ctr + Vec2::new(k * 0.9, -k * 0.9), ctr + Vec2::new(k * 0.9, -k * 0.2)], s));
         }
+        "sel_replace" | "sel_add" | "sel_sub" | "sel_int" => {
+            // два квадрата: что остаётся выделенным — закрашено
+            let a = Rect::from_min_size(ctr + Vec2::new(-k, -k), Vec2::splat(k * 1.3));
+            let b = Rect::from_min_size(ctr + Vec2::new(-k * 0.3, -k * 0.3), Vec2::splat(k * 1.3));
+            let fill = Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (c.a() as f32 * 0.55) as u8);
+            match name {
+                "sel_replace" => {
+                    p.rect_filled(b, 0.0, fill);
+                    p.rect_stroke(a, 0.0, Stroke::new(1.0_f32, c));
+                }
+                "sel_add" => {
+                    p.rect_filled(a, 0.0, fill);
+                    p.rect_filled(b, 0.0, fill);
+                }
+                "sel_sub" => {
+                    p.rect_filled(a, 0.0, fill);
+                    p.rect_filled(a.intersect(b), 0.0, Color32::WHITE);
+                }
+                _ => {
+                    p.rect_filled(a.intersect(b), 0.0, fill);
+                }
+            }
+            p.rect_stroke(a, 0.0, Stroke::new(1.0_f32, c));
+            p.rect_stroke(b, 0.0, Stroke::new(1.0_f32, c));
+        }
+        "flip_h" | "flip_v" => {
+            // половинки-треугольники по обе стороны оси
+            let (ax, ay) = if name == "flip_h" { (Vec2::X, Vec2::Y) } else { (Vec2::Y, Vec2::X) };
+            p.line_segment([ctr - ay * k, ctr + ay * k], Stroke::new(1.0_f32, c));
+            p.add(Shape::convex_polygon(vec![ctr - ax * k * 0.2 - ay * k * 0.7, ctr - ax * k * 0.2 + ay * k * 0.7, ctr - ax * k], c, Stroke::NONE));
+            p.add(Shape::closed_line(vec![ctr + ax * k * 0.2 - ay * k * 0.7, ctr + ax * k * 0.2 + ay * k * 0.7, ctr + ax * k], s));
+        }
         "view_tab" => {
             // две вкладки одного холста
             p.rect_stroke(Rect::from_min_max(ctr + Vec2::new(-k * 0.9, -k * 0.5), ctr + Vec2::new(k * 0.4, k * 0.9)), 0.0, s);

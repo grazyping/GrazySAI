@@ -80,7 +80,6 @@ PSD (со слоями) = PSD (con capas)
 Сбросить поворот (Shift+Home) = Restablecer giro (Shift+Home)
 Отразить вид (H) = Voltear vista (H)
 Сглаживание = Estabilizador
-Прямая линия = Línea recta
 Цветовой круг = Rueda de color
 Ползунки RGB = Deslizadores RGB
 Ползунки HSV = Deslizadores HSV
@@ -181,7 +180,6 @@ PSD (со слоями) = PSD (con capas)
 # Navegador y capas
 Масштаб = Zoom
 Угол = Ángulo
-Поворот вида — позже = Giro de vista — más adelante
 Эффекты слоя = Efectos de capa
 Непроз. = Opacidad
 Замок = Bloqueo
@@ -670,3 +668,20 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, con capas)
 # Текст на холсте (0.8.45)
 Раскладка = Disposición
 Начертание = Estilos
+
+# Поворот вида и прямая линия (0.8.46)
+Поворот вида: тянуть по холсту, двойной щелчок — сброс = Girar vista: arrastrar en el lienzo, doble clic para restablecer
+Прямая линия: каждый штрих — прямая (Shift + нажатие — прямая от конца прошлого штриха) = Línea recta: cada trazo es recto (Mayús + pulsar — línea desde el final del trazo anterior)
+
+# Кнопки инструментов на панели (0.8.46)
+Всё = Todo
+Вычесть (Alt) = Restar (Alt)
+Добавить (Shift) = Añadir (Mayús)
+Крупнее = Acercar
+Мельче = Alejar
+Пересечь (Shift+Alt) = Intersecar (Mayús+Alt)
+По окну = Ajustar
+Сбросить положение = Restablecer posición
+Слой: = Capa:
+Снять = Quitar
+Только текущий слой = Solo la capa actual
