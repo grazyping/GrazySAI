@@ -253,6 +253,8 @@ Normal layers only (not folders).
   - H — flip the view.
 
   View rotation and flip change only the display, not the image.
+- “View → New Floating View” opens a second window onto the same canvas with its own zoom,
+  position, rotation and mirror; you can paint in it.
 - “Canvas → Trim Canvas by Selection” makes the canvas the selection rectangle.
 - “Canvas → Background”, as in SAI: transparent (shown as a bright or dark checker, white, black
   or your color) or opaque white, black or your color; “Canvas Background Color…”. The background

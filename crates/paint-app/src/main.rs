@@ -209,6 +209,15 @@ impl Tab {
     }
 }
 
+/// Плавающий вид холста («New Floating View» в SAI): свои масштаб, сдвиг, поворот и зеркало.
+#[derive(Clone, Copy)]
+struct FloatView {
+    zoom: f32,
+    offset: Vec2,
+    angle: f32,
+    flip: bool,
+}
+
 /// Меню «Окно», как в SAI 2017.
 #[derive(Clone, Copy, PartialEq)]
 struct WindowOpts {
@@ -843,6 +852,11 @@ struct PaintApp {
     gradient: Option<GradientEdit>,
     grad_opts: GradientOpts,
     transform_kind: TransformKind,
+    /// Плавающий вид, если открыт.
+    float_view: Option<FloatView>,
+    /// Какой вид сейчас рисуется (0 — главный, 1 — плавающий) и какой принимает ввод.
+    drawing_view: u8,
+    input_view: u8,
     /// Вкладки холстов: на месте активной — `None` (её поля — в самом `PaintApp`).
     tabs: Vec<Option<Tab>>,
     active_tab: usize,
@@ -996,6 +1010,9 @@ impl PaintApp {
             bg_color_edit: None,
             win: WindowOpts::default(),
             tabs: vec![None],
+            float_view: None,
+            drawing_view: 0,
+            input_view: 0,
             active_tab: 0,
             close_ask: None,
             tab_pressed: None,
@@ -3599,6 +3616,10 @@ impl PaintApp {
                     self.rotate_view(0.0);
                     ui.close_menu();
                 }
+                if ui.button(tr("Новый плавающий вид")).clicked() {
+                    self.float_view = Some(FloatView { zoom: self.zoom, offset: self.offset, angle: self.view_angle, flip: self.view_flip });
+                    ui.close_menu();
+                }
                 ui.separator();
                 let mut flip = self.view_flip;
                 if ui.checkbox(&mut flip, tr("Зеркало вида")).on_hover_text("H").clicked() {
@@ -5444,7 +5465,7 @@ impl PaintApp {
         let to_canvas = |p: Pos2, zoom: f32, offset: Vec2| -> Vec2 { ViewXf::new(rect, zoom, offset, vang, vflip).to_canvas(p) };
 
         // Масштаб колесом — вокруг указателя; перетаскивание средней кнопкой или «Рукой» — сдвиг.
-        let (scroll, zoom_delta, middle, space, pointer, moves, pressed, released, touches) = ui
+        let (mut scroll, mut zoom_delta, mut middle, space, pointer, mut moves, mut pressed, mut released, touches) = ui
             .input(|i| {
                 let moves: Vec<Pos2> = i
                     .events
@@ -5481,6 +5502,20 @@ impl PaintApp {
                 )
             });
         // Перо через Windows Ink приходит касанием с силой нажима.
+        // несколько видов: ввод принимает тот, в котором нажали; другой в это время только показывает
+        if pressed && response.hovered() {
+            self.input_view = self.drawing_view;
+        }
+        if self.input_view != self.drawing_view {
+            pressed = false;
+            released = false;
+            moves.clear();
+            middle = false;
+            if !response.hovered() {
+                scroll = 0.0;
+                zoom_delta = 1.0;
+            }
+        }
         for (phase, force) in touches {
             match phase {
                 egui::TouchPhase::Start | egui::TouchPhase::Move => {
@@ -7150,6 +7185,24 @@ impl eframe::App for PaintApp {
         egui::CentralPanel::default()
             .frame(egui::Frame::none())
             .show(ctx, |ui| self.canvas(ui));
+        if let Some(mut fv) = self.float_view {
+            // плавающий вид рисуется тем же холстом со своим масштабом, сдвигом и поворотом
+            let mut open = true;
+            let main = (self.zoom, self.offset, self.view_angle, self.view_flip, self.view);
+            egui::Window::new(tr("Плавающий вид")).id(egui::Id::new("float_view")).open(&mut open).default_size([480.0, 360.0]).resizable(true).frame(egui::Frame::window(&ctx.style()).inner_margin(0.0)).show(ctx, |ui| {
+                (self.zoom, self.offset, self.view_angle, self.view_flip) = (fv.zoom, fv.offset, fv.angle, fv.flip);
+                self.drawing_view = 1;
+                ui.set_min_size(Vec2::new(160.0, 120.0));
+                self.canvas(ui);
+                fv = FloatView { zoom: self.zoom, offset: self.offset, angle: self.view_angle, flip: self.view_flip };
+                self.drawing_view = 0;
+            });
+            (self.zoom, self.offset, self.view_angle, self.view_flip, self.view) = main;
+            self.float_view = open.then_some(fv);
+            if !open && self.input_view == 1 {
+                self.input_view = 0;
+            }
+        }
         self.dialogs(ctx);
 
         self.render_pending(Duration::from_millis(12));

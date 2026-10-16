@@ -520,3 +520,7 @@ S-кривая = Courbe en S
 Рука = Main
 Свою клавишу инструмента сетки задают в его «Свойствах…» (правый щелчок по инструменту). = La touche propre d'un outil de la grille se règle dans ses « Propriétés… » (clic droit sur l'outil).
 Создать холст = Nouveau canevas
+
+# Плавающий вид (0.8.30)
+Новый плавающий вид = Nouvelle vue flottante
+Плавающий вид = Vue flottante

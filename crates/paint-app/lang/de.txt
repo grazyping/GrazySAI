@@ -520,3 +520,7 @@ S-кривая = S-Kurve
 Рука = Hand
 Свою клавишу инструмента сетки задают в его «Свойствах…» (правый щелчок по инструменту). = Die eigene Taste eines Werkzeugs stellt man in seinen „Eigenschaften…“ ein (Rechtsklick aufs Werkzeug).
 Создать холст = Neue Leinwand
+
+# Плавающий вид (0.8.30)
+Новый плавающий вид = Neue schwebende Ansicht
+Плавающий вид = Schwebende Ansicht

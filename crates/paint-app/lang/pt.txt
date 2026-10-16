@@ -520,3 +520,7 @@ S-кривая = Curva em S
 Рука = Mão
 Свою клавишу инструмента сетки задают в его «Свойствах…» (правый щелчок по инструменту). = A tecla própria de uma ferramenta é definida em suas “Propriedades…” (clique direito na ferramenta).
 Создать холст = Nova tela
+
+# Плавающий вид (0.8.30)
+Новый плавающий вид = Nova vista flutuante
+Плавающий вид = Vista flutuante

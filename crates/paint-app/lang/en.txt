@@ -521,3 +521,7 @@ S-кривая = S-Curve Gradation
 Рука = Hand
 Свою клавишу инструмента сетки задают в его «Свойствах…» (правый щелчок по инструменту). = A grid tool's own key is set in its “Property…” (right-click the tool).
 Создать холст = New Canvas
+
+# Плавающий вид (0.8.30)
+Новый плавающий вид = New Floating View
+Плавающий вид = Floating View
