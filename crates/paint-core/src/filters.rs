@@ -733,3 +733,285 @@ mod correction_tests {
         assert_eq!(crate::pixel::to_rgba8(filled.get(5, 5)), [200, 0, 0, 255]);
     }
 }
+
+// ---------- «Эффекты» и «Отрисовка» как в Clip Studio Paint (0.8.33) ----------
+
+/// Случайное 0..1 от целых координат (без состояния — одинаково при каждом предпросмотре).
+fn hash01(x: i32, y: i32, seed: u32) -> f64 {
+    let mut h = (x as u32).wrapping_mul(0x8da6_b343) ^ (y as u32).wrapping_mul(0xd816_3841) ^ seed.wrapping_mul(0xcb1a_b31f);
+    h ^= h >> 13;
+    h = h.wrapping_mul(0x5bd1_e995);
+    h ^= h >> 15;
+    (h & 0xff_ffff) as f64 / 16_777_215.0
+}
+
+/// Прямоугольник содержимого слоя на холсте (или пусто).
+fn canvas_bounds(src: &ColorMap, w: u32, h: u32, pad: i32) -> Option<(i32, i32, i32, i32)> {
+    let (x0, y0, x1, y1) = crate::selection::content_bounds(src)?;
+    let b = ((x0 - pad).max(0), (y0 - pad).max(0), (x1 + pad).min(w as i32), (y1 + pad).min(h as i32));
+    (b.0 < b.2 && b.1 < b.3).then_some(b)
+}
+
+/// Точка слоя с двулинейной выборкой (предумноженные 0..=1).
+fn sample(src: &ColorMap, x: f64, y: f64) -> [f64; 4] {
+    let (fx, fy) = (x - 0.5, y - 0.5);
+    let (ix, iy) = (fx.floor() as i32, fy.floor() as i32);
+    let (tx, ty) = (fx - ix as f64, fy - iy as f64);
+    let k = 1.0 / ONE as f64;
+    let g = |x: i32, y: i32| src.get(x, y).map(|c| c as f64 * k);
+    let (a, b, c, d) = (g(ix, iy), g(ix + 1, iy), g(ix, iy + 1), g(ix + 1, iy + 1));
+    [0, 1, 2, 3].map(|i| (a[i] * (1.0 - tx) + b[i] * tx) * (1.0 - ty) + (c[i] * (1.0 - tx) + d[i] * tx) * ty)
+}
+
+/// Общий проход: новая точка по координатам `f(x, y)` в пределах прямоугольника.
+fn per_pixel(src: &ColorMap, b: (i32, i32, i32, i32), sel: &(dyn Fn(i32, i32) -> u32 + Sync), f: &(dyn Fn(i32, i32) -> [f64; 4] + Sync)) -> ColorMap {
+    let (x0, y0, x1, y1) = b;
+    let bw = (x1 - x0) as usize;
+    let res: Vec<[f64; 4]> = (0..bw * (y1 - y0) as usize).map(|i| f(x0 + (i % bw) as i32, y0 + (i / bw) as i32)).collect();
+    write_back(src, x0, y0, bw, &res, sel)
+}
+
+/// «Хроматическая аберрация»: красный и синий расходятся на `intensity` px — по кругу от
+/// середины холста (`radial`) или вдоль угла `angle` (градусы).
+pub fn chromatic_aberration(src: &ColorMap, w: u32, h: u32, radial: bool, intensity: f64, angle: f64, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let pad = intensity.ceil() as i32 + 1;
+    let Some(b) = canvas_bounds(src, w, h, pad) else { return src.clone() };
+    let (cx, cy) = (w as f64 / 2.0, h as f64 / 2.0);
+    let far = cx.hypot(cy).max(1.0);
+    let (dx, dy) = (angle.to_radians().cos() * intensity, angle.to_radians().sin() * intensity);
+    per_pixel(src, b, sel, &|x, y| {
+        let (px, py) = (x as f64 + 0.5, y as f64 + 0.5);
+        let (sx, sy) = if radial { ((px - cx) / far * intensity, (py - cy) / far * intensity) } else { (dx, dy) };
+        // за краем холста — край (иначе у края цветная рамка)
+        let cl = |x: f64, y: f64| (x.clamp(0.5, w as f64 - 0.5), y.clamp(0.5, h as f64 - 0.5));
+        let ((rx, ry), (bx, by)) = (cl(px - sx, py - sy), cl(px + sx, py + sy));
+        let r = sample(src, rx, ry);
+        let g = sample(src, px, py);
+        let bl = sample(src, bx, by);
+        let a = r[3].max(g[3]).max(bl[3]);
+        [r[0], g[1], bl[2], a]
+    })
+}
+
+/// «Шум»: случайная добавка ±сила/2 к каждой точке (цветной — к каждому каналу своя).
+pub fn noise(src: &ColorMap, w: u32, h: u32, color: bool, strength: f64, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let Some(b) = canvas_bounds(src, w, h, 0) else { return src.clone() };
+    let k = 1.0 / ONE as f64;
+    per_pixel(src, b, sel, &|x, y| {
+        let p = src.get(x, y).map(|c| c as f64 * k);
+        let n = |s: u32| (hash01(x, y, s) - 0.5) * strength * p[3];
+        let g = n(1);
+        let d = if color { [n(1), n(2), n(3)] } else { [g, g, g] };
+        [p[0] + d[0], p[1] + d[1], p[2] + d[2], p[3]]
+    })
+}
+
+/// «Мозаика»: квадраты `tile` px (от угла холста) — среднее по квадрату.
+pub fn mosaic(src: &ColorMap, w: u32, h: u32, tile: u32, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let t = tile.max(1) as i32;
+    let Some((x0, y0, x1, y1)) = canvas_bounds(src, w, h, 0) else { return src.clone() };
+    let (x0, y0) = (x0.div_euclid(t) * t, y0.div_euclid(t) * t);
+    let (x1, y1) = ((x1 + t - 1).div_euclid(t) * t, (y1 + t - 1).div_euclid(t) * t);
+    let k = 1.0 / ONE as f64;
+    let mut avg = std::collections::HashMap::new();
+    for ty in (y0..y1).step_by(t as usize) {
+        for tx in (x0..x1).step_by(t as usize) {
+            let mut s = [0f64; 4];
+            let mut n = 0.0f64;
+            for y in ty..(ty + t).min(h as i32) {
+                for x in tx..(tx + t).min(w as i32) {
+                    let p = src.get(x, y);
+                    for c in 0..4 {
+                        s[c] += p[c] as f64 * k;
+                    }
+                    n += 1.0;
+                }
+            }
+            avg.insert((tx, ty), s.map(|v| v / n.max(1.0)));
+        }
+    }
+    per_pixel(src, (x0, y0, x1.min(w as i32), y1.min(h as i32)), sel, &|x, y| avg[&(x.div_euclid(t) * t, y.div_euclid(t) * t)])
+}
+
+/// «Кристаллизация»: ячейки Вороного вокруг точек сетки `cell` px со сдвигом `random` (0..1);
+/// точка получает средний цвет своей ячейки. `tiling` — ячейки повторяются по краям холста.
+pub fn crystallize(src: &ColorMap, w: u32, h: u32, cell: u32, random: f64, tiling: bool, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let c = cell.max(2) as i32;
+    let (gw, gh) = ((w as i32 + c - 1) / c, (h as i32 + c - 1) / c);
+    let site = |gx: i32, gy: i32| -> (f64, f64) {
+        let (wx, wy) = if tiling { (gx.rem_euclid(gw), gy.rem_euclid(gh)) } else { (gx, gy) };
+        let jx = (hash01(wx, wy, 7) - 0.5) * random;
+        let jy = (hash01(wx, wy, 11) - 0.5) * random;
+        ((gx as f64 + 0.5 + jx) * c as f64, (gy as f64 + 0.5 + jy) * c as f64)
+    };
+    let owner = |x: i32, y: i32| -> (i32, i32) {
+        let (gx, gy) = (x.div_euclid(c), y.div_euclid(c));
+        let (px, py) = (x as f64 + 0.5, y as f64 + 0.5);
+        let mut best = (f64::MAX, (gx, gy));
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let (sx, sy) = site(gx + dx, gy + dy);
+                let d = (sx - px).powi(2) + (sy - py).powi(2);
+                if d < best.0 {
+                    best = (d, (gx + dx, gy + dy));
+                }
+            }
+        }
+        let (ox, oy) = best.1;
+        if tiling { (ox.rem_euclid(gw), oy.rem_euclid(gh)) } else { (ox, oy) }
+    };
+    let Some(b) = canvas_bounds(src, w, h, c) else { return src.clone() };
+    let k = 1.0 / ONE as f64;
+    let mut sums: std::collections::HashMap<(i32, i32), ([f64; 4], f64)> = std::collections::HashMap::new();
+    for y in b.1..b.3 {
+        for x in b.0..b.2 {
+            let p = src.get(x, y);
+            let e = sums.entry(owner(x, y)).or_insert(([0.0; 4], 0.0));
+            for (acc, &v) in e.0.iter_mut().zip(&p) {
+                *acc += v as f64 * k;
+            }
+            e.1 += 1.0;
+        }
+    }
+    per_pixel(src, b, sel, &|x, y| sums.get(&owner(x, y)).map_or([0.0; 4], |(s, n)| s.map(|v| v / n)))
+}
+
+/// Пресет и эффект «Ретро-плёнки».
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RetroFilm {
+    /// 0 — винтаж (выцветание), 1 — современный (холоднее), 2 — тёплый.
+    pub preset: u8,
+    /// 0 — нет, 1 — сепия, 2 — засветка, 3 — сепия и засветка.
+    pub effect: u8,
+    pub intensity: f64,
+    pub noise: f64,
+}
+
+/// «Ретро-плёнка»: тон пресета, сепия, засветка от угла, шум и лёгкая аберрация.
+pub fn retro_film(src: &ColorMap, w: u32, h: u32, r: RetroFilm, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let ca = chromatic_aberration(src, w, h, true, 2.0 * r.intensity, 0.0, &|_, _| ONE);
+    let Some(b) = canvas_bounds(&ca, w, h, 0) else { return src.clone() };
+    let k = 1.0 / ONE as f64;
+    let diag = (w as f64).hypot(h as f64).max(1.0);
+    per_pixel(src, b, sel, &|x, y| {
+        let p = ca.get(x, y).map(|c| c as f64 * k);
+        if p[3] <= 0.0 {
+            return [0.0; 4];
+        }
+        let mut c = [p[0] / p[3], p[1] / p[3], p[2] / p[3]];
+        let t = r.intensity;
+        // тон пресета
+        let tone = match r.preset {
+            1 => [0.96, 1.0, 1.06],
+            2 => [1.08, 1.0, 0.88],
+            _ => [1.04, 1.0, 0.92],
+        };
+        let fade = if r.preset == 0 { 0.12 * t } else { 0.05 * t };
+        for i in 0..3 {
+            c[i] = (c[i] * (1.0 + (tone[i] - 1.0) * t)) * (1.0 - fade) + fade * 0.5;
+        }
+        if r.effect & 1 != 0 {
+            let l = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+            let sepia = [l * 1.07 + 0.05, l * 0.95 + 0.02, l * 0.75];
+            for i in 0..3 {
+                c[i] += (sepia[i] - c[i]) * t;
+            }
+        }
+        if r.effect & 2 != 0 {
+            // засветка: оранжевое пятно от левого верхнего угла
+            let d = ((x as f64).hypot(y as f64) / diag).min(1.0);
+            let leak = (1.0 - d * 1.6).max(0.0).powi(2) * t;
+            let col = [1.0, 0.55, 0.2];
+            for i in 0..3 {
+                c[i] = c[i] + (1.0 - c[i]) * col[i] * leak;
+            }
+        }
+        let n = (hash01(x, y, 3) - 0.5) * r.noise;
+        let q = |i: usize| (c[i] + n).clamp(0.0, 1.0) * p[3];
+        [q(0), q(1), q(2), p[3]]
+    })
+}
+
+/// Настройки «Шума Перлина».
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Perlin {
+    /// Размер узора, px.
+    pub scale: f64,
+    pub amplitude: f64,
+    /// Ослабление каждой следующей октавы (0..1).
+    pub attenuation: f64,
+    /// Число октав.
+    pub repetition: u32,
+    pub offset: [f64; 2],
+}
+
+fn perlin2(x: f64, y: f64) -> f64 {
+    let (xi, yi) = (x.floor() as i32, y.floor() as i32);
+    let (xf, yf) = (x - xi as f64, y - yi as f64);
+    let grad = |ix: i32, iy: i32, dx: f64, dy: f64| {
+        let a = hash01(ix, iy, 99) * std::f64::consts::TAU;
+        a.cos() * dx + a.sin() * dy
+    };
+    let fade = |t: f64| t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+    let (u, v) = (fade(xf), fade(yf));
+    let n00 = grad(xi, yi, xf, yf);
+    let n10 = grad(xi + 1, yi, xf - 1.0, yf);
+    let n01 = grad(xi, yi + 1, xf, yf - 1.0);
+    let n11 = grad(xi + 1, yi + 1, xf - 1.0, yf - 1.0);
+    let a = n00 + (n10 - n00) * u;
+    let b = n01 + (n11 - n01) * u;
+    a + (b - a) * v
+}
+
+/// «Шум Перлина»: облачный серый узор по всему холсту (содержимое слоя заменяется, как у CSP).
+pub fn perlin_noise(src: &ColorMap, w: u32, h: u32, p: Perlin, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    per_pixel(src, (0, 0, w as i32, h as i32), sel, &|x, y| {
+        let (mut f, mut a, mut sum) = (1.0 / p.scale.max(1.0), 1.0, 0.0);
+        for _ in 0..p.repetition.clamp(1, 10) {
+            sum += perlin2((x as f64 + p.offset[0]) * f, (y as f64 + p.offset[1]) * f) * a;
+            f *= 2.0;
+            a *= p.attenuation;
+        }
+        let v = (0.5 + sum * p.amplitude).clamp(0.0, 1.0);
+        [v, v, v, 1.0]
+    })
+}
+
+#[cfg(test)]
+mod effect_tests {
+    use super::*;
+    use crate::pixel::{from_rgba8, to_rgba8};
+
+    fn spot() -> ColorMap {
+        let mut m = ColorMap::new();
+        for y in 0..40 {
+            for x in 0..40 {
+                let v = if (10..30).contains(&x) { 200 } else { 50 };
+                m.set(x, y, from_rgba8([v, v, v, 255]));
+            }
+        }
+        m
+    }
+
+    #[test]
+    fn effects_do_what_they_say() {
+        let all = |_: i32, _: i32| ONE;
+        // мозаика 10 px: квадрат 0..10 по x — ровный цвет
+        let m = mosaic(&spot(), 40, 40, 10, &all);
+        assert_eq!(to_rgba8(m.get(0, 0)), to_rgba8(m.get(9, 9)));
+        // аберрация сдвигом вправо: у левого края светлой полосы красный уже тёмный, синий светлый
+        let ca = chromatic_aberration(&spot(), 40, 40, false, 3.0, 0.0, &all);
+        let c = to_rgba8(ca.get(11, 20));
+        assert!(c[0] < c[2], "{c:?}");
+        // шум серый меняет, но не трогает альфу
+        let n = noise(&spot(), 40, 40, false, 0.5, &all);
+        assert_ne!(to_rgba8(n.get(5, 5)), to_rgba8(spot().get(5, 5)));
+        assert_eq!(n.get(5, 5)[3], ONE as u16);
+        // кристаллизация — значения из исходных (средние по ячейкам), Перлин — непрозрачный серый
+        let cr = crystallize(&spot(), 40, 40, 8, 0.5, false, &all);
+        assert!(to_rgba8(cr.get(20, 20))[0] >= 50);
+        let pn = perlin_noise(&ColorMap::new(), 32, 32, Perlin { scale: 8.0, amplitude: 1.0, attenuation: 0.5, repetition: 3, offset: [0.0, 0.0] }, &all);
+        let g = to_rgba8(pn.get(5, 7));
+        assert!(g[0] == g[1] && g[3] == 255);
+    }
+}

@@ -181,6 +181,13 @@ enum FilterKind {
     /// «Изменение толщины линий» и «Удаление пыли» (Коррекция в CSP).
     LineWidth,
     Dust,
+    /// «Эффекты» и «Отрисовка» как в CSP.
+    Aberration,
+    Noise,
+    Mosaic,
+    Crystallize,
+    RetroFilm,
+    Perlin,
 }
 
 /// Открытый фильтр: настройки, слой и его исходные пиксели (для предпросмотра и отмены).
@@ -197,6 +204,19 @@ struct FilterDialog {
     thicken: bool,
     dust_size: u32,
     dust_mode: u8,
+    /// Эффекты: аберрация (по кругу, px, угол), шум (цветной, сила), мозаика, кристаллизация
+    /// (ячейка, разброс, бесшовно), ретро-плёнка, шум Перлина.
+    ca_radial: bool,
+    ca_px: f64,
+    ca_angle: f64,
+    noise_color: bool,
+    noise_amount: f64,
+    tile: u32,
+    cell: u32,
+    randomness: f64,
+    tiling: bool,
+    retro: paint_core::filters::RetroFilm,
+    perlin: paint_core::filters::Perlin,
     preview: bool,
     path: Vec<usize>,
     original: paint_core::tile::ColorMap,
@@ -2883,6 +2903,17 @@ impl PaintApp {
             thicken: true,
             dust_size: 8,
             dust_mode: 0,
+            ca_radial: true,
+            ca_px: 5.0,
+            ca_angle: 0.0,
+            noise_color: false,
+            noise_amount: 0.2,
+            tile: 10,
+            cell: 20,
+            randomness: 0.7,
+            tiling: false,
+            retro: paint_core::filters::RetroFilm { preset: 0, effect: 0, intensity: 0.6, noise: 0.15 },
+            perlin: paint_core::filters::Perlin { scale: 64.0, amplitude: 0.7, attenuation: 0.5, repetition: 4, offset: [0.0, 0.0] },
             preview: true,
             path: self.selected.clone(),
             original: layer.pixels.clone(),
@@ -2922,6 +2953,12 @@ impl PaintApp {
                 };
                 paint_core::filters::remove_dust(&f.original, self.doc.width, self.doc.height, f.dust_size, mode, &amount)
             }
+            FilterKind::Aberration => paint_core::filters::chromatic_aberration(&f.original, self.doc.width, self.doc.height, f.ca_radial, f.ca_px, f.ca_angle, &amount),
+            FilterKind::Noise => paint_core::filters::noise(&f.original, self.doc.width, self.doc.height, f.noise_color, f.noise_amount, &amount),
+            FilterKind::Mosaic => paint_core::filters::mosaic(&f.original, self.doc.width, self.doc.height, f.tile, &amount),
+            FilterKind::Crystallize => paint_core::filters::crystallize(&f.original, self.doc.width, self.doc.height, f.cell, f.randomness, f.tiling, &amount),
+            FilterKind::RetroFilm => paint_core::filters::retro_film(&f.original, self.doc.width, self.doc.height, f.retro, &amount),
+            FilterKind::Perlin => paint_core::filters::perlin_noise(&f.original, self.doc.width, self.doc.height, f.perlin, &amount),
         }
     }
 
@@ -3620,6 +3657,26 @@ impl PaintApp {
                 ui.menu_button(tr("Размытие"), |ui| {
                     if ui.button(tr("Размытие по Гауссу…")).clicked() {
                         self.open_filter(FilterKind::GaussianBlur);
+                        ui.close_menu();
+                    }
+                });
+                ui.menu_button(tr("Эффекты"), |ui| {
+                    for (item, kind) in [
+                        ("Хроматическая аберрация…", FilterKind::Aberration),
+                        ("Шум…", FilterKind::Noise),
+                        ("Мозаика…", FilterKind::Mosaic),
+                        ("Кристаллизация…", FilterKind::Crystallize),
+                        ("Ретро-плёнка…", FilterKind::RetroFilm),
+                    ] {
+                        if ui.button(tr(item)).clicked() {
+                            self.open_filter(kind);
+                            ui.close_menu();
+                        }
+                    }
+                });
+                ui.menu_button(tr("Отрисовка"), |ui| {
+                    if ui.button(tr("Шум Перлина…")).clicked() {
+                        self.open_filter(FilterKind::Perlin);
                         ui.close_menu();
                     }
                 });
@@ -6393,10 +6450,17 @@ impl PaintApp {
                 FilterKind::Unsharp => tr("Нерезкая маска"),
                 FilterKind::LineWidth => tr("Изменение толщины линий"),
                 FilterKind::Dust => tr("Удаление пыли"),
+                FilterKind::Aberration => tr("Хроматическая аберрация"),
+                FilterKind::Noise => tr("Шум"),
+                FilterKind::Mosaic => tr("Мозаика"),
+                FilterKind::Crystallize => tr("Кристаллизация"),
+                FilterKind::RetroFilm => tr("Ретро-плёнка"),
+                FilterKind::Perlin => tr("Шум Перлина"),
             };
             let mut open = true;
             egui::Window::new(title).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
                 let before = (f.hs, f.bc, f.radius, f.preview, f.amount, f.threshold, (f.width_px, f.thicken, f.dust_size, f.dust_mode));
+                let mut ch = false;
                 egui::Grid::new("filter").num_columns(2).show(ui, |ui| {
                     match f.kind {
                         FilterKind::HueSaturation => {
@@ -6431,6 +6495,94 @@ impl PaintApp {
                         }
                         FilterKind::Sharpen | FilterKind::SharpenMore => {
                             ui.label(tr("Без настроек — OK применяет."));
+                            ui.end_row();
+                        }
+                        FilterKind::Aberration => {
+                            ui.label(tr("Режим:"));
+                            ui.horizontal(|ui| {
+                                ch |= ui.radio_value(&mut f.ca_radial, true, tr("По кругу")).changed();
+                                ch |= ui.radio_value(&mut f.ca_radial, false, tr("Сдвигом")).changed();
+                            });
+                            ui.end_row();
+                            ui.label(tr("Сила:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.ca_px, 0.0..=50.0).suffix(" px")).changed();
+                            ui.end_row();
+                            if !f.ca_radial {
+                                ui.label(tr("Угол:"));
+                                ch |= ui.add(egui::Slider::new(&mut f.ca_angle, 0.0..=360.0).suffix("°")).changed();
+                                ui.end_row();
+                            }
+                        }
+                        FilterKind::Noise => {
+                            ui.label(tr("Режим:"));
+                            ui.horizontal(|ui| {
+                                ch |= ui.radio_value(&mut f.noise_color, false, tr("Серый")).changed();
+                                ch |= ui.radio_value(&mut f.noise_color, true, tr("Цветной")).changed();
+                            });
+                            ui.end_row();
+                            ui.label(tr("Сила:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.noise_amount, 0.0..=1.0)).changed();
+                            ui.end_row();
+                        }
+                        FilterKind::Mosaic => {
+                            ui.label(tr("Размер плитки:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.tile, 2..=200).suffix(" px")).changed();
+                            ui.end_row();
+                        }
+                        FilterKind::Crystallize => {
+                            ui.label(tr("Размер ячейки:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.cell, 2..=200).suffix(" px")).changed();
+                            ui.end_row();
+                            ui.label(tr("Разброс:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.randomness, 0.0..=1.0)).changed();
+                            ui.end_row();
+                            ui.label("");
+                            ch |= ui.checkbox(&mut f.tiling, tr("Бесшовно")).changed();
+                            ui.end_row();
+                        }
+                        FilterKind::RetroFilm => {
+                            ui.label(tr("Пресет:"));
+                            ui.horizontal(|ui| {
+                                for (m, n) in [(0u8, tr("Винтаж")), (1, tr("Современный")), (2, tr("Тёплый"))] {
+                                    ch |= ui.radio_value(&mut f.retro.preset, m, n).changed();
+                                }
+                            });
+                            ui.end_row();
+                            ui.label(tr("Эффект:"));
+                            ui.horizontal(|ui| {
+                                for (m, n) in [(0u8, tr("Нет")), (1, tr("Сепия")), (2, tr("Засветка")), (3, tr("Сепия и засветка"))] {
+                                    ch |= ui.radio_value(&mut f.retro.effect, m, n).changed();
+                                }
+                            });
+                            ui.end_row();
+                            ui.label(tr("Сила:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.retro.intensity, 0.0..=1.0)).changed();
+                            ui.end_row();
+                            ui.label(tr("Шум:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.retro.noise, 0.0..=1.0)).changed();
+                            ui.end_row();
+                        }
+                        FilterKind::Perlin => {
+                            ui.label(tr("Масштаб:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.perlin.scale, 2.0..=1000.0).logarithmic(true).suffix(" px")).changed();
+                            ui.end_row();
+                            ui.label(tr("Амплитуда:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.perlin.amplitude, 0.0..=2.0)).changed();
+                            ui.end_row();
+                            ui.label(tr("Ослабление:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.perlin.attenuation, 0.0..=1.0)).changed();
+                            ui.end_row();
+                            ui.label(tr("Повторения:"));
+                            ch |= ui.add(egui::Slider::new(&mut f.perlin.repetition, 1..=10)).changed();
+                            ui.end_row();
+                            ui.label(tr("Сдвиг:"));
+                            ui.horizontal(|ui| {
+                                ch |= ui.add(egui::DragValue::new(&mut f.perlin.offset[0]).prefix("X ")).changed();
+                                ch |= ui.add(egui::DragValue::new(&mut f.perlin.offset[1]).prefix("Y ")).changed();
+                            });
+                            ui.end_row();
+                            ui.label("");
+                            ui.label(egui::RichText::new(tr("Узор заменяет содержимое слоя — лучше на пустом слое.")).small().weak());
                             ui.end_row();
                         }
                         FilterKind::LineWidth => {
@@ -6486,7 +6638,7 @@ impl PaintApp {
                         finish = Some(false);
                     }
                 });
-                if before != (f.hs, f.bc, f.radius, f.preview, f.amount, f.threshold, (f.width_px, f.thicken, f.dust_size, f.dust_mode)) {
+                if ch || before != (f.hs, f.bc, f.radius, f.preview, f.amount, f.threshold, (f.width_px, f.thicken, f.dust_size, f.dust_mode)) {
                     f.dirty = true;
                 }
             });
