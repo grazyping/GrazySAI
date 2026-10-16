@@ -67,10 +67,11 @@ The “Window” menu, as in SAI: UI scale (100–200%), the color and tool pane
 layer panel on the right or left, full screen (F11, Shift+Tab), “Show All User Interface Panels”
 (Tab leaves only the canvas), “Show” for each panel separately (navigator, layers, color, tools,
 quick bar, view tabs, status bar), a dot cursor for brushes, the brush size circle. The color panel
-has a **scratch pad** (last button): paint on it with the current brush to mix a color; Alt + click
+has a **scratch pad** (last button): paint on it with the current brush (with pen pressure, in screen pixels) to mix a color; Alt + click
 or right click picks a color, “×” clears it. The “View” menu:
 rotate and mirror the view, “Reset Position of View” (Home), “Reset Angle of View” (Shift+Home),
-100% (Ctrl+Alt+0).
+100% (Ctrl+Alt+0). Zoom percentages, as in SAI, are in screen pixels: with Windows scaling at
+125–150%, 100% shows one picture pixel per screen pixel, without blur.
 
 ## Painting
 

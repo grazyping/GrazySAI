@@ -454,14 +454,19 @@ struct ScratchPad {
     live: Option<LiveStroke>,
     tex: Option<egui::TextureHandle>,
     dirty: bool,
+    /// Физических пикселей экрана на точку интерфейса: черновик рисуется в пикселях экрана, как
+    /// в SAI (при масштабе Windows 125–150 % иначе картинка растягивается и теряет чёткость).
+    scale: f32,
 }
 
 impl ScratchPad {
+    /// Размер в точках интерфейса.
     const W: u32 = 220;
     const H: u32 = 110;
 
-    fn new() -> Self {
-        Self { doc: Document::new(Self::W, Self::H), live: None, tex: None, dirty: true }
+    fn new(scale: f32) -> Self {
+        let (w, h) = ((Self::W as f32 * scale).round() as u32, (Self::H as f32 * scale).round() as u32);
+        Self { doc: Document::new(w.max(1), h.max(1)), live: None, tex: None, dirty: true, scale }
     }
 }
 
@@ -1251,6 +1256,9 @@ struct PaintApp {
     pending_points: VecDeque<InputPoint>,
     /// Область списка слоёв — от неё считаются id «папка открыта» (для клавиши Alt+\).
     layers_ui: Option<egui::Id>,
+    /// Пикселей экрана на точку интерфейса (масштаб Windows, «Масштаб интерфейса»): «100 %» вида
+    /// — пиксель холста на пиксель экрана, как в SAI.
+    ppp: f32,
     cp_sel: Option<CpSelection>,
     /// Разобранные кривые текущего слоя контура для показа узлов: слой, отпечаток, кривые.
     line_view: Option<(Vec<usize>, u64, Vec<paint_formats::sai2_vector::Shape>)>,
@@ -1299,7 +1307,7 @@ impl PaintApp {
             ruler: ruler::Ruler::default(),
             ruler_drag: None,
             color_views: [true, false, true, false, false, false],
-            scratch: ScratchPad::new(),
+            scratch: ScratchPad::new(1.0),
             viewer: None,
             always_viewer: false,
             viewer_marks: Vec::new(),
@@ -1425,6 +1433,7 @@ impl PaintApp {
             filter_last: None,
             pending_points: VecDeque::new(),
             layers_ui: None,
+            ppp: 1.0,
             cp_sel: None,
             line_view: None,
             frame_stats: std::env::var_os("PAINT_FRAMES").map(|_| Default::default()),
@@ -4006,7 +4015,7 @@ app.open_canvas_dialog(d == "resolution")
                         self.set_zoom(self.zoom * 1.5);
                     }
                     if ui.small_button("100%").clicked() {
-                        self.set_zoom(1.0);
+                        self.set_zoom(1.0 / self.ppp);
                     }
                     if ui.small_button(tr("По окну")).clicked() {
                         self.fit_pending = true;
@@ -5142,7 +5151,7 @@ app.open_canvas_dialog(d == "resolution")
                     ui.close_menu();
                 }
                 if ui.add(menu_item("Масштаб 100%", "Ctrl+Alt+0")).clicked() {
-                    self.set_zoom(1.0);
+                    self.set_zoom(1.0 / self.ppp);
                     ui.close_menu();
                 }
                 if ui.button(tr("Вписать в окно")).clicked() {
@@ -5375,7 +5384,7 @@ app.open_canvas_dialog(d == "resolution")
             }
             ui.label(tr("Выделение"));
             ui.separator();
-            let current = format!("{:.0}%", self.zoom * 100.0);
+            let current = format!("{:.0}%", self.zoom * self.ppp * 100.0);
             let mut pick = None;
             egui::ComboBox::from_id_salt("zoom")
                 .selected_text(current)
@@ -5388,7 +5397,7 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 });
             if let Some(z) = pick {
-                self.set_zoom(z);
+                self.set_zoom(z / self.ppp);
             }
             if sai_ui::icon_button(ui, b, false, true, tr("Уменьшить"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "minus")
@@ -5409,7 +5418,7 @@ app.open_canvas_dialog(d == "resolution")
             })
             .clicked()
             {
-                self.set_zoom(1.0);
+                self.set_zoom(1.0 / self.ppp);
             }
             ui.separator();
             let deg = self.view_angle.to_degrees();
@@ -6575,7 +6584,7 @@ app.open_canvas_dialog(d == "resolution")
         sai_ui::row(ui, tr("Масштаб"), lw, true, |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             let mut z = self.zoom.ln();
-            let text = format!("{:.0}%", self.zoom * 100.0);
+            let text = format!("{:.0}%", self.zoom * self.ppp * 100.0);
             if sai_ui::bar(ui, &mut z, 0.02f32.ln(), 32f32.ln(), text, w, true).changed() {
                 self.set_zoom(z.exp());
             }
@@ -6598,7 +6607,7 @@ app.open_canvas_dialog(d == "resolution")
             })
             .clicked()
             {
-                self.set_zoom(1.0);
+                self.set_zoom(1.0 / self.ppp);
             }
         });
         sai_ui::row(ui, tr("Угол"), lw, true, |ui| {
@@ -7537,7 +7546,10 @@ app.open_canvas_dialog(d == "resolution")
 
         // Показ: только плитки, попавшие в окно.
         let xf = ViewXf::new(rect, self.zoom, self.offset, vang, vflip);
-        let options = if self.zoom >= 2.0 {
+        // проценты масштаба — от пикселей экрана, как в SAI; при 100 % без поворота пиксель
+        // холста — пиксель экрана, без размытия
+        let shown = self.zoom * self.ppp;
+        let options = if shown >= 2.0 || ((shown - 1.0).abs() < 1e-3 && vang == 0.0) {
             egui::TextureOptions::NEAREST
         } else {
             egui::TextureOptions::LINEAR
@@ -8695,17 +8707,25 @@ impl PaintApp {
 
     /// Черновик: рисование текущей кистью, Alt + щелчок или правая кнопка — взять цвет.
     fn scratch_pad(&mut self, ui: &mut egui::Ui) {
+        // масштаб экрана сменился (другой монитор, «Масштаб интерфейса») — черновик заново
+        let ppp = ui.ctx().pixels_per_point();
+        if (self.scratch.scale - ppp).abs() > 0.01 && self.scratch.live.is_none() {
+            self.scratch = ScratchPad::new(ppp);
+        }
+        let k = self.scratch.scale;
         let size = Vec2::new(ScratchPad::W as f32, ScratchPad::H as f32);
         let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
-        let local = |p: Pos2| (p - rect.min).to_pos2();
+        // точка экрана → пиксель черновика
+        let local = |p: Pos2| ((p - rect.min) * k).to_pos2();
         let alt = ui.input(|i| i.modifiers.alt);
         let pick = |pad: &ScratchPad, p: Pos2| -> Option<Color32> {
+            let (w, h) = (pad.doc.width, pad.doc.height);
             let (x, y) = (p.x as i32, p.y as i32);
-            if x < 0 || y < 0 || x >= ScratchPad::W as i32 || y >= ScratchPad::H as i32 {
+            if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
                 return None;
             }
             let flat = pad.doc.flatten();
-            let i = ((y as u32 * ScratchPad::W + x as u32) * 4) as usize;
+            let i = ((y as u32 * w + x as u32) * 4) as usize;
             Some(Color32::from_rgb(flat[i], flat[i + 1], flat[i + 2]))
         };
         if resp.secondary_clicked() || (alt && resp.clicked()) {
@@ -8713,7 +8733,8 @@ impl PaintApp {
                 self.set_color(c);
             }
         } else if !alt {
-            let pressure = 1.0;
+            // нажим пера — как на холсте
+            let (pressure, _) = self.pressure();
             if resp.drag_started_by(egui::PointerButton::Primary) {
                 let mut params = self.brushes[self.brush].params;
                 params.size = params.size.min(60.0);
@@ -8724,11 +8745,20 @@ impl PaintApp {
                 let c = self.color();
                 self.scratch.live = Some(LiveStroke::new(vec![0], Stroke::new(params), [c.r(), c.g(), c.b()]));
             }
-            if let (Some(live), Some(p)) = (self.scratch.live.as_mut(), resp.interact_pointer_pos()) {
-                let q = local(p);
-                live.stroke.add_point(InputPoint { x: q.x, y: q.y, pressure });
-                self.scratch.doc.live_update(live);
-                self.scratch.dirty = true;
+            if self.scratch.live.is_some() {
+                // все движения пера за кадр, а не одно последнее — иначе мазок становится ломаной
+                let mut pts: Vec<Pos2> = ui.input(|i| i.events.iter().filter_map(|e| if let egui::Event::PointerMoved(p) = e { Some(*p) } else { None }).collect());
+                if pts.is_empty() {
+                    pts.extend(resp.interact_pointer_pos());
+                }
+                if let Some(live) = self.scratch.live.as_mut() {
+                    for p in pts {
+                        let q = local(p);
+                        live.stroke.add_point(InputPoint { x: q.x, y: q.y, pressure });
+                    }
+                    self.scratch.doc.live_update(live);
+                    self.scratch.dirty = true;
+                }
             }
             if resp.drag_stopped() {
                 if let Some(live) = self.scratch.live.take() {
@@ -8738,7 +8768,8 @@ impl PaintApp {
             }
         }
         if self.scratch.dirty || self.scratch.tex.is_none() {
-            let img = egui::ColorImage::from_rgba_unmultiplied([ScratchPad::W as usize, ScratchPad::H as usize], &self.scratch.doc.flatten());
+            let (w, h) = (self.scratch.doc.width as usize, self.scratch.doc.height as usize);
+            let img = egui::ColorImage::from_rgba_unmultiplied([w, h], &self.scratch.doc.flatten());
             self.scratch.tex = Some(ui.ctx().load_texture("scratch", img, egui::TextureOptions::NEAREST));
             self.scratch.dirty = false;
         }
@@ -8754,7 +8785,7 @@ impl PaintApp {
         ui.painter().rect_stroke(clear, 2.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
         ui.painter().text(clear.center(), egui::Align2::CENTER_CENTER, "×", egui::FontId::proportional(12.0), sai_ui::INK);
         if cr.clicked() {
-            self.scratch = ScratchPad::new();
+            self.scratch = ScratchPad::new(ppp);
         }
     }
 
@@ -9138,6 +9169,7 @@ impl eframe::App for PaintApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.ppp = ctx.pixels_per_point();
         let _frame_timer = self.frame_stats.clone().filter(|_| self.live.is_some()).map(|s| FrameTimer(s, Instant::now()));
         self.ctx = Some(ctx.clone());
         self.poll_file_dialog();
@@ -9353,7 +9385,7 @@ impl eframe::App for PaintApp {
                 self.reset_view_position();
             }
             if hit(A::Zoom100) {
-                self.set_zoom(1.0);
+                self.set_zoom(1.0 / self.ppp);
             }
             if hit(A::NewView) {
                 self.new_view();
@@ -9695,7 +9727,7 @@ impl eframe::App for PaintApp {
                     p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, if active { sai_ui::SELECT_EDGE } else { sai_ui::BORDER }));
                     let label = if dirty { format!("{name} *") } else { name };
                     p.text(rect.left_center() + Vec2::new(6.0, 0.0), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), sai_ui::INK);
-                    p.text(rect.right_center() - Vec2::new(18.0, 0.0), egui::Align2::RIGHT_CENTER, format!("{:.0}%", zoom * 100.0), egui::FontId::proportional(10.0), sai_ui::INK);
+                    p.text(rect.right_center() - Vec2::new(18.0, 0.0), egui::Align2::RIGHT_CENTER, format!("{:.0}%", zoom * self.ppp * 100.0), egui::FontId::proportional(10.0), sai_ui::INK);
                     // крестик закрытия
                     let x = Rect::from_center_size(rect.right_center() - Vec2::new(8.0, 0.0), Vec2::splat(12.0));
                     let over_x = ui.input(|i| i.pointer.hover_pos()).is_some_and(|h| x.contains(h));
