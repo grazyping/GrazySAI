@@ -35,7 +35,7 @@
 | Trim Canvas by Selection | Обрезать по выделению | ✔ |
 | Reverse Horizontal/Vertical, Rotate 90° | то же | ✔ |
 | Background (белый, чёрный, прозрачный: шашки, белый, чёрный, цвет), Background Color | то же, по коду SAI, пишется в файл | ✔ |
-| Layer Effect Color: Normal, Vivid, Deep, Multiply, Ver.1 Like | хранится в файле, меню нет, на вид не влияет | ✘ |
+| Layer Effect Color: Normal, Vivid, Deep, Multiply, Ver.1 Like | «Цвет эффектов слоя» — все пять, кайма и бумага по коду SAI, сверено вживую (расхождение ≤ 1 из 255) | ✔ |
 
 ## Слой
 

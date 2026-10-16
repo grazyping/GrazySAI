@@ -4339,6 +4339,23 @@ impl PaintApp {
                         }
                     }
                 });
+                // как в SAI 2017: цвет каймы и бумаги у эффектов слоя (метка в заголовке .sai2)
+                ui.menu_button(tr("Цвет эффектов слоя"), |ui| {
+                    for (fx, name) in [
+                        (4u8, tr("Как в версии 1")),
+                        (3, tr("Умножение")),
+                        (2, tr("Глубокий")),
+                        (1, tr("Яркий")),
+                        (0, tr("Обычный")),
+                    ] {
+                        if ui.radio(self.doc.fx() == fx, name).clicked() {
+                            self.doc.effect_color = paint_core::paper::fx_tag(fx);
+                            self.invalidate_all();
+                            self.dirty = true;
+                            ui.close_menu();
+                        }
+                    }
+                });
             });
             ui.menu_button(keys::hint(tr("Слой(L)")), |ui| {
                 if ui.button(tr("Новый слой")).clicked() {

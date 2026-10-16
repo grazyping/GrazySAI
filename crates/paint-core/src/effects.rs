@@ -3,7 +3,7 @@
 //! SAI (`docs/25-layer-effects.md`). Накладываются на сам слой до бумаги.
 
 use crate::layer::Layer;
-use crate::paper::{dense_q14, toward_q14};
+use crate::paper::{dense_q14_fx, mult_q14, toward_q14, ver1_q14};
 use crate::tile::{Key, TILE};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -92,9 +92,55 @@ pub fn fringe_map(alpha: impl Fn(i32, i32) -> i32, x0: i32, y0: i32, w: usize, h
     out
 }
 
+/// Кайма на пиксель `p` (единица 16384): `e` — значение карты, `w` — доля по карте и силе, `s` —
+/// сила в единицах 16384; у каждого цвета эффектов своя функция (по коду SAI).
+fn fringe_px(p: [i32; 4], e: i32, w: i32, s: i32, fx: u8) -> [i32; 4] {
+    let one = 0x4000;
+    // плавная доля «глубокого» и «умножения»: 1 − (1 − w/2)², в единицах 16384
+    let soft = || {
+        let x = 2 * (one - (w >> 1));
+        one - ((x * x) >> 16)
+    };
+    match fx {
+        // глубокий: цвет уходит от самого яркого канала, непрозрачность растёт, избыток снимается
+        2 => {
+            let kk = (2 * soft()).min(0x7fff);
+            let mx = p[0].max(p[1]).max(p[2]);
+            let m3 = kk.min(p[3]);
+            let alpha = p[3] + m3;
+            let ex = (alpha - one).max(0);
+            let col = |c: i32| (c - (((mx - c) * kk) >> 14) + (m3 - (m3 >> 1)) - ex).clamp(0, one);
+            [col(p[0]), col(p[1]), col(p[2]), alpha.clamp(0, one)]
+        }
+        // умножение: к цели «цвет на белом в квадрате» с долей 4·(1 − (1 − w/2)²)
+        3 => {
+            let k = (4 * soft()).min(0x7fff);
+            let t = mult_q14(p);
+            let mut out = p;
+            for c in 0..4 {
+                out[c] = (p[c] + (((t[c].clamp(0, one) - p[c]) * k) >> 14)).clamp(0, one);
+            }
+            out
+        }
+        // как в версии 1: сила без удвоения, шаг с отбрасыванием младших разрядов
+        4 => {
+            let w1 = (e * s) >> 16;
+            let t = ver1_q14(p);
+            let mut out = p;
+            for c in 0..4 {
+                let d = t[c].clamp(0, one) - p[c];
+                out[c] = (p[c] + (((d * w1) >> 16) << 2)).max(0);
+            }
+            out
+        }
+        _ => toward_q14(p, dense_q14_fx(p, fx == 0), w),
+    }
+}
+
 /// Эффект слоя на его плитку (предумноженные пиксели в долях единицы).
 /// `size` — размер холста: за его краем кайма берёт крайние точки (края холста каймы не дают).
-pub fn apply(layer: &Layer, key: Key, buf: &mut [[f32; 4]], size: (i32, i32)) {
+/// `fx` — цвет эффектов слоя холста (`paper::fx_of`): у каждого своя функция каймы, по коду SAI.
+pub fn apply(layer: &Layer, key: Key, buf: &mut [[f32; 4]], size: (i32, i32), fx: u8) {
     let Some(effect) = &layer.effect else { return };
     if layer.children.is_some() {
         return;
@@ -116,7 +162,7 @@ pub fn apply(layer: &Layer, key: Key, buf: &mut [[f32; 4]], size: (i32, i32)) {
                 }
                 let w = (e * s2) >> 16;
                 let p = px.map(q);
-                *px = toward_q14(p, dense_q14(p), w).map(|v| v as f32 / 16384.0);
+                *px = fringe_px(p, e, w, s2 / 2, fx).map(|v| v as f32 / 16384.0);
             }
         }
         Effect::Binary { threshold, .. } => {
@@ -160,7 +206,7 @@ mod tests {
         let mut l = Layer::new("x");
         l.effect = Some(Effect::Binary { threshold: 50, rest: 0 });
         let mut buf = vec![[0.3, 0.6, 0.0, 0.8], [0.0, 0.0, 0.0, 0.0]];
-        apply(&l, (0, 0), &mut buf, (64, 64));
+        apply(&l, (0, 0), &mut buf, (64, 64), 0);
         assert_eq!(buf[0], [0.0, 1.0, 0.0, 1.0]);
         assert_eq!(buf[1], [0.0; 4]);
     }

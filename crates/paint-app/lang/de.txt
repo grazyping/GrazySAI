@@ -798,3 +798,7 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, mit Ebenen)
 Уже есть: {0} = Existiert bereits: {0}
 Файл уже есть: {0}. Заменить? = Datei existiert bereits: {0}. Ersetzen?
 нет имени = kein Name
+Цвет эффектов слоя = Farbe der Ebeneneffekte
+Глубокий = Tief
+Яркий = Lebhaft
+Как в версии 1 = Wie Version 1

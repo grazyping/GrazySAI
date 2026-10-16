@@ -798,3 +798,7 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, com camadas)
 Уже есть: {0} = Já existe: {0}
 Файл уже есть: {0}. Заменить? = O ficheiro já existe: {0}. Substituir?
 нет имени = sem nome
+Цвет эффектов слоя = Cor dos efeitos de camada
+Глубокий = Profundo
+Яркий = Vívido
+Как в версии 1 = Como a versão 1

@@ -272,6 +272,8 @@ Normal layers only (not folders).
 - “Canvas → Background”, as in SAI: transparent (shown as a bright or dark checker, white, black
   or your color) or opaque white, black or your color; “Canvas Background Color…”. The background
   is saved in `.sai2` the same way SAI does.
+- “Canvas → Layer Effect Color” sets how fringe effects and paper textures tint a layer: Normal,
+  Vivid, Deep, Multiply, Ver.1 Like. It applies to the whole canvas and is saved in `.sai2`.
 
 ## Ruler
 

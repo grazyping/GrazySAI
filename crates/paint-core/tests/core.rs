@@ -1119,3 +1119,39 @@ fn bristle_hairs_from_bmp_and_strokes() {
     // одна линия толщиной ~4 px (0,1 от 40) вокруг y = 60
     assert!(rows.len() <= 6 && rows.contains(&59) && rows.contains(&60), "{rows:?}");
 }
+
+/// Сверка каймы при каждом цвете эффектов со снимками живой SAI (GRAZYSAI_FX_DIR — папка
+/// `fx-norm.png` … `fx-ver1.png`, холст 400×400 при 100 %). Без переменной пропускается.
+#[test]
+fn effect_colors_against_live_sai() {
+    let Some(dir) = std::env::var_os("GRAZYSAI_FX_DIR") else { return };
+    let dir = std::path::PathBuf::from(dir);
+    let (w, h, norm) = paint_core::io::load_png(&dir.join("fx-norm.png")).unwrap();
+    // заливка — всё, что не белое на снимке «обычного»
+    let filled = |x: u32, y: u32| norm[((y * w + x) * 4) as usize..][..3] != [255, 255, 255];
+    for tag in [*b"norm", *b"vivd", *b"deep", *b"mult", *b"ver1"] {
+        let (_, _, sai) = paint_core::io::load_png(&dir.join(format!("fx-{}.png", String::from_utf8_lossy(&tag)))).unwrap();
+        let mut doc = paint_core::Document::new(w, h);
+        doc.effect_color = tag;
+        for y in 0..h {
+            for x in 0..w {
+                if filled(x, y) {
+                    doc.layers[0].pixels.set(x as i32, y as i32, paint_core::pixel::from_rgba8([180, 25, 177, 255]));
+                }
+            }
+        }
+        doc.layers[0].effect = Some(paint_core::effects::Effect::Fringe { kind: *b"watr", width: 2, strength: 100 });
+        let ours = doc.flatten();
+        let (mut worst, mut sum, mut n, mut exact) = (0i32, 0i64, 0i64, 0i64);
+        for i in 0..(w * h) as usize {
+            for c in 0..3 {
+                let d = (ours[i * 4 + c] as i32 - sai[i * 4 + c] as i32).abs();
+                worst = worst.max(d);
+                sum += d as i64;
+                n += 1;
+                exact += (d == 0) as i64;
+            }
+        }
+        eprintln!("{}: точно {:.2}%, средняя {:.3}, наибольшая {worst}; край у нас {:?} у SAI {:?}", String::from_utf8_lossy(&tag), exact as f64 * 100.0 / n as f64, sum as f64 / n as f64, &ours[(200 * w as usize + 100) * 4..][..3], &sai[(200 * w as usize + 100) * 4..][..3]);
+    }
+}

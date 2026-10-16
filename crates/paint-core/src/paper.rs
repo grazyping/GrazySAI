@@ -165,6 +165,28 @@ pub fn sample(tex: &PaperTexture, scale: u16, x0: i32, y0: i32, w: usize, h: usi
 /// Накладывает бумагу на пиксель: предумноженный RGBA в долях 1/16384 (`0x4000` — единица).
 /// `g` — значение текстуры, `strength` — сила 0–100.
 pub fn apply_q14(p: [i32; 4], g: u8, strength: u16) -> [i32; 4] {
+    apply_q14_fx(p, g, strength, 0)
+}
+
+/// «Цвет эффектов слоя» холста (Layer Effect Color в SAI) по метке из файла: 0 — обычный,
+/// 1 — яркий, 2 — глубокий, 3 — умножение, 4 — как в версии 1.
+pub fn fx_of(tag: &[u8; 4]) -> u8 {
+    match tag {
+        b"vivd" => 1,
+        b"deep" => 2,
+        b"mult" => 3,
+        b"ver1" => 4,
+        _ => 0,
+    }
+}
+
+/// Метка в файле по номеру цвета эффектов.
+pub fn fx_tag(fx: u8) -> [u8; 4] {
+    *[b"norm", b"vivd", b"deep", b"mult", b"ver1"][fx.min(4) as usize]
+}
+
+/// Бумага с учётом цвета эффектов (по коду SAI, пять своих функций).
+pub fn apply_q14_fx(p: [i32; 4], g: u8, strength: u16, fx: u8) -> [i32; 4] {
     if p.iter().all(|&c| c <= 0) {
         return p;
     }
@@ -173,24 +195,72 @@ pub fn apply_q14(p: [i32; 4], g: u8, strength: u16) -> [i32; 4] {
     let t = (g as i32 * 257) >> 1;
     let k = (((t - one) * s) >> 16) * 2;
     let w = k.abs();
-    let target = if k < 0 { dense_q14(p) } else { light_q14(p) };
-    toward_q14(p, target, w)
+    match fx {
+        // глубокий: в тёмную сторону — на (2a − c)·k, в светлую — на a·k; не больше a
+        2 => {
+            let a = p[3];
+            let mut out = p;
+            for c in 0..3 {
+                let d = if k < 0 { 2 * a - p[c] } else { a };
+                out[c] = (p[c] + (((d * k) >> 16) << 1)).clamp(0, a);
+            }
+            out
+        }
+        // умножение: тёмная цель — цвет на белом, умноженный сам на себя; к ней вдвое сильнее
+        3 => {
+            let (target, w) = if k < 0 { (mult_q14(p), (2 * w).min(0x7fff)) } else { (light_q14(p), w) };
+            toward_q14(p, target, w)
+        }
+        // как в версии 1: своя тёмная цель, шаг с отбрасыванием младших разрядов
+        4 => {
+            let w = ((t - one).abs() * 2 * s) >> 16;
+            let target = if t < one { ver1_q14(p) } else { light_q14(p) };
+            let mut out = p;
+            for c in 0..4 {
+                let d = target[c].min(one) - p[c];
+                out[c] = (p[c] + (((d * w) >> 16) << 2)).max(0);
+            }
+            out
+        }
+        _ => {
+            let target = if k < 0 { dense_q14_fx(p, fx == 0) } else { light_q14(p) };
+            toward_q14(p, target, w)
+        }
+    }
 }
 
-/// «Густая» цель (её же использует кайма): цвет чуть сводится к серому (на 1/8 разброса
-/// каналов), затем удваивается с поправкой у ярких каналов; непрозрачность растёт примерно в
-/// полтора раза, избыток сверх единицы вычитается из всех каналов. Без ограничения 0..единица.
-pub(crate) fn dense_q14(p: [i32; 4]) -> [i32; 4] {
+/// «Густая» цель (её же использует кайма): цвет сводится к серому на 1/8 разброса каналов
+/// (`gray`; у «яркого» цвета эффектов этого шага нет), затем удваивается с поправкой у ярких
+/// каналов; непрозрачность растёт примерно в полтора раза, избыток сверх единицы вычитается из всех
+/// каналов. Без ограничения 0..единица.
+pub(crate) fn dense_q14_fx(p: [i32; 4], gray: bool) -> [i32; 4] {
     let one = 0x4000;
     let [c0, c1, c2, a] = p;
     let mn = c0.min(c1).min(c2);
     let mx = c0.max(c1).max(c2);
-    let d = (mx - mn) >> 3;
+    let d = if gray { (mx - mn) >> 3 } else { 0 };
     let cp = [c0, c1, c2].map(|c| (c - d).max(0));
     let col = cp.map(|c| 2 * c - (a >> 1).min((2 * (mx - c)).min(0x7fff)));
     let alpha = a + ((a.min(mx) + a) >> 1);
     let e = (alpha - one).max(0);
     [col[0] - e, col[1] - e, col[2] - e, alpha - e]
+}
+
+/// Цель «умножения»: цвет на белом, умноженный сам на себя, обратно в предумноженный вид:
+/// `(c + 1 − a)² − (1 − a)²`; непрозрачность — `1 − (1 − a)²`.
+pub(crate) fn mult_q14(p: [i32; 4]) -> [i32; 4] {
+    let t = 0x4000 - p[3];
+    let sq = |v: i32| ((2 * v) * (2 * v)) >> 16;
+    p.map(|c| (sq(c + t) - sq(t)).max(0))
+}
+
+/// Цель «как в версии 1»: цвет `max(3c − 2a, 0)` минус четверть суммы недостач `max(2a − 3c, 0)`
+/// по трём каналам; непрозрачность — `2a`.
+pub(crate) fn ver1_q14(p: [i32; 4]) -> [i32; 4] {
+    let a = p[3];
+    let short: i32 = (0..3).map(|c| (2 * a - 3 * p[c]).max(0)).sum();
+    let col = |c: i32| ((3 * c - 2 * a).max(0) - (short >> 2)).max(0);
+    [col(p[0]), col(p[1]), col(p[2]), 2 * a]
 }
 
 /// «Светлая» цель: каждый канал сдвигается к непрозрачности (к белому), непрозрачность прежняя.
@@ -211,13 +281,13 @@ pub(crate) fn toward_q14(p: [i32; 4], target: [i32; 4], w: i32) -> [i32; 4] {
 }
 
 /// Бумага на плитку предумноженных пикселей в долях единицы. `vals` — значения текстуры.
-pub fn apply(buf: &mut [[f32; 4]], vals: &[u8], strength: u16) {
+pub fn apply(buf: &mut [[f32; 4]], vals: &[u8], strength: u16, fx: u8) {
     for (px, &g) in buf.iter_mut().zip(vals) {
         if px[3] <= 0.0 {
             continue;
         }
         let q = px.map(|v| (v * 16384.0).round() as i32);
-        let r = apply_q14(q, g, strength);
+        let r = apply_q14_fx(q, g, strength, fx);
         *px = r.map(|v| v as f32 / 16384.0);
     }
 }
