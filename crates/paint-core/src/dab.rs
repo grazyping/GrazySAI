@@ -105,6 +105,9 @@ pub struct DabInput {
     pub taper: f32,
     /// «Amplify Density», 0..=1: усиление плотности. У Акварели и Маркера по умолчанию 0,5.
     pub amplify: f32,
+    /// Кисть с размытием (Акварель): множитель усиления растёт только с нажимом — подобрано по
+    /// живой SAI (`docs/16-mixing.md`), в коде SAI отдельной ветки для неё нет.
+    pub amplify_by_pressure: bool,
 }
 
 /// Готовый отпечаток.
@@ -165,6 +168,9 @@ impl Dab {
             let mid = d.clamp(1.0, 3.0);
             let tiny = ((1.0 - d.min(1.0)) * a * 2.0).min(1.0);
             gain = ((1.0 - q) * big * 0.1 + q) * a + 1.0;
+            if i.amplify_by_pressure {
+                gain = q * a + 1.0;
+            }
             sharp *= (1.0 - (mid - 1.0) * 0.5 * a * 0.2) * (1.0 - tiny);
             if d < 10.0 {
                 const SIZES: [f64; 21] =

@@ -460,6 +460,7 @@ impl Stroke {
             flat: !self.params.linework && softness <= 0.0,
             ver1: self.params.ver1_density,
             amplify: self.params.amplify,
+            amplify_by_pressure: self.params.mix.is_some_and(|m| m.blur),
             blot: self.blot_on(),
             taper: match self.params.mix {
                 Some(m) if m.blur && m.blend_by_pressure && m.blur_pressure > 0.0 => (1.0 - pressure / m.blur_pressure).max(0.0),

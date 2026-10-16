@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.46)
+### 0.8 — linework and shapes (current version 0.8.47)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -97,7 +97,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Brush forms and textures (`blotmap`, `brushtex`) — from SAI's code, checked against live SAI
 - [x] Bristle brush form (`bristle`) after SAI's code; band width and stroke ends checked against the live SAI
 - [x] Marker at light pressure — as in SAI: its own compositing from SAI's code, paint amount from live SAI
-- [ ] Water with Amplify Density
+- [x] Water with Amplify Density — closer to SAI, fitted to measurements (0.8.47)
 - [x] The hardest edge step by SAI's code: its own renderer and a stroke mask from 20 px — lines match live SAI to 0.0–0.3 levels
 - [x] Text layers and perspective rulers (reading and writing): text is drawn with the system font, both are saved byte for byte
 - [x] Text tool: creating and editing text (font, size, color, several lines); bold, italic and vertical text — from the user's sample, look checked against SAI under Wine; font list as in SAI (GDI)
@@ -140,6 +140,17 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Icons for new menu items (0.8.44)
 - [x] Text is typed right on the canvas, settings on the tool panel, as in SAI (0.8.45)
 - [x] Tools get their useful buttons on the panel; Straight line, rotate view as a tool and in the navigator (0.8.46)
+
+### More from SAI 2017 (found by comparison, `docs/32-sai-comparison.md`)
+
+- [ ] Layer effect color (Canvas → Layer Effect Color)
+- [ ] Layers: show alone, collapse and expand folders, bring to front and send to back, select the layer above/below by key, cut and nudge
+- [ ] Selection: dilate and erode by 1 px at once; selection from opacity in the menu; linework points and strokes in the selection
+- [ ] View: close all views, previous and next view, scrolling and zoom at the cursor by keys
+- [ ] Window: show and hide each panel separately; scratch pad; floating panels
+- [ ] Options window (memory, history, pen)
+- [ ] Keys: transparent color, pick from merged image or layer, brush density 10…100
+- [ ] Own file viewer with thumbnails
 
 ### First after 1.0 — filters as in Clip Studio Paint
 
