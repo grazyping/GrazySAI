@@ -729,3 +729,15 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, with layers)
 Выход отменён: холст не сохранён = Exit cancelled: the canvas was not saved
 Не сохранять = Don't Save
 Сохранить изменения в рисунках? = Save changes to the pictures?
+
+# Окно: показ панелей, черновик (0.9.1)
+Быстрая панель = Quick bar
+Вкладки видов = View tabs
+Инструменты = Tools
+Навигатор = Navigator
+Очистить черновик = Clear scratch pad
+Показать = Show
+Слои = Layers
+Строка состояния = Status bar
+Черновик = Scratch pad
+Черновик: рисуйте текущей кистью; Alt + щелчок или правая кнопка — взять цвет = Scratch pad: paint with the current brush; Alt + click or right click picks a color

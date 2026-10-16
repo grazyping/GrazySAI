@@ -104,9 +104,9 @@
 |---|---|---|
 | Scaling of UI, Brush Size Circle, Dot Cursor, Full Screen, Show All Panels | то же | ✔ |
 | Панели справа/слева, HSV/HSL Mode, Swatches Size | то же, по коду SAI | ✔ |
-| Show: Navigator, Layer, Color, Tool Panel, Quick Bar, View Selector, Status Bar, Scroll Bar | только «все панели» разом | ✘ |
+| Show: Navigator, Layer, Color, Tool Panel, Quick Bar, View Selector, Status Bar, Scroll Bar | «Окно → Показать» — каждая панель (полос прокрутки у холста нет) | ✔ |
 | Show: Color Circle, RGB Slider, HSV Slider, Color Mixer, Swatches | кнопки панели цвета | ≈ |
-| Scratch Pad — черновик для смешивания цветов | — | ✘ |
+| Scratch Pad — черновик для смешивания цветов | черновик на панели цвета: текущая кисть, взять цвет | ✔ |
 | Separate User Interface Panel (плавающие панели) | — | ✘ |
 
 ## Помощь

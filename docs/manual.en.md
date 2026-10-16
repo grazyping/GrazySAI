@@ -62,7 +62,10 @@ Shortcut keys in menu items and tooltips can be hidden: “Window → Show short
 
 The “Window” menu, as in SAI: UI scale (100–200%), the color and tool panel and the navigator and
 layer panel on the right or left, full screen (F11, Shift+Tab), “Show All User Interface Panels”
-(Tab leaves only the canvas), a dot cursor for brushes, the brush size circle. The “View” menu:
+(Tab leaves only the canvas), “Show” for each panel separately (navigator, layers, color, tools,
+quick bar, view tabs, status bar), a dot cursor for brushes, the brush size circle. The color panel
+has a **scratch pad** (last button): paint on it with the current brush to mix a color; Alt + click
+or right click picks a color, “×” clears it. The “View” menu:
 rotate and mirror the view, “Reset Position of View” (Home), “Reset Angle of View” (Shift+Home),
 100% (Ctrl+Alt+0).
 

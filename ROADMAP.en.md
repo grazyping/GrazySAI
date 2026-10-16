@@ -74,7 +74,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
 - [x] Curves of linework and shape layers from `.sai2` are saved as they were (byte for byte); brushes do not paint on such layers, “Rasterize Layer” makes them normal
 
-### 0.9 — brushes in full, text and rulers (current version 0.9.0)
+### 0.9 — brushes in full, text and rulers (current version 0.9.1)
 - [x] Brush forms and textures (`blotmap`, `brushtex`) — from SAI's code, checked against live SAI
 - [x] Bristle brush form (`bristle`) after SAI's code; band width and stroke ends checked against the live SAI
 - [x] Marker at light pressure — as in SAI: its own compositing from SAI's code, paint amount from live SAI
@@ -149,7 +149,8 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Selection from layer opacity in the menu (0.8.48)
 - [ ] Linework points and strokes in the selection
 - [x] View: close all views, previous and next view, scrolling and zoom at the cursor by keys (0.8.48)
-- [ ] Window: show and hide each panel separately; scratch pad; floating panels
+- [x] Window: show and hide each panel separately; scratch pad (0.9.1)
+- [ ] Floating panels
 - [ ] Options window (memory, history, pen)
 - [x] Transparent color; keys for the pickers and brush density 10…100 (0.8.48)
 - [x] “Save changes?” question on exit (0.8.48)

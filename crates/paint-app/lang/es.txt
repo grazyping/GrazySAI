@@ -728,3 +728,15 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, con capas)
 Выход отменён: холст не сохранён = Salida cancelada: el lienzo no se guardó
 Не сохранять = No guardar
 Сохранить изменения в рисунках? = ¿Guardar los cambios en los dibujos?
+
+# Окно: показ панелей, черновик (0.9.1)
+Быстрая панель = Barra rápida
+Вкладки видов = Pestañas de vistas
+Инструменты = Herramientas
+Навигатор = Navegador
+Очистить черновик = Limpiar borrador
+Показать = Mostrar
+Слои = Capas
+Строка состояния = Barra de estado
+Черновик = Borrador
+Черновик: рисуйте текущей кистью; Alt + щелчок или правая кнопка — взять цвет = Borrador: pinta con el pincel actual; Alt + clic o clic derecho toma un color

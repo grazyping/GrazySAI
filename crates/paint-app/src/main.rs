@@ -69,6 +69,10 @@ const SIZES: [f32; 50] = [
     3000.0, 3500.0, 4000.0, 5000.0,
 ];
 
+/// Настройки «Окно → Показать»: ключи и названия (по порядку `WindowOpts::show`).
+const SHOW_KEYS: [&str; 7] = ["show_navigator", "show_layers", "show_color", "show_tools", "show_quickbar", "show_tabs", "show_status"];
+const SHOW_NAMES: [&str; 7] = ["Навигатор", "Слои", "Цвет", "Инструменты", "Быстрая панель", "Вкладки видов", "Строка состояния"];
+
 /// Пункты «Файл → Экспорт»: сведённые картинки, затем форматы со слоями.
 const EXPORTS: [(&str, &str); 9] = [
     ("PNG (сведённая картинка)", "png"),
@@ -277,6 +281,24 @@ struct FilterDialog {
     dirty: bool,
 }
 
+/// Черновик (Scratch Pad в SAI): маленький белый холст на панели цвета — рисовать текущей
+/// кистью, чтобы смешать цвет, и брать с него цвет (Alt + щелчок или правая кнопка).
+struct ScratchPad {
+    doc: Document,
+    live: Option<LiveStroke>,
+    tex: Option<egui::TextureHandle>,
+    dirty: bool,
+}
+
+impl ScratchPad {
+    const W: u32 = 220;
+    const H: u32 = 110;
+
+    fn new() -> Self {
+        Self { doc: Document::new(Self::W, Self::H), live: None, tex: None, dirty: true }
+    }
+}
+
 /// Холст во вкладке, пока он не активен (у активного эти поля — в `PaintApp`).
 struct Tab {
     doc: Document,
@@ -332,11 +354,14 @@ struct WindowOpts {
     hsv_mode: u8,
     /// Размер образцов: 0 — маленький (10 px), 1 — средний (12), 2 — большой (14, по умолчанию).
     swatch_size: u8,
+    /// «Окно → Показать» (как в SAI): навигатор, слои, цвет, инструменты, быстрая панель,
+    /// вкладки видов, строка состояния.
+    show: [bool; 7],
 }
 
 impl Default for WindowOpts {
     fn default() -> Self {
-        Self { ui_scale: 1.0, tools_right: false, layers_right: true, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true, hsv_mode: 0, swatch_size: 2 }
+        Self { ui_scale: 1.0, tools_right: false, layers_right: true, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true, hsv_mode: 0, swatch_size: 2, show: [true; 7] }
     }
 }
 
@@ -867,7 +892,9 @@ struct PaintApp {
     /// Мазок в маске: штрих (его покрытие), маска до мазка, к какому значению ведёт мазок.
     mask_stroke: Option<(Stroke, paint_core::layer::LayerMask, u16)>,
     /// Виды панели цвета: круг, ползунки RGB, ползунки HSV.
-    color_views: [bool; 5],
+    color_views: [bool; 6],
+    /// Черновик панели цвета (Scratch Pad в SAI).
+    scratch: ScratchPad,
     /// Смеситель цвета: четыре строки — два края и метка взятого цвета.
     mixer: [[Color32; 2]; 4],
     mixer_pos: [Option<f32>; 4],
@@ -1068,7 +1095,8 @@ impl PaintApp {
             layer_drag: None,
             ruler: ruler::Ruler::default(),
             ruler_drag: None,
-            color_views: [true, false, true, false, false],
+            color_views: [true, false, true, false, false, false],
+            scratch: ScratchPad::new(),
             mixer: [[Color32::WHITE; 2]; 4],
             mixer_pos: [None; 4],
             swatches: vec![None; SWATCHES],
@@ -1413,6 +1441,9 @@ impl PaintApp {
             self.win.ui_scale = v.clamp(1.0, 2.0);
         }
         s.read_bool("tools_right", &mut self.win.tools_right);
+        for (i, k) in SHOW_KEYS.iter().enumerate() {
+            s.read_bool(k, &mut self.win.show[i]);
+        }
         s.read_bool("layers_right", &mut self.win.layers_right);
         s.read_bool("dot_cursor", &mut self.win.dot_cursor);
         s.read_bool("brush_circle", &mut self.win.brush_circle);
@@ -1555,6 +1586,9 @@ impl PaintApp {
         let w = &self.win;
         s.set("ui_scale", w.ui_scale);
         s.set("tools_right", w.tools_right as u8);
+        for (i, k) in SHOW_KEYS.iter().enumerate() {
+            s.set(k, w.show[i] as u8);
+        }
         s.set("layers_right", w.layers_right as u8);
         s.set("dot_cursor", w.dot_cursor as u8);
         s.set("brush_circle", w.brush_circle as u8);
@@ -4500,6 +4534,13 @@ impl PaintApp {
                 }
             });
             ui.menu_button(keys::hint(tr("Окно(W)")), |ui| {
+                ui.menu_button(tr("Показать"), |ui| {
+                    for (i, name) in SHOW_NAMES.iter().enumerate() {
+                        if ui.checkbox(&mut self.win.show[i], tr(name)).changed() {
+                            self.save_settings();
+                        }
+                    }
+                });
                 ui.menu_button(tr("Язык (Language)"), |ui| {
                     for (code, native, _) in i18n::LANGS {
                         if ui.radio(i18n::code() == code, native).clicked() {
@@ -4754,6 +4795,7 @@ impl PaintApp {
     }
 
     fn left_panel(&mut self, ui: &mut egui::Ui) {
+        if self.win.show[2] {
         // Переключатели панели цвета, как у образца: круг, ползунки RGB, ползунки HSV — каждый
         // показывается или прячется отдельно.
         ui.horizontal(|ui| {
@@ -4798,6 +4840,15 @@ impl PaintApp {
             .clicked()
             {
                 self.color_views[4] = !self.color_views[4];
+            }
+            if sai_ui::icon_button(ui, b, self.color_views[5], true, tr("Черновик"), |p, r, c| {
+                p.rect_stroke(r.shrink(1.0), 0.0, egui::Stroke::new(1.0_f32, c));
+                let pts: Vec<Pos2> = (0..=8).map(|i| Pos2::new(r.left() + 3.0 + i as f32 * (r.width() - 6.0) / 8.0, r.center().y + ((i as f32) * 1.4).sin() * r.height() * 0.22)).collect();
+                p.add(egui::Shape::line(pts, egui::Stroke::new(1.5_f32, c)));
+            })
+            .clicked()
+            {
+                self.color_views[5] = !self.color_views[5];
             }
         });
         if self.color_views[0] {
@@ -4868,7 +4919,14 @@ impl PaintApp {
                 None => {}
             }
         }
+        if self.color_views[5] {
+            self.scratch_pad(ui);
+        }
         ui.add_space(4.0);
+        }
+        if !self.win.show[3] {
+            return;
+        }
         // Общие инструменты и два цвета.
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
@@ -5772,7 +5830,10 @@ impl PaintApp {
 
     fn right_panel(&mut self, ui: &mut egui::Ui) {
         let mut changed = false;
-        self.navigator(ui);
+        let show_nav = self.win.show[0];
+        if show_nav {
+            self.navigator(ui);
+        }
         let lw = sai_ui::label_w(ui, 44.0, &[tr("Масштаб"), tr("Угол")]);
         let lw_fx = sai_ui::label_w(
             ui,
@@ -5781,6 +5842,7 @@ impl PaintApp {
         ) - 10.0;
         let b = Vec2::splat(18.0);
         let w = ui.available_width() - lw - 3.0 * 20.0 - 10.0;
+        if show_nav {
         sai_ui::row(ui, tr("Масштаб"), lw, true, |ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             let mut z = self.zoom.ln();
@@ -5824,6 +5886,10 @@ impl PaintApp {
             }
         });
         ui.add_space(3.0);
+        }
+        if !self.win.show[1] {
+            return;
+        }
         if sai_ui::section(ui, "sec_effect", tr("Эффекты слоя")) {
             changed |= self.effect_panel(ui, lw_fx);
         }
@@ -7865,6 +7931,71 @@ impl PaintApp {
         }
     }
 
+    /// Черновик: рисование текущей кистью, Alt + щелчок или правая кнопка — взять цвет.
+    fn scratch_pad(&mut self, ui: &mut egui::Ui) {
+        let size = Vec2::new(ScratchPad::W as f32, ScratchPad::H as f32);
+        let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
+        let local = |p: Pos2| (p - rect.min).to_pos2();
+        let alt = ui.input(|i| i.modifiers.alt);
+        let pick = |pad: &ScratchPad, p: Pos2| -> Option<Color32> {
+            let (x, y) = (p.x as i32, p.y as i32);
+            if x < 0 || y < 0 || x >= ScratchPad::W as i32 || y >= ScratchPad::H as i32 {
+                return None;
+            }
+            let flat = pad.doc.flatten();
+            let i = ((y as u32 * ScratchPad::W + x as u32) * 4) as usize;
+            Some(Color32::from_rgb(flat[i], flat[i + 1], flat[i + 2]))
+        };
+        if resp.secondary_clicked() || (alt && resp.clicked()) {
+            if let Some(c) = resp.interact_pointer_pos().and_then(|p| pick(&self.scratch, local(p))) {
+                self.set_color(c);
+            }
+        } else if !alt {
+            let pressure = 1.0;
+            if resp.drag_started_by(egui::PointerButton::Primary) {
+                let mut params = self.brushes[self.brush].params;
+                params.size = params.size.min(60.0);
+                if self.transparent {
+                    params.erase = true;
+                    params.mix = None;
+                }
+                let c = self.color();
+                self.scratch.live = Some(LiveStroke::new(vec![0], Stroke::new(params), [c.r(), c.g(), c.b()]));
+            }
+            if let (Some(live), Some(p)) = (self.scratch.live.as_mut(), resp.interact_pointer_pos()) {
+                let q = local(p);
+                live.stroke.add_point(InputPoint { x: q.x, y: q.y, pressure });
+                self.scratch.doc.live_update(live);
+                self.scratch.dirty = true;
+            }
+            if resp.drag_stopped() {
+                if let Some(live) = self.scratch.live.take() {
+                    self.scratch.doc.live_finish(live);
+                    self.scratch.dirty = true;
+                }
+            }
+        }
+        if self.scratch.dirty || self.scratch.tex.is_none() {
+            let img = egui::ColorImage::from_rgba_unmultiplied([ScratchPad::W as usize, ScratchPad::H as usize], &self.scratch.doc.flatten());
+            self.scratch.tex = Some(ui.ctx().load_texture("scratch", img, egui::TextureOptions::NEAREST));
+            self.scratch.dirty = false;
+        }
+        if let Some(t) = &self.scratch.tex {
+            ui.painter().image(t.id(), rect, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+        }
+        ui.painter().rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
+        resp.on_hover_text(tr("Черновик: рисуйте текущей кистью; Alt + щелчок или правая кнопка — взять цвет"));
+        // «×» в углу — очистить (рисуется сам: `ui.put` сдвинул бы следующие панели)
+        let clear = Rect::from_min_size(rect.right_top() + Vec2::new(-16.0, 2.0), Vec2::splat(14.0));
+        let cr = ui.interact(clear, ui.id().with("scratch_clear"), egui::Sense::click()).on_hover_text(tr("Очистить черновик"));
+        ui.painter().rect_filled(clear, 2.0, if cr.hovered() { Color32::from_gray(225) } else { Color32::from_gray(245) });
+        ui.painter().rect_stroke(clear, 2.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
+        ui.painter().text(clear.center(), egui::Align2::CENTER_CENTER, "×", egui::FontId::proportional(12.0), sai_ui::INK);
+        if cr.clicked() {
+            self.scratch = ScratchPad::new();
+        }
+    }
+
     /// Есть ли несохранённое хоть в одном холсте.
     fn any_dirty(&self) -> bool {
         self.dirty || self.tabs.iter().flatten().any(|t| t.dirty)
@@ -8581,7 +8712,7 @@ impl eframe::App for PaintApp {
         );
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
         egui::TopBottomPanel::top("menu").show(ctx, |ui| self.menu_bar(ui));
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+        egui::TopBottomPanel::bottom("status").show_animated(ctx, self.win.show[6], |ui| {
             ui.horizontal(|ui| {
                 ui.label(&self.status);
                 for note in &self.notes {
@@ -8619,13 +8750,20 @@ impl eframe::App for PaintApp {
         }
         let side = |right: bool, id: &'static str| if right { egui::SidePanel::right(id) } else { egui::SidePanel::left(id) };
         if !self.win.panels_hidden {
-            side(self.win.tools_right, "tools").exact_width(236.0).resizable(false).show(ctx, |ui| self.left_panel(ui));
-            side(self.win.layers_right, "layers").exact_width(186.0).resizable(false).show(ctx, |ui| self.right_panel(ui));
-            egui::TopBottomPanel::top("quick").show(ctx, |ui| self.quick_bar(ui));
+            let sh = self.win.show;
+            if sh[2] || sh[3] {
+                side(self.win.tools_right, "tools").exact_width(236.0).resizable(false).show(ctx, |ui| self.left_panel(ui));
+            }
+            if sh[0] || sh[1] {
+                side(self.win.layers_right, "layers").exact_width(186.0).resizable(false).show(ctx, |ui| self.right_panel(ui));
+            }
+            if sh[4] {
+                egui::TopBottomPanel::top("quick").show(ctx, |ui| self.quick_bar(ui));
+            }
         }
         let mut tab_click = None;
         let mut tab_close = None;
-        egui::TopBottomPanel::bottom("tabs").show_animated(ctx, !self.win.panels_hidden, |ui| {
+        egui::TopBottomPanel::bottom("tabs").show_animated(ctx, !self.win.panels_hidden && self.win.show[5], |ui| {
             ui.horizontal(|ui| {
                 for i in 0..self.views.len() {
                     let active = i == self.active_view;

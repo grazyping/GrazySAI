@@ -728,3 +728,15 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, avec calques)
 Выход отменён: холст не сохранён = Sortie annulée : le canevas n'a pas été enregistré
 Не сохранять = Ne pas enregistrer
 Сохранить изменения в рисунках? = Enregistrer les modifications des dessins ?
+
+# Окно: показ панелей, черновик (0.9.1)
+Быстрая панель = Barre rapide
+Вкладки видов = Onglets des vues
+Инструменты = Outils
+Навигатор = Navigateur
+Очистить черновик = Effacer le brouillon
+Показать = Afficher
+Слои = Calques
+Строка состояния = Barre d'état
+Черновик = Brouillon
+Черновик: рисуйте текущей кистью; Alt + щелчок или правая кнопка — взять цвет = Brouillon : peignez avec le pinceau actuel ; Alt + clic ou clic droit prélève une couleur

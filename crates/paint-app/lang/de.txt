@@ -728,3 +728,15 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, mit Ebenen)
 Выход отменён: холст не сохранён = Beenden abgebrochen: Leinwand nicht gespeichert
 Не сохранять = Nicht speichern
 Сохранить изменения в рисунках? = Änderungen an den Bildern speichern?
+
+# Окно: показ панелей, черновик (0.9.1)
+Быстрая панель = Schnellleiste
+Вкладки видов = Ansichts-Tabs
+Инструменты = Werkzeuge
+Навигатор = Navigator
+Очистить черновик = Notizblock leeren
+Показать = Anzeigen
+Слои = Ebenen
+Строка состояния = Statusleiste
+Черновик = Notizblock
+Черновик: рисуйте текущей кистью; Alt + щелчок или правая кнопка — взять цвет = Notizblock: mit dem aktuellen Pinsel malen; Alt + Klick oder Rechtsklick nimmt eine Farbe auf
