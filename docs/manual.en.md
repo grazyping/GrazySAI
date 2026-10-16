@@ -370,9 +370,9 @@ one. The defaults are below.
 ## How it still differs from SAI
 
 The full list is in [ROADMAP.en.md](../ROADMAP.en.md). The main points:
-- No several views of one canvas, HSL and V-HSV slider modes yet; perspective
-  rulers are saved but not shown; the thumbnail for SAI's file browser is not written; the binary
-  pen does not follow SAI's exact stair rule.
+- No second view of the same canvas in a tab (“New View”) yet; perspective rulers are saved but
+  not shown; the thumbnail for SAI's file browser is not written; at some slopes the binary pen
+  adds fewer stair pixels than SAI.
 
 ## If something is wrong
 
