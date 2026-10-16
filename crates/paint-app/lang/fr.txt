@@ -656,3 +656,8 @@ S-кривая = Courbe en S
 
 # Новый вид (0.8.37)
 Новый вид = Nouvelle vue
+
+# Линейка перспективы (0.8.38)
+Перспектива: 1 точка = Perspective : 1 point
+Перспектива: 2 точки = Perspective : 2 points
+Перспектива: 3 точки = Perspective : 3 points

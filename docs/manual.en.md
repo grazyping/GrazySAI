@@ -272,6 +272,11 @@ wherever it starts.
   with “Lock Pivot” — to rotate it around the pivot (the cross).
 - **Ellipse**: a ring; strokes lie on its outer edge. Holding Ctrl shows a frame: inside —
   move, outside — rotate, a side or a corner — stretch.
+- **Perspective: 1, 2 or 3 points**: the horizon, rays from the vanishing points (green, blue,
+  red) and guides through the cursor. A stroke runs straight from where it starts toward the
+  vanishing point its first movement points at (one point also gives horizontals and verticals,
+  two points give verticals). Ctrl + drag a vanishing point to move it. Our own version: it is
+  not saved in the file.
 - “Ignore Ruler” (menu or the quick bar button) — draw freely without hiding it; “Reset
   Ruler” — place it again in the middle of the view.
 

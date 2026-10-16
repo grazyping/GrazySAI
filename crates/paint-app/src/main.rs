@@ -2458,11 +2458,16 @@ impl PaintApp {
     }
 
     /// Точка штриха на линейке, если линейка показана и не отключена.
-    fn snap_to_ruler(&self, p: InputPoint) -> InputPoint {
+    /// `first` — начало штриха (перспектива выбирает направление по первому движению).
+    fn snap_to_ruler(&mut self, p: InputPoint, first: bool) -> InputPoint {
         if !self.ruler.active() {
             return p;
         }
-        let [x, y] = self.ruler.snap([p.x, p.y]);
+        let [x, y] = if matches!(self.ruler.kind, ruler::Kind::Perspective(_)) {
+            self.ruler.snap_perspective([p.x, p.y], first, self.zoom)
+        } else {
+            self.ruler.snap([p.x, p.y])
+        };
         InputPoint { x, y, ..p }
     }
 
@@ -2474,11 +2479,16 @@ impl PaintApp {
         }
     }
 
-    fn reset_ruler(&mut self) {
+    /// Середина вида и его меньшая сторона в точках холста.
+    fn view_frame(&self) -> ([f32; 2], f32) {
         let xf = ViewXf::new(self.view, self.zoom, self.offset, self.view_angle, self.view_flip);
         let c = xf.to_canvas(self.view.center());
-        let min = self.view.width().min(self.view.height()).max(100.0) / self.zoom;
-        self.ruler.reset([c.x, c.y], min);
+        ([c.x, c.y], self.view.width().min(self.view.height()).max(100.0) / self.zoom)
+    }
+
+    fn reset_ruler(&mut self) {
+        let (c, min) = self.view_frame();
+        self.ruler.reset(c, min);
     }
 
     fn begin_stroke(&mut self, p: InputPoint, eraser_end: bool) {
@@ -2522,7 +2532,7 @@ impl PaintApp {
             }
             return;
         }
-        let p = self.snap_to_ruler(p);
+        let p = self.snap_to_ruler(p, true);
         if liwk && !eraser_end && !self.sel_tool() && self.filter.is_none() {
             // перо слоя контура: точки копятся, по отрыву становятся кривой
             self.smoother = Stabilizer::with_level(self.stabilizer);
@@ -2606,7 +2616,7 @@ impl PaintApp {
             self.line_apply(tool, p);
             return;
         }
-        let p = self.snap_to_ruler(p);
+        let p = self.snap_to_ruler(p, false);
         if let Some(pts) = self.line_stroke.as_mut() {
             let q = self.smoother.push(p);
             pts.push(paint_core::vectorize::StrokePoint { at: [q.x as f64, q.y as f64], pressure: q.pressure as f64 });
@@ -3788,9 +3798,21 @@ impl PaintApp {
                     ui.close_menu();
                 }
                 ui.separator();
-                for (kind, label) in [(ruler::Kind::Straight, tr("Прямая")), (ruler::Kind::Ellipse, tr("Эллипс"))] {
+                for (kind, label) in [
+                    (ruler::Kind::Straight, tr("Прямая")),
+                    (ruler::Kind::Ellipse, tr("Эллипс")),
+                    (ruler::Kind::Perspective(1), tr("Перспектива: 1 точка")),
+                    (ruler::Kind::Perspective(2), tr("Перспектива: 2 точки")),
+                    (ruler::Kind::Perspective(3), tr("Перспектива: 3 точки")),
+                ] {
                     if ui.radio(self.ruler.kind == kind, label).clicked() {
+                        let was = self.ruler.kind;
                         self.ruler.kind = kind;
+                        // точки схода — заново посреди вида, если сменилось их число
+                        if was != kind && matches!(kind, ruler::Kind::Perspective(_)) && self.ruler.placed {
+                            let (c, min) = self.view_frame();
+                            self.ruler.place_vps(c, min);
+                        }
                         if !self.ruler.visible {
                             self.toggle_ruler();
                         }
@@ -5725,6 +5747,42 @@ impl PaintApp {
                 cross(a);
                 if r.lock_pivot {
                     painter.circle_stroke(a, 5.0, egui::Stroke::new(1.0_f32, ink));
+                }
+            }
+            ruler::Kind::Perspective(_) => {
+                let n = r.vps();
+                let far = painter.clip_rect().size().length() * 2.0;
+                let alpha = if r.ignore { 0.4 } else { 1.0 };
+                let faint = Color32::from_rgba_premultiplied(16, 60, 54, 60).gamma_multiply(alpha);
+                let through = Color32::from_rgba_premultiplied(30, 120, 105, 160).gamma_multiply(alpha);
+                let dir = |at: [f32; 2], d: [f32; 2]| (s([at[0] + d[0] * 10.0, at[1] + d[1] * 10.0]) - s(at)).normalized();
+                // горизонт
+                let h = r.horizon();
+                let c0 = s(r.vp[0]);
+                let hd = dir(r.vp[0], h);
+                painter.line_segment([c0 - hd * far, c0 + hd * far], egui::Stroke::new(1.0_f32, ink.gamma_multiply(alpha)));
+                // веер лучей от каждой точки схода
+                for v in &r.vp[..n] {
+                    let c = s(*v);
+                    for k in 0..24 {
+                        let t = k as f32 / 24.0 * std::f32::consts::TAU;
+                        painter.line_segment([c, c + Vec2::angled(t) * far], egui::Stroke::new(1.0_f32, faint));
+                    }
+                }
+                // направляющие через курсор — куда пойдёт штрих
+                if let Some(m) = painter.ctx().input(|i| i.pointer.hover_pos()).filter(|m| painter.clip_rect().contains(*m)) {
+                    let mc = xf.to_canvas(m);
+                    for g in r.guides([mc.x, mc.y]) {
+                        let gd = dir([mc.x, mc.y], g);
+                        painter.line_segment([m - gd * far, m + gd * far], egui::Stroke::new(1.0_f32, through));
+                    }
+                }
+                // точки схода — зелёная, синяя, красная, как в меню SAI
+                let cols = [Color32::from_rgb(40, 170, 60), Color32::from_rgb(50, 90, 220), Color32::from_rgb(210, 50, 50)];
+                for (v, col) in r.vp[..n].iter().zip(cols) {
+                    let c = s(*v);
+                    painter.circle_filled(c, 4.0, col);
+                    painter.circle_stroke(c, 8.0, egui::Stroke::new(1.5_f32, col));
                 }
             }
             ruler::Kind::Ellipse => {

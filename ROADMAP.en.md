@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.37)
+### 0.8 — linework and shapes (current version 0.8.38)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -105,7 +105,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] The mask moves and transforms with its layer; Merge Down for a layer with a mask
 - [x] Color mixer and swatches in the color panel — as in SAI 2017 (checked against the running program)
 - [x] Large Water brush: blur over a reduced copy of the layer, as in SAI — 350 px: 7.4 → 2.0 s per 1000 px of line (`docs/23-performance.md`)
-- [ ] Perspective rulers: display and drawing along them (reference: Krita's perspective and vanishing point assistants)
+- [x] Perspective rulers: display and drawing along them (reference: Krita's perspective and vanishing point assistants); our own version, not written to the file (0.8.38)
 
 ### 1.0 — finished
 - [x] `.sai2` read and written without loss for every kind of layer: checked by resaving the user's files — same flattened picture (difference 0), text and linework byte for byte, masks, effects, paper, background and resolution kept

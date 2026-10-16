@@ -6,6 +6,11 @@
 //! - эллипс: внутри рамки — сдвиг, снаружи — поворот вокруг центра, стороны и углы рамки —
 //!   размер (противоположная сторона стоит на месте).
 //!
+//! Линейка перспективы (своя версия: в SAI новее 2017 это слой `pers`, образца файла нет): 1–3
+//! точки схода. Штрих идёт по прямой из точки начала — к той точке схода (или вдоль того
+//! семейства параллельных), куда смотрит первое движение пера. Ctrl + перетаскивание точки
+//! схода — сдвиг.
+//!
 //! Все координаты — точки холста; размеры полосы и ручек заданы в точках экрана и делятся на
 //! масштаб вида.
 
@@ -19,6 +24,8 @@ const GRIP: f32 = 8.0;
 pub enum Kind {
     Straight,
     Ellipse,
+    /// Перспектива с 1, 2 или 3 точками схода.
+    Perspective(u8),
 }
 
 /// За что взялись при правке.
@@ -28,6 +35,8 @@ pub enum Grip {
     Rotate,
     /// Сторона или угол рамки эллипса: −1 / 0 / +1 по местным осям.
     Side(i8, i8),
+    /// Точка схода перспективы.
+    Vp(u8),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -48,6 +57,12 @@ pub struct Ruler {
     pub rx: f32,
     pub ry: f32,
     pub tilt: f32,
+    /// Перспектива: точки схода (зелёная, синяя, красная, как в меню SAI); первые две задают
+    /// горизонт.
+    pub vp: [[f32; 2]; 3],
+    /// Штрих по перспективе: точка начала и выбранное направление (`None` — ещё не выбрано).
+    pub start: [f32; 2],
+    pub guide: Option<[f32; 2]>,
 }
 
 impl Default for Ruler {
@@ -64,6 +79,9 @@ impl Default for Ruler {
             rx: 100.0,
             ry: 100.0,
             tilt: 0.0,
+            vp: [[0.0; 2]; 3],
+            start: [0.0; 2],
+            guide: None,
         }
     }
 }
@@ -89,7 +107,87 @@ impl Ruler {
         self.ry = self.rx;
         self.tilt = 0.0;
         self.lock_pivot = false;
+        self.place_vps(view_center, view_min);
         self.placed = true;
+    }
+
+    /// Точки схода посреди вида: одна — в середине; две — по сторонам на одном горизонте;
+    /// третья — внизу.
+    pub fn place_vps(&mut self, c: [f32; 2], view_min: f32) {
+        let m = view_min.max(8.0);
+        self.vp = match self.kind {
+            Kind::Perspective(1) => [c, [c[0] + m, c[1]], [c[0], c[1] + m]],
+            _ => [[c[0] - 0.45 * m, c[1] - 0.1 * m], [c[0] + 0.45 * m, c[1] - 0.1 * m], [c[0], c[1] + 0.6 * m]],
+        };
+    }
+
+    /// Сколько точек схода.
+    pub fn vps(&self) -> usize {
+        match self.kind {
+            Kind::Perspective(n) => n.clamp(1, 3) as usize,
+            _ => 0,
+        }
+    }
+
+    /// Направление горизонта: через первые две точки схода (у одной точки — по горизонтали).
+    pub fn horizon(&self) -> [f32; 2] {
+        if self.vps() < 2 {
+            return [1.0, 0.0];
+        }
+        let d = sub(self.vp[1], self.vp[0]);
+        let l = d[0].hypot(d[1]);
+        if l < 1e-3 {
+            [1.0, 0.0]
+        } else {
+            [d[0] / l, d[1] / l]
+        }
+    }
+
+    /// Направления, по которым может пойти штрих из точки `at`: к каждой точке схода и вдоль
+    /// семейств параллельных (у одной точки — горизонталь и вертикаль, у двух — вертикаль).
+    pub fn guides(&self, at: [f32; 2]) -> Vec<[f32; 2]> {
+        let n = self.vps();
+        let mut out = Vec::with_capacity(4);
+        for v in &self.vp[..n] {
+            let d = sub(*v, at);
+            let l = d[0].hypot(d[1]);
+            if l > 1e-3 {
+                out.push([d[0] / l, d[1] / l]);
+            }
+        }
+        let h = self.horizon();
+        if n == 1 {
+            out.push(h);
+        }
+        if n <= 2 {
+            out.push([-h[1], h[0]]);
+        }
+        out
+    }
+
+    /// Точка штриха по перспективе. `first` — начало штриха; пока перо не ушло на 6 точек
+    /// экрана, штрих стоит в начале, потом выбирается направление, ближайшее к движению.
+    pub fn snap_perspective(&mut self, p: [f32; 2], first: bool, zoom: f32) -> [f32; 2] {
+        if first {
+            self.start = p;
+            self.guide = None;
+            return p;
+        }
+        let d = sub(p, self.start);
+        if self.guide.is_none() {
+            let len = d[0].hypot(d[1]);
+            if len * zoom < 6.0 {
+                return self.start;
+            }
+            let m = [d[0] / len, d[1] / len];
+            self.guide = self.guides(self.start).into_iter().max_by(|a, b| {
+                let k = |g: &[f32; 2]| (g[0] * m[0] + g[1] * m[1]).abs();
+                k(a).total_cmp(&k(b))
+            });
+        }
+        let Some(g) = self.guide else { return p };
+        let t = d[0] * g[0] + d[1] * g[1];
+        [self.start[0] + t * g[0], self.start[1] + t * g[1]]
     }
 
     /// Прижимать ли сейчас штрих к линейке.
@@ -106,6 +204,7 @@ impl Ruler {
                 let t = d[0] * c + d[1] * s;
                 [self.pivot[0] + t * c, self.pivot[1] + t * s]
             }
+            Kind::Perspective(_) => p,
             Kind::Ellipse => {
                 let l = rot(sub(p, self.center), -self.tilt);
                 let u = [l[0] / self.rx, l[1] / self.ry];
@@ -126,6 +225,11 @@ impl Ruler {
             return None;
         }
         match self.kind {
+            Kind::Perspective(_) => (0..self.vps()).find(|&i| {
+                let d = sub(p, self.vp[i]);
+                d[0].hypot(d[1]) * zoom < GRIP + 4.0
+            })
+            .map(|i| Grip::Vp(i as u8)),
             Kind::Straight => {
                 let (s, c) = self.angle.sin_cos();
                 let d = sub(p, self.pivot);
@@ -184,7 +288,11 @@ impl Ruler {
                 let shift = rot([dx / 2.0 * sx as f32, dy / 2.0 * sy as f32], self.tilt);
                 self.center = [self.center[0] + shift[0], self.center[1] + shift[1]];
             }
-            (Kind::Straight, Grip::Side(..)) => {}
+            (_, Grip::Vp(i)) => {
+                let v = &mut self.vp[i as usize % 3];
+                *v = [v[0] + d[0], v[1] + d[1]];
+            }
+            _ => {}
         }
     }
 }
@@ -241,6 +349,29 @@ mod tests {
         r.tilt = std::f32::consts::FRAC_PI_2;
         let p = r.snap([500.0, 0.0]);
         assert!(close(p, [500.0, 200.0]), "{p:?}");
+    }
+
+    /// Две точки схода: штрих, начатый в сторону левой точки, идёт точно к ней; почти
+    /// вертикальный — по вертикали; пока перо не ушло на 6 точек экрана, штрих стоит.
+    #[test]
+    fn perspective_follows_the_vanishing_point_of_the_first_move() {
+        let mut r = shown(Kind::Perspective(2));
+        r.vp = [[0.0, 0.0], [1000.0, 0.0], [0.0, 0.0]];
+        assert!(close(r.snap_perspective([500.0, 500.0], true, 1.0), [500.0, 500.0]));
+        assert!(close(r.snap_perspective([497.0, 498.0], false, 1.0), [500.0, 500.0]));
+        let a = r.snap_perspective([480.0, 470.0], false, 1.0);
+        let b = r.snap_perspective([300.0, 330.0], false, 1.0);
+        for p in [a, b] {
+            // на прямой из (500, 500) в (0, 0)
+            assert!((p[0] - p[1]).abs() < 1e-2, "{p:?}");
+        }
+        r.snap_perspective([200.0, 200.0], true, 1.0);
+        let v = r.snap_perspective([203.0, 260.0], false, 1.0);
+        assert!(close(v, [200.0, 260.0]), "{v:?}");
+        // точку схода берёт Ctrl + нажатие рядом с ней
+        assert_eq!(r.hit([1003.0, 2.0], 1.0), Some(Grip::Vp(1)));
+        r.drag(Grip::Vp(1), [1000.0, 0.0], [1000.0, 100.0]);
+        assert!(close(r.vp[1], [1000.0, 100.0]));
     }
 
     /// Правка как в образце: полоса прямой — сдвиг (с закреплённой осью — поворот), мимо —

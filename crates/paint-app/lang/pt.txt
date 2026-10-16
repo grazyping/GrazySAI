@@ -656,3 +656,8 @@ S-кривая = Curva em S
 
 # Новый вид (0.8.37)
 Новый вид = Nova vista
+
+# Линейка перспективы (0.8.38)
+Перспектива: 1 точка = Perspectiva: 1 ponto
+Перспектива: 2 точки = Perspectiva: 2 pontos
+Перспектива: 3 точки = Perspectiva: 3 pontos
