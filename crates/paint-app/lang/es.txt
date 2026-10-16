@@ -653,3 +653,6 @@ S-кривая = Curva en S
 Уровни яркости: = Niveles de brillo:
 нет = ninguno
 Контуры: = Contornos:
+
+# Новый вид (0.8.37)
+Новый вид = Nueva vista

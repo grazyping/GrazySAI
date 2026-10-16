@@ -654,3 +654,6 @@ S-кривая = S-Curve Gradation
 Уровни яркости: = Brightness levels:
 нет = none
 Контуры: = Outlines:
+
+# Новый вид (0.8.37)
+Новый вид = New View

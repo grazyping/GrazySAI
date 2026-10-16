@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.36)
+### 0.8 — linework and shapes (current version 0.8.37)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -117,7 +117,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Transform: SAI modes and “Perspective” 0–100 — a blend of bilinear and perspective deform, checked against the live SAI
 - [x] Several canvases in tabs at the bottom, as in SAI; “File → Close” (Ctrl+W)
 - [x] Floating view of the canvas: its own zoom, position, rotation and mirror; painting works in it
-- [ ] “New View” — a second view of the same canvas in a tab
+- [x] “New View” — a second view of the same canvas in a tab (0.8.37)
 - [x] Layer outline (inside, centre, outside, canvas edges) — checked against the live SAI
 - [x] Layer menu as in SAI: “Merge Visible Layers”, “Rotate Layer 90°”, “Layer Property…” — after the live SAI
 - [x] Binary pen: points by SAI's code — stairs at slope 0.2 match SAI; at 0.4 SAI adds a point on every other stair — not found yet

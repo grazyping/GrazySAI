@@ -280,6 +280,14 @@ struct FloatView {
     flip: bool,
 }
 
+/// Вкладка внизу — вид холста: у одного холста может быть несколько («Новый вид» в SAI), у
+/// каждого свои масштаб, сдвиг, поворот и зеркало.
+#[derive(Clone, Copy)]
+struct TabView {
+    canvas: usize,
+    view: FloatView,
+}
+
 /// Меню «Окно», как в SAI 2017.
 #[derive(Clone, Copy, PartialEq)]
 struct WindowOpts {
@@ -922,6 +930,9 @@ struct PaintApp {
     /// Вкладки холстов: на месте активной — `None` (её поля — в самом `PaintApp`).
     tabs: Vec<Option<Tab>>,
     active_tab: usize,
+    /// Вкладки внизу (виды холстов) и активная; у каждого холста хотя бы один вид.
+    views: Vec<TabView>,
+    active_view: usize,
     /// Закрыть вкладку с несохранёнными изменениями — спросить.
     close_ask: Option<usize>,
     /// Настройки меню «Окно».
@@ -1076,6 +1087,8 @@ impl PaintApp {
             drawing_view: 0,
             input_view: 0,
             active_tab: 0,
+            views: vec![TabView { canvas: 0, view: FloatView { zoom: 1.0, offset: Vec2::ZERO, angle: 0.0, flip: false } }],
+            active_view: 0,
             close_ask: None,
             tab_pressed: None,
             clip_own: None,
@@ -1145,6 +1158,12 @@ impl PaintApp {
             }
             Ok("blur") => app.open_filter(FilterKind::GaussianBlur),
             Ok("bc") => app.open_filter(FilterKind::BrightnessContrast),
+            Ok("lens") => app.open_filter(FilterKind::Lens),
+            Ok("wave") => app.open_filter(FilterKind::Distort(paint_core::filters::DistortKind::Wave)),
+            Ok("twirl") => app.open_filter(FilterKind::Distort(paint_core::filters::DistortKind::Twirl)),
+            Ok("polar") => app.open_filter(FilterKind::Distort(paint_core::filters::DistortKind::Polar)),
+            Ok("pencil") => app.open_filter(FilterKind::Pencil),
+            Ok("artistic") => app.open_filter(FilterKind::Artistic),
             _ => {}
         }
         // Для проверок: PAINT_TOOL=move|marquee|lasso|wand — инструмент при запуске;
@@ -2033,6 +2052,79 @@ impl PaintApp {
         self.put_tab(t);
     }
 
+    fn cur_view(&self) -> FloatView {
+        FloatView { zoom: self.zoom, offset: self.offset, angle: self.view_angle, flip: self.view_flip }
+    }
+
+    fn set_view(&mut self, v: FloatView) {
+        self.zoom = v.zoom;
+        self.offset = v.offset;
+        self.view_angle = v.angle;
+        self.view_flip = v.flip;
+    }
+
+    /// Перейти на вкладку-вид `j` (другой холст — через `switch_tab`).
+    fn switch_view(&mut self, j: usize) {
+        if j == self.active_view || j >= self.views.len() || self.live.is_some() {
+            return;
+        }
+        self.views[self.active_view].view = self.cur_view();
+        let v = self.views[j];
+        if v.canvas != self.active_tab {
+            self.switch_tab(v.canvas);
+            if self.active_tab != v.canvas {
+                return;
+            }
+        }
+        self.active_view = j;
+        self.set_view(v.view);
+    }
+
+    /// «Новый вид» (как в SAI): ещё одна вкладка того же холста рядом с текущей.
+    fn new_view(&mut self) {
+        let v = TabView { canvas: self.active_tab, view: self.cur_view() };
+        self.views[self.active_view] = v;
+        self.views.insert(self.active_view + 1, v);
+        self.active_view += 1;
+    }
+
+    /// Закрыть вкладку-вид: если у холста есть другие виды — только её, иначе сам холст.
+    fn request_close_view(&mut self, j: usize) {
+        let Some(v) = self.views.get(j).copied() else { return };
+        if self.live.is_some() {
+            return;
+        }
+        let Some(other) = (0..self.views.len()).find(|&k| k != j && self.views[k].canvas == v.canvas) else {
+            self.request_close_tab(v.canvas);
+            return;
+        };
+        if j == self.active_view {
+            self.switch_view(other);
+        }
+        self.views.remove(j);
+        if self.active_view > j {
+            self.active_view -= 1;
+        }
+    }
+
+    /// Убрать виды закрытого холста `i` и сдвинуть номера холстов после него.
+    fn drop_views_of(&mut self, i: usize) {
+        let before = self.views[..self.active_view].iter().filter(|v| v.canvas == i).count();
+        let active_gone = self.views[self.active_view].canvas == i;
+        self.views.retain(|v| v.canvas != i);
+        for v in &mut self.views {
+            if v.canvas > i {
+                v.canvas -= 1;
+            }
+        }
+        if active_gone {
+            self.active_view = self.views.iter().position(|v| v.canvas == self.active_tab).unwrap_or(0);
+            self.set_view(self.views[self.active_view].view);
+        } else {
+            self.active_view -= before;
+        }
+    }
+
     /// Перед новым холстом или открытием: если текущий холст уже в деле — новая вкладка
     /// (как в SAI каждый холст — своя вкладка), иначе — на месте пустого.
     fn prepare_tab(&mut self) {
@@ -2041,10 +2133,13 @@ impl PaintApp {
             return;
         }
         self.settle();
+        self.views[self.active_view].view = self.cur_view();
         let cur = self.take_tab();
         self.tabs[self.active_tab] = Some(cur);
         self.tabs.push(None);
         self.active_tab = self.tabs.len() - 1;
+        self.views.push(TabView { canvas: self.active_tab, view: self.cur_view() });
+        self.active_view = self.views.len() - 1;
         self.thumbs.clear();
         self.dirty = false;
         self.had_vectors = false;
@@ -2063,12 +2158,15 @@ impl PaintApp {
             if self.active_tab > i {
                 self.active_tab -= 1;
             }
+            self.drop_views_of(i);
             return;
         }
         self.settle();
         if self.tabs.len() == 1 {
             self.new_canvas_in_place(self.doc.width.max(1), self.doc.height.max(1));
             self.dirty = false;
+            self.views.truncate(1);
+            self.active_view = 0;
             return;
         }
         self.tabs.remove(i);
@@ -2076,6 +2174,7 @@ impl PaintApp {
         let t = self.tabs[next].take().expect("tab slot");
         self.active_tab = next;
         self.put_tab(t);
+        self.drop_views_of(i);
     }
 
     /// Закрыть вкладку, спросив, если в ней есть несохранённое.
@@ -3409,7 +3508,7 @@ impl PaintApp {
                     }
                 }
                 if ui.add(menu_item("Закрыть", "Ctrl+W")).clicked() {
-                    self.request_close_tab(self.active_tab);
+                    self.request_close_view(self.active_view);
                     ui.close_menu();
                 }
                 ui.separator();
@@ -3822,6 +3921,10 @@ impl PaintApp {
                 }
                 if ui.add(menu_item("Сбросить угол вида", "Shift+Home")).clicked() {
                     self.rotate_view(0.0);
+                    ui.close_menu();
+                }
+                if ui.button(tr("Новый вид")).clicked() {
+                    self.new_view();
                     ui.close_menu();
                 }
                 if ui.button(tr("Новый плавающий вид")).clicked() {
@@ -7386,7 +7489,7 @@ impl eframe::App for PaintApp {
         let cut = hit(A::Cut) || (ev_cut && is_default(A::Cut, "Ctrl+X"));
         if !typing && self.live.is_none() {
             if hit(A::Close) {
-                self.request_close_tab(self.active_tab);
+                self.request_close_view(self.active_view);
             }
             if hit(A::New) {
                 self.show_new = true;
@@ -7469,6 +7572,9 @@ impl eframe::App for PaintApp {
             }
             if hit(A::Zoom100) {
                 self.set_zoom(1.0);
+            }
+            if hit(A::NewView) {
+                self.new_view();
             }
             if hit(A::RotateCcw) {
                 self.rotate_view(-15.0);
@@ -7665,12 +7771,17 @@ impl eframe::App for PaintApp {
         let mut tab_close = None;
         egui::TopBottomPanel::bottom("tabs").show_animated(ctx, !self.win.panels_hidden, |ui| {
             ui.horizontal(|ui| {
-                for i in 0..self.tabs.len() {
-                    let active = i == self.active_tab;
-                    let (name, zoom, dirty) = match &self.tabs[i] {
-                        Some(t) => (t.title(), t.zoom, t.dirty),
-                        None => (self.file_name(), self.zoom, self.dirty),
+                for i in 0..self.views.len() {
+                    let active = i == self.active_view;
+                    let v = self.views[i];
+                    let (name, dirty) = match &self.tabs[v.canvas] {
+                        Some(t) => (t.title(), t.dirty),
+                        None => (self.file_name(), self.dirty),
                     };
+                    let zoom = if active { self.zoom } else { v.view.zoom };
+                    // у холста несколько видов — номер вида, как в SAI
+                    let same = self.views.iter().filter(|o| o.canvas == v.canvas).count();
+                    let name = if same > 1 { format!("{name} ({})", self.views[..=i].iter().filter(|o| o.canvas == v.canvas).count()) } else { name };
                     let (rect, resp) = ui.allocate_exact_size(Vec2::new(180.0, 18.0), egui::Sense::click());
                     let p = ui.painter();
                     p.rect_filled(rect, 0.0, if active { sai_ui::SELECT_BG } else { Color32::from_gray(236) });
@@ -7696,10 +7807,10 @@ impl eframe::App for PaintApp {
             });
         });
         if let Some(i) = tab_click {
-            self.switch_tab(i);
+            self.switch_view(i);
         }
         if let Some(i) = tab_close {
-            self.request_close_tab(i);
+            self.request_close_view(i);
         }
         egui::CentralPanel::default()
             .frame(egui::Frame::none())

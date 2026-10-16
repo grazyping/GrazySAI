@@ -653,3 +653,6 @@ S-кривая = S-Kurve
 Уровни яркости: = Helligkeitsstufen:
 нет = keine
 Контуры: = Konturen:
+
+# Новый вид (0.8.37)
+Новый вид = Neue Ansicht

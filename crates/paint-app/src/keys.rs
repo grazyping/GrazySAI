@@ -72,6 +72,7 @@ pub enum Action {
     Paste,
     ResetView,
     Zoom100,
+    NewView,
     Fullscreen,
     TogglePanels,
     InvertSelection,
@@ -89,7 +90,7 @@ pub enum Action {
 
 /// Действие, имя для настроек, подпись в окне, клавиша по умолчанию.
 /// Пустая клавиша — по умолчанию не назначена (в SAI её нет).
-pub const ALL: [(Action, &str, &str, &str); 55] = [
+pub const ALL: [(Action, &str, &str, &str); 56] = [
     (Action::Undo, "undo", "Отменить", "Ctrl+Z"),
     (Action::Redo, "redo", "Повторить", "Ctrl+Y"),
     (Action::Open, "open", "Открыть", "Ctrl+O"),
@@ -132,6 +133,7 @@ pub const ALL: [(Action, &str, &str, &str); 55] = [
     (Action::Paste, "paste", "Вставить", "Ctrl+V"),
     (Action::ResetView, "reset_view", "Сбросить положение вида", "Home"),
     (Action::Zoom100, "zoom_100", "Масштаб 100%", "Ctrl+Alt+0"),
+    (Action::NewView, "new_view", "Новый вид", ""),
     (Action::Fullscreen, "fullscreen", "Полный экран", "F11"),
     (Action::TogglePanels, "panels", "Показывать все панели", "Tab"),
     (Action::InvertSelection, "invert_selection", "Инвертировать", ""),
