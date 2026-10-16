@@ -818,3 +818,4 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, with layers)
 Снять выделение узлов = Deselect All CPs
 Выделено узлов: {0} = Control points selected: {0}
 Нет выделения = No selection
+Отдельные панели = Separate User Interface Panel

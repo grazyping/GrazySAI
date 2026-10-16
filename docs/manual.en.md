@@ -60,6 +60,9 @@ The layout follows SAI 2:
 
 Shortcut keys in menu items and tooltips can be hidden: “Window → Show shortcut keys”.
 
+“Window → Separate User Interface Panel” (as in SAI): tools, color, layers or navigator — each
+panel in its own window that can go to another monitor; closing that window puts the panel back.
+
 The “Window” menu, as in SAI: UI scale (100–200%), the color and tool panel and the navigator and
 layer panel on the right or left, full screen (F11, Shift+Tab), “Show All User Interface Panels”
 (Tab leaves only the canvas), “Show” for each panel separately (navigator, layers, color, tools,

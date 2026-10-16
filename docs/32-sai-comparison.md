@@ -107,7 +107,7 @@
 | Show: Navigator, Layer, Color, Tool Panel, Quick Bar, View Selector, Status Bar, Scroll Bar | «Окно → Показать» — каждая панель (полос прокрутки у холста нет) | ✔ |
 | Show: Color Circle, RGB Slider, HSV Slider, Color Mixer, Swatches | кнопки панели цвета | ≈ |
 | Scratch Pad — черновик для смешивания цветов | черновик на панели цвета: текущая кисть, взять цвет | ✔ |
-| Separate User Interface Panel (плавающие панели) | — | ✘ |
+| Separate User Interface Panel: Tool, Color, Layer, Navigator | «Отдельные панели» — каждая в своём окне системы; закрыть окно — панель на место | ✔ |
 
 ## Помощь
 

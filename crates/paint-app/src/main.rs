@@ -523,11 +523,14 @@ struct WindowOpts {
     /// «Окно → Показать» (как в SAI): навигатор, слои, цвет, инструменты, быстрая панель,
     /// вкладки видов, строка состояния.
     show: [bool; 7],
+    /// «Окно → Отдельные панели» (Separate User Interface Panel в SAI): навигатор, слои, цвет,
+    /// инструменты — каждая в своём окне (номера — как у `show`).
+    separate: [bool; 4],
 }
 
 impl Default for WindowOpts {
     fn default() -> Self {
-        Self { ui_scale: 1.0, tools_right: false, layers_right: true, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true, hsv_mode: 0, swatch_size: 2, show: [true; 7] }
+        Self { ui_scale: 1.0, tools_right: false, layers_right: true, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true, hsv_mode: 0, swatch_size: 2, show: [true; 7], separate: [false; 4] }
     }
 }
 
@@ -1667,6 +1670,9 @@ app.open_canvas_dialog(d == "resolution")
         for (i, k) in SHOW_KEYS.iter().enumerate() {
             s.read_bool(k, &mut self.win.show[i]);
         }
+        for (i, k) in SHOW_KEYS[..4].iter().enumerate() {
+            s.read_bool(&format!("separate_{k}"), &mut self.win.separate[i]);
+        }
         s.read_bool("viewer.always", &mut self.always_viewer);
         if let Some(m) = s.str("viewer.marks") {
             self.viewer_marks = m.split('\u{1f}').filter(|x| !x.is_empty()).map(PathBuf::from).collect();
@@ -1832,6 +1838,9 @@ app.open_canvas_dialog(d == "resolution")
         s.set("tools_right", w.tools_right as u8);
         for (i, k) in SHOW_KEYS.iter().enumerate() {
             s.set(k, w.show[i] as u8);
+        }
+        for (i, k) in SHOW_KEYS[..4].iter().enumerate() {
+            s.set(&format!("separate_{k}"), w.separate[i] as u8);
         }
         s.set("viewer.always", self.always_viewer as u8);
         s.set("viewer.marks", self.viewer_marks.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\u{1f}"));
@@ -5193,6 +5202,14 @@ app.open_canvas_dialog(d == "resolution")
                         }
                     }
                 });
+                // как Separate User Interface Panel в SAI: панель — в своём окне
+                ui.menu_button(tr("Отдельные панели"), |ui| {
+                    for i in [3, 2, 1, 0] {
+                        if ui.checkbox(&mut self.win.separate[i], tr(SHOW_NAMES[i])).changed() {
+                            self.save_settings();
+                        }
+                    }
+                });
                 ui.menu_button(tr("Язык (Language)"), |ui| {
                     for (code, native, _) in i18n::LANGS {
                         if ui.radio(i18n::code() == code, native).clicked() {
@@ -5448,6 +5465,51 @@ app.open_canvas_dialog(d == "resolution")
                 self.ruler.ignore = !self.ruler.ignore;
             }
         });
+    }
+
+    /// Отделённые панели (Separate User Interface Panel в SAI) — каждая в своём окне системы;
+    /// закрыть окно — панель возвращается на место.
+    fn separate_panels(&mut self, ctx: &egui::Context) {
+        for i in [3usize, 2, 1, 0] {
+            if !(self.win.separate[i] && self.win.show[i]) {
+                continue;
+            }
+            let size = [[186.0, 250.0], [186.0, 520.0], [236.0, 300.0], [236.0, 600.0]][i];
+            let title = format!("{} — GrazySAI", tr(SHOW_NAMES[i]));
+            let id = egui::ViewportId::from_hash_of(("panel", i));
+            let builder = egui::ViewportBuilder::default().with_title(title.clone()).with_inner_size(size).with_min_inner_size([120.0, 80.0]);
+            let full = self.win.show;
+            let mut closed = false;
+            ctx.show_viewport_immediate(id, builder, |ctx, class| {
+                // в окне — только эта панель
+                for (k, v) in self.win.show.iter_mut().take(4).enumerate() {
+                    *v = k == i;
+                }
+                let body = |app: &mut Self, ui: &mut egui::Ui| {
+                    egui::ScrollArea::vertical().id_salt(("panel_scroll", i)).show(ui, |ui| {
+                        if i >= 2 {
+                            app.left_panel(ui);
+                        } else {
+                            app.right_panel(ui);
+                        }
+                    });
+                };
+                if class == egui::ViewportClass::Embedded {
+                    // система не даёт второго окна — плавающее окно внутри главного
+                    let mut open = true;
+                    egui::Window::new(&title).id(egui::Id::new(("panel_win", i))).open(&mut open).default_size(size).show(ctx, |ui| body(self, ui));
+                    closed = !open;
+                } else {
+                    egui::CentralPanel::default().show(ctx, |ui| body(self, ui));
+                    closed = ctx.input(|inp| inp.viewport().close_requested());
+                }
+                self.win.show = full;
+            });
+            if closed {
+                self.win.separate[i] = false;
+                self.save_settings();
+            }
+        }
     }
 
     fn left_panel(&mut self, ui: &mut egui::Ui) {
@@ -9593,13 +9655,21 @@ impl eframe::App for PaintApp {
         }
         let side = |right: bool, id: &'static str| if right { egui::SidePanel::right(id) } else { egui::SidePanel::left(id) };
         if !self.win.panels_hidden {
-            let sh = self.win.show;
+            let full = self.win.show;
+            // отделённые панели — в своих окнах, в главном их место освобождается
+            self.separate_panels(ctx);
+            let mut sh = full;
+            for (v, sep) in sh.iter_mut().zip(self.win.separate) {
+                *v &= !sep;
+            }
+            self.win.show = sh;
             if sh[2] || sh[3] {
                 side(self.win.tools_right, "tools").exact_width(236.0).resizable(false).show(ctx, |ui| self.left_panel(ui));
             }
             if sh[0] || sh[1] {
                 side(self.win.layers_right, "layers").exact_width(186.0).resizable(false).show(ctx, |ui| self.right_panel(ui));
             }
+            self.win.show[..4].copy_from_slice(&full[..4]);
             if sh[4] {
                 egui::TopBottomPanel::top("quick").show(ctx, |ui| self.quick_bar(ui));
             }

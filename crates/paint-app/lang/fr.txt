@@ -817,3 +817,4 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, avec calques)
 Снять выделение узлов = Désélectionner tous les points de contrôle
 Выделено узлов: {0} = Points de contrôle sélectionnés : {0}
 Нет выделения = Aucune sélection
+Отдельные панели = Panneaux séparés

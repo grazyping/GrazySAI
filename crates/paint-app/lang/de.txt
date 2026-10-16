@@ -817,3 +817,4 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, mit Ebenen)
 Снять выделение узлов = Alle Kontrollpunkte abwählen
 Выделено узлов: {0} = Gewählte Kontrollpunkte: {0}
 Нет выделения = Keine Auswahl
+Отдельные панели = Getrennte Bedienfelder
