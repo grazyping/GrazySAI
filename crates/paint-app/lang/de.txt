@@ -500,3 +500,12 @@ S-кривая = S-Kurve
 Средний = Mittel
 Большой = Groß
 Размер образцов = Farbfeldgröße
+
+# Щетина (0.8.27)
+   Размер волоска =    Haargröße
+   Мин. волоска =    Haar min.
+   Разброс =    Zufall
+   Направление =    Richtung
+Нет = Keine
+Авто = Auto
+По перу = Stiftrichtung

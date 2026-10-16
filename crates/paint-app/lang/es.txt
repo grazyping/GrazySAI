@@ -500,3 +500,12 @@ S-кривая = Curva en S
 Средний = Mediano
 Большой = Grande
 Размер образцов = Tamaño de muestras
+
+# Щетина (0.8.27)
+   Размер волоска =    Tamaño del pelo
+   Мин. волоска =    Pelo mín.
+   Разброс =    Aleatorio
+   Направление =    Dirección
+Нет = Ninguna
+Авто = Auto
+По перу = Dirección del lápiz

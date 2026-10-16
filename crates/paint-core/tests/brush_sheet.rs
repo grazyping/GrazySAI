@@ -66,8 +66,10 @@ fn brush_sheet_matches_the_reference_program() {
 /// образец ограничивает отпечатки маской штриха (docs/13-thin-brushes.md, раздел 4).
 #[test]
 fn hard_lines_match_the_reference_program() {
+    /// Размер, точка отпечатка, линия (x0, x1, y).
+    type Item = (f32, (f32, f32), (f32, f32, f32));
     let (dx, dy) = (4.5f32, 1.5f32);
-    let draw = |items: &[(f32, (f32, f32), (f32, f32, f32))]| {
+    let draw = |items: &[Item]| {
         let mut doc = Document::new(540, 540);
         for &(size, dab, line) in items {
             let params = BrushParams { size, hardness: 1.0, size_by_pressure: false, ..Default::default() };

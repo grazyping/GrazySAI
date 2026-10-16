@@ -672,6 +672,12 @@ struct GrainSettings {
     tex_strength: f32,
     tex_scale: u16,
     by_min_density: bool,
+    /// Щетина из `bristle` (вместо «пятна»), её Hair Size, Hair Min, Randomize, Direction.
+    bristle: Option<String>,
+    hair_size: f32,
+    hair_min: f32,
+    randomize: f32,
+    direction: u8,
 }
 
 impl Default for GrainSettings {
@@ -684,6 +690,11 @@ impl Default for GrainSettings {
             tex_strength: 1.0,
             tex_scale: 100,
             by_min_density: true,
+            bristle: None,
+            hair_size: 0.5,
+            hair_min: 0.0,
+            randomize: 0.0,
+            direction: 1,
         }
     }
 }
@@ -737,7 +748,7 @@ struct PaintApp {
     paper_dir: String,
     paper_names: Option<Vec<String>>,
     /// Имена форм (`blotmap`) и текстур кисти (`brushtex`) из папки SAI.
-    grain_names: Option<(Vec<String>, Vec<String>)>,
+    grain_names: Option<(Vec<String>, Vec<String>, Vec<String>)>,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
     /// Линейка (прямая или эллипс) и её правка Ctrl + перетаскиванием: что взяли и где было.
@@ -1162,6 +1173,15 @@ impl PaintApp {
             }
             p.size = p.size.clamp(0.1, 5000.0);
             let g = &mut b.grain;
+            if let Some(v) = s.str(&k("bristle")) {
+                g.bristle = (!v.is_empty()).then(|| v.to_string());
+            }
+            s.read_f32(&k("hair_size"), &mut g.hair_size);
+            s.read_f32(&k("hair_min"), &mut g.hair_min);
+            s.read_f32(&k("randomize"), &mut g.randomize);
+            if let Some(v) = s.f32(&k("direction")) {
+                g.direction = (v as u8).min(2);
+            }
             if let Some(v) = s.str(&k("form")) {
                 g.form = (!v.is_empty()).then(|| v.to_string());
             }
@@ -1322,6 +1342,11 @@ impl PaintApp {
             }
             let g = &b.grain;
             s.set(&k("form"), g.form.as_deref().unwrap_or(""));
+            s.set(&k("bristle"), g.bristle.as_deref().unwrap_or(""));
+            s.set(&k("hair_size"), g.hair_size);
+            s.set(&k("hair_min"), g.hair_min);
+            s.set(&k("randomize"), g.randomize);
+            s.set(&k("direction"), g.direction);
             s.set(&k("form_strength"), g.form_strength);
             s.set(&k("form_scale"), g.form_scale);
             let tex = match &g.tex {
@@ -1532,11 +1557,20 @@ impl PaintApp {
                 .and_then(|p| Some((p.texture.clone()?, g.tex_strength, p.scale))),
             TexChoice::File(n) => paint_core::paper::texture_of("brushtex", n).map(|t| (t, g.tex_strength, g.tex_scale)),
         };
-        (blot.is_some() || texture.is_some()).then(|| paint_core::stroke::Grain {
+        let bristle = g.bristle.as_deref().and_then(paint_core::paper::bristle_of).map(|hairs| paint_core::stroke::Bristle {
+            hairs,
+            hair_size: g.hair_size,
+            hair_min: g.hair_min,
+            randomize: g.randomize,
+            direction: g.direction,
+        });
+        let blot = if bristle.is_some() { None } else { blot };
+        (blot.is_some() || texture.is_some() || bristle.is_some()).then(|| paint_core::stroke::Grain {
             blot,
             texture,
             paper: g.tex == TexChoice::Paper,
             by_min_density: g.by_min_density,
+            bristle,
         })
     }
 
@@ -4222,9 +4256,9 @@ impl PaintApp {
         }
         if self.grain_names.is_none() {
             use paint_core::paper::names_of;
-            self.grain_names = Some((names_of("blotmap"), names_of("brushtex")));
+            self.grain_names = Some((names_of("blotmap"), names_of("brushtex"), names_of("bristle")));
         }
-        let (blot_names, tex_names) = self.grain_names.clone().unwrap_or_default();
+        let (blot_names, tex_names, bristle_names) = self.grain_names.clone().unwrap_or_default();
         let mut set_dir = false;
         let tool = &mut self.brushes[self.brush];
         let (brush, grain) = (&mut tool.params, &mut tool.grain);
@@ -4347,21 +4381,47 @@ impl PaintApp {
         if sai_ui::section(ui, "sec_form", tr("Форма")) {
             let circle = tr("[ Простой круг ]");
             sai_ui::row(ui, tr("   Форма"), lw, true, |ui| {
-                let shown = grain.form.clone().unwrap_or_else(|| circle.to_string());
+                let shown = grain.bristle.clone().or_else(|| grain.form.clone()).unwrap_or_else(|| circle.to_string());
                 egui::ComboBox::from_id_salt("form").selected_text(shown).width(w - 8.0).height(400.0).show_ui(ui, |ui| {
-                    if ui.selectable_label(grain.form.is_none(), circle).clicked() {
+                    if ui.selectable_label(grain.form.is_none() && grain.bristle.is_none(), circle).clicked() {
                         grain.form = None;
+                        grain.bristle = None;
                     }
                     for n in &blot_names {
                         if ui.selectable_label(grain.form.as_deref() == Some(n), n).clicked() {
                             grain.form = Some(n.clone());
+                            grain.bristle = None;
+                        }
+                    }
+                    // как в SAI: после «пятен» — щетины
+                    if !bristle_names.is_empty() {
+                        ui.separator();
+                    }
+                    for n in &bristle_names {
+                        if ui.selectable_label(grain.bristle.as_deref() == Some(n), n).clicked() {
+                            grain.bristle = Some(n.clone());
+                            grain.form = None;
                         }
                     }
                 });
             });
-            let on = grain.form.is_some();
-            pct_bar(ui, tr("   Сила"), &mut grain.form_strength, on);
-            scale_bar(ui, &mut grain.form_scale, on);
+            if grain.bristle.is_some() {
+                pct_bar(ui, tr("   Размер волоска"), &mut grain.hair_size, true);
+                pct_bar(ui, tr("   Мин. волоска"), &mut grain.hair_min, true);
+                pct_bar(ui, tr("   Разброс"), &mut grain.randomize, true);
+                sai_ui::row(ui, tr("   Направление"), lw, true, |ui| {
+                    let names = [tr("Нет"), tr("Авто"), tr("По перу")];
+                    egui::ComboBox::from_id_salt("hairdir").selected_text(names[grain.direction.min(2) as usize]).width(w - 8.0).show_ui(ui, |ui| {
+                        for (i, n) in names.iter().enumerate() {
+                            ui.selectable_value(&mut grain.direction, i as u8, *n);
+                        }
+                    });
+                });
+            } else {
+                let on = grain.form.is_some();
+                pct_bar(ui, tr("   Сила"), &mut grain.form_strength, on);
+                scale_bar(ui, &mut grain.form_scale, on);
+            }
             if blot_names.is_empty() {
                 no_files(ui, &mut self.paper_dir, &mut set_dir);
             }

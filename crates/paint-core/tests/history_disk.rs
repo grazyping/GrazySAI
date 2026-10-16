@@ -25,9 +25,9 @@ fn undo_from_disk_restores_every_step() {
         doc.undo().unwrap();
         assert!(doc.flatten() == shots[i], "отмена до шага {i} разошлась");
     }
-    for i in 1..=10 {
+    for (i, shot) in shots.iter().enumerate().skip(1) {
         doc.redo().unwrap();
-        assert!(doc.flatten() == shots[i], "повтор шага {i} разошёлся");
+        assert!(doc.flatten() == *shot, "повтор шага {i} разошёлся");
     }
     drop(doc);
     let left = std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0);

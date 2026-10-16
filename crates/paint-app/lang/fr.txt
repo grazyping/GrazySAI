@@ -500,3 +500,12 @@ S-кривая = Courbe en S
 Средний = Moyenne
 Большой = Grande
 Размер образцов = Taille des nuanciers
+
+# Щетина (0.8.27)
+   Размер волоска =    Taille des poils
+   Мин. волоска =    Poil min.
+   Разброс =    Aléatoire
+   Направление =    Direction
+Нет = Aucune
+Авто = Auto
+По перу = Direction du stylet

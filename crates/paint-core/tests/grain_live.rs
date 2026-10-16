@@ -28,11 +28,11 @@ fn render(dir: &Path, off: f32) -> Vec<u8> {
     let canvas = tex(dir, "brushtex", "Canvas");
     let blots = tex(dir, "blotmap", "Blots");
     let rows: [(f32, f32, Grain); 5] = [
-        (50.0, 1.0, Grain { blot: None, texture: Some((canvas.clone(), 1.0, 100)), paper: false, by_min_density: true }),
-        (110.0, 1.0, Grain { blot: None, texture: Some((canvas.clone(), 0.56, 100)), paper: false, by_min_density: true }),
-        (200.0, 1.0, Grain { blot: Some((blots.clone(), 1.0, 100)), texture: None, paper: false, by_min_density: true }),
-        (280.0, 0.0, Grain { blot: Some((blots.clone(), 1.0, 100)), texture: None, paper: false, by_min_density: true }),
-        (360.0, 0.75, Grain { blot: Some((blots, 1.0, 100)), texture: None, paper: false, by_min_density: true }),
+        (50.0, 1.0, Grain { blot: None, texture: Some((canvas.clone(), 1.0, 100)), paper: false, by_min_density: true, bristle: None }),
+        (110.0, 1.0, Grain { blot: None, texture: Some((canvas.clone(), 0.56, 100)), paper: false, by_min_density: true, bristle: None }),
+        (200.0, 1.0, Grain { blot: Some((blots.clone(), 1.0, 100)), texture: None, paper: false, by_min_density: true, bristle: None }),
+        (280.0, 0.0, Grain { blot: Some((blots.clone(), 1.0, 100)), texture: None, paper: false, by_min_density: true, bristle: None }),
+        (360.0, 0.75, Grain { blot: Some((blots, 1.0, 100)), texture: None, paper: false, by_min_density: true, bristle: None }),
     ];
     let mut doc = Document::new(600, 500);
     for (y, hardness, grain) in rows {

@@ -1084,3 +1084,38 @@ fn binary_pen_steps_like_sai() {
         assert_eq!(w[1][0], w[0].last().unwrap() + 1, "{rows:?}");
     }
 }
+
+#[test]
+fn bristle_hairs_from_bmp_and_strokes() {
+    // BMP 63×63, 24 бита, снизу вверх: два чёрных пикселя (31, 10) и (31, 52) — волоски над и
+    // под серединой (y вниз)
+    let row = (63 * 3usize).div_ceil(4) * 4; // строка до 4 байт
+    let mut bmp = vec![0u8; 54 + row * 63];
+    bmp[..2].copy_from_slice(b"BM");
+    bmp[10..14].copy_from_slice(&54u32.to_le_bytes());
+    bmp[14..18].copy_from_slice(&40u32.to_le_bytes());
+    bmp[18..22].copy_from_slice(&63i32.to_le_bytes());
+    bmp[22..26].copy_from_slice(&63i32.to_le_bytes());
+    bmp[28..30].copy_from_slice(&24u16.to_le_bytes());
+    for px in bmp[54..].chunks_mut(1) {
+        px[0] = 255;
+    }
+    for (x, y) in [(31usize, 10usize), (31, 52)] {
+        let o = 54 + (62 - y) * row + x * 3;
+        bmp[o..o + 3].copy_from_slice(&[0, 0, 0]);
+    }
+    let hairs = paint_core::paper::hairs_from_bmp(&bmp).unwrap();
+    assert_eq!(hairs.len(), 2);
+    assert!((hairs[0].1 + 21.0 / 31.0).abs() < 1e-6 && hairs[0].0.abs() < 1e-6);
+    // горизонтальный штрих: точки (0, ∓0.68) → смещения поперёк штриха 0 и вдоль ±0.68 — по
+    // повороту (−y, x) волоски идут друг за другом по одной линии
+    let b = paint_core::stroke::Bristle { hairs: std::sync::Arc::new(hairs), hair_size: 0.5, hair_min: 0.0, randomize: 0.0, direction: 1 };
+    let mut s = Stroke::new(BrushParams { size: 40.0, size_by_pressure: false, ..Default::default() });
+    s.set_grain(Some(paint_core::stroke::Grain { blot: None, texture: None, paper: false, by_min_density: true, bristle: Some(b) }));
+    for i in 0..=30 {
+        s.add_point(InputPoint { x: 50.0 + i as f32 * 4.0, y: 60.0, pressure: 1.0 });
+    }
+    let rows: Vec<i32> = (40..80).filter(|&y| (60..150).any(|x| s.mask.get(x, y) > 0)).collect();
+    // одна линия толщиной ~4 px (0,1 от 40) вокруг y = 60
+    assert!(rows.len() <= 6 && rows.contains(&59) && rows.contains(&60), "{rows:?}");
+}

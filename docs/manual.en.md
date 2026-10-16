@@ -105,7 +105,9 @@ Water also blurs the layer under the stroke.
 
 - “Form” — a simple circle or a blot from the `blotmap` folder: the stroke edge becomes ragged
   following the pattern. “Strength” sets how much, “Zoom” the pattern size (10–500 %). Brush
-  hardness changes how sharp the blot is.
+  hardness changes how sharp the blot is. After the blots the list has the bristles from the
+  `bristle` folder: each hair draws its own line along the stroke; “Hair Size”, “Hair Min”,
+  “Randomize”, “Direction” (None, Auto, Pen Direction).
 - “Texture” — a pattern from the `brushtex` folder or the current layer's paper: light parts of
   the pattern let less paint through. “Strength”, “Zoom”, “Affect by MinDens” (the pattern is
   weaker on thin brushes and at light pressure).
@@ -363,7 +365,7 @@ restores all defaults. Assignments are saved in the settings. The defaults are b
 ## How it still differs from SAI
 
 The full list is in [ROADMAP.en.md](../ROADMAP.en.md). The main points:
-- No bristle brush form, several views of one canvas, HSL and V-HSV slider modes yet; perspective
+- No several views of one canvas, HSL and V-HSV slider modes yet; perspective
   rulers are saved but not shown; the thumbnail for SAI's file browser is not written; the binary
   pen does not follow SAI's exact stair rule.
 

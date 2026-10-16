@@ -306,6 +306,52 @@ pub fn texture_of(kind: &str, name: &str) -> Option<Arc<PaperTexture>> {
     found
 }
 
+/// Волоски щетины из папки `bristle` (BMP 63×63, 24 или 32 бита, как проверяет SAI 2017):
+/// каждый чёрный пиксель — волосок, не больше 63. Координаты — (x − 31, y − 31) / 31, y вниз.
+pub fn bristle_of(name: &str) -> Option<Arc<Vec<(f32, f32)>>> {
+    type Hairs = Arc<Vec<(f32, f32)>>;
+    static CACHE: OnceLock<Mutex<HashMap<String, Hairs>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(h) = cache.lock().unwrap().get(name) {
+        return Some(h.clone());
+    }
+    let found = dirs("bristle").into_iter().find_map(|d| hairs_from_bmp(&std::fs::read(d.join(format!("{name}.bmp"))).ok()?)).map(Arc::new);
+    if let Some(h) = &found {
+        cache.lock().unwrap().insert(name.to_string(), h.clone());
+    }
+    found
+}
+
+/// Чёрные пиксели BMP 24/32 бита (63×63) как волоски.
+pub fn hairs_from_bmp(d: &[u8]) -> Option<Vec<(f32, f32)>> {
+    let u16_at = |o: usize| d.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+    let i32_at = |o: usize| d.get(o..o + 4).map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    if d.get(..2) != Some(b"BM") {
+        return None;
+    }
+    let off = i32_at(10)? as usize;
+    let (w, h) = (i32_at(18)?, i32_at(22)?);
+    let bpp = u16_at(28)? as usize;
+    if w != 63 || h.abs() != 63 || !matches!(bpp, 24 | 32) {
+        return None;
+    }
+    let px = bpp / 8;
+    let row = (63 * px).div_ceil(4) * 4;
+    let mut out = Vec::new();
+    for y in 0..63usize {
+        // строки BMP снизу вверх (высота > 0) или сверху вниз
+        let src = if h > 0 { 62 - y } else { y };
+        for x in 0..63usize {
+            let o = off + src * row + x * px;
+            let c = d.get(o..o + 3)?;
+            if c.iter().all(|&v| v < 128) && out.len() < 63 {
+                out.push(((x as f32 - 31.0) / 31.0, (y as f32 - 31.0) / 31.0));
+            }
+        }
+    }
+    (!out.is_empty()).then_some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -74,6 +74,42 @@ pub struct Grain {
     pub paper: bool,
     /// «Affect by MinDens»: сила текстуры зависит от размера и минимальной плотности.
     pub by_min_density: bool,
+    /// Форма «щетина» (`bristle`); вместо «пятна».
+    pub bristle: Option<Bristle>,
+}
+
+/// Щетина, как форма вида 3 в SAI 2017 (`FUN_1400e1a30`, `FUN_1400e20a0`, `FUN_1400e2600`): каждый
+/// волосок — свой ряд отпечатков. Волосок смещён от точки штриха на (−y, x)·радиус кисти,
+/// повёрнутое по направлению штриха (сглаживание — среднее по 16 последним поворотам, как
+/// `FUN_1400417d0`); диаметр волоска — 0,4·Hair Size·размер (при 50 — 0,2 размера, так ширина
+/// полосы совпала с живой SAI: 47 px при размере 50).
+#[derive(Clone, Debug)]
+pub struct Bristle {
+    pub hairs: Arc<Vec<(f32, f32)>>,
+    /// Hair Size, 0..=1 (в SAI 0–100, по умолчанию 50).
+    pub hair_size: f32,
+    /// Hair Min — доля размера волоска при нулевом нажиме.
+    pub hair_min: f32,
+    /// Randomize, 0..=1 — разброс волосков в начале штриха.
+    pub randomize: f32,
+    /// Direction: 0 — None, 1 — Auto (по ходу штриха), 2 — Pen Direction (наклона пера у нас нет — как None).
+    pub direction: u8,
+}
+
+/// Разлёт волосков относительно радиуса кисти.
+const HAIR_SPREAD: f32 = 1.13;
+
+/// Диаметр волоска: 0,2·Hair Size·размер (0,1 размера при 50 — как у живой SAI), с Hair Min по нажиму.
+fn hair_diameter(b: &Bristle, diameter: f32, pressure: f32) -> f32 {
+    (diameter * 0.2 * b.hair_size).max(diameter * 0.002).max(0.3) * (b.hair_min + (1.0 - b.hair_min) * pressure.clamp(0.0, 1.0))
+}
+
+/// Волоски этого штриха: смещения с разбросом и сглаженное направление.
+struct Hairs {
+    offsets: Vec<(f32, f32)>,
+    angle: Option<f32>,
+    turns: std::collections::VecDeque<f32>,
+    prev: Option<(f32, f32)>,
 }
 
 /// Коэффициенты порога «пятна» по ступени жёсткости 0..=4 (таблицы образца).
@@ -275,6 +311,8 @@ pub struct Stroke {
     last: Option<InputPoint>,
     /// Двоичное перо: последняя поставленная точка (в координатах «−0,5»), как поле +0x1c0 SAI.
     bin_prev: Option<(f64, f64)>,
+    /// Щетина: волоски штриха.
+    hairs: Option<Hairs>,
     /// Путь, пройденный после последнего отпечатка.
     carry: f32,
     pub dab_count: usize,
@@ -303,6 +341,7 @@ impl Stroke {
             mask: MaskMap::new(),
             last: None,
             bin_prev: None,
+            hairs: None,
             carry: 0.0,
             dab_count: 0,
             touched: HashSet::new(),
@@ -318,7 +357,8 @@ impl Stroke {
 
     /// Форма «пятно» и текстура кисти для этого штриха.
     pub fn set_grain(&mut self, grain: Option<Grain>) {
-        self.grain = grain.filter(|g| g.blot.is_some() || g.texture.is_some());
+        self.grain = grain.filter(|g| g.blot.is_some() || g.texture.is_some() || g.bristle.is_some());
+        self.hairs = None;
         self.grain_cache = Default::default();
     }
 
@@ -399,15 +439,25 @@ impl Stroke {
 
     /// Отпечаток по модели образца (docs/13-thin-brushes.md).
     fn sai_dab(&self, pressure: f32) -> Dab {
+        self.sai_dab_sized(pressure, self.params.diameter_at(pressure))
+    }
+
+    fn sai_dab_sized(&self, pressure: f32, diameter: f32) -> Dab {
+        self.sai_dab_with(pressure, diameter, None)
+    }
+
+    /// Отпечаток диаметра `diameter`; `softness` — своя мягкость вместо мягкости кисти.
+    fn sai_dab_with(&self, pressure: f32, diameter: f32, softness: Option<f32>) -> Dab {
         let density = self.params.density;
         let factor = if density > 0.0 { self.params.density_at(pressure) / density } else { 0.0 };
+        let softness = softness.unwrap_or(1.0 - self.params.hardness.clamp(0.0, 1.0));
         Dab::new(DabInput {
-            diameter: self.params.diameter_at(pressure),
-            softness: 1.0 - self.params.hardness.clamp(0.0, 1.0),
+            diameter,
+            softness,
             density,
             density_factor: factor,
             density_scale: 1.0 - self.params.sharpness.clamp(0.0, 1.0),
-            flat: !self.params.linework && self.params.hardness >= 1.0,
+            flat: !self.params.linework && softness <= 0.0,
             ver1: self.params.ver1_density,
             amplify: self.params.amplify,
             blot: self.blot_on(),
@@ -424,6 +474,10 @@ impl Stroke {
         if self.params.binary {
             // точки двоичного пера ставятся на пересечения с сеткой — путь проходится мелко
             return 0.25;
+        }
+        if let Some(b) = self.grain.as_ref().and_then(|g| g.bristle.as_ref()) {
+            // щетина: шаг по толщине волоска
+            return (hair_diameter(b, d, pressure) * 0.25).max(0.25);
         }
         if self.params.spacing > 0.0 {
             return (self.params.spacing * d.max(1.0)).max(0.05);
@@ -499,11 +553,92 @@ impl Stroke {
         Some(((rnd(at.0) + half) as f32, (rnd(at.1) + half) as f32, (size / 2.0) as f32))
     }
 
+    /// Отпечатки волосков щетины вместо одного круглого.
+    fn bristle_dab(&mut self, p: InputPoint, b: &Bristle, diameter: f32, density: f32) {
+        let hairs = self.hairs.get_or_insert_with(|| {
+            // разброс — свой генератор (у SAI — rand(), повторить точно нельзя)
+            let mut seed = 0x2545_f491u32 ^ (p.x.to_bits() ^ p.y.to_bits().rotate_left(7));
+            let mut rnd = move || {
+                seed = seed.wrapping_mul(214_013).wrapping_add(2_531_011);
+                ((seed >> 16) & 0x7fff) as f32 / 32767.0 - 0.5
+            };
+            let k = b.randomize;
+            let offsets = b
+                .hairs
+                .iter()
+                .map(|&(x, y)| {
+                    let (u, v) = (-y, x);
+                    let ju = if u < 1.0 { rnd() * (1.0 - u).max(0.0).sqrt() } else { 0.0 };
+                    let jv = if v < 1.0 { rnd() * (1.0 - v).max(0.0).sqrt() } else { 0.0 };
+                    (u + ju * k, v + jv * k)
+                })
+                .collect();
+            Hairs { offsets, angle: None, turns: Default::default(), prev: None }
+        });
+        if b.direction == 1 {
+            let prev = hairs.prev.replace((p.x, p.y));
+            let Some((px, py)) = prev else { return };
+            let (dx, dy) = (p.x - px, p.y - py);
+            if dx.hypot(dy) > 1e-3 {
+                let raw = dy.atan2(dx);
+                match hairs.angle {
+                    None => hairs.angle = Some(raw),
+                    Some(a) => {
+                        let mut d = raw - a;
+                        while d > std::f32::consts::PI {
+                            d -= std::f32::consts::TAU;
+                        }
+                        while d < -std::f32::consts::PI {
+                            d += std::f32::consts::TAU;
+                        }
+                        let n = hairs.turns.len().min(15);
+                        let avg = (d + hairs.turns.iter().rev().take(n).sum::<f32>()) / (n + 1) as f32;
+                        hairs.turns.push_back(avg);
+                        if hairs.turns.len() > 16 {
+                            hairs.turns.pop_front();
+                        }
+                        hairs.angle = Some(a + avg);
+                    }
+                }
+            }
+            if hairs.angle.is_none() {
+                return;
+            }
+        }
+        let angle = if b.direction == 1 { hairs.angle.unwrap_or(0.0) } else { 0.0 };
+        let (sn, cs) = angle.sin_cos();
+        // разлёт волосков: по ширине полосы живой SAI (47 px у размера 50 с Bristle.bmp)
+        let radius = diameter / 2.0 * HAIR_SPREAD;
+        let hair_d = hair_diameter(b, diameter, p.pressure);
+        let offsets = hairs.offsets.clone();
+        // волоски у SAI рисуются своим жёстким отпечатком, мягкость кисти на них не влияет
+        let hard = |s: &Self| s.sai_dab_with(p.pressure, hair_d, Some(0.0));
+        let o = hard(self).opacity(self.step_at(p.pressure));
+        for (u, v) in offsets {
+            let (ox, oy) = (u * radius, v * radius);
+            let hp = InputPoint { x: p.x + ox * cs - oy * sn, y: p.y + ox * sn + oy * cs, ..p };
+            let shape = Shape::Sai(hard(self), o);
+            add_to_hard_mask(&mut self.hard_mask, hp.x, hp.y, &shape);
+            self.dab_count += 1;
+            let grain = if self.grain.as_ref().is_some_and(|g| g.texture.is_some()) { self.dab_grain(hp, hair_d, shape.outer() + 1.0) } else { None };
+            if self.is_mixing() {
+                self.pending.push(Pending { x: hp.x, y: hp.y, pressure: hp.pressure, shape, grain });
+            } else {
+                self.queued.push(Placed::new(hp, shape, density, grain));
+            }
+        }
+    }
+
     fn dab(&mut self, p: InputPoint) {
         let diameter = self.params.diameter_at(p.pressure);
         let density = self.params.density_at(p.pressure);
         if density <= 0.0 {
             return;
+        }
+        if !self.params.binary {
+            if let Some(b) = self.grain.as_ref().and_then(|g| g.bristle.clone()) {
+                return self.bristle_dab(p, &b, diameter, density);
+            }
         }
         let (p, shape) = if self.params.binary {
             let Some((cx, cy, r)) = self.binary_point(p.x as f64, p.y as f64, diameter) else { return };
