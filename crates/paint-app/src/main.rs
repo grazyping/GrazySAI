@@ -337,6 +337,34 @@ pub static NvOptimusEnablement: u32 = 1;
 #[used]
 pub static AmdPowerXpressRequestHighPerformance: u32 = 1;
 
+/// Точки пера за кадр: если их меньше `want`, путь от прошлой точки `last` через `moves`
+/// делится на `want` равных по длине шагов (нажим — плавно от прошлого к `pressure`).
+fn resample_moves(last: (Pos2, f32), moves: &[Pos2], pressure: f32, want: usize) -> Vec<(Pos2, f32)> {
+    if moves.len() >= want {
+        return moves.iter().map(|&p| (p, pressure)).collect();
+    }
+    let mut path = vec![last.0];
+    path.extend_from_slice(moves);
+    let lens: Vec<f32> = path.windows(2).map(|w| w[0].distance(w[1])).collect();
+    let total: f32 = lens.iter().sum();
+    if total <= 0.0 {
+        return moves.iter().map(|&p| (p, pressure)).collect();
+    }
+    let mut out = Vec::with_capacity(want);
+    let (mut seg, mut before) = (0, 0.0);
+    for k in 1..=want {
+        let t = k as f32 / want as f32;
+        let at = total * t;
+        while seg + 1 < lens.len() && before + lens[seg] < at {
+            before += lens[seg];
+            seg += 1;
+        }
+        let f = if lens[seg] > 0.0 { ((at - before) / lens[seg]).clamp(0.0, 1.0) } else { 1.0 };
+        out.push((path[seg] + (path[seg + 1] - path[seg]) * f, last.1 + (pressure - last.1) * t));
+    }
+    out
+}
+
 /// Чтение файла: сбой разбора (испорченный файл) — ошибка, а не падение программы со всеми
 /// вкладками.
 fn read_guarded<T>(f: impl FnOnce() -> Result<T, Box<dyn std::error::Error>>) -> Result<T, String> {
@@ -1274,6 +1302,8 @@ struct PaintApp {
     frame_stats: Option<std::rc::Rc<std::cell::RefCell<FrameStats>>>,
     /// Точки штриха, ещё не нарисованные (см. `drain_points`).
     pending_points: VecDeque<InputPoint>,
+    /// Прошлая точка пера на экране и её нажим (для `resample_moves`).
+    raw_last: Option<(Pos2, f32)>,
     /// Область списка слоёв — от неё считаются id «папка открыта» (для клавиши Alt+\).
     layers_ui: Option<egui::Id>,
     /// Пикселей экрана на точку интерфейса (масштаб Windows, «Масштаб интерфейса»): «100 %» вида
@@ -1452,6 +1482,7 @@ impl PaintApp {
             filter: None,
             filter_last: None,
             pending_points: VecDeque::new(),
+            raw_last: None,
             layers_ui: None,
             ppp: 1.0,
             cp_sel: None,
@@ -7554,11 +7585,27 @@ app.open_canvas_dialog(d == "resolution")
             };
             if pressed && response.hovered() {
                 if let Some(pos) = pointer {
+                    self.raw_last = Some((pos, pressure));
                     self.begin_stroke(point(pos, self.zoom, self.offset), eraser_end);
                 }
             } else if self.live.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some() || self.line_stroke.is_some() || self.line_edit.is_some() || self.shape_drag.is_some() {
-                for pos in moves {
-                    self.continue_stroke(point(pos, self.zoom, self.offset));
+                // Сглаживание SAI — среднее последних N точек пера, а планшет шлёт их с постоянной
+                // частотой. Windows склеивает движения, пока кадр занят (тяжёлые кисти), — точек
+                // меньше, и то же N сглаживает сильнее. Поэтому точки кадра дополняются до 240 в
+                // секунду вдоль пройденного пути: сила сглаживания одна на любом инструменте.
+                let stabilized = self.live.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some() || self.line_stroke.is_some();
+                let dt = ui.input(|i| i.unstable_dt).clamp(0.0, 0.25);
+                let pts = match self.raw_last {
+                    Some(last) if stabilized && !moves.is_empty() => resample_moves(last, &moves, pressure, (dt * 240.0).ceil() as usize),
+                    _ => moves.iter().map(|&p| (p, pressure)).collect(),
+                };
+                if let Some(&(p, pr)) = pts.last() {
+                    self.raw_last = Some((p, pr));
+                }
+                for (pos, pr) in pts {
+                    let mut q = point(pos, self.zoom, self.offset);
+                    q.pressure = pr;
+                    self.continue_stroke(q);
                 }
             }
             self.drain_points(Some(Duration::from_millis(25)));
@@ -9885,4 +9932,43 @@ fn main() -> eframe::Result {
             Ok(Box::new(app))
         }),
     )
+}
+
+#[cfg(test)]
+mod input_tests {
+    use super::*;
+    use paint_core::stabilizer::{Level, Stabilizer};
+
+    /// Сглаживание не зависит от того, как часто приходят точки: путь, присланный редкими
+    /// склеенными точками (тяжёлая кисть, Windows), после дополнения сглаживается почти так же,
+    /// как присланный часто (лёгкий карандаш).
+    #[test]
+    fn stabilizer_strength_does_not_depend_on_input_rate() {
+        // дуга за 1 с; «часто» — 240 точек в секунду, «редко» — 20 кадров по 50 мс
+        let at = |t: f32| Pos2::new(100.0 + 400.0 * t, 300.0 + 150.0 * (t * std::f32::consts::PI).sin());
+        let run = |frames: &[Vec<Pos2>], dts: &[f32], resample: bool| -> Vec<Pos2> {
+            let mut st = Stabilizer::with_level(Level::Plain(15));
+            let mut last = (at(0.0), 1.0);
+            let mut out = vec![st.push(InputPoint { x: last.0.x, y: last.0.y, pressure: 1.0 })];
+            for (moves, dt) in frames.iter().zip(dts) {
+                let want = if resample { (dt * 240.0).ceil() as usize } else { 0 };
+                let pts = resample_moves(last, moves, 1.0, want);
+                last = *pts.last().unwrap();
+                out.extend(pts.iter().map(|(p, pr)| st.push(InputPoint { x: p.x, y: p.y, pressure: *pr })));
+            }
+            out.into_iter().map(|q| Pos2::new(q.x, q.y)).collect()
+        };
+        let fast: Vec<Vec<Pos2>> = (1..=240).map(|k| vec![at(k as f32 / 240.0)]).collect();
+        let slow: Vec<Vec<Pos2>> = (1..=20).map(|k| vec![at(k as f32 / 20.0)]).collect();
+        let fast_out = run(&fast, &[1.0 / 240.0; 240], true);
+        let slow_out = run(&slow, &[0.05; 20], true);
+        assert_eq!(fast_out.len(), slow_out.len());
+        // сглаженные линии совпадают с точностью до хорд редкого пути
+        let worst = fast_out.iter().zip(&slow_out).map(|(a, b)| a.distance(*b)).fold(0.0, f32::max);
+        assert!(worst < 3.0, "расхождение {worst}");
+        // без дополнения те же 15 точек сглаживают 0,75 с пути вместо 1/16 с — линия отстаёт
+        let raw = run(&slow, &[0.05; 20], false);
+        let lag = |out: &[Pos2], k: usize| out[k].distance(at(k as f32 / (out.len() - 1) as f32));
+        assert!(lag(&raw, 10) > 50.0, "без дополнения сглаживание сильнее: {}", lag(&raw, 10));
+    }
 }

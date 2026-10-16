@@ -7,8 +7,8 @@ PaintTool SAI 2 for everyday work, and `.sai2` files open and save without loss.
 number is the last stage in which everything is done; fixes and features within a stage are the
 third number.
 
-Revised on 15 October 2026: stages 0.5–0.8 turned out to be done except for a few brush items.
-Those items moved to 0.9, so the version is now **0.8**.
+On 16 October 2026 **1.0.0** was released: everything on the 1.0 list is done. Next come
+feedback, Clip Studio Paint-like filters and ideas from Krita.
 
 On GitHub every stage is a milestone with a progress bar
 ([Milestones](https://github.com/grazyping/GrazySAI/milestones)) and every item is an issue
@@ -74,7 +74,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
 - [x] Curves of linework and shape layers from `.sai2` are saved as they were (byte for byte); brushes do not paint on such layers, “Rasterize Layer” makes them normal
 
-### 0.9 — brushes in full, text and rulers (current version 0.9.15)
+### 0.9 — brushes in full, text and rulers
 - [x] Brush forms and textures (`blotmap`, `brushtex`) — from SAI's code, checked against live SAI
 - [x] Bristle brush form (`bristle`) after SAI's code; band width and stroke ends checked against the live SAI
 - [x] Marker at light pressure — as in SAI: its own compositing from SAI's code, paint amount from live SAI
@@ -88,26 +88,11 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Large Water brush: blur over a reduced copy of the layer, as in SAI — 350 px: 7.4 → 2.0 s per 1000 px of line
 - [x] Perspective rulers: display and drawing along them (reference: Krita's perspective and vanishing point assistants); our own version, not written to the file (0.8.38)
 
-### Beyond the plan
-- [x] Filters: hue and saturation, brightness and contrast, Gaussian blur — by SAI's rules, compared with live SAI; the other filters do not work in SAI itself
-- [x] Brush, color and stabilizer settings kept between runs
-- [x] Custom shortcuts: “Help → Shortcut Keys…”, 34 actions, SAI's defaults
-- [x] PSD (with layers) and JPEG export; opening PSD, PNG and JPEG
-- [x] Work recovery after a crash (a copy every 3 minutes)
-- [x] Undo history: 100 steps, as in SAI; beyond 1 GB — on disk
-- [x] Fast on large canvases: 2300×4096 with 191 layers — reading 0.3 s, display 0.3 s
-- [x] User manual (`docs/manual.en.md`, updated with every version)
-- [x] RGB and HSV color sliders, dragging layers in the list
-- [x] Large brushes 4–40 times faster with identical results
-- [x] Layer dragging with clear feedback: the layer fades in place, a label at the cursor, an insertion bar, folder highlight, scrolling at the edges, Esc
-- [x] Interface in 10 languages (English, Russian, Ukrainian, German, French, Spanish, Portuguese, Japanese, Chinese, Korean), system language by default, switchable without a restart; labels and columns adapt to the length of each translation, a light CJK font
-- [x] Updating from the program: GitHub releases are checked at startup, a “Version is out” notice in the menu bar, download with SHA-256 check and file replacement, restart; a GitHub link in the menu bar
-- [x] System “Open”, “Save As” and “Export” windows (File Explorer on Windows, the desktop dialog on Linux), Ctrl+O
-- [x] Shortcut keys in menus and tooltips can be hidden (“Window → Show shortcut keys”)
+### 1.0 — everything from SAI 2 for everyday work (current version 0.9.16)
 
-## Ahead
+Everything people use in PaintTool SAI 2017 for everyday work is there and checked against the original (feature-by-feature comparison — `docs/32-sai-comparison.md`); `.sai2` files open and save without loss. A code audit came before the release (`docs/audit-2026-10-16.md`).
 
-### 1.0 — finished
+#### Core
 - [x] `.sai2` read and written without loss for every kind of layer: checked by resaving the user's files — same flattened picture (difference 0), text and linework byte for byte, masks, effects, paper, background and resolution kept
 - [x] The `thum` thumbnail in `.sai2` (SAI's own JPEG-like `jssf` format) — for SAI's file browser; size and layout as in SAI 2017 (0.8.39)
 - [x] Undo history on disk (for very large canvases): beyond 1 GB, steps go to temporary files and all 100 steps are kept
@@ -131,7 +116,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Window: V-HSV, HSL and HSV slider modes from SAI's code; S and V/L 0–100, as in SAI
 - [x] Window: swatch size (Small, Middle, Large — 10, 12, 14 px, measured on the live SAI)
 
-### Now
+#### Fixes from the user's list
 
 - [x] “New Linework Layer” and “Perspective Ruler” buttons on the layer panel (0.8.40)
 - [x] Brush size grid up to 5000, as in SAI (0.8.40)
@@ -141,17 +126,16 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Text is typed right on the canvas, settings on the tool panel, as in SAI (0.8.45)
 - [x] Tools get their useful buttons on the panel; Straight line, rotate view as a tool and in the navigator (0.8.46)
 
-### Next — from feedback
+#### From feedback
 
 - [x] Watercolor with a pen no longer crashes the program; crash causes go to `crash.log` (0.9.6)
 - [x] The New Canvas window remembers the last choice across restarts (0.9.7)
 - [x] Scratch pad and the canvas at 100% are sharp with Windows display scaling; the scratch pad takes every pen move and pressure (0.9.11)
 - [x] Laptops with two GPUs (Windows): the program asks for the discrete NVIDIA or AMD GPU by itself (0.9.15)
-- [ ] Stabilizer setting is kept when switching tools
 - [x] Smoother and faster: filter previews in the background; brushes up to 5000 px are 5–14 times faster, the window does not freeze (0.9.7)
 - [x] Filter, Dilate/Erode Selection and Canvas Size windows remember the last settings, even after Cancel; “Reset” (0.9.7)
 
-### For 1.0 — more from SAI 2017 (found by comparison, `docs/32-sai-comparison.md`)
+#### More from SAI 2017 (found by comparison, `docs/32-sai-comparison.md`)
 
 - [x] Layer effect color (Canvas → Layer Effect Color), checked against SAI (0.9.5)
 - [x] Layers: show alone, bring to front and send to back, select the layer above/below by key (0.8.48)
@@ -165,6 +149,29 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Transparent color; keys for the pickers and brush density 10…100 (0.8.48)
 - [x] “Save changes?” question on exit (0.8.48)
 - [x] Own file viewer with thumbnails, as in SAI (0.9.4)
+
+### Beyond the plan
+- [x] Filters: hue and saturation, brightness and contrast, Gaussian blur — by SAI's rules, compared with live SAI; the other filters do not work in SAI itself
+- [x] Brush, color and stabilizer settings kept between runs
+- [x] Custom shortcuts: “Help → Shortcut Keys…”, 34 actions, SAI's defaults
+- [x] PSD (with layers) and JPEG export; opening PSD, PNG and JPEG
+- [x] Work recovery after a crash (a copy every 3 minutes)
+- [x] Undo history: 100 steps, as in SAI; beyond 1 GB — on disk
+- [x] Fast on large canvases: 2300×4096 with 191 layers — reading 0.3 s, display 0.3 s
+- [x] User manual (`docs/manual.en.md`, updated with every version)
+- [x] RGB and HSV color sliders, dragging layers in the list
+- [x] Large brushes 4–40 times faster with identical results
+- [x] Layer dragging with clear feedback: the layer fades in place, a label at the cursor, an insertion bar, folder highlight, scrolling at the edges, Esc
+- [x] Interface in 10 languages (English, Russian, Ukrainian, German, French, Spanish, Portuguese, Japanese, Chinese, Korean), system language by default, switchable without a restart; labels and columns adapt to the length of each translation, a light CJK font
+- [x] Updating from the program: GitHub releases are checked at startup, a “Version is out” notice in the menu bar, download with SHA-256 check and file replacement, restart; a GitHub link in the menu bar
+- [x] System “Open”, “Save As” and “Export” windows (File Explorer on Windows, the desktop dialog on Linux), Ctrl+O
+- [x] Shortcut keys in menus and tooltips can be hidden (“Window → Show shortcut keys”)
+
+## Ahead
+
+### Next — from feedback
+
+- [ ] Stabilizer setting is kept when switching tools
 
 ### First after 1.0 — filters as in Clip Studio Paint
 
