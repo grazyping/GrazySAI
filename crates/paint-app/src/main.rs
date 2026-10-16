@@ -60,10 +60,12 @@ const MODES: [(BlendMode, &str); 28] = [
     (BlendMode::Divide, "Деление"),
 ];
 
-const SIZES: [f32; 35] = [
+/// Сетка размеров кисти — таблица SAI 2017 целиком (0,6…5000).
+const SIZES: [f32; 50] = [
     0.6, 0.8, 1.0, 1.3, 1.6, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 12.0, 14.0,
     16.0, 20.0, 25.0, 30.0, 35.0, 40.0, 50.0, 60.0, 70.0, 80.0, 100.0, 120.0, 160.0, 200.0, 250.0,
-    300.0, 350.0,
+    300.0, 350.0, 400.0, 450.0, 500.0, 600.0, 700.0, 800.0, 1000.0, 1200.0, 1600.0, 2000.0, 2500.0,
+    3000.0, 3500.0, 4000.0, 5000.0,
 ];
 
 #[derive(Clone, Copy, PartialEq)]
@@ -2484,6 +2486,21 @@ impl PaintApp {
         let xf = ViewXf::new(self.view, self.zoom, self.offset, self.view_angle, self.view_flip);
         let c = xf.to_canvas(self.view.center());
         ([c.x, c.y], self.view.width().min(self.view.height()).max(100.0) / self.zoom)
+    }
+
+    /// Показать линейку перспективы с `n` точками схода (точки — посреди вида, если их число
+    /// сменилось или линейка ещё не ставилась).
+    fn show_perspective(&mut self, n: u8) {
+        let kind = ruler::Kind::Perspective(n);
+        let changed = self.ruler.kind != kind;
+        self.ruler.kind = kind;
+        if !self.ruler.placed {
+            self.reset_ruler();
+        } else if changed {
+            let (c, min) = self.view_frame();
+            self.ruler.place_vps(c, min);
+        }
+        self.ruler.visible = true;
     }
 
     fn reset_ruler(&mut self) {
@@ -5360,14 +5377,9 @@ impl PaintApp {
             {
                 self.add_layer(false);
             }
-            sai_ui::icon_button(
-                ui,
-                b2,
-                false,
-                false,
-                tr("Новый слой контура — позже"),
-                |p, r, c| sai_ui::glyph(p, r, c, "new_linework"),
-            );
+            if sai_ui::icon_button(ui, b2, false, true, tr("Новый слой контура"), |p, r, c| sai_ui::glyph(p, r, c, "new_linework")).clicked() {
+                self.add_linework_layer();
+            }
             if sai_ui::icon_button(ui, b2, false, true, tr("Новая папка"), |p, r, c| {
                 sai_ui::glyph(p, r, c, "new_folder")
             })
@@ -5375,14 +5387,29 @@ impl PaintApp {
             {
                 self.add_layer(true);
             }
-            sai_ui::icon_button(
-                ui,
-                b2,
-                false,
-                false,
-                tr("Линейка перспективы — позже"),
-                |p, r, c| sai_ui::glyph(p, r, c, "ruler"),
-            );
+            // как в SAI: кнопка раскрывает выбор числа точек схода
+            let persp = self.ruler.visible && matches!(self.ruler.kind, ruler::Kind::Perspective(_));
+            let resp = sai_ui::icon_button(ui, b2, persp, true, tr("Линейка перспективы"), |p, r, c| sai_ui::glyph(p, r, c, "ruler"));
+            let popup = ui.make_persistent_id("persp_popup");
+            if resp.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(popup));
+            }
+            egui::popup_below_widget(ui, popup, &resp, egui::PopupCloseBehavior::CloseOnClick, |ui| {
+                ui.set_min_width(170.0);
+                for n in 1..=3u8 {
+                    let label = match n {
+                        1 => tr("Перспектива: 1 точка"),
+                        2 => tr("Перспектива: 2 точки"),
+                        _ => tr("Перспектива: 3 точки"),
+                    };
+                    if ui.selectable_label(persp && self.ruler.kind == ruler::Kind::Perspective(n), label).clicked() {
+                        self.show_perspective(n);
+                    }
+                }
+                if persp && ui.button(tr("Спрятать линейку")).clicked() {
+                    self.ruler.visible = false;
+                }
+            });
             let masked = self.doc.layer(&self.selected).is_some_and(|l| l.mask.is_some());
             if sai_ui::icon_button(ui, b2, false, !masked, tr("Новая маска слоя"), |p, r, c| sai_ui::glyph(p, r, c, "mask")).clicked() {
                 self.mask_command(0);

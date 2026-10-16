@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.39)
+### 0.8 — linework and shapes (current version 0.8.40)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -130,6 +130,17 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Window: full screen (F11, Shift+Tab), hide panels (Tab), panels on the right or left, UI scale, dot cursor and brush size circle
 - [x] Window: V-HSV, HSL and HSV slider modes from SAI's code; S and V/L 0–100, as in SAI
 - [x] Window: swatch size (Small, Middle, Large — 10, 12, 14 px, measured on the live SAI)
+
+### Now — from the user's notes (16 October 2026), in order
+
+- [x] Layer panel buttons “New Linework Layer” and “Perspective Ruler” work (they were placeholders) (0.8.40)
+- [x] Brush size grid — SAI 2017's whole table, up to 5000 (0.8.40)
+- [ ] New name — **GrazySAI** (SOsai is taken on GitHub); old versions still find the update at the old address
+- [ ] More save and export formats (as in similar programs)
+- [ ] Icons for new menu items and windows; layout checked in every language
+- [ ] More right on the canvas and panels, fewer extra windows: text is typed straight on the canvas as in SAI; tools get their useful buttons on the panel (after Krita, GIMP and others), keeping SAI's look
+- [ ] A full pass over every feature: is everything there and does it all work
+- [ ] Code audit by a professional method (bugs, inaccuracies, logic, memory, speed) — as a separate skill
 
 ### First after 1.0 — filters as in Clip Studio Paint
 

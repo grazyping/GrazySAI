@@ -194,8 +194,6 @@ PSD (со слоями) = PSD (with layers)
 Насквозь (папка) = Pass Through (folder)
 Источник выбора = Selection Source
 Палочка и заливка берут цвет со всех слоёв-источников = The magic wand and the bucket read colors from all source layers
-Новый слой контура — позже = New Linework Layer — later
-Линейка перспективы — позже = Perspective ruler — later
 Перенести на нижний (F) = Transfer to Next Layer (F)
 Слить с нижним (Ctrl+E) = Merge Down (Ctrl+E)
 Очистить слой (Delete) = Erase Layer (Delete)
@@ -662,3 +660,7 @@ S-кривая = S-Curve Gradation
 Перспектива: 1 точка = Perspective: 1 point
 Перспектива: 2 точки = Perspective: 2 points
 Перспектива: 3 точки = Perspective: 3 points
+
+# Кнопки панели слоёв (0.8.40)
+Линейка перспективы = Perspective Ruler
+Спрятать линейку = Hide Ruler

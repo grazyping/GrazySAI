@@ -193,8 +193,6 @@ PSD (со слоями) = PSD (mit Ebenen)
 Насквозь (папка) = Hindurchwirken (Ordner)
 Источник выбора = Auswahlquelle
 Палочка и заливка берут цвет со всех слоёв-источников = Zauberstab und Füllen lesen die Farbe aus allen Quellebenen
-Новый слой контура — позже = Neue Linienebene — später
-Линейка перспективы — позже = Perspektivlineal — später
 Перенести на нижний (F) = Auf untere Ebene übertragen (F)
 Слить с нижним (Ctrl+E) = Mit unterer zusammenfügen (Ctrl+E)
 Очистить слой (Delete) = Ebene leeren (Delete)
@@ -661,3 +659,7 @@ S-кривая = S-Kurve
 Перспектива: 1 точка = Perspektive: 1 Punkt
 Перспектива: 2 точки = Perspektive: 2 Punkte
 Перспектива: 3 точки = Perspektive: 3 Punkte
+
+# Кнопки панели слоёв (0.8.40)
+Линейка перспективы = Perspektivlineal
+Спрятать линейку = Lineal ausblenden

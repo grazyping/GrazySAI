@@ -193,8 +193,6 @@ PSD (со слоями) = PSD (avec calques)
 Насквозь (папка) = Transfert (dossier)
 Источник выбора = Source de sélection
 Палочка и заливка берут цвет со всех слоёв-источников = La baguette et le pot lisent la couleur de tous les calques sources
-Новый слой контура — позже = Nouveau calque de tracé — plus tard
-Линейка перспективы — позже = Règle de perspective — plus tard
 Перенести на нижний (F) = Transférer sur le calque inférieur (F)
 Слить с нижним (Ctrl+E) = Fusionner avec le calque inférieur (Ctrl+E)
 Очистить слой (Delete) = Effacer le calque (Suppr)
@@ -661,3 +659,7 @@ S-кривая = Courbe en S
 Перспектива: 1 точка = Perspective : 1 point
 Перспектива: 2 точки = Perspective : 2 points
 Перспектива: 3 точки = Perspective : 3 points
+
+# Кнопки панели слоёв (0.8.40)
+Линейка перспективы = Règle de perspective
+Спрятать линейку = Masquer la règle

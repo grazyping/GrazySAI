@@ -193,8 +193,6 @@ PSD (со слоями) = PSD (com camadas)
 Насквозь (папка) = Passagem (pasta)
 Источник выбора = Fonte de seleção
 Палочка и заливка берут цвет со всех слоёв-источников = A varinha e o balde leem a cor de todas as camadas de origem
-Новый слой контура — позже = Nova camada de traço — mais tarde
-Линейка перспективы — позже = Régua de perspectiva — mais tarde
 Перенести на нижний (F) = Transferir para a camada inferior (F)
 Слить с нижним (Ctrl+E) = Mesclar com a inferior (Ctrl+E)
 Очистить слой (Delete) = Limpar camada (Delete)
@@ -661,3 +659,7 @@ S-кривая = Curva em S
 Перспектива: 1 точка = Perspectiva: 1 ponto
 Перспектива: 2 точки = Perspectiva: 2 pontos
 Перспектива: 3 точки = Perspectiva: 3 pontos
+
+# Кнопки панели слоёв (0.8.40)
+Линейка перспективы = Régua de perspectiva
+Спрятать линейку = Ocultar régua
