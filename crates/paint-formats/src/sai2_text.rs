@@ -336,6 +336,42 @@ fn fallback() -> Option<Arc<FontVec>> {
     }
 }
 
+/// Курсор перед каждым знаком надписи и после последнего (`text().chars().count() + 1`
+/// положений): верх и низ отрезка курсора в точках холста. Раскладка — та же, что у `render`.
+pub fn caret_positions(layer: &TextLayer) -> Vec<[[f64; 2]; 2]> {
+    let fb = fallback();
+    let [a, b, c, d] = layer.matrix;
+    let vertical = layer.flags[0] & FLAG_VERTICAL != 0;
+    let map = |u: f32, v: f32| {
+        let (u, v) = if vertical { (-(v as f64), u as f64) } else { (u as f64, v as f64) };
+        [layer.x + a * u + c * v, layer.y + b * u + d * v]
+    };
+    let (mut pen_x, mut line_y) = (0.0f32, 0.0f32);
+    let mut line = 0.0f32;
+    let mut out = Vec::new();
+    for run in &layer.runs {
+        let Some(main) = font(&run.font).or_else(|| fb.clone()) else { continue };
+        let scale = PxScale::from(run.size);
+        line = main.as_scaled(scale).height() + main.as_scaled(scale).line_gap();
+        let strength = if run.style & STYLE_BOLD != 0 { run.size / 12.0 } else { 0.0 };
+        for ch in run.text.chars() {
+            out.push([map(pen_x, line_y), map(pen_x, line_y + line)]);
+            if ch == '\n' {
+                pen_x = 0.0;
+                line_y += line;
+                continue;
+            }
+            let f = if main.glyph_id(ch).0 == 0 { fb.as_ref().unwrap_or(&main) } else { &main };
+            pen_x += f.as_scaled(scale).h_advance(f.glyph_id(ch)) + strength;
+        }
+    }
+    if line == 0.0 {
+        line = layer.runs.first().map_or(20.0, |r| r.size * 1.2);
+    }
+    out.push([map(pen_x, line_y), map(pen_x, line_y + line)]);
+    out
+}
+
 /// Нарисовать текстовый слой в `pixels` (предумноженные, `pixel::ONE` = 1).
 pub fn render(layer: &TextLayer, pixels: &mut ColorMap) {
     let fb = fallback();

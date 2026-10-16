@@ -380,7 +380,6 @@ GrazySAI на GitHub = GrazySAI auf GitHub
 Вертикально = Vertikal
 Жирный = Fett
 Курсив = Kursiv
-Цвет — основной цвет панели. = Farbe ist die Hauptfarbe des Panels.
 
 # Градиент, лассо, расширение выделения (0.8.13)
 Градиент = Verlauf
@@ -667,3 +666,7 @@ S-кривая = S-Kurve
 # Форматы (0.8.43)
 WebP (без потерь) = WebP (verlustfrei)
 OpenRaster (.ora, со слоями) = OpenRaster (.ora, mit Ebenen)
+
+# Текст на холсте (0.8.45)
+Раскладка = Layout
+Начертание = Schriftschnitt

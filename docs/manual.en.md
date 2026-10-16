@@ -340,9 +340,11 @@ there are unsaved changes. Crash recovery keeps a copy of the active canvas.
 own dialog on Linux (KDE, GNOME). Without one, a simple window with the file path appears.
 
 Text layers from `.sai2` are shown with the font chosen in SAI (if it is installed) and saved as
-they were. The Text tool (“T” button): click the canvas for new text, click with a text layer
-selected to edit it; the window has the text, font and size, the color is the main color. Bold,
-italic and vertical, as in SAI, are there too. Brushes don't paint on text — rasterize it first
+they were. The Text tool (“T” button) works as in SAI: a click on the canvas creates a
+text layer at once and you type right on the canvas (Enter for a new line, arrows, Home/End,
+Backspace/Delete; Esc or another tool finishes; click the selected text to edit it). The
+settings are on the tool panel: Vertical, color (the main color), size, Bold, Italic and a font
+list with search; they change the text immediately. The whole edit is one undo step. Brushes don't paint on text — rasterize it first
 (“Layer → Rasterize Layer”). Perspective
 rulers from newer SAI versions are not shown but are saved too.
 

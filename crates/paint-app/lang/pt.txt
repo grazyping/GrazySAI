@@ -380,7 +380,6 @@ GrazySAI на GitHub = GrazySAI no GitHub
 Вертикально = Vertical
 Жирный = Negrito
 Курсив = Itálico
-Цвет — основной цвет панели. = A cor é a cor principal do painel.
 
 # Градиент, лассо, расширение выделения (0.8.13)
 Градиент = Degradê
@@ -667,3 +666,7 @@ S-кривая = Curva em S
 # Форматы (0.8.43)
 WebP (без потерь) = WebP (sem perdas)
 OpenRaster (.ora, со слоями) = OpenRaster (.ora, com camadas)
+
+# Текст на холсте (0.8.45)
+Раскладка = Disposição
+Начертание = Estilos

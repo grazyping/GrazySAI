@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.44)
+### 0.8 — linework and shapes (current version 0.8.45)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -138,7 +138,8 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] New name — GrazySAI; old versions update by themselves (0.8.42)
 - [x] More formats: OpenRaster with layers; export and open BMP, TGA, TIFF, WebP, QOI (0.8.43)
 - [x] Icons for new menu items (0.8.44)
-- [ ] Text is typed right on the canvas; tools get their useful buttons on the panel
+- [x] Text is typed right on the canvas, settings on the tool panel, as in SAI (0.8.45)
+- [ ] Tools get their useful buttons on the panel
 
 ### First after 1.0 — filters as in Clip Studio Paint
 

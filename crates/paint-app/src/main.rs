@@ -111,18 +111,21 @@ enum Tool {
 
 /// Надпись, которая сейчас правится в окне «Текст».
 struct TextEditing {
-    /// Слой, который правится; `None` — новая надпись.
-    path: Option<Vec<usize>>,
+    /// Слой надписи (новый слой вставлен сразу, без записи в историю).
+    path: Vec<usize>,
     x: f64,
     y: f64,
     text: String,
-    font: String,
-    size: f32,
-    bold: bool,
-    italic: bool,
-    vertical: bool,
+    /// Курсор — номер знака.
+    caret: usize,
+    /// Слой создан этой правкой (при отмене исчезает).
+    created: bool,
+    /// Кривые и пиксели слоя до правки — вернуть перед записью шага.
+    orig: Option<(Option<paint_core::layer::VectorData>, paint_core::tile::ColorMap)>,
     /// Остальное из файла (флаги, матрица) — сохраняется как было.
     base: Option<paint_formats::sai2_text::TextLayer>,
+    /// Текст или настройки менялись.
+    changed: bool,
 }
 
 /// Перевод координат между экраном и холстом с учётом масштаба, поворота и зеркала вида.
@@ -913,6 +916,11 @@ struct PaintApp {
     /// Инструмент «Текст»: шрифт и размер по умолчанию, открытая правка, строка поиска шрифта.
     text_font: String,
     text_size: f32,
+    text_bold: bool,
+    text_italic: bool,
+    text_vertical: bool,
+    /// Прокрутить список шрифтов к выбранному (при показе панели текста).
+    font_scroll: bool,
     text_edit: Option<TextEditing>,
     font_filter: String,
     /// Системное окно «Открыть» / «Сохранить», ждущее ответа.
@@ -1076,6 +1084,10 @@ impl PaintApp {
             show_save_as: false,
             text_font: String::new(),
             text_size: 20.0,
+            text_bold: false,
+            text_italic: false,
+            text_vertical: false,
+            font_scroll: true,
             text_edit: None,
             font_filter: String::new(),
             file_dialog: None,
@@ -1704,11 +1716,30 @@ impl PaintApp {
         })
     }
 
-    /// Щелчок инструментом «Текст»: правка выбранного текстового слоя или новая надпись в точке.
-    fn begin_text(&mut self, x: f64, y: f64) {
-        use paint_formats::sai2_text;
+    /// Рамка правящейся надписи и мигающий курсор (как в SAI).
+    fn draw_text_box(&self, painter: &egui::Painter, xf: ViewXf) {
+        let Some(e) = self.text_edit.as_ref() else { return };
+        let carets = paint_formats::sai2_text::caret_positions(&self.text_now(e));
+        let s = |p: [f64; 2]| xf.to_screen(Vec2::new(p[0] as f32, p[1] as f32));
+        let pts: Vec<Pos2> = carets.iter().flat_map(|c| [s(c[0]), s(c[1])]).collect();
+        let mut r = Rect::from_points(&pts).expand(4.0);
+        if r.width() < 12.0 {
+            r = r.expand2(Vec2::new(6.0, 0.0));
+        }
+        painter.rect_stroke(r, 0.0, egui::Stroke::new(1.0_f32, Color32::from_gray(150)));
+        let t = painter.ctx().input(|i| i.time);
+        if (t * 2.0) as i64 % 2 == 0 {
+            if let Some(c) = carets.get(e.caret.min(carets.len() - 1)) {
+                painter.line_segment([s(c[0]), s(c[1])], egui::Stroke::new(1.5_f32, Color32::from_rgb(220, 180, 0)));
+            }
+        }
+        painter.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+    }
+
+    /// Шрифт по умолчанию — первый из привычных, что есть в системе.
+    fn ensure_text_font(&mut self) {
         if self.text_font.is_empty() {
-            let fonts = sai2_text::system_fonts();
+            let fonts = paint_formats::sai2_text::system_fonts();
             self.text_font = ["Noto Sans", "DejaVu Sans", "Segoe UI", "Arial"]
                 .iter()
                 .find(|f| fonts.iter().any(|n| n == *f))
@@ -1716,127 +1747,272 @@ impl PaintApp {
                 .or_else(|| fonts.first().cloned())
                 .unwrap_or_default();
         }
-        let existing = self.doc.layer(&self.selected).and_then(|l| l.vector.as_ref()).filter(|v| &v.kind == b"text").and_then(|v| sai2_text::parse(&v.raw));
-        self.text_edit = Some(match existing {
-            Some(t) => {
-                let first = t.runs.first();
-                TextEditing {
-                    path: Some(self.selected.clone()),
-                    x: t.x,
-                    y: t.y,
-                    text: t.text(),
-                    font: first.map_or(self.text_font.clone(), |r| r.font.clone()),
-                    size: first.map_or(self.text_size, |r| r.size),
-                    bold: first.is_some_and(|r| r.style & sai2_text::STYLE_BOLD != 0),
-                    italic: first.is_some_and(|r| r.style & sai2_text::STYLE_ITALIC != 0),
-                    vertical: t.flags[0] & sai2_text::FLAG_VERTICAL != 0,
-                    base: Some(t),
-                }
-            }
-            None => TextEditing {
-                path: None,
-                x,
-                y,
-                text: String::new(),
-                font: self.text_font.clone(),
-                size: self.text_size,
-                bold: false,
-                italic: false,
-                vertical: false,
-                base: None,
-            },
-        });
     }
 
-    /// Окно «Текст»: надпись, шрифт, размер; OK — одна запись отмены.
-    fn text_window(&mut self, ctx: &egui::Context) {
-        use paint_formats::sai2_text::{self, TextLayer, TextRun};
-        let Some(mut e) = self.text_edit.take() else { return };
-        let (mut ok, mut cancel) = (false, false);
-        let fonts = sai2_text::system_fonts();
-        let filter = &mut self.font_filter;
-        egui::Window::new(tr("Текст")).collapsible(false).resizable(false).default_width(340.0).show(ctx, |ui| {
-            let edit = ui.add(egui::TextEdit::multiline(&mut e.text).desired_rows(3).desired_width(320.0));
-            if e.text.is_empty() && !edit.has_focus() {
-                edit.request_focus();
+    /// Щелчок инструментом «Текст», как в SAI: внутри рамки правящейся надписи — курсор туда;
+    /// по выбранному текстовому слою — его правка; иначе сразу новый текстовый слой в этой точке.
+    /// Набор идёт прямо на холсте, настройки — на панели инструмента.
+    fn begin_text(&mut self, x: f64, y: f64) {
+        use paint_formats::sai2_text;
+        self.ensure_text_font();
+        if let Some(i) = self.text_edit.as_ref().and_then(|e| text_hit(&self.text_now(e), x, y)) {
+            if let Some(e) = self.text_edit.as_mut() {
+                e.caret = i;
             }
-            ui.horizontal(|ui| {
-                ui.label(tr("Шрифт"));
-                egui::ComboBox::from_id_salt("text_font").selected_text(&e.font).width(240.0).height(360.0).show_ui(ui, |ui| {
-                    ui.add(egui::TextEdit::singleline(filter).hint_text(tr("Поиск")).desired_width(220.0));
-                    let f = filter.to_lowercase();
-                    for name in fonts.iter().filter(|n| f.is_empty() || n.to_lowercase().contains(&f)) {
-                        if ui.selectable_label(*name == e.font, name).clicked() {
-                            e.font = name.clone();
-                        }
-                    }
-                });
-            });
-            ui.horizontal(|ui| {
-                ui.label(tr("Размер"));
-                ui.add(egui::DragValue::new(&mut e.size).range(1.0..=999.0).speed(0.5).suffix(" px"));
-            });
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut e.bold, tr("Жирный"));
-                ui.checkbox(&mut e.italic, tr("Курсив"));
-                ui.checkbox(&mut e.vertical, tr("Вертикально"));
-            });
-            ui.weak(tr("Цвет — основной цвет панели."));
-            ui.horizontal(|ui| {
-                ok = ui.button("OK").clicked();
-                cancel = ui.button(tr("Отмена")).clicked();
-            });
-        });
-        if cancel {
             return;
         }
-        if !ok {
-            self.text_edit = Some(e);
+        self.finish_text(true);
+        let existing = self
+            .doc
+            .layer(&self.selected)
+            .and_then(|l| l.vector.as_ref())
+            .filter(|v| &v.kind == b"text")
+            .and_then(|v| sai2_text::parse(&v.raw))
+            .filter(|t| text_hit(t, x, y).is_some());
+        if let Some(t) = existing {
+            let layer = self.doc.layer(&self.selected).unwrap();
+            let orig = (layer.vector.clone(), layer.pixels.clone());
+            if let Some(first) = t.runs.first() {
+                self.text_font = first.font.clone();
+                self.text_size = first.size;
+                self.text_bold = first.style & sai2_text::STYLE_BOLD != 0;
+                self.text_italic = first.style & sai2_text::STYLE_ITALIC != 0;
+            }
+            self.text_vertical = t.flags[0] & sai2_text::FLAG_VERTICAL != 0;
+            let text = t.text();
+            self.text_edit = Some(TextEditing { path: self.selected.clone(), x: t.x, y: t.y, caret: text.chars().count(), text, created: false, orig: Some(orig), base: Some(t), changed: false });
             return;
         }
-        self.text_font = e.font.clone();
-        self.text_size = e.size;
+        // новый слой «Текст» над текущим — сразу, как в SAI
+        let mut path = self.selected.clone();
+        let index = path.pop().map_or(0, |i| i + 1);
+        path.push(index);
+        let keys = self.doc.insert_layer_quiet(&path, Layer::new(tr("Текст")));
+        self.selected = path.clone();
+        self.after_structure_quiet(keys);
+        self.text_edit = Some(TextEditing { path, x, y, text: String::new(), caret: 0, created: true, orig: None, base: None, changed: false });
+        self.text_refresh();
+    }
+
+    /// Надпись, как она выглядит сейчас: текст правки и настройки панели.
+    fn text_now(&self, e: &TextEditing) -> paint_formats::sai2_text::TextLayer {
+        use paint_formats::sai2_text::{self, TextLayer, TextRun};
         let c = self.color();
-        let style = if e.bold { sai2_text::STYLE_BOLD } else { 0 } | if e.italic { sai2_text::STYLE_ITALIC } else { 0 };
-        let run = TextRun { font: e.font.clone(), size: e.size, color: [c.r(), c.g(), c.b()], style, text: e.text.clone() };
+        let style = if self.text_bold { sai2_text::STYLE_BOLD } else { 0 } | if self.text_italic { sai2_text::STYLE_ITALIC } else { 0 };
+        let run = TextRun { font: self.text_font.clone(), size: self.text_size, color: [c.r(), c.g(), c.b()], style, text: e.text.clone() };
         let mut layer = e.base.clone().unwrap_or_else(|| TextLayer::new(e.x, e.y, run.clone()));
-        // правка без изменений атрибутов и текста — слой как был (в том числе по отрезкам)
-        let vflag = if e.vertical { sai2_text::FLAG_VERTICAL } else { 0 };
-        let same = e.base.as_ref().is_some_and(|b| {
-            b.text() == e.text && b.flags[0] & sai2_text::FLAG_VERTICAL == vflag && b.runs.first().is_some_and(|r| r.font == e.font && r.size == e.size && r.style == style)
-        });
+        let vflag = if self.text_vertical { sai2_text::FLAG_VERTICAL } else { 0 };
+        // без изменений — слой как был (в том числе по отрезкам)
+        let same = !e.changed
+            && e.base.as_ref().is_some_and(|b| b.text() == e.text && b.flags[0] & sai2_text::FLAG_VERTICAL == vflag && b.runs.first().is_some_and(|r| r.font == run.font && r.size == run.size && r.style == style && r.color == run.color));
         if !same {
             layer.runs = vec![run];
             layer.flags[0] = (layer.flags[0] & !sai2_text::FLAG_VERTICAL) | vflag;
         }
-        if e.text.is_empty() && e.path.is_none() {
-            return;
-        }
+        layer
+    }
+
+    /// Перерисовать правящуюся надпись на холсте (без записи в историю).
+    fn text_refresh(&mut self) {
+        use paint_formats::sai2_text;
+        let Some(e) = self.text_edit.as_ref() else { return };
+        let layer = self.text_now(e);
         let mut pixels = paint_core::tile::ColorMap::new();
         sai2_text::render(&layer, &mut pixels);
         let vector = paint_core::layer::VectorData { kind: *b"text", raw: sai2_text::to_bytes(&layer) };
-        match e.path {
-            Some(path) => {
-                if same {
-                    return;
-                }
-                let keys = self.doc.set_vector_layer(&path, vector, pixels);
-                self.invalidate(keys);
-            }
-            None => {
-                let mut path = self.selected.clone();
-                let index = path.pop().map_or(0, |i| i + 1);
+        let path = e.path.clone();
+        let keys = self.doc.set_vector_quiet(&path, Some(vector), pixels);
+        self.invalidate(keys);
+        self.thumbs.clear();
+    }
+
+    /// Что-то в надписи поменялось (текст или настройка панели) — перерисовать.
+    fn text_changed(&mut self) {
+        if let Some(e) = self.text_edit.as_mut() {
+            e.changed = true;
+        }
+        self.text_refresh();
+    }
+
+    /// Закончить набор: живая правка снимается и записывается одним шагом отмены (`commit`),
+    /// или надпись возвращается как была. Пустая новая надпись исчезает.
+    fn finish_text(&mut self, commit: bool) {
+        use paint_formats::sai2_text;
+        let Some(e) = self.text_edit.take() else { return };
+        // слой за время правки мог исчезнуть или смениться — тогда правка просто бросается
+        let ours = self.doc.layer(&e.path).is_some_and(|l| l.vector.as_ref().is_some_and(|v| &v.kind == b"text") || (e.created && l.vector.is_none()));
+        if !ours {
+            return;
+        }
+        let layer = self.text_now(&e);
+        let keep = commit && !e.text.is_empty() && (e.created || e.changed);
+        if e.created {
+            let (_, keys) = self.doc.remove_layer_quiet(&e.path);
+            self.invalidate(keys);
+        } else if let Some((v, px)) = e.orig.clone() {
+            let keys = self.doc.set_vector_quiet(&e.path, v, px);
+            self.invalidate(keys);
+        }
+        if keep {
+            let mut pixels = paint_core::tile::ColorMap::new();
+            sai2_text::render(&layer, &mut pixels);
+            let vector = paint_core::layer::VectorData { kind: *b"text", raw: sai2_text::to_bytes(&layer) };
+            if e.created {
                 let mut l = Layer::new(tr("Текст"));
                 l.vector = Some(vector);
                 l.pixels = pixels;
-                path.push(index);
-                let keys = self.doc.insert_layer(&path, l);
-                self.selected = path;
+                let keys = self.doc.insert_layer(&e.path, l);
+                self.selected = e.path.clone();
                 self.after_structure(keys);
+            } else {
+                let keys = self.doc.set_vector_layer(&e.path, vector, pixels);
+                self.invalidate(keys);
+            }
+            self.dirty = true;
+        } else if e.created {
+            // пустая надпись: выбран снова слой под ней
+            let mut p = e.path.clone();
+            if let Some(last) = p.last_mut() {
+                *last = last.saturating_sub(1);
+            }
+            if self.doc.layer(&p).is_some() {
+                self.selected = p;
+            }
+            self.after_structure_quiet(Vec::new());
+        }
+        self.text_font = layer.runs.first().map_or(self.text_font.clone(), |r| r.font.clone());
+        self.thumbs.clear();
+    }
+
+    /// Клавиши при наборе: буквы и вставка — в текст, стрелки, Home/End, Backspace/Delete,
+    /// Enter — новая строка, Esc — закончить.
+    fn text_keys(&mut self, ctx: &egui::Context) {
+        let Some(e) = self.text_edit.as_mut() else { return };
+        let events = ctx.input(|i| i.events.clone());
+        let mut changed = false;
+        let mut done = false;
+        let byte = |t: &str, c: usize| t.char_indices().nth(c).map_or(t.len(), |(b, _)| b);
+        for ev in events {
+            match ev {
+                egui::Event::Text(t) | egui::Event::Paste(t) => {
+                    let t: String = t.chars().filter(|c| !c.is_control() || *c == '\n').collect();
+                    if !t.is_empty() {
+                        let at = byte(&e.text, e.caret);
+                        e.text.insert_str(at, &t);
+                        e.caret += t.chars().count();
+                        changed = true;
+                    }
+                }
+                egui::Event::Key { key, pressed: true, modifiers, .. } => {
+                    let n = e.text.chars().count();
+                    let lines: Vec<&str> = e.text.split('\n').collect();
+                    // строка и место в ней
+                    let (mut row, mut col, mut left) = (0, 0, e.caret);
+                    for (r, l) in lines.iter().enumerate() {
+                        let len = l.chars().count();
+                        if left <= len {
+                            (row, col) = (r, left);
+                            break;
+                        }
+                        left -= len + 1;
+                    }
+                    let start_of = |r: usize| lines[..r].iter().map(|l| l.chars().count() + 1).sum::<usize>();
+                    match key {
+                        egui::Key::Escape => done = true,
+                        egui::Key::Enter => {
+                            let at = byte(&e.text, e.caret);
+                            e.text.insert(at, '\n');
+                            e.caret += 1;
+                            changed = true;
+                        }
+                        egui::Key::Backspace if e.caret > 0 => {
+                            let at = byte(&e.text, e.caret - 1);
+                            e.text.remove(at);
+                            e.caret -= 1;
+                            changed = true;
+                        }
+                        egui::Key::Delete if e.caret < n => {
+                            let at = byte(&e.text, e.caret);
+                            e.text.remove(at);
+                            changed = true;
+                        }
+                        egui::Key::ArrowLeft => e.caret = e.caret.saturating_sub(1),
+                        egui::Key::ArrowRight => e.caret = (e.caret + 1).min(n),
+                        egui::Key::Home if modifiers.command => e.caret = 0,
+                        egui::Key::End if modifiers.command => e.caret = n,
+                        egui::Key::Home => e.caret = start_of(row),
+                        egui::Key::End => e.caret = start_of(row) + lines[row].chars().count(),
+                        egui::Key::ArrowUp if row > 0 => e.caret = start_of(row - 1) + col.min(lines[row - 1].chars().count()),
+                        egui::Key::ArrowDown if row + 1 < lines.len() => e.caret = start_of(row + 1) + col.min(lines[row + 1].chars().count()),
+                        _ => {}
+                    }
+                }
+                _ => {}
             }
         }
-        self.thumbs.clear();
-        self.dirty = true;
+        if changed {
+            self.text_changed();
+        }
+        if done {
+            self.finish_text(true);
+        }
+    }
+
+    /// Настройки текста на панели инструмента (как в SAI): вертикально, цвет, размер, начертание,
+    /// список шрифтов. Меняют правящуюся надпись сразу.
+    fn text_panel(&mut self, ui: &mut egui::Ui, lw: f32, w: f32) {
+        use paint_formats::sai2_text;
+        self.ensure_text_font();
+        let mut ch = false;
+        sai_ui::row(ui, tr("Раскладка"), lw, true, |ui| {
+            ch |= ui.checkbox(&mut self.text_vertical, tr("Вертикально")).changed();
+        });
+        let c = self.color();
+        sai_ui::row(ui, tr("Цвет"), lw, true, |ui| {
+            let (r, _) = ui.allocate_exact_size(Vec2::new(32.0, 18.0), egui::Sense::hover());
+            ui.painter().rect_filled(r, 0.0, c);
+            ui.painter().rect_stroke(r, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
+        });
+        sai_ui::row(ui, tr("Размер"), lw, true, |ui| {
+            ch |= ui.add(egui::DragValue::new(&mut self.text_size).range(1.0..=999.0).speed(0.5).suffix(" px")).changed();
+        });
+        sai_ui::row(ui, tr("Начертание"), lw, true, |ui| {
+            ch |= ui.checkbox(&mut self.text_bold, tr("Жирный")).changed();
+            ch |= ui.checkbox(&mut self.text_italic, tr("Курсив")).changed();
+        });
+        sai_ui::row(ui, tr("Шрифт"), lw, true, |ui| {
+            ui.add(egui::TextEdit::singleline(&mut self.font_filter).hint_text(tr("Поиск")).desired_width(ui.available_width() - 4.0));
+        });
+        let fonts = sai2_text::system_fonts();
+        let f = self.font_filter.to_lowercase();
+        // список, как у SAI: белый, имена в строку (длинные обрезаются)
+        egui::Frame::none().stroke(egui::Stroke::new(1.0_f32, sai_ui::BORDER)).fill(Color32::WHITE).show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt("font_list").max_height(240.0).auto_shrink([false, true]).show(ui, |ui| {
+                ui.set_width(w - 4.0);
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for name in fonts.iter().filter(|n| f.is_empty() || n.to_lowercase().contains(&f)) {
+                    let sel = *name == self.text_font;
+                    let r = ui.add(egui::SelectableLabel::new(sel, egui::RichText::new(name).size(13.0))).on_hover_text(name);
+                    if sel && self.font_scroll {
+                        r.scroll_to_me(Some(egui::Align::Center));
+                        self.font_scroll = false;
+                    }
+                    if r.clicked() && !sel {
+                        self.text_font = name.clone();
+                        ch = true;
+                    }
+                }
+            });
+        });
+        // цвет надписи — основной цвет: сменили на круге — надпись тоже
+        let col = [c.r(), c.g(), c.b()];
+        if self.text_edit.is_some() && self.text_edit.as_ref().map(|e| self.text_now(e).runs.first().map(|r| r.color)) != Some(Some(col)) {
+            ch = true;
+        }
+        if ch && self.text_edit.is_some() {
+            self.text_changed();
+        }
     }
 
     /// Окно «Обновление»: что нашлось, заметки выпуска, загрузка и перезапуск.
@@ -2059,7 +2235,7 @@ impl PaintApp {
             self.doc.selection = d.original;
         }
         self.sel_poly = None;
-        self.text_edit = None;
+        self.finish_text(true);
         self.layer_props = None;
     }
 
@@ -3447,6 +3623,13 @@ impl PaintApp {
         }
     }
 
+    /// То же, но без пометки «изменено» (живая правка, которая потом запишется шагом).
+    fn after_structure_quiet(&mut self, keys: Vec<Key>) {
+        let dirty = self.dirty;
+        self.after_structure(keys);
+        self.dirty = dirty;
+    }
+
     /// После изменения стопки: проверить выбор, перерисовать, обновить миниатюры.
     fn after_structure(&mut self, keys: Vec<Key>) {
         self.dirty = true;
@@ -4654,6 +4837,11 @@ impl PaintApp {
             self.gradient_panel(ui);
             return;
         }
+        if self.tool == Tool::Text {
+            self.text_panel(ui, lw, w);
+            return;
+        }
+        self.font_scroll = true;
         if self.tool == Tool::Brush && self.kind() == ToolKind::Bucket {
             let tol = &mut self.wand_tolerance;
             sai_ui::row(ui, tr("Допуск"), lw, true, |ui| {
@@ -6106,7 +6294,7 @@ impl PaintApp {
                 }
             }
         } else if self.tool == Tool::Text {
-            if pressed && response.hovered() && self.text_edit.is_none() {
+            if pressed && response.hovered() {
                 if let Some(pos) = pointer {
                     let c = to_canvas(pos, self.zoom, self.offset);
                     self.begin_text(c.x as f64, c.y as f64);
@@ -6263,6 +6451,7 @@ impl PaintApp {
             self.reset_ruler();
         }
         self.draw_ruler(&painter, xf, ctrl);
+        self.draw_text_box(&painter, xf);
         // Граница выделения («бегущие муравьи») и выделение, которое сейчас тянут.
         if self.sel_dirty {
             self.sel_outline = self.doc.selection.outline();
@@ -7318,13 +7507,36 @@ impl PaintApp {
         if self.show_update {
             self.update_window(ctx);
         }
-        if self.text_edit.is_some() {
-            self.text_window(ctx);
-        }
+
     }
 }
 
 /// Миниатюра слоя поверх белого: ближайшие точки на сетке `size`×`size` с полями по пропорции.
+/// Щелчок `(x, y)` по надписи: номер ближайшего места курсора, если щелчок в рамке надписи.
+fn text_hit(t: &paint_formats::sai2_text::TextLayer, x: f64, y: f64) -> Option<usize> {
+    let carets = paint_formats::sai2_text::caret_positions(t);
+    let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    for p in carets.iter().flatten() {
+        x0 = x0.min(p[0]);
+        y0 = y0.min(p[1]);
+        x1 = x1.max(p[0]);
+        y1 = y1.max(p[1]);
+    }
+    let pad = 4.0;
+    if x < x0 - pad || x > x1 + pad || y < y0 - pad || y > y1 + pad {
+        return None;
+    }
+    // ближайший курсор: по середине его отрезка
+    (0..carets.len()).min_by(|&a, &b| {
+        let d = |i: usize| {
+            let c = carets[i];
+            let (mx, my) = ((c[0][0] + c[1][0]) / 2.0, (c[0][1] + c[1][1]) / 2.0);
+            (mx - x).powi(2) + (my - y).powi(2)
+        };
+        d(a).total_cmp(&d(b))
+    })
+}
+
 fn layer_thumbnail(doc: &Document, path: &[usize], size: usize) -> Option<egui::ColorImage> {
     let layer = doc.layer(path)?;
     let (w, h) = (doc.width as f32, doc.height as f32);
@@ -7581,7 +7793,15 @@ impl eframe::App for PaintApp {
         let km = self.keymap.clone();
         let hit = |a: keys::Action| ctx.input(|i| km.get(&a).copied().flatten().is_some_and(|b| b.pressed(i)));
         use keys::Action as A;
-        let typing = ctx.wants_keyboard_input();
+        // сменили инструмент — набор закончен
+        if self.text_edit.is_some() && self.tool != Tool::Text {
+            self.finish_text(true);
+        }
+        // набор надписи на холсте забирает клавиатуру, как поле ввода
+        if self.text_edit.is_some() && !ctx.wants_keyboard_input() {
+            self.text_keys(ctx);
+        }
+        let typing = ctx.wants_keyboard_input() || self.text_edit.is_some();
         // запасные сочетания: Shift+Ctrl+Z — повтор, Ctrl+Plus — приблизить
         let redo_alt = ctx.input(|i| i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::Z));
         let zoom_alt = ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Plus));

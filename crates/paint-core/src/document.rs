@@ -891,6 +891,32 @@ impl Document {
         self.perform(vec![Op::Vector { path: path.to_vec(), vector: Some(vector) }, Op::Tiles { path: path.to_vec(), tiles }])
     }
 
+    /// Вставить слой без записи в историю — для живой правки (итог потом записывается обычным
+    /// шагом, а этот снимается `remove_layer_quiet`).
+    pub fn insert_layer_quiet(&mut self, path: &[usize], layer: Layer) -> Vec<Key> {
+        self.apply_op(Op::Insert { path: path.to_vec(), layer: Box::new(layer) }).map_or(Vec::new(), |(_, k)| k)
+    }
+
+    /// Убрать слой без записи в историю.
+    pub fn remove_layer_quiet(&mut self, path: &[usize]) -> (Option<Layer>, Vec<Key>) {
+        match self.apply_op(Op::Remove { path: path.to_vec() }) {
+            Some((Op::Insert { layer, .. }, k)) => (Some(*layer), k),
+            _ => (None, Vec::new()),
+        }
+    }
+
+    /// Заменить кривые и пиксели слоя без записи в историю (живая правка надписи).
+    pub fn set_vector_quiet(&mut self, path: &[usize], vector: Option<crate::layer::VectorData>, pixels: ColorMap) -> Vec<Key> {
+        let Some(layer) = self.layer_mut(path) else { return Vec::new() };
+        let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
+        keys.extend(pixels.tiles.keys().copied());
+        keys.sort_unstable();
+        keys.dedup();
+        layer.vector = vector;
+        layer.pixels = pixels;
+        keys
+    }
+
     /// Растеризовать слой контура или фигур: кривые отбрасываются, пиксели остаются; отмена —
     /// одним шагом.
     pub fn rasterize_layer(&mut self, path: &[usize]) -> Vec<Key> {
