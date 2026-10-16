@@ -342,7 +342,13 @@ pub fn save_webp(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Res<()> {
 pub fn load_webp(path: &Path) -> Res<Image> {
     let mut dec = image_webp::WebPDecoder::new(std::io::BufReader::new(File::open(path)?))?;
     let (w, h) = dec.dimensions();
-    let mut buf = vec![0u8; dec.output_buffer_size().ok_or("WebP: слишком большой")?];
+    let need = dec.output_buffer_size().ok_or("WebP: слишком большой")?;
+    // 42-байтный файл, заявивший 16383×16383, разбирался 46 с: размер должен сходиться с данными
+    let len = std::fs::metadata(path)?.len() as usize;
+    if w as u64 * h as u64 > 1 << 29 || need > len.saturating_mul(1100).saturating_add(1 << 20) {
+        return Err(format!("WebP: неверный размер {w}×{h}").into());
+    }
+    let mut buf = vec![0u8; need];
     dec.read_image(&mut buf)?;
     let out = if dec.has_alpha() { buf } else { buf.chunks(3).flat_map(|c| [c[0], c[1], c[2], 255]).collect() };
     Ok((w, h, out))
@@ -409,6 +415,10 @@ pub fn decode_qoi(d: &[u8]) -> Res<Image> {
     let w = u32::from_be_bytes(d[4..8].try_into()?);
     let h = u32::from_be_bytes(d[8..12].try_into()?);
     let n = (w as usize).checked_mul(h as usize).filter(|n| *n <= 1 << 28).ok_or("QOI: слишком большой")?;
+    // байт данных даёт не больше 62 точек (QOI_OP_RUN) — иначе размер ложный
+    if n > d.len().saturating_mul(62) {
+        return Err("QOI: размер не сходится с данными".into());
+    }
     let mut out = Vec::with_capacity(n * 4);
     let mut seen = [[0u8; 4]; 64];
     let mut p = [0u8, 0, 0, 255];

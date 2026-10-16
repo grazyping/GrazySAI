@@ -185,7 +185,7 @@ dependencies = [
 
 [[package]]
 name = "paint-core"
-version = "0.9.12"
+version = "0.9.13"
 dependencies = [
  "image-webp",
  "jpeg-encoder",
@@ -197,7 +197,7 @@ dependencies = [
 
 [[package]]
 name = "paint-formats"
-version = "0.9.12"
+version = "0.9.13"
 dependencies = [
  "ab_glyph",
  "miniz_oxide 0.8.9",
