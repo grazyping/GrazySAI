@@ -1380,6 +1380,189 @@ pub fn distort(src: &ColorMap, w: u32, h: u32, d: &Distort, sel: &(dyn Fn(i32, i
     })
 }
 
+/// Размытие серого буфера: три прохода квадратом радиуса `r` (почти гаусс); за краем — край.
+fn blur_gray(buf: &mut [f64], bw: usize, bh: usize, r: usize) {
+    if r == 0 || buf.is_empty() {
+        return;
+    }
+    let mut tmp = vec![0f64; buf.len()];
+    for _ in 0..3 {
+        for horizontal in [true, false] {
+            let (lines, len) = if horizontal { (bh, bw) } else { (bw, bh) };
+            for line in 0..lines {
+                let at = |i: isize| {
+                    let i = i.clamp(0, len as isize - 1) as usize;
+                    if horizontal {
+                        line * bw + i
+                    } else {
+                        i * bw + line
+                    }
+                };
+                let r = r as isize;
+                let mut acc: f64 = (-r..=r).map(|k| buf[at(k)]).sum();
+                for i in 0..len as isize {
+                    tmp[at(i)] = acc / (2 * r + 1) as f64;
+                    acc += buf[at(i + r + 1)] - buf[at(i - r)];
+                }
+            }
+            buf.copy_from_slice(&tmp);
+        }
+    }
+}
+
+fn luma(c: [f64; 3]) -> f64 {
+    0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+}
+
+/// «Карандашный рисунок» (своя версия; у CSP способ закрыт).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pencil {
+    /// Толщина линий, px (радиус размытия для осветления основы).
+    pub thickness: f64,
+    /// Темнота линий 0…1.
+    pub darkness: f64,
+    /// Штриховка тёмных мест 0…1.
+    pub hatching: f64,
+    /// Оставить цвет (иначе серый карандаш).
+    pub color: bool,
+}
+
+/// Карандашный рисунок: серое поверх белого делится на своё размытие (осветление основы) —
+/// ровные места белеют, края остаются линиями; темнота — степень, штриховка — шум, вытянутый по
+/// диагонали, в тёмных местах. Альфа слоя сохраняется.
+pub fn pencil_drawing(src: &ColorMap, w: u32, h: u32, p: Pencil, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let r = p.thickness.round().max(1.0) as usize;
+    let Some((x0, y0, bw, bh, buf)) = dense(src, w, h, 3 * r as i32) else { return src.clone() };
+    let white: Vec<[f64; 3]> = buf.iter().map(|q| [0, 1, 2].map(|i| q[i] + 1.0 - q[3])).collect();
+    let gray: Vec<f64> = white.iter().map(|c| luma(*c)).collect();
+    let mut soft = gray.clone();
+    blur_gray(&mut soft, bw, bh, r);
+    let gamma = 1.0 + 3.0 * p.darkness;
+    let res: Vec<[f64; 4]> = (0..buf.len())
+        .map(|i| {
+            let mut s = (gray[i] / soft[i].max(1e-4)).min(1.0).powf(gamma);
+            if p.hatching > 0.0 {
+                let (x, y) = (x0 + (i % bw) as i32, y0 + (i / bw) as i32);
+                let n = (0..12).map(|k| hash01(x - k, y + k, 7)).sum::<f64>() / 12.0;
+                let streak = ((n - 0.5) * 5.0 + 0.5).clamp(0.0, 1.0);
+                s *= 1.0 - p.hatching * (1.0 - soft[i]) * streak;
+            }
+            let a = buf[i][3];
+            let c = if p.color { white[i].map(|v| v * s) } else { [s; 3] };
+            [c[0] * a, c[1] * a, c[2] * a, a]
+        })
+        .collect();
+    write_back(src, x0, y0, bw, &res, sel)
+}
+
+/// «Художественный» (своя версия): сглаживание Кувахары, плакатные уровни и тёмные контуры.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Artistic {
+    /// Радиус сглаживания (мазка), px.
+    pub radius: u32,
+    /// Уровней на канал (2–16), 0 — без плаката.
+    pub levels: u32,
+    /// Контуры 0…1 (0 — без контуров).
+    pub edges: f64,
+}
+
+/// Художественный: у каждой точки из четырёх квадратов `(r+1)²` вокруг берётся средний цвет
+/// самого ровного (наименьший разброс яркости) — мазки с чёткими краями; затем уровни яркости и
+/// контур по Собелю на яркости.
+pub fn artistic(src: &ColorMap, w: u32, h: u32, a: Artistic, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let r = a.radius.max(1) as isize;
+    let Some((x0, y0, bw, bh, buf)) = dense(src, w, h, r as i32 + 2) else { return src.clone() };
+    let sw = bw + 1;
+    let mut sat = vec![[0f64; 6]; sw * (bh + 1)];
+    for y in 0..bh {
+        for x in 0..bw {
+            let q = buf[y * bw + x];
+            let l = luma([q[0], q[1], q[2]]);
+            let v = [q[0], q[1], q[2], q[3], l, l * l];
+            for c in 0..6 {
+                sat[(y + 1) * sw + x + 1][c] = v[c] + sat[y * sw + x + 1][c] + sat[(y + 1) * sw + x][c] - sat[y * sw + x][c];
+            }
+        }
+    }
+    let smooth: Vec<[f64; 4]> = (0..bw * bh)
+        .map(|i| {
+            let (x, y) = ((i % bw) as isize, (i / bw) as isize);
+            let mut best = (f64::MAX, buf[i]);
+            for (dx, dy) in [(-r, -r), (0, -r), (-r, 0), (0, 0)] {
+                let (xa, ya) = ((x + dx).max(0) as usize, (y + dy).max(0) as usize);
+                let (xb, yb) = ((x + dx + r + 1).min(bw as isize) as usize, (y + dy + r + 1).min(bh as isize) as usize);
+                let n = ((xb - xa) * (yb - ya)) as f64;
+                let s: [f64; 6] = std::array::from_fn(|c| sat[yb * sw + xb][c] - sat[ya * sw + xb][c] - sat[yb * sw + xa][c] + sat[ya * sw + xa][c]);
+                let mean = s[4] / n;
+                let var = s[5] / n - mean * mean;
+                if var < best.0 {
+                    best = (var, [s[0] / n, s[1] / n, s[2] / n, s[3] / n]);
+                }
+            }
+            best.1
+        })
+        .collect();
+    let lum: Vec<f64> = smooth.iter().map(|q| luma([0, 1, 2].map(|i| q[i] + 1.0 - q[3]))).collect();
+    let at = |x: isize, y: isize| lum[y.clamp(0, bh as isize - 1) as usize * bw + x.clamp(0, bw as isize - 1) as usize];
+    let res: Vec<[f64; 4]> = (0..bw * bh)
+        .map(|i| {
+            let q = smooth[i];
+            if q[3] <= 0.0 {
+                return q;
+            }
+            let mut c = [0, 1, 2].map(|k| (q[k] / q[3]).clamp(0.0, 1.0));
+            // уровни — по яркости, оттенок остаётся (поканально цвета уходят в розовое и зелёное)
+            if a.levels >= 2 {
+                let n = (a.levels - 1) as f64;
+                let l = luma(c);
+                let lq = (l * n).round() / n;
+                c = if l > 1e-6 { c.map(|v| (v * lq / l).clamp(0.0, 1.0)) } else { [lq; 3] };
+            }
+            if a.edges > 0.0 {
+                let (x, y) = ((i % bw) as isize, (i / bw) as isize);
+                let gx = at(x + 1, y - 1) + 2.0 * at(x + 1, y) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2.0 * at(x - 1, y) - at(x - 1, y + 1);
+                let gy = at(x - 1, y + 1) + 2.0 * at(x, y + 1) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2.0 * at(x, y - 1) - at(x + 1, y - 1);
+                let mag = gx.hypot(gy) / 4.0;
+                let line = ((mag * (1.0 + 4.0 * a.edges) - 0.15) * 3.0).clamp(0.0, 1.0);
+                c = c.map(|v| v * (1.0 - 0.85 * line));
+            }
+            [c[0] * q[3], c[1] * q[3], c[2] * q[3], q[3]]
+        })
+        .collect();
+    write_back(src, x0, y0, bw, &res, sel)
+}
+
+#[cfg(test)]
+mod stylize_tests {
+    use super::*;
+    use crate::pixel::{from_rgba8, to_rgba8};
+
+    #[test]
+    fn pencil_whitens_flat_areas_and_artistic_posterizes() {
+        let all = |_: i32, _: i32| ONE;
+        let mut m = ColorMap::new();
+        for y in 0..60 {
+            for x in 0..60 {
+                let c = if x < 30 { [40, 60, 200, 255] } else { [(x * 3) as u8, 180, 90, 255] };
+                m.set(x, y, from_rgba8(c));
+            }
+        }
+        let px = |c: &ColorMap, x, y| to_rgba8(c.get(x, y));
+        // карандаш: ровное место белое, край тёмный, цвет — серый
+        let p = pencil_drawing(&m, 60, 60, Pencil { thickness: 3.0, darkness: 0.5, hatching: 0.0, color: false }, &all);
+        assert!(px(&p, 10, 30)[0] > 245);
+        assert!(px(&p, 29, 30)[0] < 200, "{:?}", px(&p, 29, 30));
+        let e = px(&p, 29, 30);
+        assert!(e[0] == e[1] && e[1] == e[2]);
+        // художественный: уровней 2 — яркость 0 или 1 (синее уходит в чёрное); край — темнее
+        let a = artistic(&m, 60, 60, Artistic { radius: 3, levels: 2, edges: 0.0 }, &all);
+        assert_eq!(px(&a, 10, 10)[..3], [0, 0, 0]);
+        let ae = artistic(&m, 60, 60, Artistic { radius: 3, levels: 0, edges: 1.0 }, &all);
+        assert!(px(&ae, 30, 30)[2] < px(&m, 31, 30)[2].max(px(&m, 29, 30)[2]) / 2 + 20);
+        assert_eq!(px(&ae, 10, 10), px(&m, 10, 10));
+    }
+}
+
 #[cfg(test)]
 mod distort_tests {
     use super::*;

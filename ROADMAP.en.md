@@ -68,7 +68,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.33)
+### 0.8 — linework and shapes (current version 0.8.36)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
@@ -135,13 +135,13 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 
 A Filter menu with CSP's submenus; windows with a preview, like our current filters. They only change layer pixels, so `.sai2` compatibility is kept. CSP is closed source: built from its manual's descriptions, checked against Krita and GIMP where they have a match.
 
-- [x] (0.8.34) Blur filters: average, blur and strong blur, motion, radial, spin, smoothing, lens blur (bokeh)
+- [x] Blur filters: average, blur and strong blur, motion, radial, spin, smoothing, lens blur (bokeh) (0.8.34)
 - [x] Sharpen filters: sharpen, sharpen more, unsharp mask (0.8.33)
 - [x] Effect filters: chromatic aberration, noise, mosaic, crystallize, retro film (0.8.33)
-- [x] (0.8.35) Distort filters: pinch, ripple, fish-eye lens, polar coordinates, wave, twirl
+- [x] Distort filters: pinch, ripple, fish-eye lens, polar coordinates, wave, twirl (0.8.35)
 - [x] Render filter: Perlin noise (0.8.33)
 - [x] Correction filters: remove dust, adjust line width (0.8.33)
-- [ ] Stylizing filters “Pencil drawing” and “Artistic” (our own take — CSP's method is closed)
+- [x] Stylizing filters “Pencil drawing” and “Artistic” (our own take — CSP's method is closed) (0.8.36)
 
 ### Beyond SAI — ideas from Krita (after 1.0)
 

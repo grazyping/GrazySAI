@@ -639,3 +639,17 @@ S-кривая = S-Kurve
 Синус = Sinus
 Прямоугольные → полярные = Rechteckig → polar
 Полярные → прямоугольные = Polar → rechteckig
+
+# Карандашный рисунок и Художественный (0.8.36)
+Карандашный рисунок… = Bleistiftzeichnung…
+Художественный… = Künstlerisch…
+Карандашный рисунок = Bleistiftzeichnung
+Художественный = Künstlerisch
+Толщина линий: = Linienstärke:
+Темнота: = Dunkelheit:
+Штриховка: = Schraffur:
+Оставить цвет = Farbe behalten
+Мазок: = Strich:
+Уровни яркости: = Helligkeitsstufen:
+нет = keine
+Контуры: = Konturen:

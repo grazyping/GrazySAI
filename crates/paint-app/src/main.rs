@@ -188,6 +188,9 @@ enum FilterKind {
     Crystallize,
     RetroFilm,
     Perlin,
+    /// «Карандашный рисунок» и «Художественный» — свои версии (у CSP способ закрыт).
+    Pencil,
+    Artistic,
     /// «Размытие» как в CSP.
     Average,
     Blur,
@@ -238,6 +241,8 @@ struct FilterDialog {
     lens_highlight: f64,
     /// Искажение: середина, радиус, сила, волна, полярный режим.
     distort: paint_core::filters::Distort,
+    pencil: paint_core::filters::Pencil,
+    artistic: paint_core::filters::Artistic,
     preview: bool,
     path: Vec<usize>,
     original: paint_core::tile::ColorMap,
@@ -2952,6 +2957,8 @@ impl PaintApp {
                 };
                 paint_core::filters::Distort { kind: k, center: (w / 2.0, h / 2.0), radius: w.min(h) * 0.4, amount, amplitude: 10.0, wavelength: 40.0, angle: 0.0, shape: 0, to_polar: true }
             },
+            pencil: paint_core::filters::Pencil { thickness: 3.0, darkness: 0.5, hatching: 0.3, color: false },
+            artistic: paint_core::filters::Artistic { radius: 4, levels: 6, edges: 0.6 },
             preview: true,
             path: self.selected.clone(),
             original: layer.pixels.clone(),
@@ -3012,6 +3019,8 @@ impl PaintApp {
             }
             FilterKind::Smoothing => paint_core::filters::smoothing(&f.original, self.doc.width, self.doc.height, &amount),
             FilterKind::Lens => paint_core::filters::lens_blur(&f.original, self.doc.width, self.doc.height, f.lens_radius, f.lens_sides, f.lens_highlight, &amount),
+            FilterKind::Pencil => paint_core::filters::pencil_drawing(&f.original, self.doc.width, self.doc.height, f.pencil, &amount),
+            FilterKind::Artistic => paint_core::filters::artistic(&f.original, self.doc.width, self.doc.height, f.artistic, &amount),
             FilterKind::Distort(_) => paint_core::filters::distort(&f.original, self.doc.width, self.doc.height, &f.distort, &amount),
         }
     }
@@ -3733,6 +3742,8 @@ impl PaintApp {
                         ("Мозаика…", FilterKind::Mosaic),
                         ("Кристаллизация…", FilterKind::Crystallize),
                         ("Ретро-плёнка…", FilterKind::RetroFilm),
+                        ("Карандашный рисунок…", FilterKind::Pencil),
+                        ("Художественный…", FilterKind::Artistic),
                     ] {
                         if ui.button(tr(item)).clicked() {
                             self.open_filter(kind);
@@ -6546,6 +6557,8 @@ impl PaintApp {
                 FilterKind::Spin => tr("Размытие вращением"),
                 FilterKind::Smoothing => tr("Сглаживание краёв"),
                 FilterKind::Lens => tr("Размытие линзы"),
+                FilterKind::Pencil => tr("Карандашный рисунок"),
+                FilterKind::Artistic => tr("Художественный"),
                 FilterKind::Distort(k) => {
                     use paint_core::filters::DistortKind as D;
                     tr(match k {
@@ -6634,6 +6647,33 @@ impl PaintApp {
                                     ch |= ui.radio_value(&mut f.spin_dir, i as u8, *n).changed();
                                 }
                             });
+                            ui.end_row();
+                        }
+                        FilterKind::Pencil => {
+                            let p = &mut f.pencil;
+                            ui.label(tr("Толщина линий:"));
+                            ch |= ui.add(egui::Slider::new(&mut p.thickness, 1.0..=20.0).suffix(" px")).changed();
+                            ui.end_row();
+                            ui.label(tr("Темнота:"));
+                            ch |= ui.add(egui::Slider::new(&mut p.darkness, 0.0..=1.0)).changed();
+                            ui.end_row();
+                            ui.label(tr("Штриховка:"));
+                            ch |= ui.add(egui::Slider::new(&mut p.hatching, 0.0..=1.0)).changed();
+                            ui.end_row();
+                            ui.label("");
+                            ch |= ui.checkbox(&mut p.color, tr("Оставить цвет")).changed();
+                            ui.end_row();
+                        }
+                        FilterKind::Artistic => {
+                            let a = &mut f.artistic;
+                            ui.label(tr("Мазок:"));
+                            ch |= ui.add(egui::Slider::new(&mut a.radius, 1..=12).suffix(" px")).changed();
+                            ui.end_row();
+                            ui.label(tr("Уровни яркости:"));
+                            ch |= ui.add(egui::Slider::new(&mut a.levels, 1..=16).custom_formatter(|v, _| if v < 2.0 { tr("нет").to_string() } else { format!("{v}") })).changed();
+                            ui.end_row();
+                            ui.label(tr("Контуры:"));
+                            ch |= ui.add(egui::Slider::new(&mut a.edges, 0.0..=1.0)).changed();
                             ui.end_row();
                         }
                         FilterKind::Distort(k) => {

@@ -639,3 +639,17 @@ S-кривая = Curva en S
 Синус = Seno
 Прямоугольные → полярные = Rectangulares → polares
 Полярные → прямоугольные = Polares → rectangulares
+
+# Карандашный рисунок и Художественный (0.8.36)
+Карандашный рисунок… = Dibujo a lápiz…
+Художественный… = Artístico…
+Карандашный рисунок = Dibujo a lápiz
+Художественный = Artístico
+Толщина линий: = Grosor de línea:
+Темнота: = Oscuridad:
+Штриховка: = Sombreado:
+Оставить цвет = Mantener el color
+Мазок: = Trazo:
+Уровни яркости: = Niveles de brillo:
+нет = ninguno
+Контуры: = Contornos:

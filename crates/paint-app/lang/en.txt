@@ -640,3 +640,17 @@ S-кривая = S-Curve Gradation
 Синус = Sine
 Прямоугольные → полярные = Rectangular → polar
 Полярные → прямоугольные = Polar → rectangular
+
+# Карандашный рисунок и Художественный (0.8.36)
+Карандашный рисунок… = Pencil Drawing…
+Художественный… = Artistic…
+Карандашный рисунок = Pencil Drawing
+Художественный = Artistic
+Толщина линий: = Line thickness:
+Темнота: = Darkness:
+Штриховка: = Hatching:
+Оставить цвет = Keep color
+Мазок: = Stroke:
+Уровни яркости: = Brightness levels:
+нет = none
+Контуры: = Outlines:

@@ -43,7 +43,26 @@ fn filters_to_png() {
         ("ripple", distort(&grid, w, h, &Distort { kind: DistortKind::Ripple, ..d }, &all)),
         ("wave", distort(&grid, w, h, &Distort { kind: DistortKind::Wave, ..d }, &all)),
         ("polar", distort(&grid, w, h, &Distort { kind: DistortKind::Polar, ..d }, &all)),
+        ("pencil", pencil_drawing(&src, w, h, Pencil { thickness: 3.0, darkness: 0.5, hatching: 0.6, color: false }, &all)),
+        ("pencil-color", pencil_drawing(&grid, w, h, Pencil { thickness: 2.0, darkness: 0.3, hatching: 0.0, color: true }, &all)),
+        ("artistic", artistic(&src, w, h, Artistic { radius: 4, levels: 5, edges: 0.6 }, &all)),
     ]);
+    // своя картинка (SOSAI_FILTERS_IN, PNG) — для стилизации
+    let mine = std::env::var_os("SOSAI_FILTERS_IN").map(|p| {
+        let (iw, ih, rgba) = paint_core::io::load_png(std::path::Path::new(&p)).unwrap();
+        let mut m = ColorMap::new();
+        for (i, c) in rgba.as_chunks::<4>().0.iter().enumerate() {
+            m.set((i % iw as usize) as i32, (i / iw as usize) as i32, from_rgba8([c[0], c[1], c[2], c[3]]));
+        }
+        let pen = Pencil { thickness: 3.0, darkness: 0.5, hatching: 0.5, color: false };
+        let art = Artistic { radius: 4, levels: 6, edges: 0.6 };
+        for (name, m) in [("in-pencil", pencil_drawing(&m, iw, ih, pen, &all)), ("in-artistic", artistic(&m, iw, ih, art, &all))] {
+            let mut doc = paint_core::Document::new(iw, ih);
+            doc.layers[0].pixels = m;
+            paint_core::io::save_png(&dir.join(format!("{name}.png")), iw, ih, &doc.flatten()).unwrap();
+        }
+    });
+    let _ = mine;
     for (name, m) in outs {
         let mut doc = paint_core::Document::new(w, h);
         doc.layers[0].pixels = m;
