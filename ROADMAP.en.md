@@ -74,7 +74,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
 - [x] Curves of linework and shape layers from `.sai2` are saved as they were (byte for byte); brushes do not paint on such layers, “Rasterize Layer” makes them normal
 
-### 0.9 — brushes in full, text and rulers (current version 0.9.11)
+### 0.9 — brushes in full, text and rulers (current version 0.9.12)
 - [x] Brush forms and textures (`blotmap`, `brushtex`) — from SAI's code, checked against live SAI
 - [x] Bristle brush form (`bristle`) after SAI's code; band width and stroke ends checked against the live SAI
 - [x] Marker at light pressure — as in SAI: its own compositing from SAI's code, paint amount from live SAI
@@ -120,7 +120,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] “New View” — a second view of the same canvas in a tab (0.8.37)
 - [x] Layer outline (inside, centre, outside, canvas edges)
 - [x] Layer menu as in SAI: “Merge Visible Layers”, “Rotate Layer 90°”, “Layer Property…” — after the live SAI
-- [x] Binary pen: points by SAI's code — stairs at slope 0.2 match SAI; at 0.4 SAI adds a point on every other stair — not found yet
+- [x] Binary pen: points by SAI's code — stairs at slopes 0.2 and 0.4 and line ends match SAI (0.9.12)
 - [x] PSD: opening 16-bit files and layer masks, ZIP compression, grayscale
 - [x] Custom tools in the grid: right-click an empty cell to add a tool of the needed kind; duplicate, delete, property (name, second line), as in SAI
 - [x] Edit: cut, copy, paste (as a new layer), copy by selection bounds; new canvas from the clipboard — system clipboard

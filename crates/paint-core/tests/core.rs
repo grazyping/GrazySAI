@@ -1211,3 +1211,48 @@ fn huge_brush_speed() {
         }
     }
 }
+
+/// Живая SAI 2017, двоичное перо 1 px, мышью (точка холста — середина пикселя под мышью), снято
+/// 16.10.2026. Наклон 0,4 из (14, 20): ряды по 2, 2, затем 3 и 2 по очереди, вплотную; одинаково
+/// при шаге мыши (5, 2), (10, 4) и одним прыжком. Последний пиксель (точка отпускания) SAI не
+/// ставит: горизонталь 14→64 — до 63, вертикаль 100→150 — до 149, наклон 0,2 кончается рядом из 2.
+#[test]
+fn binary_pen_lines_like_sai() {
+    let run = |x0: f32, y0: f32, step: (f32, f32), n: usize| {
+        let mut s = Stroke::new(BrushParams { binary: true, size: 1.0, size_by_pressure: false, ..Default::default() });
+        for i in 0..=n {
+            s.add_point(InputPoint { x: x0 + i as f32 * step.0, y: y0 + i as f32 * step.1, pressure: 1.0 });
+        }
+        s
+    };
+    let rows = |s: &Stroke, ys: std::ops::Range<i32>| -> Vec<(i32, i32, usize)> {
+        ys.filter_map(|y| {
+            let xs: Vec<i32> = (0..220).filter(|&x| s.mask.get(x, y) > 0).collect();
+            (!xs.is_empty()).then(|| (y, xs[0], xs.len()))
+        })
+        .collect()
+    };
+    let mut sai = vec![(20, 14, 2), (21, 16, 2)];
+    let mut x = 18;
+    for y in 22..80 {
+        let n = if y % 2 == 0 { 3 } else { 2 };
+        sai.push((y, x, n));
+        x += n as i32;
+    }
+    sai.push((80, 163, 1));
+    for (step, n) in [((5.0f32, 2.0f32), 30), ((10.0, 4.0), 15), ((150.0, 60.0), 1)] {
+        assert_eq!(rows(&run(14.5, 20.5, step, n), 15..90), sai, "наклон 0,4, шаг {step:?}");
+    }
+    // горизонталь и вертикаль: конец не ставится
+    assert_eq!(rows(&run(14.5, 30.5, (5.0, 0.0), 10), 25..35), vec![(30, 14, 50)]);
+    let v = run(14.5, 100.5, (0.0, 5.0), 10);
+    let ys: Vec<i32> = (90..170).filter(|&y| v.mask.get(14, y) > 0).collect();
+    assert_eq!((ys[0], *ys.last().unwrap(), ys.len()), (100, 149, 50));
+    // наклон 0,2: первый ряд 3, дальше по 5, последний 2
+    let mut sai = vec![(50, 14, 3)];
+    for y in 51..70 {
+        sai.push((y, 17 + (y - 51) * 5, 5));
+    }
+    sai.push((70, 112, 2));
+    assert_eq!(rows(&run(14.5, 50.5, (5.0, 1.0), 20), 45..75), sai, "наклон 0,2");
+}

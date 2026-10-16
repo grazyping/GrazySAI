@@ -7520,8 +7520,10 @@ app.open_canvas_dialog(d == "resolution")
             }
         } else if !panning {
             let (pressure, eraser_end) = self.pressure();
+            // точка пера — середина пикселя экрана под ним, как в SAI (позиция указателя — угол)
+            let half = Vec2::splat(0.5 / self.ppp);
             let point = |p: Pos2, zoom: f32, offset: Vec2| {
-                let c = to_canvas(p, zoom, offset);
+                let c = to_canvas(p + half, zoom, offset);
                 InputPoint {
                     x: c.x,
                     y: c.y,

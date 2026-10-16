@@ -501,13 +501,20 @@ impl Stroke {
             self.last = Some(p);
             return;
         }
+        // Двоичное перо, как SAI 2017 (сверено вживую): путь проходится до точки на 1 px раньше
+        // текущей, остаток — вместе со следующим отрезком; так последний пиксель штриха (у точки
+        // отрыва) не ставится, как у SAI.
+        let end = if self.params.binary { len - 1.0 } else { len };
+        if end <= 0.0 {
+            return;
+        }
         let mut pos = 0.0;
         let mut pressure = prev.pressure;
         loop {
             // шаг мог уменьшиться (нажим упал) — тогда следующий отпечаток сразу
             let need = (self.step_at(pressure) - self.carry).max(0.0);
-            if pos + need > len {
-                self.carry += len - pos;
+            if pos + need > end {
+                self.carry += end - pos;
                 break;
             }
             pos += need;
@@ -517,7 +524,12 @@ impl Stroke {
             self.carry = 0.0;
         }
         self.flush_dabs();
-        self.last = Some(p);
+        self.last = Some(if end < len {
+            let t = end / len;
+            InputPoint { x: prev.x + dx * t, y: prev.y + dy * t, pressure: prev.pressure + (p.pressure - prev.pressure) * t }
+        } else {
+            p
+        });
     }
 
     /// Двоичное перо SAI 2017: от прошлой точки к текущей берутся пересечения

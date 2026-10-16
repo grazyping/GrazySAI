@@ -437,10 +437,12 @@ one. The defaults are below.
 
 ## How it still differs from SAI
 
-The full list is in [ROADMAP.en.md](../ROADMAP.en.md). The main points:
-- No second view of the same canvas in a tab (“New View”) yet; perspective rulers are saved but
-  not shown; the thumbnail for SAI's file browser is not written; at some slopes the binary pen
-  adds fewer stair pixels than SAI.
+A feature-by-feature comparison is in [docs/32-sai-comparison.md](32-sai-comparison.md). The main
+points:
+- the perspective ruler is our own (1–3 vanishing points, not a layer, no grid) and is not saved;
+- Water Color with “Amplify Density” is fitted to measurements, not taken from SAI's code;
+- folder marks for visibility are not saved in the file;
+- filters beyond SAI 2017's three working ones are our own, as in Clip Studio Paint.
 
 ## If something is wrong
 
