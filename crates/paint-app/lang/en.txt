@@ -535,3 +535,20 @@ S-кривая = S-Curve Gradation
 Без настроек — OK применяет. = No settings — OK applies.
 Сила: = Strength:
 Порог: = Threshold:
+
+# Фильтры «Коррекция» (0.8.32)
+Коррекция = Correction
+Удаление пыли… = Remove Dust…
+Изменение толщины линий… = Adjust Line Width…
+Изменение толщины линий = Adjust Line Width
+Удаление пыли = Remove Dust
+Действие: = Process:
+Сузить = Narrow
+Утолщить = Thicken
+На сколько: = By:
+Размер пыли: = Dust size:
+Режим: = Mode:
+Убрать пыль с прозрачного = Remove dust from transparency
+Убрать пыль с белого фона = Remove dust from white background
+Залить дырки цветом вокруг = Fill transparent gaps with surrounding color
+Залить дырки основным цветом = Fill transparent gaps with main color

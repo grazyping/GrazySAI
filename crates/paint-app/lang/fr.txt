@@ -534,3 +534,20 @@ S-кривая = Courbe en S
 Без настроек — OK применяет. = Pas de réglages — OK applique.
 Сила: = Intensité :
 Порог: = Seuil :
+
+# Фильтры «Коррекция» (0.8.32)
+Коррекция = Correction
+Удаление пыли… = Supprimer la poussière…
+Изменение толщины линий… = Ajuster l'épaisseur des traits…
+Изменение толщины линий = Ajuster l'épaisseur des traits
+Удаление пыли = Supprimer la poussière
+Действие: = Action :
+Сузить = Amincir
+Утолщить = Épaissir
+На сколько: = De :
+Размер пыли: = Taille de la poussière :
+Режим: = Mode :
+Убрать пыль с прозрачного = Retirer la poussière sur la transparence
+Убрать пыль с белого фона = Retirer la poussière sur fond blanc
+Залить дырки цветом вокруг = Combler les trous avec la couleur voisine
+Залить дырки основным цветом = Combler les trous avec la couleur principale

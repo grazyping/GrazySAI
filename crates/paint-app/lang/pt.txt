@@ -534,3 +534,20 @@ S-кривая = Curva em S
 Без настроек — OK применяет. = Sem ajustes — OK aplica.
 Сила: = Intensidade:
 Порог: = Limiar:
+
+# Фильтры «Коррекция» (0.8.32)
+Коррекция = Correção
+Удаление пыли… = Remover poeira…
+Изменение толщины линий… = Ajustar espessura da linha…
+Изменение толщины линий = Ajustar espessura da linha
+Удаление пыли = Remover poeira
+Действие: = Ação:
+Сузить = Afinar
+Утолщить = Engrossar
+На сколько: = Em:
+Размер пыли: = Tamanho da poeira:
+Режим: = Modo:
+Убрать пыль с прозрачного = Remover poeira sobre transparência
+Убрать пыль с белого фона = Remover poeira sobre fundo branco
+Залить дырки цветом вокруг = Preencher buracos com a cor ao redor
+Залить дырки основным цветом = Preencher buracos com a cor principal

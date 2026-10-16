@@ -178,6 +178,9 @@ enum FilterKind {
     SharpenMore,
     /// «Нерезкая маска»: радиус, сила, порог.
     Unsharp,
+    /// «Изменение толщины линий» и «Удаление пыли» (Коррекция в CSP).
+    LineWidth,
+    Dust,
 }
 
 /// Открытый фильтр: настройки, слой и его исходные пиксели (для предпросмотра и отмены).
@@ -189,6 +192,11 @@ struct FilterDialog {
     /// Нерезкая маска: сила (1 = 100 %) и порог 0–255.
     amount: f64,
     threshold: u8,
+    /// Толщина линий: на сколько px и утолщить ли; пыль: размер (точек) и что делать (0–3).
+    width_px: u32,
+    thicken: bool,
+    dust_size: u32,
+    dust_mode: u8,
     preview: bool,
     path: Vec<usize>,
     original: paint_core::tile::ColorMap,
@@ -2871,6 +2879,10 @@ impl PaintApp {
             radius: if kind == FilterKind::Unsharp { 2.0 } else { 1.0 },
             amount: 1.0,
             threshold: 0,
+            width_px: 1,
+            thicken: true,
+            dust_size: 8,
+            dust_mode: 0,
             preview: true,
             path: self.selected.clone(),
             original: layer.pixels.clone(),
@@ -2898,6 +2910,18 @@ impl PaintApp {
                 paint_core::filters::sharpen(&f.original, self.doc.width, self.doc.height, s, &amount)
             }
             FilterKind::Unsharp => paint_core::filters::unsharp_mask(&f.original, self.doc.width, self.doc.height, f.radius, f.amount, f.threshold, &amount),
+            FilterKind::LineWidth => paint_core::filters::adjust_line_width(&f.original, self.doc.width, self.doc.height, f.width_px, f.thicken, &amount),
+            FilterKind::Dust => {
+                use paint_core::filters::DustMode;
+                let c = self.color();
+                let mode = match f.dust_mode {
+                    1 => DustMode::FromWhite,
+                    2 => DustMode::GapsSurrounding,
+                    3 => DustMode::GapsColor([c.r(), c.g(), c.b()]),
+                    _ => DustMode::FromTransparency,
+                };
+                paint_core::filters::remove_dust(&f.original, self.doc.width, self.doc.height, f.dust_size, mode, &amount)
+            }
         }
     }
 
@@ -3597,6 +3621,14 @@ impl PaintApp {
                     if ui.button(tr("Размытие по Гауссу…")).clicked() {
                         self.open_filter(FilterKind::GaussianBlur);
                         ui.close_menu();
+                    }
+                });
+                ui.menu_button(tr("Коррекция"), |ui| {
+                    for (item, kind) in [("Удаление пыли…", FilterKind::Dust), ("Изменение толщины линий…", FilterKind::LineWidth)] {
+                        if ui.button(tr(item)).clicked() {
+                            self.open_filter(kind);
+                            ui.close_menu();
+                        }
                     }
                 });
                 ui.menu_button(tr("Резкость"), |ui| {
@@ -6359,10 +6391,12 @@ impl PaintApp {
                 FilterKind::Sharpen => tr("Резкость"),
                 FilterKind::SharpenMore => tr("Сильная резкость"),
                 FilterKind::Unsharp => tr("Нерезкая маска"),
+                FilterKind::LineWidth => tr("Изменение толщины линий"),
+                FilterKind::Dust => tr("Удаление пыли"),
             };
             let mut open = true;
             egui::Window::new(title).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
-                let before = (f.hs, f.bc, f.radius, f.preview, f.amount, f.threshold);
+                let before = (f.hs, f.bc, f.radius, f.preview, f.amount, f.threshold, (f.width_px, f.thicken, f.dust_size, f.dust_mode));
                 egui::Grid::new("filter").num_columns(2).show(ui, |ui| {
                     match f.kind {
                         FilterKind::HueSaturation => {
@@ -6399,6 +6433,34 @@ impl PaintApp {
                             ui.label(tr("Без настроек — OK применяет."));
                             ui.end_row();
                         }
+                        FilterKind::LineWidth => {
+                            ui.label(tr("Действие:"));
+                            ui.horizontal(|ui| {
+                                ui.radio_value(&mut f.thicken, false, tr("Сузить"));
+                                ui.radio_value(&mut f.thicken, true, tr("Утолщить"));
+                            });
+                            ui.end_row();
+                            ui.label(tr("На сколько:"));
+                            ui.add(egui::Slider::new(&mut f.width_px, 1..=20).suffix(" px"));
+                            ui.end_row();
+                        }
+                        FilterKind::Dust => {
+                            ui.label(tr("Размер пыли:"));
+                            ui.add(egui::Slider::new(&mut f.dust_size, 1..=400).logarithmic(true));
+                            ui.end_row();
+                            ui.label(tr("Режим:"));
+                            ui.vertical(|ui| {
+                                for (m, name) in [
+                                    (0u8, tr("Убрать пыль с прозрачного")),
+                                    (1, tr("Убрать пыль с белого фона")),
+                                    (2, tr("Залить дырки цветом вокруг")),
+                                    (3, tr("Залить дырки основным цветом")),
+                                ] {
+                                    ui.radio_value(&mut f.dust_mode, m, name);
+                                }
+                            });
+                            ui.end_row();
+                        }
                         FilterKind::Unsharp => {
                             ui.label(tr("Радиус:"));
                             ui.add(egui::Slider::new(&mut f.radius, 0.1..=50.0).step_by(0.1));
@@ -6424,7 +6486,7 @@ impl PaintApp {
                         finish = Some(false);
                     }
                 });
-                if before != (f.hs, f.bc, f.radius, f.preview, f.amount, f.threshold) {
+                if before != (f.hs, f.bc, f.radius, f.preview, f.amount, f.threshold, (f.width_px, f.thicken, f.dust_size, f.dust_mode)) {
                     f.dirty = true;
                 }
             });

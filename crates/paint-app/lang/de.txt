@@ -534,3 +534,20 @@ S-кривая = S-Kurve
 Без настроек — OK применяет. = Keine Einstellungen — OK wendet an.
 Сила: = Stärke:
 Порог: = Schwelle:
+
+# Фильтры «Коррекция» (0.8.32)
+Коррекция = Korrektur
+Удаление пыли… = Staub entfernen…
+Изменение толщины линий… = Linienbreite anpassen…
+Изменение толщины линий = Linienbreite anpassen
+Удаление пыли = Staub entfernen
+Действие: = Aktion:
+Сузить = Verschmälern
+Утолщить = Verdicken
+На сколько: = Um:
+Размер пыли: = Staubgröße:
+Режим: = Modus:
+Убрать пыль с прозрачного = Staub auf Transparenz entfernen
+Убрать пыль с белого фона = Staub auf weißem Hintergrund entfernen
+Залить дырки цветом вокруг = Lücken mit Umgebungsfarbe füllen
+Залить дырки основным цветом = Lücken mit Hauptfarbe füllen

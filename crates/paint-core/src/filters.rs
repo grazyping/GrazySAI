@@ -545,3 +545,191 @@ mod sharpen_tests {
         assert!(to_rgba8(sharp.get(10, 10))[0] > 178);
     }
 }
+
+/// «Изменение толщины линий» (как Adjust line width в Clip Studio Paint): `n` шагов, каждый берёт
+/// у точки и соседей ту, что непрозрачнее (`thicken`) или прозрачнее; шаги по очереди квадратом
+/// 3×3 и крестом, как расширение выделения (`selection::morph`).
+pub fn adjust_line_width(src: &ColorMap, w: u32, h: u32, n: u32, thicken: bool, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let Some((x0, y0, x1, y1)) = crate::selection::content_bounds(src) else { return src.clone() };
+    let pad = if thicken { n as i32 + 1 } else { 1 };
+    let (x0, y0) = ((x0 - pad).max(0), (y0 - pad).max(0));
+    let (x1, y1) = ((x1 + pad).min(w as i32), (y1 + pad).min(h as i32));
+    if x0 >= x1 || y0 >= y1 {
+        return src.clone();
+    }
+    let (bw, bh) = ((x1 - x0) as usize, (y1 - y0) as usize);
+    let mut buf: Vec<Px> = (0..bw * bh).map(|i| src.get(x0 + (i % bw) as i32, y0 + (i / bw) as i32)).collect();
+    let better = |a: Px, b: Px| if (b[3] > a[3]) == thicken && b[3] != a[3] { b } else { a };
+    for step in 0..n {
+        let prev = buf.clone();
+        let at = |x: isize, y: isize| -> Px {
+            if x < 0 || y < 0 || x >= bw as isize || y >= bh as isize {
+                [0; 4]
+            } else {
+                prev[y as usize * bw + x as usize]
+            }
+        };
+        let square = step % 2 == 0;
+        for (i, out) in buf.iter_mut().enumerate() {
+            let (x, y) = ((i % bw) as isize, (i / bw) as isize);
+            let mut v = at(x, y);
+            for dy in -1..=1isize {
+                for dx in -1..=1isize {
+                    if (dx, dy) != (0, 0) && (square || dx == 0 || dy == 0) {
+                        v = better(v, at(x + dx, y + dy));
+                    }
+                }
+            }
+            *out = v;
+        }
+    }
+    let mut out = src.clone();
+    for (i, &p) in buf.iter().enumerate() {
+        let (x, y) = (x0 + (i % bw) as i32, y0 + (i / bw) as i32);
+        let s = sel(x, y);
+        if s == 0 {
+            continue;
+        }
+        let old = src.get(x, y);
+        let n = if s >= ONE { p } else { mix(old, p, s) };
+        if n != old {
+            out.set(x, y, n);
+        }
+    }
+    out.tiles.retain(|_, t| t.0.iter().any(|p| p[3] != 0));
+    out
+}
+
+/// Что убирает «Удаление пыли».
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DustMode {
+    /// Мелкие пятна на прозрачном — стереть.
+    FromTransparency,
+    /// Мелкие небелые пятна на белом — сделать белыми.
+    FromWhite,
+    /// Мелкие прозрачные дырки — залить цветом вокруг.
+    GapsSurrounding,
+    /// Мелкие прозрачные дырки — залить основным цветом.
+    GapsColor([u8; 3]),
+}
+
+/// «Удаление пыли» (как Remove dust в Clip Studio Paint): связные (по 8 соседям) пятна площадью
+/// не больше `size` точек убираются или заливаются по `mode`.
+pub fn remove_dust(src: &ColorMap, w: u32, h: u32, size: u32, mode: DustMode, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let (w, h) = (w as usize, h as usize);
+    let px: Vec<Px> = (0..w * h).map(|i| src.get((i % w) as i32, (i / w) as i32)).collect();
+    // что считается «пятном»
+    let white = |p: Px| crate::pixel::to_rgba8(p).iter().take(3).all(|&c| c >= 240) || p[3] == 0;
+    let is_speck = |p: Px| match mode {
+        DustMode::FromTransparency => p[3] > 0,
+        DustMode::FromWhite => !white(p),
+        DustMode::GapsSurrounding | DustMode::GapsColor(_) => p[3] == 0,
+    };
+    let mut seen = vec![false; w * h];
+    let mut out = src.clone();
+    let mut stack = Vec::new();
+    let mut comp = Vec::new();
+    for start in 0..w * h {
+        if seen[start] || !is_speck(px[start]) {
+            continue;
+        }
+        comp.clear();
+        stack.push(start);
+        seen[start] = true;
+        let mut touches_edge = false;
+        while let Some(i) = stack.pop() {
+            comp.push(i);
+            let (x, y) = ((i % w) as isize, (i / w) as isize);
+            for dy in -1..=1isize {
+                for dx in -1..=1isize {
+                    let (nx, ny) = (x + dx, y + dy);
+                    if nx < 0 || ny < 0 || nx >= w as isize || ny >= h as isize {
+                        touches_edge = true;
+                        continue;
+                    }
+                    let j = ny as usize * w + nx as usize;
+                    if !seen[j] && is_speck(px[j]) {
+                        seen[j] = true;
+                        stack.push(j);
+                    }
+                }
+            }
+        }
+        // дырка у края холста — не дырка
+        let gap = matches!(mode, DustMode::GapsSurrounding | DustMode::GapsColor(_));
+        if comp.len() > size as usize || (gap && touches_edge) {
+            continue;
+        }
+        let fill: Option<Px> = match mode {
+            DustMode::FromTransparency => Some([0; 4]),
+            DustMode::FromWhite => Some(crate::pixel::from_rgba8([255, 255, 255, 255])),
+            DustMode::GapsColor(c) => Some(crate::pixel::from_rgba8([c[0], c[1], c[2], 255])),
+            DustMode::GapsSurrounding => {
+                // средний цвет соседей дырки
+                let mut sum = [0u64; 4];
+                let mut n = 0u64;
+                for &i in &comp {
+                    let (x, y) = ((i % w) as isize, (i / w) as isize);
+                    for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                        let (nx, ny) = (x + dx, y + dy);
+                        if nx >= 0 && ny >= 0 && nx < w as isize && ny < h as isize {
+                            let p = px[ny as usize * w + nx as usize];
+                            if p[3] > 0 {
+                                for c in 0..4 {
+                                    sum[c] += p[c] as u64;
+                                }
+                                n += 1;
+                            }
+                        }
+                    }
+                }
+                (n > 0).then(|| sum.map(|v| (v / n) as u16))
+            }
+        };
+        let Some(fill) = fill else { continue };
+        for &i in &comp {
+            let (x, y) = ((i % w) as i32, (i / w) as i32);
+            let s = sel(x, y);
+            if s == 0 {
+                continue;
+            }
+            let old = px[i];
+            out.set(x, y, if s >= ONE { fill } else { mix(old, fill, s) });
+        }
+    }
+    out.tiles.retain(|_, t| t.0.iter().any(|p| p[3] != 0));
+    out
+}
+
+#[cfg(test)]
+mod correction_tests {
+    use super::*;
+    use crate::pixel::from_rgba8;
+
+    #[test]
+    fn line_width_and_dust() {
+        let black = from_rgba8([0, 0, 0, 255]);
+        let mut m = ColorMap::new();
+        for x in 5..35 {
+            m.set(x, 20, black);
+        }
+        m.set(30, 5, black); // пылинка
+        let thick = adjust_line_width(&m, 40, 40, 2, true, &|_, _| ONE);
+        assert_eq!((thick.get(10, 18)[3], thick.get(10, 23)[3]), (ONE as u16, 0));
+        let thin = adjust_line_width(&thick, 40, 40, 2, false, &|_, _| ONE);
+        assert_eq!((thin.get(10, 20)[3], thin.get(10, 19)[3]), (ONE as u16, 0));
+        let clean = remove_dust(&m, 40, 40, 4, DustMode::FromTransparency, &|_, _| ONE);
+        assert_eq!((clean.get(30, 5)[3], clean.get(10, 20)[3]), (0, ONE as u16));
+        // дырка в заливке закрывается цветом вокруг
+        let mut f = ColorMap::new();
+        for y in 0..10 {
+            for x in 0..10 {
+                if (x, y) != (5, 5) {
+                    f.set(x, y, from_rgba8([200, 0, 0, 255]));
+                }
+            }
+        }
+        let filled = remove_dust(&f, 10, 10, 3, DustMode::GapsSurrounding, &|_, _| ONE);
+        assert_eq!(crate::pixel::to_rgba8(filled.get(5, 5)), [200, 0, 0, 255]);
+    }
+}
