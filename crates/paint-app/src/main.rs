@@ -1093,8 +1093,15 @@ struct DisplayTile {
     /// Готовые для текстуры точки (перевод из RGBA — в потоках пересчёта, не в кадре).
     pixels: Vec<Color32>,
     texture: Option<egui::TextureHandle>,
-    stale: bool,
+    /// Какие кусочки TILE×TILE изменились с прошлой загрузки (бит на кусочек, строками): на
+    /// видеокарту идут только они (`set_partial`), а не вся плитка.
+    dirty: u64,
+    /// Фильтр, с которым текстура загружена: сменился масштаб — загрузить заново.
+    options: Option<egui::TextureOptions>,
 }
+
+/// Кусочков TILE×TILE в стороне экранной плитки.
+const SUB: i32 = DT / TILE;
 
 struct PaintApp {
     doc: Document,
@@ -3200,7 +3207,8 @@ app.open_canvas_dialog(d == "resolution")
                 let tile = self.display.entry(dkey).or_insert_with(|| DisplayTile {
                     pixels: vec![Color32::TRANSPARENT; (DT * DT) as usize],
                     texture: None,
-                    stale: true,
+                    dirty: 0,
+                    options: None,
                 });
                 let (ox, oy) = (key.0 * TILE - dkey.0 * DT, key.1 * TILE - dkey.1 * DT);
                 for y in 0..TILE {
@@ -3208,7 +3216,7 @@ app.open_canvas_dialog(d == "resolution")
                     let src = (y * TILE) as usize;
                     tile.pixels[dst..dst + TILE as usize].copy_from_slice(&rgba[src..src + TILE as usize]);
                 }
-                tile.stale = true;
+                tile.dirty |= 1 << ((oy / TILE) * SUB + ox / TILE);
             }
             if started.elapsed() > budget {
                 break;
@@ -7622,6 +7630,9 @@ app.open_canvas_dialog(d == "resolution")
         let shown = self.zoom * self.ppp;
         let options = if shown >= 2.0 || ((shown - 1.0).abs() < 1e-3 && vang == 0.0) {
             egui::TextureOptions::NEAREST
+        } else if shown < 0.99 && std::env::var_os("PAINT_NO_MIPMAP").is_none() {
+            // уменьшение — трилинейно по мипмапам: без мерцания и муара на мелких деталях
+            egui::TextureOptions { mipmap_mode: Some(egui::TextureFilter::Linear), ..egui::TextureOptions::LINEAR }
         } else {
             egui::TextureOptions::LINEAR
         };
@@ -7639,20 +7650,34 @@ app.open_canvas_dialog(d == "resolution")
             if !screen.intersects(rect) {
                 continue;
             }
-            if tile.stale || tile.texture.is_none() {
+            // больше половины кусочков изменилось — одна загрузка целиком дешевле многих мелких
+            let full = tile.texture.is_none() || tile.options != Some(options) || tile.dirty.count_ones() > (SUB * SUB / 2) as u32;
+            if full || tile.dirty != 0 {
                 let t0 = Instant::now();
-                let image = egui::ColorImage { size: [DT as usize, DT as usize], pixels: tile.pixels.clone() };
                 match &mut tile.texture {
-                    Some(t) => t.set(image, options),
+                    // изменились отдельные кусочки — только они (в 16 раз меньше данных на видеокарту)
+                    Some(t) if !full => {
+                        let n = TILE as usize;
+                        for k in 0..(SUB * SUB) as usize {
+                            if tile.dirty & (1 << k) == 0 {
+                                continue;
+                            }
+                            let (sx, sy) = ((k % SUB as usize) * n, (k / SUB as usize) * n);
+                            let pixels: Vec<Color32> = (0..n).flat_map(|y| tile.pixels[(sy + y) * DT as usize + sx..][..n].iter().copied()).collect();
+                            t.set_partial([sx, sy], egui::ColorImage { size: [n, n], pixels }, options);
+                        }
+                    }
+                    Some(t) => t.set(egui::ColorImage { size: [DT as usize, DT as usize], pixels: tile.pixels.clone() }, options),
                     None => {
                         tile.texture = Some(ui.ctx().load_texture(
                             format!("tile-{dx}-{dy}"),
-                            image,
+                            egui::ColorImage { size: [DT as usize, DT as usize], pixels: tile.pixels.clone() },
                             options,
                         ))
                     }
                 }
-                tile.stale = false;
+                tile.dirty = 0;
+                tile.options = Some(options);
                 if let Some(s) = &self.frame_stats {
                     s.borrow_mut().upload += t0.elapsed().as_secs_f32() * 1000.0;
                 }
