@@ -664,3 +664,7 @@ S-кривая = S-Curve Gradation
 # Кнопки панели слоёв (0.8.40)
 Линейка перспективы = Perspective Ruler
 Спрятать линейку = Hide Ruler
+
+# Форматы (0.8.43)
+WebP (без потерь) = WebP (lossless)
+OpenRaster (.ora, со слоями) = OpenRaster (.ora, with layers)

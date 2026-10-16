@@ -141,7 +141,7 @@ fn encode_planes(rgba: &[u8], w: usize, h: usize, order: &[usize]) -> Vec<Vec<u8
 }
 
 /// Пиксели слоя в рамке содержимого: (лево, верх, ширина, высота, RGBA прямой).
-fn layer_rgba(px: &ColorMap) -> (i32, i32, usize, usize, Vec<u8>) {
+pub(crate) fn layer_rgba(px: &ColorMap) -> (i32, i32, usize, usize, Vec<u8>) {
     let Some((x0, y0, x1, y1)) = paint_core::selection::content_bounds(px) else { return (0, 0, 0, 0, Vec::new()) };
     let (w, h) = ((x1 - x0) as usize, (y1 - y0) as usize);
     let mut out = vec![0u8; w * h * 4];

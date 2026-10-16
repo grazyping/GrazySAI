@@ -1121,7 +1121,17 @@ dependencies = [
  "moxcms",
  "num-traits",
  "png 0.18.1",
- "tiff",
+ "tiff 0.11.3",
+]
+
+[[package]]
+name = "image-webp"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "525e9ff3e1a4be2fbea1fdf0e98686a6d98b4d8f937e1bf7402245af1909e8c3"
+dependencies = [
+ "byteorder-lite",
+ "quick-error",
 ]
 
 [[package]]
@@ -1201,6 +1211,12 @@ dependencies = [
  "getrandom 0.4.3",
  "libc",
 ]
+
+[[package]]
+name = "jpeg-decoder"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00810f1d8b74be64b13dbf3db89ac67740615d6c891f0e7b6179326533011a07"
 
 [[package]]
 name = "jpeg-encoder"
@@ -1791,7 +1807,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1805,7 +1821,7 @@ dependencies = [
 
 [[package]]
 name = "paint-app"
-version = "0.8.42"
+version = "0.8.43"
 dependencies = [
  "arboard",
  "eframe",
@@ -1817,7 +1833,7 @@ dependencies = [
 
 [[package]]
 name = "paint-cli"
-version = "0.8.42"
+version = "0.8.43"
 dependencies = [
  "paint-core",
  "paint-formats",
@@ -1825,17 +1841,19 @@ dependencies = [
 
 [[package]]
 name = "paint-core"
-version = "0.8.42"
+version = "0.8.43"
 dependencies = [
+ "image-webp",
  "jpeg-encoder",
  "png 0.17.16",
+ "tiff 0.9.1",
  "zune-core 0.4.12",
  "zune-jpeg 0.4.21",
 ]
 
 [[package]]
 name = "paint-formats"
-version = "0.8.42"
+version = "0.8.43"
 dependencies = [
  "ab_glyph",
  "miniz_oxide 0.8.9",
@@ -1874,7 +1892,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pen-test"
-version = "0.8.42"
+version = "0.8.43"
 dependencies = [
  "paint-core",
  "windows-sys 0.59.0",
@@ -2472,6 +2490,17 @@ dependencies = [
 
 [[package]]
 name = "tiff"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba1310fcea54c6a9a4fd1aad794ecc02c31682f6bfbecdf460bf19533eed1e3e"
+dependencies = [
+ "flate2",
+ "jpeg-decoder",
+ "weezl",
+]
+
+[[package]]
+name = "tiff"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b63feaf3343d35b6ca4d50483f94843803b0f51634937cc2ec519fc32232bc52"
@@ -2626,7 +2655,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "virtual-tablet"
-version = "0.8.42"
+version = "0.8.43"
 dependencies = [
  "libc",
 ]

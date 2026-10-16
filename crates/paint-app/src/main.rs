@@ -68,6 +68,25 @@ const SIZES: [f32; 50] = [
     3000.0, 3500.0, 4000.0, 5000.0,
 ];
 
+/// Пункты «Файл → Экспорт»: сведённые картинки, затем форматы со слоями.
+const EXPORTS: [(&str, &str); 9] = [
+    ("PNG (сведённая картинка)", "png"),
+    ("JPEG (качество 92)", "jpg"),
+    ("BMP", "bmp"),
+    ("TGA", "tga"),
+    ("TIFF", "tiff"),
+    ("WebP (без потерь)", "webp"),
+    ("QOI", "qoi"),
+    ("PSD (со слоями)", "psd"),
+    ("OpenRaster (.ora, со слоями)", "ora"),
+];
+
+/// Расширение формата со слоями, в который программа сохраняет (`sai2`, `ora`, `psd`).
+fn layered_ext(path: &std::path::Path) -> Option<&'static str> {
+    let e = path.extension()?.to_string_lossy().to_ascii_lowercase();
+    ["sai2", "ora", "psd"].into_iter().find(|x| *x == e)
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Tool {
     /// Кисть из сетки инструментов слоя (`PaintApp::brush`).
@@ -1931,10 +1950,12 @@ impl PaintApp {
 
     fn open(&mut self, path: PathBuf) {
         let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
-        if matches!(ext.as_str(), "psd" | "png" | "jpg" | "jpeg") {
+        if ext == "psd" || ext == "ora" || paint_core::io::IMAGE_EXTS.contains(&ext.as_str()) {
             let started = Instant::now();
             let loaded = if ext == "psd" {
                 paint_formats::psd::load(&path)
+            } else if ext == "ora" {
+                paint_formats::ora::load(&path)
             } else {
                 paint_core::io::load_image(&path).map(|(w, h, rgba)| Document::from_rgba(w, h, &rgba))
             };
@@ -2223,7 +2244,7 @@ impl PaintApp {
             self.finish_transform(true);
         }
         match self.file.clone() {
-            Some(f) if !self.had_vectors && f.extension().is_some_and(|e| e.eq_ignore_ascii_case("sai2")) => self.save_to(f),
+            Some(f) if !self.had_vectors && layered_ext(&f).is_some() => self.save_to(f),
             _ => self.ask_save_as(),
         }
     }
@@ -2234,7 +2255,7 @@ impl PaintApp {
             let stem = base.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
             base.with_file_name(format!("{stem}-paint-rs.sai2"))
         } else {
-            base.with_extension("sai2")
+            base.with_extension(layered_ext(&base).unwrap_or("sai2"))
         };
         self.save_path = suggested.display().to_string();
         if !self.native_dialog(files::Ask::SaveAs, &suggested) {
@@ -2276,7 +2297,10 @@ impl PaintApp {
                 self.open_path = p.display().to_string();
                 self.open(p);
             }
-            (files::Answer::Path(p), files::Ask::SaveAs) => self.save_to(files::with_ext(p, "sai2")),
+            (files::Answer::Path(p), files::Ask::SaveAs) => {
+                let ext = layered_ext(&p).unwrap_or("sai2");
+                self.save_to(files::with_ext(p, ext));
+            }
             (files::Answer::Path(p), files::Ask::Export(ext)) => self.export_to(files::with_ext(p, ext), ext),
             (files::Answer::Unavailable, files::Ask::Open) => self.show_open = true,
             (files::Answer::Unavailable, files::Ask::SaveAs) => self.show_save_as = true,
@@ -2293,7 +2317,12 @@ impl PaintApp {
             self.finish_transform(true);
         }
         let started = Instant::now();
-        match paint_formats::sai2_write::save(&self.doc, &path) {
+        let result: Result<(), Box<dyn std::error::Error>> = match layered_ext(&path) {
+            Some("ora") => paint_formats::ora::save(&self.doc, &path),
+            Some("psd") => paint_formats::psd::save(&self.doc, &path),
+            _ => paint_formats::sai2_write::save(&self.doc, &path).map_err(Into::into),
+        };
+        match result {
             Ok(()) => {
                 self.status = trf("Сохранено: {0} (за {1} с)", &[&path.display(), &format!("{:.1}", started.elapsed().as_secs_f32())]);
                 self.remember_recent(&path);
@@ -2319,10 +2348,6 @@ impl PaintApp {
         }
     }
 
-    fn export_png(&mut self) {
-        self.export_as("png");
-    }
-
     /// Куда экспорт по умолчанию: рядом с файлом или в рабочую папку.
     fn export_default(&self, ext: &str) -> PathBuf {
         match &self.file {
@@ -2332,10 +2357,10 @@ impl PaintApp {
     }
 
     fn export_to(&mut self, path: PathBuf, ext: &str) {
-        let result = match ext {
+        let result: Result<(), Box<dyn std::error::Error>> = match ext {
             "psd" => paint_formats::psd::save(&self.doc, &path),
-            "png" => paint_core::io::save_png(&path, self.doc.width, self.doc.height, &self.doc.flatten()),
-            _ => paint_core::io::save_jpeg(&path, self.doc.width, self.doc.height, &self.doc.flatten(), 92),
+            "ora" => paint_formats::ora::save(&self.doc, &path),
+            _ => paint_core::io::save_image(&path, self.doc.width, self.doc.height, &self.doc.flatten()),
         };
         self.status = match result {
             Ok(()) => trf("Сохранено: {0}", &[&path.display()]),
@@ -3501,17 +3526,14 @@ impl PaintApp {
                     ui.close_menu();
                 }
                 ui.menu_button(tr("Экспорт"), |ui| {
-                    if ui.button(tr("PNG (сведённая картинка)")).clicked() {
-                        self.export_png();
-                        ui.close_menu();
-                    }
-                    if ui.button(tr("JPEG (качество 92)")).clicked() {
-                        self.export_as("jpg");
-                        ui.close_menu();
-                    }
-                    if ui.button(tr("PSD (со слоями)")).clicked() {
-                        self.export_as("psd");
-                        ui.close_menu();
+                    for (label, ext) in EXPORTS {
+                        if ext == "psd" {
+                            ui.separator();
+                        }
+                        if ui.button(tr(label)).clicked() {
+                            self.export_as(ext);
+                            ui.close_menu();
+                        }
                     }
                 });
                 let mut pick = None;
@@ -7267,7 +7289,8 @@ impl PaintApp {
                 }
                 ui.horizontal(|ui| {
                     if ui.button(if exists { tr("Заменить") } else { tr("Сохранить") }).clicked() && !self.save_path.trim().is_empty() {
-                        self.save_to(path.with_extension("sai2"));
+                        let ext = layered_ext(&path).unwrap_or("sai2");
+                        self.save_to(path.with_extension(ext));
                         self.show_save_as = false;
                     }
                     if ui.button(tr("Отмена")).clicked() {

@@ -322,8 +322,12 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 | Format | Open | Save |
 |---|---|---|
 | `.sai2` | Yes (Ctrl+O) | Ctrl+S, Shift+Ctrl+S (in the same format as SAI 2) |
-| `.psd` | Yes (RGB and grayscale, 8 and 16 bit, layer masks) | “File → Export → PSD”: with layers, folders, modes |
-| `.png`, `.jpg` | Yes, as one layer | “File → Export → PNG / JPEG” (flattened image) |
+| `.psd` | Yes (RGB and grayscale, 8 and 16 bit, layer masks) | “Save As” or “Export → PSD”: with layers, folders, modes |
+| `.ora` (OpenRaster — Krita, GIMP, MyPaint) | Yes, with layers and folders | “Save As” or “Export → OpenRaster”: layers, folders, modes, opacity |
+| `.png`, `.jpg`, `.bmp`, `.tga`, `.tiff`, `.webp`, `.qoi` | Yes, as one layer | “File → Export” (flattened image; JPEG at quality 92, WebP lossless) |
+
+Masks, paper, layer effects and curves do not go into `.psd` and `.ora` (the layer is written as
+pixels); other programs show a clipped layer in `.ora` as a normal one.
 
 Every canvas has its own tab at the bottom of the window, as in SAI: “New”, “Open” and “Create
 Canvas from Clipboard” open a new tab (an untouched empty canvas is replaced). Click a tab to

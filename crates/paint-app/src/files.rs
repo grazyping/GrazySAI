@@ -47,18 +47,22 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
         Ask::Open => (
             tr("Открыть"),
             vec![
-                (tr("Рисунки").to_string(), vec!["sai2", "psd", "png", "jpg", "jpeg"]),
+                (tr("Рисунки").to_string(), vec!["sai2", "psd", "ora", "png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi"]),
                 (tr("Все файлы").to_string(), vec!["*"]),
             ],
         ),
-        Ask::SaveAs => (tr("Сохранить как"), vec![("SAI 2 (.sai2)".to_string(), vec!["sai2"])]),
+        Ask::SaveAs => (
+            tr("Сохранить как"),
+            vec![("SAI 2 (.sai2)".to_string(), vec!["sai2"]), ("OpenRaster (.ora)".to_string(), vec!["ora"]), ("Photoshop (.psd)".to_string(), vec!["psd"])],
+        ),
         Ask::Export(ext) => (
             tr("Экспорт"),
             vec![(
                 match *ext {
-                    "png" => "PNG (.png)".to_string(),
                     "jpg" => "JPEG (.jpg)".to_string(),
-                    _ => "Photoshop (.psd)".to_string(),
+                    "psd" => "Photoshop (.psd)".to_string(),
+                    "ora" => "OpenRaster (.ora)".to_string(),
+                    e => format!("{} (.{e})", e.to_ascii_uppercase()),
                 },
                 vec![*ext],
             )],

@@ -663,3 +663,7 @@ S-кривая = Courbe en S
 # Кнопки панели слоёв (0.8.40)
 Линейка перспективы = Règle de perspective
 Спрятать линейку = Masquer la règle
+
+# Форматы (0.8.43)
+WebP (без потерь) = WebP (sans perte)
+OpenRaster (.ora, со слоями) = OpenRaster (.ora, avec calques)

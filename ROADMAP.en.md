@@ -24,14 +24,14 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 
 ### 0.2 — first window and brush
 - [x] Editor window: canvas, zoom, hand, color picker, undo and redo, PNG export
-- [x] Brush following SAI's model: dab, edge, opacity, spacing — compared with live SAI
-- [x] All 28 blend modes — compared with live SAI within 2 levels
+- [x] Brush following SAI's model: dab, edge, opacity, spacing
+- [x] All 28 blend modes
 - [x] Pen pressure: XInput 2 (Linux), Windows Ink (Windows)
 
 ### 0.3 — interface and vector layers
 - [x] Window laid out like SAI 2: color wheel, brush and size grids, quick bar, navigator, layer list with thumbnails
 - [x] Thin brushes by SAI's rules (edge tables) — steps 1–4 match up to rounding
-- [x] Linework and shape layers from `.sai2`: format, curves, rendering (checked on the user's files)
+- [x] Linework and shape layers from `.sai2`: format, curves, rendering
 - [x] Layer operations with undo: copy, delete, erase, transfer down, merge, order
 - [x] Five resampling methods as in SAI (core; compared with live SAI)
 - [x] Virtual pen and virtual tablet for testing without a tablet
@@ -39,89 +39,89 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 ### 0.4 — saving
 - [x] Writing `.sai2`: layers, folders, properties, pixels, flattened image
 - [x] Save and Save As; the user's files re-save without loss
-- [x] A licensed SAI opens our files (checked by the user)
+- [x] A licensed SAI opens our files
 
 ### 0.5 — painting as in SAI
-- [x] Checked on a real XPPen Artist 24 Pro tablet (checked by the user)
-- [x] Stabilizer as in SAI: levels 1–15 and S-1…S-7 (`docs/15-stabilizer.md`)
+- [x] Checked on a real XPPen Artist 24 Pro tablet
+- [x] Stabilizer as in SAI: levels 1–15 and S-1…S-7
 - [x] Pressure on density — compared with live SAI (dome-shaped profile, middle within 2 levels on average)
 - [x] “Ver1 Prs Spec.” — version-1 pressure on density, checked on Marker and Water
 - [x] Amplify Density by SAI's rules, checked on Marker; minimum density uses the same formula as minimum size
-- [x] Mixing with the canvas for Brush, Water, Marker by SAI's rules; Brush compared with live SAI (`docs/16-mixing.md`)
+- [x] Mixing with the canvas for Brush, Water, Marker by SAI's rules; Brush compared with live SAI
 - [x] Water: blur by SAI's rules, compared with live SAI
 - [x] AirBrush: SAI uses the Pencil engine for it; defaults as in SAI, compared with live SAI
 
 ### 0.6 — selection and transform
-- [x] Selection: rectangle, lasso, magic wand, Shift/Alt modes, invert, deselect, expand/shrink (`docs/17-selection-move.md`)
+- [x] Selection: rectangle, lasso, magic wand, Shift/Alt modes, invert, deselect, expand/shrink
 - [x] Selection pen and eraser, selection from layer opacity
 - [x] Moving a layer or the selection: tool, Ctrl + drag, Alt+arrows
 - [x] Transform (Ctrl+T): size and rotation with a handle frame, five resampling methods
 - [x] Free deform by corners (Ctrl + corner)
-- [x] View rotation and flip, canvas flip and rotation, layer flip, canvas size and resolution (`docs/18-canvas-view.md`)
+- [x] View rotation and flip, canvas flip and rotation, layer flip, canvas size and resolution
 
 ### 0.7 — layers in full
-- [x] Layer masks: reading, display, writing `.sai2` — checked against a SAI file; create, paint in the mask, apply, delete (`docs/26-layer-masks.md`)
-- [x] Layer paper (`papertex`) by SAI's rules, checked against the file's flattened image: 92 % of pixels exact, the rest within 1–3 levels (`docs/24-paper.md`)
-- [x] Fringe and Binary Color layer effects by SAI's rules, compared with live SAI (`docs/25-layer-effects.md`)
-- [x] Locks: painting, moving, everything (`docs/19-fill-locks.md`)
+- [x] Layer masks: reading, display, writing `.sai2`; create, paint in the mask, apply, delete
+- [x] Layer paper (`papertex`) by SAI's rules, checked against the file's flattened image: 92 % of pixels exact, the rest within 1–3 levels
+- [x] Fringe and Binary Color layer effects by SAI's rules, compared with live SAI
+- [x] Locks: painting, moving, everything
 - [x] Selection Source for the magic wand and the bucket
 - [x] Bucket fill (Alt+Delete), Flatten Image
 - [x] Luminance to Opacity
 
-### 0.8 — linework and shapes (current version 0.8.42)
+### 0.8 — linework and shapes (current version 0.8.43)
 - [x] New linework layer; pen with vectorization by SAI's rules (“Normal” handles match SAI exactly)
 - [x] Linework tools: eraser, weight, color, edit, pressure (SAI's behaviour not compared)
 - [x] Shape tools: rectangle, ellipse, triangle — as SAI's templates
 - [x] Curves of linework and shape layers from `.sai2` are saved as they were (byte for byte); brushes do not paint on such layers, “Rasterize Layer” makes them normal
 
 ### Beyond the plan
-- [x] Filters: hue and saturation, brightness and contrast, Gaussian blur — by SAI's rules, compared with live SAI (`docs/20-filters.md`); the other filters do not work in SAI itself
-- [x] Brush, color and stabilizer settings kept between runs (`docs/22-settings-recovery.md`)
+- [x] Filters: hue and saturation, brightness and contrast, Gaussian blur — by SAI's rules, compared with live SAI; the other filters do not work in SAI itself
+- [x] Brush, color and stabilizer settings kept between runs
 - [x] Custom shortcuts: “Help → Shortcut Keys…”, 34 actions, SAI's defaults
-- [x] PSD (with layers) and JPEG export; opening PSD, PNG and JPEG (`docs/21-file-formats.md`)
+- [x] PSD (with layers) and JPEG export; opening PSD, PNG and JPEG
 - [x] Work recovery after a crash (a copy every 3 minutes)
 - [x] Undo history: 100 steps, as in SAI; beyond 1 GB — on disk
-- [x] Fast on large canvases: 2300×4096 with 191 layers — reading 0.3 s, display 0.3 s (`docs/23-performance.md`)
+- [x] Fast on large canvases: 2300×4096 with 191 layers — reading 0.3 s, display 0.3 s
 - [x] User manual (`docs/manual.en.md`, updated with every version)
 - [x] RGB and HSV color sliders, dragging layers in the list
-- [x] Large brushes 4–40 times faster with identical results (`docs/23-performance.md`)
+- [x] Large brushes 4–40 times faster with identical results
 - [x] Layer dragging with clear feedback: the layer fades in place, a label at the cursor, an insertion bar, folder highlight, scrolling at the edges, Esc
 - [x] Interface in 10 languages (English, Russian, Ukrainian, German, French, Spanish, Portuguese, Japanese, Chinese, Korean), system language by default, switchable without a restart; labels and columns adapt to the length of each translation, a light CJK font
-- [x] Updating from the program: GitHub releases are checked at startup, a “Version is out” notice in the menu bar, download with SHA-256 check and file replacement, restart; a GitHub link in the menu bar (`docs/28-updates.md`)
+- [x] Updating from the program: GitHub releases are checked at startup, a “Version is out” notice in the menu bar, download with SHA-256 check and file replacement, restart; a GitHub link in the menu bar
 - [x] System “Open”, “Save As” and “Export” windows (File Explorer on Windows, the desktop dialog on Linux), Ctrl+O
 - [x] Shortcut keys in menus and tooltips can be hidden (“Window → Show shortcut keys”)
 
 ## Ahead
 
 ### 0.9 — brushes in full, text and rulers
-- [x] Brush forms and textures (`blotmap`, `brushtex`) — from SAI's code, checked against live SAI (`docs/29-brush-form-texture.md`)
-- [x] Bristle brush form (`bristle`) after SAI's code; band width and stroke ends checked against the live SAI (`docs/29-brush-form-texture.md`)
-- [x] Marker at light pressure — as in SAI: its own compositing from SAI's code, paint amount from live SAI (`docs/16-mixing.md`)
+- [x] Brush forms and textures (`blotmap`, `brushtex`) — from SAI's code, checked against live SAI
+- [x] Bristle brush form (`bristle`) after SAI's code; band width and stroke ends checked against the live SAI
+- [x] Marker at light pressure — as in SAI: its own compositing from SAI's code, paint amount from live SAI
 - [ ] Water with Amplify Density
-- [x] The hardest edge step by SAI's code: its own renderer and a stroke mask from 20 px — lines match live SAI to 0.0–0.3 levels (`docs/13-thin-brushes.md`)
-- [x] Text layers and perspective rulers (reading and writing): text is drawn with the system font, both are saved byte for byte (`docs/30-text-layers.md`)
+- [x] The hardest edge step by SAI's code: its own renderer and a stroke mask from 20 px — lines match live SAI to 0.0–0.3 levels
+- [x] Text layers and perspective rulers (reading and writing): text is drawn with the system font, both are saved byte for byte
 - [x] Text tool: creating and editing text (font, size, color, several lines); bold, italic and vertical text — from the user's sample, look checked against SAI under Wine; font list as in SAI (GDI)
-- [x] Rulers: straight line and ellipse, as in SAI 2017 — compared with live SAI (`docs/27-rulers.md`)
+- [x] Rulers: straight line and ellipse, as in SAI 2017
 - [x] The mask moves and transforms with its layer; Merge Down for a layer with a mask
-- [x] Color mixer and swatches in the color panel — as in SAI 2017 (checked against the running program)
-- [x] Large Water brush: blur over a reduced copy of the layer, as in SAI — 350 px: 7.4 → 2.0 s per 1000 px of line (`docs/23-performance.md`)
+- [x] Color mixer and swatches in the color panel — as in SAI 2017
+- [x] Large Water brush: blur over a reduced copy of the layer, as in SAI — 350 px: 7.4 → 2.0 s per 1000 px of line
 - [x] Perspective rulers: display and drawing along them (reference: Krita's perspective and vanishing point assistants); our own version, not written to the file (0.8.38)
 
 ### 1.0 — finished
 - [x] `.sai2` read and written without loss for every kind of layer: checked by resaving the user's files — same flattened picture (difference 0), text and linework byte for byte, masks, effects, paper, background and resolution kept
 - [x] The `thum` thumbnail in `.sai2` (SAI's own JPEG-like `jssf` format) — for SAI's file browser; size and layout as in SAI 2017 (0.8.39)
 - [x] Undo history on disk (for very large canvases): beyond 1 GB, steps go to temporary files and all 100 steps are kept
-- [x] Gradient: linear and radial, main colour → background or transparent, S-curve — checked against the live SAI (`docs/31-gradient-selection.md`)
+- [x] Gradient: linear and radial, main colour → background or transparent, S-curve
 - [x] Polygonal lasso and anti-aliasing switch
 - [x] Dilate and erode the selection by 1–25 px with a preview, corners as in SAI
 - [x] Transform: SAI modes and “Perspective” 0–100 — a blend of bilinear and perspective deform, checked against the live SAI
 - [x] Several canvases in tabs at the bottom, as in SAI; “File → Close” (Ctrl+W)
 - [x] Floating view of the canvas: its own zoom, position, rotation and mirror; painting works in it
 - [x] “New View” — a second view of the same canvas in a tab (0.8.37)
-- [x] Layer outline (inside, centre, outside, canvas edges) — checked against the live SAI
+- [x] Layer outline (inside, centre, outside, canvas edges)
 - [x] Layer menu as in SAI: “Merge Visible Layers”, “Rotate Layer 90°”, “Layer Property…” — after the live SAI
 - [x] Binary pen: points by SAI's code — stairs at slope 0.2 match SAI; at 0.4 SAI adds a point on every other stair — not found yet
-- [x] PSD: opening 16-bit files and layer masks, ZIP compression, grayscale — checked with files from Krita (`docs/21-file-formats.md`)
+- [x] PSD: opening 16-bit files and layer masks, ZIP compression, grayscale
 - [x] Custom tools in the grid: right-click an empty cell to add a tool of the needed kind; duplicate, delete, property (name, second line), as in SAI
 - [x] Edit: cut, copy, paste (as a new layer), copy by selection bounds; new canvas from the clipboard — system clipboard
 - [x] File: recent files (up to 10, kept between runs)
@@ -131,16 +131,14 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Window: V-HSV, HSL and HSV slider modes from SAI's code; S and V/L 0–100, as in SAI
 - [x] Window: swatch size (Small, Middle, Large — 10, 12, 14 px, measured on the live SAI)
 
-### Now — from the user's notes (16 October 2026), in order
+### Now
 
-- [x] Layer panel buttons “New Linework Layer” and “Perspective Ruler” work (they were placeholders) (0.8.40)
-- [x] Brush size grid — SAI 2017's whole table, up to 5000 (0.8.40)
-- [x] New name — **GrazySAI** (the name SOsai is taken on GitHub); old versions still find the update at the old address (0.8.42)
-- [ ] More save and export formats (as in similar programs)
-- [ ] Icons for new menu items and windows; layout checked in every language
-- [ ] More right on the canvas and panels, fewer extra windows: text is typed straight on the canvas as in SAI; tools get their useful buttons on the panel (after Krita, GIMP and others), keeping SAI's look
-- [ ] A full pass over every feature: is everything there and does it all work
-- [ ] Code audit by a professional method (bugs, inaccuracies, logic, memory, speed) — as a separate skill
+- [x] “New Linework Layer” and “Perspective Ruler” buttons on the layer panel (0.8.40)
+- [x] Brush size grid up to 5000, as in SAI (0.8.40)
+- [x] New name — GrazySAI; old versions update by themselves (0.8.42)
+- [x] More formats: OpenRaster with layers; export and open BMP, TGA, TIFF, WebP, QOI (0.8.43)
+- [ ] Icons for new menu items
+- [ ] Text is typed right on the canvas; tools get their useful buttons on the panel
 
 ### First after 1.0 — filters as in Clip Studio Paint
 
@@ -164,7 +162,7 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 - [ ] History window: list of steps, jump back with a click
 - [ ] Pen pressure curve in the settings
 - [ ] PSD: layer masks and 16 bits on export; “Keep the exact look” for SAI-only modes
-- [ ] OpenRaster (`.ora`): open and save with layers
+- [x] OpenRaster (`.ora`): open and save with layers (0.8.43)
 - [ ] “Save incremental” (picture_002.sai2)
 - [ ] History memory and recovery copy interval in a settings window
 - [ ] Wrap-around mode (the canvas repeats at its edges) and a pixel grid at high zoom

@@ -663,3 +663,7 @@ S-кривая = S-Kurve
 # Кнопки панели слоёв (0.8.40)
 Линейка перспективы = Perspektivlineal
 Спрятать линейку = Lineal ausblenden
+
+# Форматы (0.8.43)
+WebP (без потерь) = WebP (verlustfrei)
+OpenRaster (.ora, со слоями) = OpenRaster (.ora, mit Ebenen)
