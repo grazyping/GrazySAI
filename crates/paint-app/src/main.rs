@@ -4079,7 +4079,7 @@ impl PaintApp {
                 let w = (ui.available_width() / 4.0).floor();
                 // пустые ячейки — до конца ряда, а если ряд полон — ещё ряд
                 let cells = (self.brushes.len() / 4 + 1) * 4;
-                egui::ScrollArea::vertical().max_height(36.0 * 3.0).auto_shrink([false, true]).show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("tool_grid").max_height(36.0 * 3.0).auto_shrink([false, true]).show(ui, |ui| {
                     for row in 0..cells / 4 {
                         ui.horizontal(|ui| {
                             for i in row * 4..row * 4 + 4 {
@@ -4494,8 +4494,17 @@ impl PaintApp {
             .stroke(egui::Stroke::new(1.0_f32, sai_ui::BORDER))
             .fill(Color32::WHITE)
             .show(ui, |ui| {
+                // как у SAI: своя полоса прокрутки сбоку, ячейки её не перекрывают; не меньше 3 рядов
+                ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
+                let v = ui.visuals_mut();
+                v.extreme_bg_color = Color32::from_gray(240);
+                v.widgets.inactive.bg_fill = Color32::from_gray(185);
+                v.widgets.hovered.bg_fill = Color32::from_gray(160);
+                v.widgets.active.bg_fill = Color32::from_gray(140);
                 egui::ScrollArea::vertical()
+                    .id_salt("size_grid")
                     .auto_shrink([false, false])
+                    .min_scrolled_height(40.0 * 3.0)
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
                         let cw = (ui.available_width() / 5.0).floor();
@@ -5032,6 +5041,7 @@ impl PaintApp {
             .inner_margin(2.0)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical()
+                    .id_salt("layer_list")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing.y = 1.0;
