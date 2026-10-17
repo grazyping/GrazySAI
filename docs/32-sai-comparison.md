@@ -93,7 +93,6 @@
 | Close View | Закрыть (Ctrl+W) закрывает вид | ✔ |
 | Close All Views | «Закрыть все виды» (о несохранённом спрашивает) | ✔ |
 | Zoom In / Out, Display at 100% | то же | ✔ |
-| Навигатор: рамка вида с поворотом и чертой «верх», протяжка сдвигает вид, щелчок не двигает | то же (сверено вживую) | ✔ |
 | Zoom In/Out at Cursor Position | колесо и клавиши «Приблизить/Отдалить у курсора» | ✔ |
 | Reverse Horizontal, Rotate CCW/CW, Reset Position / Angle | то же | ✔ |
 | Select Previous / Next View | «Предыдущий/Следующий вид» | ✔ |

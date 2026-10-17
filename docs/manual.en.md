@@ -55,8 +55,7 @@ The layout follows SAI 2:
 - **Left**: color wheel, common tools (selection, lasso, magic wand, bucket, move, zoom, hand,
   color picker), main and background color, brush grid, current brush settings, size grid.
 - **Top**: menus and the quick bar (undo, selection, zoom, view rotation and flip, stabilizer).
-- **Right**: navigator (canvas thumbnail; the gray frame is the visible part with rotation, the
-  stroke marks the view's top; dragging in it moves the view, as in SAI), layer properties (blend mode, opacity, locks, “Clipping Group”,
+- **Right**: navigator, layer properties (blend mode, opacity, locks, “Clipping Group”,
   “Selection Source”), layer buttons, layer list with thumbnails.
 
 Shortcut keys in menu items and tooltips can be hidden: “Window → Show shortcut keys”.
