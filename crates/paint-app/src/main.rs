@@ -6610,19 +6610,20 @@ app.open_canvas_dialog(d == "resolution")
             egui::Stroke::new(1.0_f32, Color32::from_gray(150)),
         );
         if self.view.is_positive() {
-            let seen =
-                Rect::from_min_size(origin + self.offset * k, self.view.size() / self.zoom * k);
-            p.rect_stroke(
-                seen,
-                0.0,
-                egui::Stroke::new(1.0_f32, Color32::from_rgb(220, 40, 40)),
-            );
+            // видимая часть, как в SAI: рамка с учётом поворота и зеркала вида, серая, и черта от
+            // её середины к верхнему краю вида — где у вида верх
+            let xf = ViewXf::new(self.view, self.zoom, self.offset, self.view_angle, self.view_flip);
+            let nav = |q: Pos2| origin + xf.to_canvas(q) * k;
+            let r = self.view;
+            let corners = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()].map(nav);
+            let ink = egui::Stroke::new(1.0_f32, Color32::from_gray(120));
+            p.add(egui::Shape::closed_line(corners.to_vec(), ink));
+            p.line_segment([nav(r.center()), nav(r.center_top())], ink);
         }
-        if let Some(pos) = response.interact_pointer_pos() {
-            if response.is_pointer_button_down_on() {
-                let c = (pos - origin) / k;
-                self.offset = c - self.view.size() / self.zoom / 2.0;
-            }
+        // Протяжка где угодно в навигаторе сдвигает вид на пройденное расстояние (как в SAI);
+        // щелчок вид не двигает.
+        if response.dragged_by(egui::PointerButton::Primary) {
+            self.offset += response.drag_delta() / k;
         }
         p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
     }
