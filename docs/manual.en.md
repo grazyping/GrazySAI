@@ -133,6 +133,9 @@ Water also blurs the layer under the stroke.
   example, thickness 20 %, rotation 45°).
 - A picture set (GIMP `.gih` brushes, sets inside Krita and CSP brushes) — the dabs change along the
   stroke: in order or “random” (the “Set” row in the “Form” section).
+- Photoshop brushes `.abr` (“File → Open”, drag and drop or “Add picture…”): every brush in the file
+  becomes a separate tip in the “Tip” list, the first one goes to the current brush. Only the brush
+  pictures are taken; Photoshop settings (spacing, scatter and so on) are not carried over.
 - Patterns are fixed to the canvas, not to the stroke. The pattern files come from SAI: if the
   lists are empty, enter the SAI folder (with `blotmap` and `brushtex`) right in the section;
   the paper folder works too.
@@ -392,7 +395,7 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 | `.ora` (OpenRaster — Krita, GIMP, MyPaint) | Yes, with layers and folders | “Save As” or “Export → OpenRaster”: layers, folders, modes, opacity |
 | `.png`, `.jpg`, `.bmp`, `.tga`, `.tiff`, `.webp`, `.qoi` | Yes, as one layer | “File → Export” (flattened image; JPEG at quality 92, WebP lossless) |
 | `.sut`, `.bfps` (Clip Studio Paint brushes) | Yes: the brushes are added at the end of the grid | — |
-| `.kpp`, `.bundle` (Krita brushes), `.gbr`, `.gih` (GIMP brushes) | Yes: Krita brushes go to the end of the grid, GIMP brushes become the current brush’s tip | — |
+| `.kpp`, `.bundle` (Krita brushes), `.gbr`, `.gih` (GIMP brushes), `.abr` (Photoshop brushes) | Yes: Krita brushes go to the end of the grid, GIMP and Photoshop brushes become tips | — |
 
 Krita brushes: a `.kpp` preset or a `.bundle` pack open the same way — “File → Open” or drag and drop;
 the brushes go to the end of the grid (all of them from a pack). Carried over: size, opacity and flow,

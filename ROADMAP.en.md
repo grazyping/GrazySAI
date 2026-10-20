@@ -194,7 +194,8 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 - [x] Clip Studio Paint brushes (`.sut`, `.bfps`): main settings and texture (1.0.14)
 - [x] Image tip for any brush (PNG etc., GIMP brushes `.gbr`); for Clip Studio Paint brushes — from the material thumbnail (1.0.20)
 - [x] Krita brushes: `.kpp` presets and `.bundle` packs, `.png`, `.gbr`, `.gih` tips (1.0.21)
-- [ ] Photoshop `.abr` brushes and `.svg` tips
+- [x] Photoshop `.abr` brushes — brush pictures as tips (1.0.26)
+- [ ] `.svg` tips (Krita) and Photoshop brush settings from the `desc` section
 - [x] Mirror painting (symmetry) (1.0.9)
 - [x] Fill: closing gaps in line art and growing the edge under the line (1.0.10)
 - [x] Recent colours; GIMP (`.gpl`) and Krita (`.kpl`) palettes (1.0.6)

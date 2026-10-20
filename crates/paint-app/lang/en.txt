@@ -906,3 +906,5 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 {0} картинок = {0} pictures
 вразнобой = random
 Картинки набора сменяются вразнобой, а не по порядку = The set's pictures change in random order, not in sequence
+Кисть Photoshop не открылась: {0} = Photoshop brush could not be opened: {0}
+Отпечатков из кистей Photoshop: {0}; выбрать — «Форма → Отпечаток» = Tips from Photoshop brushes: {0}; pick one in “Form → Tip”

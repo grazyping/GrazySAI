@@ -3001,7 +3001,7 @@ app.open_canvas_dialog(d == "resolution")
             self.load_palette(&path);
             return;
         }
-        if ext == "gbr" || ext == "gih" {
+        if ext == "gbr" || ext == "gih" || ext == "abr" {
             self.add_tip(&path);
             return;
         }
@@ -6842,8 +6842,36 @@ app.open_canvas_dialog(d == "resolution")
         }
     }
 
+    /// Кисти Photoshop `.abr` — каждая отдельным отпечатком в библиотеке; первая — у текущей кисти.
+    fn add_abr(&mut self, path: &std::path::Path) {
+        let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let list = match std::fs::read(path).map_err(Into::into).and_then(|d| paint_formats::brush_tip::abr(&d)) {
+            Ok(l) => l,
+            Err(e) => {
+                self.status = trf("Кисть Photoshop не открылась: {0}", &[&e]);
+                return;
+            }
+        };
+        let mut first = None;
+        let mut n = 0;
+        for (name, st) in &list {
+            if let Ok(saved) = paint_core::paper::save_tip(&format!("{stem} {name}"), st) {
+                first.get_or_insert(saved);
+                n += 1;
+            }
+        }
+        if let Some(f) = first {
+            self.brushes[self.brush].grain.tip = Some(f);
+        }
+        self.grain_names = None;
+        self.status = trf("Отпечатков из кистей Photoshop: {0}; выбрать — «Форма → Отпечаток»", &[&n]);
+    }
+
     /// Картинка или кисть GIMP — новый отпечаток текущего инструмента (копия в своей папке `tips`).
     fn add_tip(&mut self, path: &std::path::Path) {
+        if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("abr")) {
+            return self.add_abr(path);
+        }
         let saved = paint_formats::brush_tip::load_all(path).and_then(|(name, cells, random)| Ok((paint_core::paper::save_tips(&name, &cells)?, random)));
         match saved {
             Ok((name, random)) => {

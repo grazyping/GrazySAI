@@ -905,3 +905,5 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 {0} картинок = {0} imágenes
 вразнобой = al azar
 Картинки набора сменяются вразнобой, а не по порядку = Las imágenes del conjunto cambian al azar, no en orden
+Кисть Photoshop не открылась: {0} = No se pudo abrir el pincel de Photoshop: {0}
+Отпечатков из кистей Photoshop: {0}; выбрать — «Форма → Отпечаток» = Puntas de pinceles de Photoshop: {0}; elija una en «Forma → Punta»

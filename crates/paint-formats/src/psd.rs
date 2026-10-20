@@ -99,7 +99,7 @@ fn packbits(row: &[u8]) -> Vec<u8> {
     out
 }
 
-fn unpackbits(data: &[u8], len: usize) -> Res<Vec<u8>> {
+pub(crate) fn unpackbits(data: &[u8], len: usize) -> Res<Vec<u8>> {
     let mut out = Vec::with_capacity(len);
     let mut i = 0;
     while out.len() < len && i < data.len() {
