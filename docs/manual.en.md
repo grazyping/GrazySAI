@@ -370,6 +370,8 @@ The “New” window remembers the last size, also after a restart.
 keys by a quarter, temporary tool, color and function switching while a key is held (threshold in
 ms), returning to the previous tool by pressing its key again, protection from accidental layer
 moves after Ctrl/Alt shortcuts, history memory and the recovery copy interval.
+There is also “Pen pressure curve”: two points on the graph change how the brush answers pressure
+(above the line — softer, below — harder); “Straight” restores pressure as is. It affects the pen, not the mouse.
 
 **File viewer**, as in SAI: “File → Open/Save by File Viewer…”, and with “Always use the file
 viewer” ticked also the usual Open and Save As. The path as a chain of folders, Explorer and
