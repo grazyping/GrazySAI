@@ -4,6 +4,7 @@
 pub mod jssf;
 pub mod linework;
 pub mod ora;
+pub mod palette;
 pub mod preview;
 pub mod psd;
 pub mod sai2;

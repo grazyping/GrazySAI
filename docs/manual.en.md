@@ -135,6 +135,9 @@ Water also blurs the layer under the stroke.
 - Swatches (fifth button): click a cell to take its color; right-click — “Register Color” (store
   the current one) or “Delete Color”. Two rows are visible, scroll for the rest. The mixer and
   swatches are kept between runs.
+- Above the swatches — the last 16 colors you painted with; click one to take it. A GIMP (`.gpl`) or
+  Krita (`.kpl`) palette can be opened with “File → Open” or dropped onto the window — its colors
+  fill the swatches in order (replacing the old ones).
 - The arrow by the main and background color squares (or the X key) swaps them.
 - Color picker: Alt + click (or the Color Picker tool; its panel has “Current layer only”).
 - **Straight line** (quick bar button, as in SAI): every stroke is a straight line from where it

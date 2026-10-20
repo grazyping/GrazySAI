@@ -14,7 +14,7 @@ pub type Rgba = (u32, u32, Vec<u8>);
 /// Расширения файлов, которые обозреватель показывает и открывает.
 pub fn supported(path: &Path) -> bool {
     let e = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    e == "sai2" || e == "psd" || e == "psb" || e == "ora" || paint_core::io::IMAGE_EXTS.contains(&e.as_str())
+    e == "sai2" || e == "psd" || e == "psb" || e == "ora" || e == "gpl" || e == "kpl" || paint_core::io::IMAGE_EXTS.contains(&e.as_str())
 }
 
 /// Миниатюра файла не больше `max` по большей стороне; `None` — прочитать не удалось.
@@ -23,6 +23,24 @@ pub fn thumbnail(path: &Path, max: u32) -> Option<Rgba> {
     let full = match e.as_str() {
         "sai2" => sai2_preview(path)?,
         "ora" => crate::ora::thumbnail(path).ok()?,
+        "gpl" | "kpl" => {
+            // миниатюра палитры — её цвета сеткой по 8 в ряд
+            let pal = crate::palette::load(path).ok()?;
+            let n = pal.colors.len().clamp(1, 256);
+            let (cols, cell) = (8usize, 16usize);
+            let rows = n.div_ceil(cols);
+            let (w, h) = (cols * cell, rows * cell);
+            let mut img = vec![0u8; w * h * 4];
+            for (i, (c, _)) in pal.colors.iter().take(n).enumerate() {
+                let (x0, y0) = ((i % cols) * cell, (i / cols) * cell);
+                for y in y0 + 1..y0 + cell - 1 {
+                    for x in x0 + 1..x0 + cell - 1 {
+                        img[(y * w + x) * 4..][..4].copy_from_slice(&[c[0], c[1], c[2], 255]);
+                    }
+                }
+            }
+            (w as u32, h as u32, img)
+        }
         "psd" | "psb" => {
             // сведение PSD — целым рисунком; большие файлы не трогаем
             if std::fs::metadata(path).ok()?.len() > 64 << 20 {

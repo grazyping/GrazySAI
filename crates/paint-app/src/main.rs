@@ -1105,6 +1105,8 @@ enum LayerAction {
 
 /// Число ячеек образцов цвета.
 const SWATCHES: usize = 104;
+/// Сколько недавних цветов помнить.
+const RECENT_COLORS: usize = 16;
 
 
 /// Масштабы в списке быстрой панели, %.
@@ -1169,6 +1171,8 @@ struct PaintApp {
     mixer_pos: [Option<f32>; 4],
     /// Образцы цвета и выбранная ячейка.
     swatches: Vec<Option<Color32>>,
+    /// Недавние цвета мазков, новые первыми.
+    recent_colors: Vec<Color32>,
     swatch_sel: usize,
     layer_rects: Vec<(Vec<usize>, Rect, bool)>,
     status: String,
@@ -1403,6 +1407,7 @@ impl PaintApp {
             mixer: [[Color32::WHITE; 2]; 4],
             mixer_pos: [None; 4],
             swatches: vec![None; SWATCHES],
+            recent_colors: Vec::new(),
             swatch_sel: 0,
             mask_edit: false,
             mask_stroke: None,
@@ -1827,6 +1832,7 @@ app.open_canvas_dialog(d == "resolution")
                 }
             }
         }
+        self.recent_colors = (0..RECENT_COLORS).filter_map(|i| s.str(&format!("recent.{i}")).and_then(hex)).collect();
         for (i, c) in self.swatches.iter_mut().enumerate() {
             *c = s.str(&format!("swatch.{i}")).and_then(hex);
         }
@@ -1981,6 +1987,12 @@ app.open_canvas_dialog(d == "resolution")
         for (r, row) in self.mixer.iter().enumerate() {
             for (e, c) in row.iter().enumerate() {
                 s.set(&format!("mixer.{r}.{e}"), hex(*c));
+            }
+        }
+        for i in 0..RECENT_COLORS {
+            match self.recent_colors.get(i) {
+                Some(c) => s.set(&format!("recent.{i}"), hex(*c)),
+                None => s.remove(&format!("recent.{i}")),
             }
         }
         for (i, c) in self.swatches.iter().enumerate() {
@@ -2664,6 +2676,28 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     /// Основной цвет из RGB; у серого тон не определён — прежний остаётся.
+    /// Цвет мазка — в начало недавних (без повторов).
+    fn push_recent(&mut self, c: Color32) {
+        self.recent_colors.retain(|&x| x != c);
+        self.recent_colors.insert(0, c);
+        self.recent_colors.truncate(RECENT_COLORS);
+    }
+
+    /// Палитра GIMP или Krita — в образцы цвета (вместо прежних, по порядку).
+    fn load_palette(&mut self, path: &std::path::Path) {
+        match paint_formats::palette::load(path) {
+            Ok(p) => {
+                let n = p.colors.len().min(SWATCHES);
+                for (i, slot) in self.swatches.iter_mut().enumerate() {
+                    *slot = p.colors.get(i).map(|(c, _)| Color32::from_rgb(c[0], c[1], c[2]));
+                }
+                self.color_views[4] = true;
+                self.status = trf("Палитра «{0}»: {1} цветов в образцах", &[&p.name, &n]);
+            }
+            Err(e) => self.status = trf("Палитра не открылась: {0}", &[&e]),
+        }
+    }
+
     fn set_color(&mut self, c: Color32) {
         let hsv = sai_ui::rgb_to_hsv(c);
         let hue = if hsv[1] == 0.0 { self.hsv[0] } else { hsv[0] };
@@ -2683,6 +2717,10 @@ app.open_canvas_dialog(d == "resolution")
 
     fn open(&mut self, path: PathBuf) {
         let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
+        if ext == "gpl" || ext == "kpl" {
+            self.load_palette(&path);
+            return;
+        }
         if ext == "psd" || ext == "psb" || ext == "ora" || paint_core::io::IMAGE_EXTS.contains(&ext.as_str()) {
             let started = Instant::now();
             let loaded = read_guarded(|| {
@@ -3466,6 +3504,9 @@ app.open_canvas_dialog(d == "resolution")
         self.stroke_by_touch = self.touch_down;
         self.smoother = Stabilizer::with_level(self.stabilizer);
         let c = self.color();
+        if !params.erase {
+            self.push_recent(c);
+        }
         let mut stroke = Stroke::new(params);
         stroke.set_grain(self.grain_for(if eraser_end { self.eraser_index() } else { self.brush }));
         // прямая, как в SAI: кнопка «Прямая линия» — весь штрих прямой от точки нажатия;
@@ -5755,6 +5796,12 @@ app.open_canvas_dialog(d == "resolution")
             }
         }
         if self.color_views[4] {
+            if !self.recent_colors.is_empty() {
+                let cell = [10.0, 12.0, 14.0][self.win.swatch_size.min(2) as usize];
+                if let Some(c) = sai_ui::recent_row(ui, &self.recent_colors, cell) {
+                    self.set_color(c);
+                }
+            }
             let labels = [tr("Зарегистрировать цвет"), tr("Удалить цвет")];
             match sai_ui::swatches(ui, &self.swatches, &mut self.swatch_sel, labels, [10.0, 12.0, 14.0][self.win.swatch_size.min(2) as usize]) {
                 Some(sai_ui::SwatchAction::Pick(c)) => self.set_color(c),

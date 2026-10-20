@@ -822,3 +822,6 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, com camadas)
 Тёмная тема = Tema escuro
 PSB (большой PSD, со слоями) = PSB (PSD grande, com camadas)
 Сохранить с номером = Salvar com número
+Палитры (GIMP, Krita) = Paletas (GIMP, Krita)
+Палитра «{0}»: {1} цветов в образцах = Paleta «{0}»: {1} cores nas amostras
+Палитра не открылась: {0} = Não foi possível abrir a paleta: {0}

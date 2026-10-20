@@ -1225,6 +1225,25 @@ pub enum SwatchAction {
 /// щелчок — меню «Зарегистрировать цвет» / «Удалить цвет». Видны две строки, остальное —
 /// прокруткой.
 /// `cell` — размер ячейки: 10, 12 или 14 px («Swatches Size» Small, Middle, Large в SAI 2017).
+/// Недавние цвета мазков одной строкой; щелчок — взять цвет.
+pub fn recent_row(ui: &mut Ui, colors: &[Color32], cell: f32) -> Option<Color32> {
+    let cols = ((ui.available_width() - 2.0) / cell).floor().max(1.0) as usize;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(cols as f32 * cell, cell), Sense::hover());
+    let mut out = None;
+    for (i, c) in colors.iter().take(cols).enumerate() {
+        let r = Rect::from_min_size(rect.min + Vec2::new(i as f32 * cell, 0.0), Vec2::splat(cell));
+        let resp = ui.interact(r, ui.id().with(("recent", i)), Sense::click());
+        ui.painter().rect_filled(r.shrink(1.0), 0.0, *c);
+        if resp.hovered() {
+            ui.painter().rect_stroke(r.shrink(0.5), 0.0, Stroke::new(1.0_f32, ink()));
+        }
+        if resp.clicked() {
+            out = Some(*c);
+        }
+    }
+    out
+}
+
 pub fn swatches(ui: &mut Ui, cells: &[Option<Color32>], selected: &mut usize, labels: [&str; 2], cell: f32) -> Option<SwatchAction> {
     let cols = ((ui.available_width() - 2.0) / cell).floor().max(1.0) as usize;
     let rows = cells.len().div_ceil(cols);

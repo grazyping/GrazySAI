@@ -110,7 +110,7 @@ fn zip(entries: &[(String, Vec<u8>)]) -> Vec<u8> {
     out
 }
 
-fn unzip(d: &[u8]) -> Res<Vec<(String, Vec<u8>)>> {
+pub(crate) fn unzip(d: &[u8]) -> Res<Vec<(String, Vec<u8>)>> {
     let u16_at = |i: usize| -> Res<usize> { Ok(u16::from_le_bytes(d.get(i..i + 2).ok_or("zip: обрезан")?.try_into()?) as usize) };
     let u32_at = |i: usize| -> Res<usize> { Ok(u32::from_le_bytes(d.get(i..i + 4).ok_or("zip: обрезан")?.try_into()?) as usize) };
     let end = (0..d.len().saturating_sub(21)).rev().find(|&i| d[i..].starts_with(&[0x50, 0x4b, 5, 6])).ok_or("не zip")?;

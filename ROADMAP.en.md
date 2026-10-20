@@ -195,7 +195,7 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 - [ ] Krita brushes: `.kpp` presets and `.bundle` packs (pixel and colour-smudge engines — 97 of the 117 defaults), `.gbr`, `.gih`, `.png`, `.svg` tips and Photoshop `.abr` brushes — a new brush with an image tip
 - [ ] Mirror painting (symmetry)
 - [ ] Fill: closing gaps in line art and growing the edge under the line
-- [ ] Recent colours; GIMP (`.gpl`) and Krita (`.kpl`) palettes
+- [x] Recent colours; GIMP (`.gpl`) and Krita (`.kpl`) palettes (1.0.6)
 - [ ] History window: list of steps, jump back with a click
 - [ ] Pen pressure curve in the settings
 - [ ] PSD: layer masks and 16 bits on export; “Keep the exact look” for SAI-only modes
