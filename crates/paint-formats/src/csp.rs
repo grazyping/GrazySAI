@@ -199,7 +199,9 @@ fn gray_of_png(png: &[u8]) -> Option<PaperTexture> {
         return None;
     }
     let gray = rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|p| {
             let a = p[3] as u32;
             let l = (p[0] as u32 * 77 + p[1] as u32 * 150 + p[2] as u32 * 29) >> 8;
