@@ -63,7 +63,7 @@ Shortcut keys in menu items and tooltips can be hidden: “Window → Show short
 “Window → Separate User Interface Panel” (as in SAI): tools, color, layers or navigator — each
 panel in its own window that can go to another monitor; closing that window puts the panel back.
 
-The same menu has “Dark theme”: dark panels and menus; the canvas, paper and drawing colors stay unchanged.
+The “Window” menu has “Dark theme”: dark panels and menus; the canvas, paper and drawing colors stay unchanged.
 
 The “Window” menu, as in SAI: UI scale (100–200%), the color and tool panel and the navigator and
 layer panel on the right or left, full screen (F11, Shift+Tab), “Show All User Interface Panels”
