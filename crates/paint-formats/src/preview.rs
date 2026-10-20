@@ -14,7 +14,7 @@ pub type Rgba = (u32, u32, Vec<u8>);
 /// Расширения файлов, которые обозреватель показывает и открывает.
 pub fn supported(path: &Path) -> bool {
     let e = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    e == "sai2" || e == "psd" || e == "psb" || e == "ora" || e == "gpl" || e == "kpl" || paint_core::io::IMAGE_EXTS.contains(&e.as_str())
+    e == "sai2" || e == "psd" || e == "psb" || e == "ora" || e == "gpl" || e == "kpl" || e == "sut" || e == "bfps" || paint_core::io::IMAGE_EXTS.contains(&e.as_str())
 }
 
 /// Миниатюра файла не больше `max` по большей стороне; `None` — прочитать не удалось.

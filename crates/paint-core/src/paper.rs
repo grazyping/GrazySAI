@@ -37,6 +37,7 @@ impl Paper {
 }
 
 /// Серая текстура, 8 бит на точку.
+#[derive(Clone)]
 pub struct PaperTexture {
     pub width: usize,
     pub height: usize,
@@ -90,6 +91,32 @@ impl PaperTexture {
             }
         }
         Some(Self { width, height, gray })
+    }
+
+    /// BMP 8 бит с серой палитрой — так, как его читает [`Self::from_bmp`] (номер цвета — значение).
+    pub fn to_bmp(&self) -> Vec<u8> {
+        let row = self.width.div_ceil(4) * 4;
+        let off = 14 + 40 + 256 * 4;
+        let size = off + row * self.height;
+        let mut b = Vec::with_capacity(size);
+        b.extend_from_slice(b"BM");
+        for v in [size as u32, 0, off as u32, 40, self.width as u32, self.height as u32] {
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+        b.extend_from_slice(&1u16.to_le_bytes());
+        b.extend_from_slice(&8u16.to_le_bytes());
+        for v in [0u32, (row * self.height) as u32, 2835, 2835, 256, 256] {
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+        for i in 0..=255u8 {
+            b.extend_from_slice(&[i, i, i, 0]);
+        }
+        // строки снизу вверх
+        for y in (0..self.height).rev() {
+            b.extend_from_slice(&self.gray[y * self.width..(y + 1) * self.width]);
+            b.resize(b.len() + row - self.width, 0);
+        }
+        b
     }
 
     fn at(&self, x: i64, y: i64) -> u32 {
@@ -293,6 +320,17 @@ pub fn apply(buf: &mut [[f32; 4]], vals: &[u8], strength: u16, fx: u8) {
 }
 
 static FOLDER: Mutex<Option<PathBuf>> = Mutex::new(None);
+static USER: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// Своя папка программы (рядом с настройками): там лежат текстуры, взятые из кистей CSP.
+pub fn set_user_dir(dir: Option<PathBuf>) {
+    *USER.lock().unwrap() = dir;
+}
+
+/// Папка вида `kind` в своей папке программы, если она задана.
+pub fn user_dir(kind: &str) -> Option<PathBuf> {
+    USER.lock().unwrap().as_ref().map(|d| d.join(kind))
+}
 
 /// Папка с текстурами, выбранная в программе (ищется первой).
 pub fn set_folder(dir: Option<PathBuf>) {
@@ -325,6 +363,7 @@ fn dirs(kind: &str) -> Vec<PathBuf> {
     if let Some(exe) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
         out.push(exe.join(kind));
     }
+    out.extend(user_dir(kind));
     out
 }
 
@@ -333,24 +372,27 @@ pub fn names() -> Vec<String> {
     names_of("papertex")
 }
 
-/// Имена текстур вида `kind` в первой найденной папке, по алфавиту.
+/// Имена текстур вида `kind`: из первой найденной папки SAI и из своей папки программы, по алфавиту.
 pub fn names_of(kind: &str) -> Vec<String> {
-    for d in dirs(kind) {
-        let Ok(rd) = std::fs::read_dir(&d) else { continue };
-        let mut out: Vec<String> = rd
-            .flatten()
+    let list = |d: &Path| -> Vec<String> {
+        let Ok(rd) = std::fs::read_dir(d) else { return Vec::new() };
+        rd.flatten()
             .filter_map(|e| {
                 let p = e.path();
                 let bmp = p.extension().is_some_and(|x| x.eq_ignore_ascii_case("bmp"));
                 bmp.then(|| p.file_stem()?.to_str().map(str::to_string)).flatten()
             })
-            .collect();
-        if !out.is_empty() {
-            out.sort_by_key(|n| n.to_lowercase());
-            return out;
+            .collect()
+    };
+    let own = user_dir(kind);
+    let mut out = dirs(kind).iter().filter(|d| Some(*d) != own.as_ref()).map(|d| list(d)).find(|v| !v.is_empty()).unwrap_or_default();
+    for n in own.as_deref().map(list).unwrap_or_default() {
+        if !out.contains(&n) {
+            out.push(n);
         }
     }
-    Vec::new()
+    out.sort_by_key(|n| n.to_lowercase());
+    out
 }
 
 /// Текстура бумаги по имени (имя файла без `.bmp`).
@@ -425,6 +467,13 @@ pub fn hairs_from_bmp(d: &[u8]) -> Option<Vec<(f32, f32)>> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn gray_bmp_round_trip() {
+        let t = super::PaperTexture { width: 3, height: 2, gray: vec![0, 10, 20, 200, 254, 255] };
+        let back = super::PaperTexture::from_bmp(&t.to_bmp()).unwrap();
+        assert_eq!((back.width, back.height, back.gray), (3, 2, t.gray));
+    }
+
     use super::*;
 
     fn bmp8(w: usize, h: usize, px: &[u8]) -> Vec<u8> {

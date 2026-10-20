@@ -367,6 +367,15 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 | `.psb` | Yes (same as `.psd`) | “Save As” or “Export → PSB”: Photoshop large document, sides up to 300,000 px |
 | `.ora` (OpenRaster — Krita, GIMP, MyPaint) | Yes, with layers and folders | “Save As” or “Export → OpenRaster”: layers, folders, modes, opacity |
 | `.png`, `.jpg`, `.bmp`, `.tga`, `.tiff`, `.webp`, `.qoi` | Yes, as one layer | “File → Export” (flattened image; JPEG at quality 92, WebP lossless) |
+| `.sut`, `.bfps` (Clip Studio Paint brushes) | Yes: the brushes are added at the end of the grid | — |
+
+Clip Studio Paint brushes: an exported brush `.sut` (in CSP: Sub tool palette → menu → “Export sub tool”)
+or the `BrushPreset.bfps` palette open with “File → Open” or by drag and drop. Carried over: size
+(millimetres at 350 dpi), opacity and flow (into density), hardness (to the nearest step), fixed spacing,
+pressure on size and opacity, color mixing, and the paper texture from a `.sut` (stored in the settings
+folder under `brushtex`). What GrazySAI lacks — spray, dual brush, image tip, tip thickness, watercolor
+edge — is skipped, and the status bar lists it. The stroke looks like CSP but is not identical: the
+engines differ. A `.bfps` palette has no images (it refers to CSP materials), so only settings are taken.
 
 “File → Save with number” saves next to the file under the next free number: `picture.sai2` → `picture_001.sai2`, `picture_009.sai2` → `picture_010.sai2`.
 

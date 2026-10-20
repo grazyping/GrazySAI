@@ -9,3 +9,7 @@ paint-core = { path = "../paint-core" }
 ab_glyph = "0.2.32"
 ttf-parser = "0.25.1"
 miniz_oxide = "0.8.9"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[dev-dependencies]
+png = "0.17"

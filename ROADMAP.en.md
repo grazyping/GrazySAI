@@ -191,7 +191,8 @@ A Filter menu with CSP's submenus; windows with a preview, like our current filt
 Everything SAI has comes first; these come later. They do not hurt compatibility: in `.sai2` everything lands as plain pixels, the rest goes to the program settings. The window keeps SAI's look: new things live in menus and windows, not on the panels. No Krita code (GPL) is copied — only ideas and formulas, checked against SAI or Krita.
 
 - [ ] Third-party SAI 2 brushes: the `settings2.ssd` tool set (encrypted differently from SAI 1 — decode from SAI 2's code). Blot, brush, bristle and paper textures (`blotmap`, `brushtex`, `bristle`, `papertex`) are already picked up from the SAI folder
-- [ ] Clip Studio Paint brushes (`.sut`): main settings, brush tip and texture (assessment in `docs/33-csp-brushes.md`)
+- [x] Clip Studio Paint brushes (`.sut`, `.bfps`): main settings and texture (1.0.14)
+- [ ] Clip Studio Paint brushes: image tip (needs a stamp engine of our own; `docs/33-csp-brushes.md`)
 - [ ] Krita brushes: `.kpp` presets and `.bundle` packs (pixel and colour-smudge engines — 97 of the 117 defaults), `.gbr`, `.gih`, `.png`, `.svg` tips and Photoshop `.abr` brushes — a new brush with an image tip
 - [x] Mirror painting (symmetry) (1.0.9)
 - [x] Fill: closing gaps in line art and growing the edge under the line (1.0.10)

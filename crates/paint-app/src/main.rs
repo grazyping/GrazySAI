@@ -1777,6 +1777,7 @@ app.open_canvas_dialog(d == "resolution")
             s.read_f32(&k("density"), &mut p.density);
             s.read_f32(&k("min_density"), &mut p.min_density);
             s.read_f32(&k("hardness"), &mut p.hardness);
+            s.read_f32(&k("spacing"), &mut p.spacing);
             s.read_f32(&k("sharpness"), &mut p.sharpness);
             s.read_f32(&k("amplify"), &mut p.amplify);
             s.read_bool(&k("size_by_pressure"), &mut p.size_by_pressure);
@@ -1993,6 +1994,7 @@ app.open_canvas_dialog(d == "resolution")
             s.set(&k("density"), p.density);
             s.set(&k("min_density"), p.min_density);
             s.set(&k("hardness"), p.hardness);
+            s.set(&k("spacing"), p.spacing);
             s.set(&k("sharpness"), p.sharpness);
             s.set(&k("amplify"), p.amplify);
             s.set(&k("size_by_pressure"), p.size_by_pressure as u8);
@@ -2802,6 +2804,72 @@ app.open_canvas_dialog(d == "resolution")
         }
     }
 
+    /// Кисти Clip Studio Paint — новыми инструментами в конец сетки (docs/33-csp-brushes.md).
+    /// Текстура кисти пишется в свою папку программы `brushtex` как BMP.
+    fn import_csp(&mut self, path: &std::path::Path) {
+        let brushes = match paint_formats::csp::load(path) {
+            Ok(b) => b,
+            Err(e) => {
+                self.status = trf("Кисть CSP не открылась: {0}", &[&e]);
+                return;
+            }
+        };
+        let mut skipped: Vec<&str> = Vec::new();
+        for b in &brushes {
+            let kind = if b.mix.is_some() { ToolKind::Brush } else { ToolKind::Pencil };
+            let mut t = kind.new_tool();
+            let step = paint_core::brush::HARDNESS_STEPS.iter().copied().min_by(|x, y| (x - b.hardness).abs().total_cmp(&(y - b.hardness).abs())).unwrap_or(1.0);
+            t.params = BrushParams {
+                size: b.size,
+                min_size: b.size_pressure.unwrap_or(1.0),
+                size_by_pressure: b.size_pressure.is_some(),
+                density: b.density,
+                min_density: b.density_pressure.unwrap_or(1.0),
+                density_by_pressure: b.density_pressure.is_some(),
+                hardness: step,
+                spacing: b.spacing.unwrap_or(0.0),
+                mix: b.mix.map(|(blend, dilute)| MixParams::new(blend, dilute, 0.5)),
+                ..t.params
+            };
+            t.custom = Some(b.name.clone());
+            t.extra = "CSP".to_string();
+            if let (Some(tex), Some(dir)) = (&b.texture, paint_core::paper::user_dir("brushtex")) {
+                let name: String = format!("CSP {}", b.name).chars().map(|c| if c.is_alphanumeric() || " -_().".contains(c) { c } else { '_' }).collect();
+                if std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(format!("{name}.bmp")), tex.to_bmp())).is_ok() {
+                    t.grain.tex = TexChoice::File(name);
+                    t.grain.tex_strength = b.texture_density;
+                    t.grain.tex_scale = b.texture_scale;
+                }
+            }
+            for s in &b.skipped {
+                if !skipped.contains(s) {
+                    skipped.push(s);
+                }
+            }
+            self.brushes.push(t);
+        }
+        self.brush = self.brushes.len() - 1;
+        self.tool = Tool::Brush;
+        self.grain_names = None;
+        let added = match brushes.as_slice() {
+            [one] => trf("Кисть CSP «{0}» добавлена в сетку", &[&one.name]),
+            many => trf("Кистей CSP добавлено в сетку: {0}", &[&many.len()]),
+        };
+        let label = |s: &str| match s {
+            "распыление" => tr("распыление"),
+            "двойная кисть" => tr("двойная кисть"),
+            "форма кончика из картинки" => tr("форма кончика из картинки"),
+            "смена цвета по мазку" => tr("смена цвета по мазку"),
+            "кайма акварели" => tr("кайма акварели"),
+            "толщина кончика" => tr("толщина кончика"),
+            "текстура (картинки нет в файле)" => tr("текстура (картинки нет в файле)"),
+            _ => s,
+        }
+        .to_string();
+        let skipped: Vec<String> = skipped.iter().map(|s| label(s)).collect();
+        self.status = if skipped.is_empty() { added } else { format!("{added}. {}", trf("Нет в GrazySAI, пропущено: {0}", &[&skipped.join(", ")])) };
+    }
+
     /// Палитра GIMP или Krita — в образцы цвета (вместо прежних, по порядку).
     fn load_palette(&mut self, path: &std::path::Path) {
         match paint_formats::palette::load(path) {
@@ -2838,6 +2906,10 @@ app.open_canvas_dialog(d == "resolution")
         let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
         if ext == "gpl" || ext == "kpl" {
             self.load_palette(&path);
+            return;
+        }
+        if ext == "sut" || ext == "bfps" {
+            self.import_csp(&path);
             return;
         }
         if ext == "psd" || ext == "psb" || ext == "ora" || paint_core::io::IMAGE_EXTS.contains(&ext.as_str()) {
@@ -7362,6 +7434,7 @@ app.open_canvas_dialog(d == "resolution")
     fn set_paper_dir(&mut self) {
         let dir = self.paper_dir.trim();
         paint_core::paper::set_folder((!dir.is_empty()).then(|| std::path::PathBuf::from(dir)));
+        paint_core::paper::set_user_dir(settings::dir());
         self.paper_names = None;
         self.grain_names = None;
         fn walk(layers: &mut [paint_core::Layer]) {

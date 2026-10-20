@@ -1,6 +1,7 @@
 //! Чтение и запись файлов. Сейчас — `.sai2`: структура и пиксели растровых слоёв
 //! (см. docs/03-sai2-format.md).
 
+pub mod csp;
 pub mod jssf;
 pub mod linework;
 pub mod ora;
