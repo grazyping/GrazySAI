@@ -2793,6 +2793,13 @@ app.open_canvas_dialog(d == "resolution")
         self.recent_colors.retain(|&x| x != c);
         self.recent_colors.insert(0, c);
         self.recent_colors.truncate(RECENT_COLORS);
+        // Как в SAI: использованный цвет сам ложится в первую пустую клетку образцов
+        // (занятые клетки не трогаются).
+        if !self.swatches.contains(&Some(c)) {
+            if let Some(slot) = self.swatches.iter_mut().find(|s| s.is_none()) {
+                *slot = Some(c);
+            }
+        }
     }
 
     /// Палитра GIMP или Krita — в образцы цвета (вместо прежних, по порядку).
@@ -5950,12 +5957,6 @@ app.open_canvas_dialog(d == "resolution")
             }
         }
         if self.color_views[4] {
-            if !self.recent_colors.is_empty() {
-                let cell = [10.0, 12.0, 14.0][self.win.swatch_size.min(2) as usize];
-                if let Some(c) = sai_ui::recent_row(ui, &self.recent_colors, cell) {
-                    self.set_color(c);
-                }
-            }
             let labels = [tr("Зарегистрировать цвет"), tr("Удалить цвет")];
             match sai_ui::swatches(ui, &self.swatches, &mut self.swatch_sel, labels, [10.0, 12.0, 14.0][self.win.swatch_size.min(2) as usize]) {
                 Some(sai_ui::SwatchAction::Pick(c)) => self.set_color(c),
