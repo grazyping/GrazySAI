@@ -89,6 +89,28 @@ const EXPORTS: [(&str, &str); 10] = [
     ("OpenRaster (.ora, со слоями)", "ora"),
 ];
 
+/// Следующее свободное имя с номером: `рисунок.sai2` → `рисунок_001.sai2`, `рисунок_009.sai2` →
+/// `рисунок_010.sai2` (ширина номера сохраняется, не меньше трёх цифр); занятые номера пропускаются.
+fn numbered_path(path: &std::path::Path) -> PathBuf {
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = path.extension().map(|e| e.to_string_lossy().into_owned());
+    let (base, mut n, width) = match stem.rsplit_once('_') {
+        Some((b, d)) if !d.is_empty() && d.len() <= 9 && d.bytes().all(|c| c.is_ascii_digit()) => (b.to_string(), d.parse::<u64>().unwrap_or(0), d.len().max(3)),
+        _ => (stem.clone(), 0, 3),
+    };
+    loop {
+        n += 1;
+        let name = match &ext {
+            Some(e) => format!("{base}_{n:0width$}.{e}"),
+            None => format!("{base}_{n:0width$}"),
+        };
+        let candidate = path.with_file_name(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+}
+
 /// Расширение формата со слоями, в который программа сохраняет (`sai2`, `ora`, `psd`, `psb`).
 fn layered_ext(path: &std::path::Path) -> Option<&'static str> {
     let e = path.extension()?.to_string_lossy().to_ascii_lowercase();
@@ -2962,6 +2984,20 @@ app.open_canvas_dialog(d == "resolution")
         }
     }
 
+    /// «Сохранить с номером»: следующий свободный номер рядом с текущим файлом.
+    fn save_numbered(&mut self) {
+        if self.filter.is_some() {
+            self.finish_filter(true);
+        }
+        if self.transform.is_some() {
+            self.finish_transform(true);
+        }
+        match self.file.clone() {
+            Some(f) if !self.had_vectors && layered_ext(&f).is_some() => self.save_to(numbered_path(&f)),
+            _ => self.ask_save_as(),
+        }
+    }
+
     fn ask_save_as(&mut self) {
         let base = self.file.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join(tr("НовыйХолст1.sai2")));
         let suggested = if self.had_vectors {
@@ -4741,6 +4777,10 @@ app.open_canvas_dialog(d == "resolution")
                 }
                 if ui.add(menu_item("Сохранить как…", "Shift+Ctrl+S")).clicked() {
                     self.ask_save_as();
+                    ui.close_menu();
+                }
+                if ui.add(menu_item("Сохранить с номером", "")).clicked() {
+                    self.save_numbered();
                     ui.close_menu();
                 }
                 ui.separator();
@@ -9980,6 +10020,18 @@ fn main() -> eframe::Result {
 #[cfg(test)]
 mod input_tests {
     use super::*;
+
+    #[test]
+    fn numbered_names_count_up_and_skip_taken() {
+        let d = std::env::temp_dir().join(format!("grazysai-num-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        assert_eq!(numbered_path(&d.join("рисунок.sai2")), d.join("рисунок_001.sai2"));
+        assert_eq!(numbered_path(&d.join("рисунок_009.sai2")), d.join("рисунок_010.sai2"));
+        assert_eq!(numbered_path(&d.join("кот_2026_7.psd")), d.join("кот_2026_008.psd"));
+        std::fs::write(d.join("лист_002.sai2"), b"x").unwrap();
+        assert_eq!(numbered_path(&d.join("лист_001.sai2")), d.join("лист_003.sai2"));
+        std::fs::remove_dir_all(d).ok();
+    }
     use paint_core::stabilizer::{Level, Stabilizer};
 
     /// Сглаживание не зависит от того, как часто приходят точки: путь, присланный редкими

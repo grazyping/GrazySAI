@@ -200,7 +200,7 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 - [ ] Pen pressure curve in the settings
 - [ ] PSD: layer masks and 16 bits on export; “Keep the exact look” for SAI-only modes
 - [x] OpenRaster (`.ora`): open and save with layers (0.8.43)
-- [ ] “Save incremental” (picture_002.sai2)
+- [x] “Save incremental” (picture_002.sai2) (1.0.6)
 - [x] History memory and recovery copy interval in a settings window (0.9.2)
 - [ ] Wrap-around mode (the canvas repeats at its edges) and a pixel grid at high zoom
 - [ ] Filters: levels, curves, median

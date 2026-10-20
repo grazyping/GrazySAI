@@ -352,6 +352,8 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 | `.ora` (OpenRaster — Krita, GIMP, MyPaint) | Yes, with layers and folders | “Save As” or “Export → OpenRaster”: layers, folders, modes, opacity |
 | `.png`, `.jpg`, `.bmp`, `.tga`, `.tiff`, `.webp`, `.qoi` | Yes, as one layer | “File → Export” (flattened image; JPEG at quality 92, WebP lossless) |
 
+“File → Save with number” saves next to the file under the next free number: `picture.sai2` → `picture_001.sai2`, `picture_009.sai2` → `picture_010.sai2`.
+
 Masks, paper, layer effects and curves do not go into `.psd` and `.ora` (the layer is written as
 pixels); other programs show a clipped layer in `.ora` as a normal one.
 

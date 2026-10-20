@@ -821,3 +821,4 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, con capas)
 файл повреждён = el archivo está dañado
 Тёмная тема = Tema oscuro
 PSB (большой PSD, со слоями) = PSB (PSD grande, con capas)
+Сохранить с номером = Guardar con número

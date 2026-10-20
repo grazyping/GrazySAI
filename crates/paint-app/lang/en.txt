@@ -822,3 +822,4 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, with layers)
 файл повреждён = the file is damaged
 Тёмная тема = Dark theme
 PSB (большой PSD, со слоями) = PSB (large PSD, with layers)
+Сохранить с номером = Save with number
