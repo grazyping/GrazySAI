@@ -348,6 +348,7 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 |---|---|---|
 | `.sai2` | Yes (Ctrl+O) | Ctrl+S, Shift+Ctrl+S (in the same format as SAI 2) |
 | `.psd` | Yes (RGB and grayscale, 8 and 16 bit, layer masks) | “Save As” or “Export → PSD”: with layers, folders, modes |
+| `.psb` | Yes (same as `.psd`) | “Save As” or “Export → PSB”: Photoshop large document, sides up to 300,000 px |
 | `.ora` (OpenRaster — Krita, GIMP, MyPaint) | Yes, with layers and folders | “Save As” or “Export → OpenRaster”: layers, folders, modes, opacity |
 | `.png`, `.jpg`, `.bmp`, `.tga`, `.tiff`, `.webp`, `.qoi` | Yes, as one layer | “File → Export” (flattened image; JPEG at quality 92, WebP lossless) |
 

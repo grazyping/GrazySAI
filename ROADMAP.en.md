@@ -88,7 +88,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Large Water brush: blur over a reduced copy of the layer, as in SAI — 350 px: 7.4 → 2.0 s per 1000 px of line
 - [x] Perspective rulers: display and drawing along them (reference: Krita's perspective and vanishing point assistants); our own version, not written to the file (0.8.38)
 
-### 1.0 — everything from SAI 2 for everyday work (current version 1.0.4)
+### 1.0 — everything from SAI 2 for everyday work (current version 1.0.5)
 
 Everything people use in PaintTool SAI 2017 for everyday work is there and checked against the original (feature-by-feature comparison — `docs/32-sai-comparison.md`); `.sai2` files open and save without loss. A code audit came before the release (`docs/audit-2026-10-16.md`).
 
@@ -184,7 +184,7 @@ A Filter menu with CSP's submenus; windows with a preview, like our current filt
 
 ### Remaining SAI 2017 features (check of 20 Oct 2026)
 
-- [ ] PSB: export and opening of large Photoshop files (side over 30,000 px)
+- [x] PSB: export and opening of large Photoshop files (side over 30,000 px) (1.0.5)
 
 ### Beyond SAI — ideas from Krita (after 1.0)
 

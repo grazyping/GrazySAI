@@ -47,13 +47,13 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
         Ask::Open => (
             tr("Открыть"),
             vec![
-                (tr("Рисунки").to_string(), vec!["sai2", "psd", "ora", "png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi"]),
+                (tr("Рисунки").to_string(), vec!["sai2", "psd", "psb", "ora", "png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi"]),
                 (tr("Все файлы").to_string(), vec!["*"]),
             ],
         ),
         Ask::SaveAs => (
             tr("Сохранить как"),
-            vec![("SAI 2 (.sai2)".to_string(), vec!["sai2"]), ("OpenRaster (.ora)".to_string(), vec!["ora"]), ("Photoshop (.psd)".to_string(), vec!["psd"])],
+            vec![("SAI 2 (.sai2)".to_string(), vec!["sai2"]), ("OpenRaster (.ora)".to_string(), vec!["ora"]), ("Photoshop (.psd)".to_string(), vec!["psd"]), ("Photoshop PSB (.psb)".to_string(), vec!["psb"])],
         ),
         Ask::Export(ext) => (
             tr("Экспорт"),
@@ -61,6 +61,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
                 match *ext {
                     "jpg" => "JPEG (.jpg)".to_string(),
                     "psd" => "Photoshop (.psd)".to_string(),
+                    "psb" => "Photoshop (.psb)".to_string(),
                     "ora" => "OpenRaster (.ora)".to_string(),
                     e => format!("{} (.{e})", e.to_ascii_uppercase()),
                 },

@@ -76,7 +76,7 @@ const SHOW_KEYS: [&str; 7] = ["show_navigator", "show_layers", "show_color", "sh
 const SHOW_NAMES: [&str; 7] = ["Навигатор", "Слои", "Цвет", "Инструменты", "Быстрая панель", "Вкладки видов", "Строка состояния"];
 
 /// Пункты «Файл → Экспорт»: сведённые картинки, затем форматы со слоями.
-const EXPORTS: [(&str, &str); 9] = [
+const EXPORTS: [(&str, &str); 10] = [
     ("PNG (сведённая картинка)", "png"),
     ("JPEG (качество 92)", "jpg"),
     ("BMP", "bmp"),
@@ -85,13 +85,14 @@ const EXPORTS: [(&str, &str); 9] = [
     ("WebP (без потерь)", "webp"),
     ("QOI", "qoi"),
     ("PSD (со слоями)", "psd"),
+    ("PSB (большой PSD, со слоями)", "psb"),
     ("OpenRaster (.ora, со слоями)", "ora"),
 ];
 
-/// Расширение формата со слоями, в который программа сохраняет (`sai2`, `ora`, `psd`).
+/// Расширение формата со слоями, в который программа сохраняет (`sai2`, `ora`, `psd`, `psb`).
 fn layered_ext(path: &std::path::Path) -> Option<&'static str> {
     let e = path.extension()?.to_string_lossy().to_ascii_lowercase();
-    ["sai2", "ora", "psd"].into_iter().find(|x| *x == e)
+    ["sai2", "ora", "psd", "psb"].into_iter().find(|x| *x == e)
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -2660,10 +2661,10 @@ app.open_canvas_dialog(d == "resolution")
 
     fn open(&mut self, path: PathBuf) {
         let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
-        if ext == "psd" || ext == "ora" || paint_core::io::IMAGE_EXTS.contains(&ext.as_str()) {
+        if ext == "psd" || ext == "psb" || ext == "ora" || paint_core::io::IMAGE_EXTS.contains(&ext.as_str()) {
             let started = Instant::now();
             let loaded = read_guarded(|| {
-                if ext == "psd" {
+                if ext == "psd" || ext == "psb" {
                     paint_formats::psd::load(&path)
                 } else if ext == "ora" {
                     paint_formats::ora::load(&path)
@@ -3078,6 +3079,7 @@ app.open_canvas_dialog(d == "resolution")
         let result: Result<(), Box<dyn std::error::Error>> = match layered_ext(&path) {
             Some("ora") => paint_formats::ora::save(&self.doc, &path),
             Some("psd") => paint_formats::psd::save(&self.doc, &path),
+            Some("psb") => paint_formats::psd::save_psb(&self.doc, &path),
             _ => paint_formats::sai2_write::save(&self.doc, &path).map_err(Into::into),
         };
         match result {
@@ -3117,6 +3119,7 @@ app.open_canvas_dialog(d == "resolution")
     fn export_to(&mut self, path: PathBuf, ext: &str) {
         let result: Result<(), Box<dyn std::error::Error>> = match ext {
             "psd" => paint_formats::psd::save(&self.doc, &path),
+            "psb" => paint_formats::psd::save_psb(&self.doc, &path),
             "ora" => paint_formats::ora::save(&self.doc, &path),
             _ => paint_core::io::save_image(&path, self.doc.width, self.doc.height, &self.doc.flatten()),
         };

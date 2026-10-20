@@ -121,7 +121,8 @@ fn unpackbits(data: &[u8], len: usize) -> Res<Vec<u8>> {
 }
 
 /// Каналы прямоугольника (RGBA по 8 бит) в виде плоскостей, сжатые PackBits: [A, R, G, B].
-fn encode_planes(rgba: &[u8], w: usize, h: usize, order: &[usize]) -> Vec<Vec<u8>> {
+/// `big` — PSB: длины строк по 4 байта (у PSD — по 2).
+fn encode_planes(rgba: &[u8], w: usize, h: usize, order: &[usize], big: bool) -> Vec<Vec<u8>> {
     order
         .iter()
         .map(|&c| {
@@ -129,7 +130,11 @@ fn encode_planes(rgba: &[u8], w: usize, h: usize, order: &[usize]) -> Vec<Vec<u8
             let mut out = Vec::new();
             out.extend(1u16.to_be_bytes());
             for r in &rows {
-                out.extend((r.len() as u16).to_be_bytes());
+                if big {
+                    out.extend((r.len() as u32).to_be_bytes());
+                } else {
+                    out.extend((r.len() as u16).to_be_bytes());
+                }
             }
             for r in rows {
                 out.extend(r);
@@ -164,7 +169,7 @@ struct Record {
     section: u32,
 }
 
-fn records(layers: &[Layer], out: &mut Vec<Record>) {
+fn records(layers: &[Layer], out: &mut Vec<Record>, big: bool) {
     for l in layers {
         let base = |rect, channels, section| Record {
             rect,
@@ -180,7 +185,7 @@ fn records(layers: &[Layer], out: &mut Vec<Record>) {
         match &l.children {
             Some(ch) => {
                 out.push(Record { name: "</Layer group>".into(), key: *b"norm", opacity: 255, clipping: false, visible: true, ..base([0; 4], empty(), 3) });
-                records(ch, out);
+                records(ch, out, big);
                 let mut folder = base([0; 4], empty(), 1);
                 if l.pass_through {
                     folder.key = *b"pass";
@@ -189,7 +194,7 @@ fn records(layers: &[Layer], out: &mut Vec<Record>) {
             }
             None => {
                 let (x, y, w, h, rgba) = layer_rgba(&l.pixels);
-                let planes = encode_planes(&rgba, w, h, &[3, 0, 1, 2]);
+                let planes = encode_planes(&rgba, w, h, &[3, 0, 1, 2], big);
                 let channels = [-1i16, 0, 1, 2].into_iter().zip(planes).collect();
                 out.push(base([y, x, y + h as i32, x + w as i32], channels, 0));
             }
@@ -221,9 +226,28 @@ fn block(key: &[u8; 4], data: &[u8]) -> Vec<u8> {
 
 /// Сохранить документ в PSD.
 pub fn save(doc: &Document, path: &Path) -> Res<()> {
+    save_as(doc, path, false)
+}
+
+/// Сохранить документ в PSB (большой документ Photoshop): то же, что PSD, но версия 2, стороны до
+/// 300 000 px, длины разделов и каналов по 8 байт, длины строк PackBits по 4.
+pub fn save_psb(doc: &Document, path: &Path) -> Res<()> {
+    save_as(doc, path, true)
+}
+
+/// Длина раздела: 4 байта у PSD, 8 у PSB.
+fn put_len(out: &mut Vec<u8>, n: usize, big: bool) {
+    if big {
+        out.extend((n as u64).to_be_bytes());
+    } else {
+        out.extend((n as u32).to_be_bytes());
+    }
+}
+
+fn save_as(doc: &Document, path: &Path, big: bool) -> Res<()> {
     let (w, h) = (doc.width as usize, doc.height as usize);
     let mut recs = Vec::new();
-    records(&doc.layers, &mut recs);
+    records(&doc.layers, &mut recs, big);
     // запись слоёв
     let mut info = Vec::new();
     info.extend((recs.len() as i16).to_be_bytes());
@@ -234,7 +258,7 @@ pub fn save(doc: &Document, path: &Path) -> Res<()> {
         info.extend((r.channels.len() as u16).to_be_bytes());
         for (id, data) in &r.channels {
             info.extend(id.to_be_bytes());
-            info.extend((data.len() as u32).to_be_bytes());
+            put_len(&mut info, data.len(), big);
         }
         info.extend(b"8BIM");
         info.extend(r.key);
@@ -273,7 +297,7 @@ pub fn save(doc: &Document, path: &Path) -> Res<()> {
     }
     let mut out = Vec::new();
     out.extend(b"8BPS");
-    out.extend(1u16.to_be_bytes());
+    out.extend((if big { 2u16 } else { 1u16 }).to_be_bytes());
     out.extend([0u8; 6]);
     out.extend(4u16.to_be_bytes()); // R, G, B, альфа
     out.extend((h as u32).to_be_bytes());
@@ -283,20 +307,21 @@ pub fn save(doc: &Document, path: &Path) -> Res<()> {
     out.extend(0u32.to_be_bytes()); // цветовой режим
     out.extend(0u32.to_be_bytes()); // ресурсы
     let mut lm = Vec::new();
-    lm.extend((info.len() as u32).to_be_bytes());
+    put_len(&mut lm, info.len(), big);
     lm.extend(info);
     lm.extend(0u32.to_be_bytes()); // общая маска
-    out.extend((lm.len() as u32).to_be_bytes());
+    put_len(&mut out, lm.len(), big);
     out.extend(lm);
     // сведённая картинка: R, G, B, A — заголовок со всеми длинами строк, затем строки
     let flat = doc.flatten();
-    let planes = encode_planes(&flat, w, h, &[0, 1, 2, 3]);
+    let planes = encode_planes(&flat, w, h, &[0, 1, 2, 3], big);
     out.extend(1u16.to_be_bytes());
+    let cb = if big { 4 } else { 2 };
     let mut counts = Vec::new();
     let mut rows = Vec::new();
     for p in &planes {
-        counts.extend_from_slice(&p[2..2 + 2 * h]);
-        rows.extend_from_slice(&p[2 + 2 * h..]);
+        counts.extend_from_slice(&p[2..2 + cb * h]);
+        rows.extend_from_slice(&p[2 + cb * h..]);
     }
     out.extend(counts);
     out.extend(rows);
@@ -327,7 +352,18 @@ impl Reader<'_> {
     fn i32(&mut self) -> Res<i32> {
         Ok(i32::from_be_bytes(self.take(4)?.try_into()?))
     }
+    /// Длина раздела: 4 байта у PSD, 8 у PSB.
+    fn len(&mut self, big: bool) -> Res<usize> {
+        if big {
+            Ok(usize::try_from(u64::from_be_bytes(self.take(8)?.try_into()?)).map_err(|_| "PSB: слишком большой раздел")?)
+        } else {
+            Ok(self.u32()? as usize)
+        }
+    }
 }
+
+/// Блоки слоя, у которых в PSB длина 8 байт (спецификация Adobe).
+const BIG_KEYS: [&[u8; 4]; 13] = [b"LMsk", b"Lr16", b"Lr32", b"Layr", b"Mt16", b"Mt32", b"Mtrn", b"Alph", b"FMsk", b"lnk2", b"FEid", b"FXid", b"PxSD"];
 
 /// Канал: сжатие и данные → `n` байт на строку × `h` строк.
 /// Распаковать `rows` строк по `row_bytes` байт: 0 — без сжатия, 1 — PackBits (счётчики строк
@@ -382,7 +418,7 @@ fn samples(raw: &[u8], depth: u16) -> Vec<u16> {
 }
 
 /// Канал слоя: два байта сжатия и данные.
-fn read_channel(data: &[u8], w: usize, h: usize, depth: u16) -> Res<Vec<u16>> {
+fn read_channel(data: &[u8], w: usize, h: usize, depth: u16, big: bool) -> Res<Vec<u16>> {
     if data.len() < 2 {
         return Ok(vec![0; w * h]);
     }
@@ -391,8 +427,12 @@ fn read_channel(data: &[u8], w: usize, h: usize, depth: u16) -> Res<Vec<u16>> {
     let row_bytes = w * depth as usize / 8;
     let mut counts = Vec::new();
     if comp == 1 {
-        counts = (0..h).map(|y| body.get(2 * y..2 * y + 2).map(|c| u16::from_be_bytes([c[0], c[1]]) as usize)).collect::<Option<_>>().ok_or("PSD: короткий канал")?;
-        body = &body[2 * h..];
+        let cb = if big { 4 } else { 2 };
+        counts = (0..h)
+            .map(|y| body.get(cb * y..cb * y + cb).map(|c| if big { u32::from_be_bytes([c[0], c[1], c[2], c[3]]) as usize } else { u16::from_be_bytes([c[0], c[1]]) as usize }))
+            .collect::<Option<_>>()
+            .ok_or("PSD: короткий канал")?;
+        body = body.get(cb * h..).ok_or("PSD: короткий канал")?;
     }
     Ok(samples(&unpack(comp, body, &counts, h, row_bytes, depth)?, depth))
 }
@@ -455,18 +495,25 @@ fn from_rgba16(c: [u16; 4]) -> paint_core::pixel::Px {
     [f(c[0]), f(c[1]), f(c[2]), a as u16]
 }
 
-/// Открыть PSD: RGB или оттенки серого, 8 или 16 бит; слои, папки, маски слоя.
-/// Наибольшая сторона документа и слоя PSD (спецификация Adobe; у PSB больше — не читаем).
+/// Наибольшая сторона документа и слоя: PSD — 30 000, PSB — 300 000 (спецификация Adobe).
 const MAX_SIDE: usize = 30_000;
+const MAX_SIDE_PSB: usize = 300_000;
 /// Во сколько раз данные канала могут развернуться при распаковке (Deflate — до ~1032:1).
 const EXPAND_MAX: usize = 1100;
 
+/// Открыть PSD или PSB: RGB или оттенки серого, 8 или 16 бит; слои, папки, маски слоя.
 pub fn load(path: &Path) -> Res<Document> {
     let d = std::fs::read(path)?;
     let mut r = Reader { d: &d, p: 0 };
-    if r.take(4)? != b"8BPS" || r.u16()? != 1 {
-        return Err("не PSD версии 1".into());
+    if r.take(4)? != b"8BPS" {
+        return Err("не PSD".into());
     }
+    let big = match r.u16()? {
+        1 => false,
+        2 => true,
+        v => return Err(format!("PSD: неизвестная версия {v}").into()),
+    };
+    let max_side = if big { MAX_SIDE_PSB } else { MAX_SIDE };
     r.take(6)?;
     let channels = r.u16()? as usize;
     let h = r.u32()? as usize;
@@ -474,7 +521,7 @@ pub fn load(path: &Path) -> Res<Document> {
     let depth = r.u16()?;
     let mode = r.u16()?;
     // по спецификации PSD стороны — 1…30000; больше — испорченный файл (иначе гигабайты памяти)
-    if !(1..=MAX_SIDE).contains(&w) || !(1..=MAX_SIDE).contains(&h) {
+    if !(1..=max_side).contains(&w) || !(1..=max_side).contains(&h) {
         return Err(format!("PSD: неверный размер {w}×{h}").into());
     }
     if !matches!(depth, 8 | 16) || !matches!(mode, 1 | 3) {
@@ -487,14 +534,14 @@ pub fn load(path: &Path) -> Res<Document> {
     r.take(n)?;
     let n = r.u32()? as usize;
     let linear = linear_profile(r.take(n)?);
-    let lm_len = r.u32()? as usize;
+    let lm_len = r.len(big)?;
     let lm_end = r.p + lm_len;
     let mut doc = Document::new(w as u32, h as u32);
     doc.layers.clear();
     // стопка открытых папок: (слои внутри), снизу вверх
     let mut stack: Vec<Vec<Layer>> = vec![Vec::new()];
     if lm_len > 0 {
-        let info_len = r.u32()? as usize;
+        let info_len = r.len(big)?;
         if info_len > 0 {
             let count = (r.u16()? as i16).unsigned_abs() as usize;
             struct Rec {
@@ -515,7 +562,7 @@ pub fn load(path: &Path) -> Res<Document> {
                 let nc = r.u16()? as usize;
                 let mut chans = Vec::new();
                 for _ in 0..nc {
-                    chans.push((r.u16()? as i16, r.u32()? as usize));
+                    chans.push((r.u16()? as i16, r.len(big)?));
                 }
                 r.take(4)?;
                 let key: [u8; 4] = r.take(4)?.try_into()?;
@@ -544,7 +591,7 @@ pub fn load(path: &Path) -> Res<Document> {
                         break;
                     }
                     let k: [u8; 4] = r.take(4)?.try_into()?;
-                    let len = r.u32()? as usize;
+                    let len = if big && BIG_KEYS.contains(&&k) { r.len(true)? } else { r.u32()? as usize };
                     let data = r.take(len)?.to_vec();
                     if &k == b"luni" && data.len() >= 4 {
                         let n = u32::from_be_bytes(data[..4].try_into()?) as usize;
@@ -562,7 +609,7 @@ pub fn load(path: &Path) -> Res<Document> {
             for rec in recs {
                 let [top, left, bottom, right] = rec.rect;
                 let (lw, lh) = ((right as i64 - left as i64).max(0) as usize, (bottom as i64 - top as i64).max(0) as usize);
-                if lw > MAX_SIDE || lh > MAX_SIDE {
+                if lw > max_side || lh > max_side {
                     return Err(format!("PSD: неверный размер слоя {lw}×{lh}").into());
                 }
                 // каналы слоя (не маски) должны быть способны дать столько точек
@@ -576,15 +623,15 @@ pub fn load(path: &Path) -> Res<Document> {
                 for (id, len) in &rec.chans {
                     let data = r.take(*len)?.to_vec();
                     match id {
-                        -1 => alpha = read_channel(&data, lw, lh, depth)?,
+                        -1 => alpha = read_channel(&data, lw, lh, depth, big)?,
                         -2 => {
                             if let Some((mr, _, _)) = rec.mask {
                                 let (mw, mh) = ((mr[3] - mr[1]).max(0) as usize, (mr[2] - mr[0]).max(0) as usize);
-                                user_mask = Some(read_channel(&data, mw, mh, depth)?);
+                                user_mask = Some(read_channel(&data, mw, mh, depth, big)?);
                             }
                         }
                         &c if c >= 0 => {
-                            let plane = read_channel(&data, lw, lh, depth)?;
+                            let plane = read_channel(&data, lw, lh, depth, big)?;
                             for (i, &cid) in color_ids.iter().enumerate() {
                                 if cid == c {
                                     color[i] = plane.clone();
@@ -649,7 +696,7 @@ pub fn load(path: &Path) -> Res<Document> {
         let row_bytes = w * depth as usize / 8;
         let mut counts = Vec::new();
         if comp == 1 {
-            counts = (0..channels * h).map(|_| r.u16().map(|v| v as usize)).collect::<Res<_>>()?;
+            counts = (0..channels * h).map(|_| if big { r.u32().map(|v| v as usize) } else { r.u16().map(|v| v as usize) }).collect::<Res<_>>()?;
         }
         let body = &d[r.p..];
         let planes: Vec<Vec<u16>> = if comp == 1 {

@@ -55,6 +55,30 @@ fn psd_round_trip_keeps_layers_and_picture() {
     std::fs::remove_dir_all(dir).ok();
 }
 
+/// PSB (большой документ): версия 2 в заголовке, длины по 8 байт — слои и картинка те же, что
+/// у PSD; один и тот же документ читается обратно одинаково из обоих форматов.
+#[test]
+fn psb_round_trip_matches_psd() {
+    let doc = sample();
+    let dir = std::env::temp_dir().join(format!("grazysai-psb-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let (psd, psb) = (dir.join("проба.psd"), dir.join("проба.psb"));
+    paint_formats::psd::save(&doc, &psd).unwrap();
+    paint_formats::psd::save_psb(&doc, &psb).unwrap();
+    let raw = std::fs::read(&psb).unwrap();
+    assert_eq!(&raw[..6], b"8BPS\0\x02", "версия PSB");
+    let (a, b) = (paint_formats::psd::load(&psd).unwrap(), paint_formats::psd::load(&psb).unwrap());
+    let names = |d: &Document| d.layers.iter().map(|l| l.name.clone()).collect::<Vec<_>>();
+    assert_eq!(names(&a), names(&b));
+    assert_eq!(b.layers[1].mode, BlendMode::Multiply);
+    assert!(b.layers[2].pass_through);
+    assert_eq!(a.flatten(), b.flatten());
+    if let Ok(keep) = std::env::var("PSB_KEEP") {
+        std::fs::copy(&psb, keep).unwrap();
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// PSD, записанный другой программой (photocraft-cli): слои и папка читаются.
 #[test]
 fn reads_psd_written_by_another_program() {

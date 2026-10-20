@@ -48,7 +48,7 @@ const THUMB: u32 = 112;
 const CELL: Vec2 = Vec2::new(132.0, 150.0);
 
 /// Форматы сохранения: расширение и подпись.
-const SAVE_FORMATS: [(&str, &str); 3] = [("sai2", "SAI 2 (.sai2)"), ("ora", "OpenRaster (.ora)"), ("psd", "Photoshop (.psd)")];
+const SAVE_FORMATS: [(&str, &str); 4] = [("sai2", "SAI 2 (.sai2)"), ("ora", "OpenRaster (.ora)"), ("psd", "Photoshop (.psd)"), ("psb", "Photoshop (.psb)")];
 
 pub struct FileViewer {
     pub mode: Mode,
@@ -368,7 +368,7 @@ impl FileViewer {
         // низ: тип файлов, имя и формат (сохранение), состояние, OK / Отмена
         ui.horizontal(|ui| {
             ui.label(tr("Тип:"));
-            let label = |all: bool| if all { tr("Все файлы").to_string() } else { tr("Рисунки (*.sai2, *.psd, *.ora, *.png, *.jpg, *.bmp, *.tga, *.tif, *.webp, *.qoi)").to_string() };
+            let label = |all: bool| if all { tr("Все файлы").to_string() } else { tr("Рисунки (*.sai2, *.psd, *.psb, *.ora, *.png, *.jpg, *.bmp, *.tga, *.tif, *.webp, *.qoi)").to_string() };
             let before = self.all_files;
             egui::ComboBox::from_id_salt("fv_type").selected_text(label(self.all_files)).width(420.0).show_ui(ui, |ui| {
                 ui.selectable_value(&mut self.all_files, false, label(false));
