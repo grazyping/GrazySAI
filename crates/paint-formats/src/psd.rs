@@ -455,7 +455,7 @@ fn save_as(doc: &Document, path: &Path, big: bool, deep: bool) -> Res<()> {
         res.extend([0, 0]);
         res.extend((icc.len() as u32).to_be_bytes());
         res.extend(&icc);
-        if res.len() % 2 != 0 {
+        if !res.len().is_multiple_of(2) {
             res.push(0);
         }
         out.extend((res.len() as u32).to_be_bytes());
