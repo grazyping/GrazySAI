@@ -167,7 +167,7 @@ fn psd_16_bit_keeps_fine_steps() {
     std::fs::create_dir_all(&dir).unwrap();
     for big in [false, true] {
         let path = dir.join(if big { "16.psb" } else { "16.psd" });
-        paint_formats::psd::save_with(&doc, &path, big, true).unwrap();
+        paint_formats::psd::save_with(&doc, &path, paint_formats::psd::SaveOptions { big, deep: true, exact: false }).unwrap();
         let raw = std::fs::read(&path).unwrap();
         assert_eq!(u16::from_be_bytes([raw[22], raw[23]]), 16, "глубина в заголовке");
         let back = paint_formats::psd::load(&path).unwrap();
@@ -183,5 +183,42 @@ fn psd_16_bit_keeps_fine_steps() {
             std::fs::copy(&path, format!("{keep}.{}", if big { "psb" } else { "psd" })).unwrap();
         }
     }
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// «Сохранить вид точно»: слой «Сияние» (режима нет в PSD) пишется обычным слоем с готовым
+/// результатом — PSD сводится так же, как исходник; без этого вид заметно другой.
+#[test]
+fn psd_exact_look_keeps_sai_modes() {
+    let mut doc = Document::new(32, 16);
+    for y in 0..16 {
+        for x in 0..32 {
+            doc.layers[0].pixels.set(x, y, from_rgba8([(x * 8) as u8, 90, 160, 255]));
+        }
+    }
+    let mut glow = Layer::new("Сияние");
+    for y in 2..14 {
+        for x in 4..28 {
+            glow.pixels.set(x, y, from_rgba8([200, 120, 40, if x < 10 { 120 } else { 255 }]));
+        }
+    }
+    glow.mode = BlendMode::Shine;
+    glow.opacity = 0.6;
+    doc.layers.push(glow);
+    let mut top = Layer::new("Сверху");
+    top.pixels.set(20, 8, from_rgba8([0, 0, 0, 255]));
+    doc.layers.push(top);
+    let dir = std::env::temp_dir().join(format!("grazysai-psdexact-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let worst = |exact: bool| {
+        let path = dir.join(format!("{exact}.psd"));
+        paint_formats::psd::save_with(&doc, &path, paint_formats::psd::SaveOptions { exact, ..Default::default() }).unwrap();
+        let back = paint_formats::psd::load(&path).unwrap();
+        assert_eq!(back.layers.len(), 3, "слои на месте");
+        back.flatten().iter().zip(doc.flatten()).map(|(a, b)| (*a as i32 - b as i32).abs()).max().unwrap()
+    };
+    let (exact, plain) = (worst(true), worst(false));
+    assert!(exact <= 1, "точный вид: {exact}");
+    assert!(plain > 4, "без точного вида разница должна быть видна: {plain}");
     std::fs::remove_dir_all(dir).ok();
 }

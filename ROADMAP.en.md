@@ -201,7 +201,7 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 - [x] Pen pressure curve in the settings (1.0.6)
 - [x] PSD: layer masks on export (1.0.7)
 - [x] PSD and PSB: 16 bits on save (1.0.17)
-- [ ] PSD: “Keep the exact look” for SAI-only modes
+- [x] PSD: “Keep the exact look” for SAI-only modes (1.0.18)
 - [x] OpenRaster (`.ora`): open and save with layers (0.8.43)
 - [x] “Save incremental” (picture_002.sai2) (1.0.6)
 - [x] History memory and recovery copy interval in a settings window (0.9.2)

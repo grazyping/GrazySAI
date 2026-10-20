@@ -1356,6 +1356,11 @@ impl Document {
         self.flatten_into(self.background_f32(), crate::pixel::f32_to_rgba16)
     }
 
+    /// Сведение без подложки фона по 16 бит на канал (без предумножения).
+    pub fn flatten_clear16(&self) -> Vec<u16> {
+        self.flatten_into([0.0; 4], crate::pixel::f32_to_rgba16)
+    }
+
     fn flatten_on(&self, bg: [f32; 4]) -> Vec<u8> {
         self.flatten_into(bg, |c| to_rgba8(from_f32(c)))
     }

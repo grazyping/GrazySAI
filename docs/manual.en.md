@@ -388,6 +388,12 @@ engines differ. A `.bfps` palette has no images (it refers to CSP materials), so
 and a 16-bit file keeps smooth gradients without 8-bit steps; an sRGB profile is embedded so other programs
 do not take the picture as linear (checked in Krita). The file is noticeably larger.
 
+SAI’s Shine, Shade, Shade/Shine, Burn, Dodge and Burn/Dodge modes do not exist in PSD — normally they are
+replaced by the nearest Photoshop modes, and the look shifts slightly. “PSD and PSB: keep the exact look”
+writes such layers as normal layers holding the finished result (what is under the layer together with
+it): the look is the same, but the mode can no longer be changed in another program. Layers inside
+non-pass-through folders are written as usual.
+
 Layer masks are written to `.psd`/`.psb` (not to `.ora`). Paper, layer effects and curves do not go
 into `.psd` and `.ora` (the layer is written as pixels); other programs show a clipped layer in `.ora`
 as a normal one.

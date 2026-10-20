@@ -559,11 +559,13 @@ struct Options {
     popup_palette: bool,
     /// PSD и PSB — 16 бит на канал (с профилем sRGB) вместо 8.
     psd16: bool,
+    /// PSD и PSB: слои с режимами SAI (их нет в PSD) — обычными слоями с готовым видом.
+    psd_exact: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false, psd16: false }
+        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false, psd16: false, psd_exact: false }
     }
 }
 
@@ -1883,7 +1885,7 @@ app.open_canvas_dialog(d == "resolution")
             self.viewer_view = ((v >> 8) as u8, v as u8);
         }
         let o = &mut self.opts;
-        for (k, v) in [("opt.dbl_props", &mut o.dbl_props), ("opt.swap_zoom", &mut o.swap_zoom), ("opt.size_relative", &mut o.size_relative), ("opt.spring_tools", &mut o.spring_tools), ("opt.spring_color", &mut o.spring_color), ("opt.spring_funcs", &mut o.spring_funcs), ("opt.duplex_revert", &mut o.duplex_revert), ("opt.popup_palette", &mut o.popup_palette), ("opt.psd16", &mut o.psd16)] {
+        for (k, v) in [("opt.dbl_props", &mut o.dbl_props), ("opt.swap_zoom", &mut o.swap_zoom), ("opt.size_relative", &mut o.size_relative), ("opt.spring_tools", &mut o.spring_tools), ("opt.spring_color", &mut o.spring_color), ("opt.spring_funcs", &mut o.spring_funcs), ("opt.duplex_revert", &mut o.duplex_revert), ("opt.popup_palette", &mut o.popup_palette), ("opt.psd16", &mut o.psd16), ("opt.psd_exact", &mut o.psd_exact)] {
             s.read_bool(k, v);
         }
         for (k, v) in [("opt.spring_ms", &mut o.spring_ms), ("opt.move_guard_ms", &mut o.move_guard_ms), ("opt.history_mb", &mut o.history_mb), ("opt.recovery_min", &mut o.recovery_min)] {
@@ -2066,7 +2068,7 @@ app.open_canvas_dialog(d == "resolution")
         }
         s.set("viewer.view", ((self.viewer_view.0 as u16) << 8) | self.viewer_view.1 as u16);
         let o = self.opts;
-        for (k, v) in [("opt.dbl_props", o.dbl_props), ("opt.swap_zoom", o.swap_zoom), ("opt.size_relative", o.size_relative), ("opt.spring_tools", o.spring_tools), ("opt.spring_color", o.spring_color), ("opt.spring_funcs", o.spring_funcs), ("opt.duplex_revert", o.duplex_revert), ("opt.popup_palette", o.popup_palette), ("opt.psd16", o.psd16)] {
+        for (k, v) in [("opt.dbl_props", o.dbl_props), ("opt.swap_zoom", o.swap_zoom), ("opt.size_relative", o.size_relative), ("opt.spring_tools", o.spring_tools), ("opt.spring_color", o.spring_color), ("opt.spring_funcs", o.spring_funcs), ("opt.duplex_revert", o.duplex_revert), ("opt.popup_palette", o.popup_palette), ("opt.psd16", o.psd16), ("opt.psd_exact", o.psd_exact)] {
             s.set(k, v as u8);
         }
         for (k, v) in [("opt.spring_ms", o.spring_ms), ("opt.move_guard_ms", o.move_guard_ms), ("opt.history_mb", o.history_mb), ("opt.recovery_min", o.recovery_min)] {
@@ -3362,8 +3364,8 @@ app.open_canvas_dialog(d == "resolution")
         let started = Instant::now();
         let result: Result<(), Box<dyn std::error::Error>> = match layered_ext(&path) {
             Some("ora") => paint_formats::ora::save(&self.doc, &path),
-            Some("psd") => paint_formats::psd::save_with(&self.doc, &path, false, self.opts.psd16),
-            Some("psb") => paint_formats::psd::save_with(&self.doc, &path, true, self.opts.psd16),
+            Some("psd") => paint_formats::psd::save_with(&self.doc, &path, paint_formats::psd::SaveOptions { big: false, deep: self.opts.psd16, exact: self.opts.psd_exact }),
+            Some("psb") => paint_formats::psd::save_with(&self.doc, &path, paint_formats::psd::SaveOptions { big: true, deep: self.opts.psd16, exact: self.opts.psd_exact }),
             _ => paint_formats::sai2_write::save(&self.doc, &path).map_err(Into::into),
         };
         match result {
@@ -3402,8 +3404,8 @@ app.open_canvas_dialog(d == "resolution")
 
     fn export_to(&mut self, path: PathBuf, ext: &str) {
         let result: Result<(), Box<dyn std::error::Error>> = match ext {
-            "psd" => paint_formats::psd::save_with(&self.doc, &path, false, self.opts.psd16),
-            "psb" => paint_formats::psd::save_with(&self.doc, &path, true, self.opts.psd16),
+            "psd" => paint_formats::psd::save_with(&self.doc, &path, paint_formats::psd::SaveOptions { big: false, deep: self.opts.psd16, exact: self.opts.psd_exact }),
+            "psb" => paint_formats::psd::save_with(&self.doc, &path, paint_formats::psd::SaveOptions { big: true, deep: self.opts.psd16, exact: self.opts.psd_exact }),
             "ora" => paint_formats::ora::save(&self.doc, &path),
             _ => paint_core::io::save_image(&path, self.doc.width, self.doc.height, &self.doc.flatten()),
         };
@@ -9516,6 +9518,7 @@ impl PaintApp {
             });
             ui.checkbox(&mut o.popup_palette, tr("Правый щелчок по холсту открывает палитру: цвета и кисти"));
             ui.checkbox(&mut o.psd16, tr("PSD и PSB — 16 бит на канал (точнее, файл больше)"));
+            ui.checkbox(&mut o.psd_exact, tr("PSD и PSB: сохранить вид точно — слои с режимами SAI пишутся готовым видом"));
             ui.checkbox(&mut o.duplex_revert, tr("Повторное нажатие клавиши инструмента возвращает прежний"));
             ui.weak(tr("(*) Зеркало вида, «Не замечать линейку», «Прямая линия»"));
             head(ui, tr("Защита от случайного сдвига слоя"));

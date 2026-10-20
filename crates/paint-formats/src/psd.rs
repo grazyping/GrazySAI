@@ -351,20 +351,114 @@ fn srgb_icc() -> Vec<u8> {
     out
 }
 
-/// Сохранить документ в PSD.
-pub fn save(doc: &Document, path: &Path) -> Res<()> {
-    save_as(doc, path, false, false)
+/// Как сохранять PSD.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SaveOptions {
+    /// PSB (большой документ) вместо PSD.
+    pub big: bool,
+    /// 16 бит на канал вместо 8.
+    pub deep: bool,
+    /// «Сохранить вид точно»: слои с режимами SAI, которых нет в PSD, пишутся обычными слоями
+    /// с готовым результатом (см. [`baked_layers`]).
+    pub exact: bool,
 }
 
-/// Сохранить в PSD (`big` — PSB) с 8 или 16 битами на канал (`deep`).
-pub fn save_with(doc: &Document, path: &Path, big: bool, deep: bool) -> Res<()> {
-    save_as(doc, path, big, deep)
+/// Сохранить документ в PSD.
+pub fn save(doc: &Document, path: &Path) -> Res<()> {
+    save_with(doc, path, SaveOptions::default())
+}
+
+/// Сохранить в PSD или PSB с настройками.
+pub fn save_with(doc: &Document, path: &Path, o: SaveOptions) -> Res<()> {
+    let baked;
+    let layers = if o.exact {
+        baked = baked_layers(doc);
+        &baked
+    } else {
+        &doc.layers
+    };
+    save_as(doc, layers, path, o.big, o.deep)
+}
+
+/// Режимы SAI без пары в PSD: при обычном сохранении они подменяются ближайшими («Сияние» —
+/// «Линейный осветлитель» и т. д.), и вид немного меняется.
+fn sai_only(m: BlendMode) -> bool {
+    use BlendMode::*;
+    matches!(m, Shine | Shade | ShadeShine | Burn | Dodge | BurnDodge)
+}
+
+/// Слои для «Сохранить вид точно». Видимый слой с режимом SAI заменяется обычным слоем, в котором
+/// там, где у него были пиксели, лежит готовое сведение всего, что под ним, вместе с ним самим, —
+/// поверх нижних слоёв это даёт ровно тот же вид. Режим при этом не редактируется. Так делается
+/// только для слоёв верхнего уровня и внутри видимых «сквозных» папок с полной непрозрачностью
+/// (в других папках результат папки зависит от её собственного режима); остальные — как обычно.
+fn baked_layers(doc: &Document) -> Vec<Layer> {
+    fn collect(layers: &[Layer], prefix: &[usize], open: bool, out: &mut Vec<Vec<usize>>) {
+        for (i, l) in layers.iter().enumerate() {
+            let path = [prefix, &[i]].concat();
+            match &l.children {
+                Some(ch) => collect(ch, &path, open && l.visible && l.pass_through && l.opacity >= 1.0, out),
+                None if open && l.visible && sai_only(l.mode) => out.push(path),
+                None => {}
+            }
+        }
+    }
+    fn hide_above(layers: &mut [Layer], path: &[usize]) {
+        for l in layers.iter_mut().skip(path[0] + 1) {
+            l.visible = false;
+        }
+        if let (Some(ch), true) = (layers[path[0]].children.as_mut(), path.len() > 1) {
+            hide_above(ch, &path[1..]);
+        }
+    }
+    fn at<'a>(layers: &'a mut [Layer], path: &[usize]) -> &'a mut Layer {
+        let l = &mut layers[path[0]];
+        if path.len() == 1 {
+            l
+        } else {
+            at(l.children.as_mut().expect("путь ведёт в папку"), &path[1..])
+        }
+    }
+    let mut paths = Vec::new();
+    collect(&doc.layers, &[], true, &mut paths);
+    let mut out = doc.layers.clone();
+    let w = doc.width as usize;
+    for path in paths {
+        let mut probe = Document::new(doc.width, doc.height);
+        probe.effect_color = doc.effect_color;
+        probe.layers = doc.layers.clone();
+        hide_above(&mut probe.layers, &path);
+        let flat = probe.flatten_clear16();
+        let src = at(&mut probe.layers, &path);
+        let mut px = ColorMap::new();
+        if let Some((x0, y0, x1, y1)) = paint_core::selection::content_bounds(&src.pixels) {
+            for y in y0.max(0)..y1.min(doc.height as i32) {
+                for x in x0.max(0)..x1.min(doc.width as i32) {
+                    let hidden = src.mask.as_ref().is_some_and(|m| m.hide.get(x, y) >= 0x4000);
+                    if src.pixels.get(x, y)[3] == 0 || hidden {
+                        continue;
+                    }
+                    let i = (y as usize * w + x as usize) * 4;
+                    px.set(x, y, from_rgba16([flat[i], flat[i + 1], flat[i + 2], flat[i + 3]]));
+                }
+            }
+        }
+        let dst = at(&mut out, &path);
+        dst.pixels = px;
+        dst.mode = BlendMode::Normal;
+        dst.opacity = 1.0;
+        dst.clipping = false;
+        dst.mask = None;
+        dst.paper = None;
+        dst.effect = None;
+    }
+    out
 }
 
 /// Сохранить документ в PSB (большой документ Photoshop): то же, что PSD, но версия 2, стороны до
 /// 300 000 px, длины разделов и каналов по 8 байт, длины строк PackBits по 4.
 pub fn save_psb(doc: &Document, path: &Path) -> Res<()> {
-    save_as(doc, path, true, false)
+    save_with(doc, path, SaveOptions { big: true, ..Default::default() })
 }
 
 /// Длина раздела: 4 байта у PSD, 8 у PSB.
@@ -376,10 +470,10 @@ fn put_len(out: &mut Vec<u8>, n: usize, big: bool) {
     }
 }
 
-fn save_as(doc: &Document, path: &Path, big: bool, deep: bool) -> Res<()> {
+fn save_as(doc: &Document, layers: &[Layer], path: &Path, big: bool, deep: bool) -> Res<()> {
     let (w, h) = (doc.width as usize, doc.height as usize);
     let mut recs = Vec::new();
-    records(&doc.layers, &mut recs, big, deep, (w, h));
+    records(layers, &mut recs, big, deep, (w, h));
     // запись слоёв
     let mut info = Vec::new();
     info.extend((recs.len() as i16).to_be_bytes());

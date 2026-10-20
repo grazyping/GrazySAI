@@ -879,3 +879,4 @@ PSB (большой PSD, со слоями) = PSB (large PSD, with layers)
 текстура (картинки нет в файле) = texture (image not in the file)
 Бесшовный режим (холст повторяется) = Wrap-around mode (the canvas repeats)
 PSD и PSB — 16 бит на канал (точнее, файл больше) = PSD and PSB — 16 bits per channel (more precise, larger file)
+PSD и PSB: сохранить вид точно — слои с режимами SAI пишутся готовым видом = PSD and PSB: keep the exact look — layers in SAI-only modes are written as their finished look

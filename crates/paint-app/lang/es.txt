@@ -878,3 +878,4 @@ PSB (большой PSD, со слоями) = PSB (PSD grande, con capas)
 текстура (картинки нет в файле) = textura (la imagen no está en el archivo)
 Бесшовный режим (холст повторяется) = Modo envolvente (el lienzo se repite)
 PSD и PSB — 16 бит на канал (точнее, файл больше) = PSD y PSB — 16 bits por canal (más preciso, archivo más grande)
+PSD и PSB: сохранить вид точно — слои с режимами SAI пишутся готовым видом = PSD y PSB: conservar el aspecto exacto — las capas con modos de SAI se guardan con su aspecto final
