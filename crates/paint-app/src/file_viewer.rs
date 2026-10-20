@@ -74,6 +74,8 @@ pub struct FileViewer {
     new_folder: Option<String>,
     delete_ask: Option<PathBuf>,
     overwrite_ask: Option<PathBuf>,
+    /// Папка, в которую перейти в конце кадра (двойной щелчок приходит посреди отрисовки сетки).
+    pending_dir: Option<PathBuf>,
 }
 
 impl Drop for FileViewer {
@@ -161,6 +163,7 @@ impl FileViewer {
             new_folder: None,
             delete_ask: None,
             overwrite_ask: None,
+            pending_dir: None,
         };
         v.go(dir);
         v
@@ -285,7 +288,21 @@ impl FileViewer {
             out = Some(Outcome::Cancel);
         }
         self.dialogs(ctx);
+        if self.apply_pending() {
+            ctx.request_repaint();
+        }
         out
+    }
+
+    /// Выполнить отложенный переход в папку; `true`, если он был.
+    fn apply_pending(&mut self) -> bool {
+        match self.pending_dir.take() {
+            Some(d) => {
+                self.go(d);
+                true
+            }
+            None => false,
+        }
     }
 
     fn contents(&mut self, ui: &mut egui::Ui) -> Option<Outcome> {
@@ -403,8 +420,8 @@ impl FileViewer {
             Mode::Open => {
                 let it = self.items.get(self.selected?)?;
                 if it.dir {
-                    let p = it.path.clone();
-                    self.go(p);
+                    // переход — в конце кадра: сетка ещё рисует ячейки по текущему списку
+                    self.pending_dir = Some(it.path.clone());
                     None
                 } else {
                     Some(Outcome::Open(it.path.clone()))
@@ -889,6 +906,31 @@ mod tests {
         assert!(trash.join("files/рисунок 1.png").exists());
         let info = std::fs::read_to_string(trash.join("info/рисунок 1.png.trashinfo")).unwrap();
         assert!(info.starts_with("[Trash Info]\nPath=/") && info.contains("%20"), "{info}");
+        std::fs::remove_dir_all(d).ok();
+    }
+
+    /// Двойной щелчок по папке приходит посреди отрисовки сетки: после `ok()` обработчик ещё
+    /// читает `items[i]`, а сетка — остальные ячейки. Переход не должен менять список до конца
+    /// кадра, иначе вход в папку, где элементов меньше, ронял программу.
+    #[test]
+    fn entering_a_folder_keeps_items_until_the_frame_ends() {
+        let d = std::env::temp_dir().join(format!("grazysai-fv-{}", std::process::id()));
+        let sub = d.join("пустая папка");
+        std::fs::create_dir_all(&sub).unwrap();
+        for n in ["1.png", "2.png", "3.png"] {
+            std::fs::write(d.join(n), b"x").unwrap();
+        }
+        let mut v = FileViewer::new(Mode::Open, d.clone(), String::new(), Vec::new());
+        v.all_files = true;
+        v.reload();
+        let i = v.items.iter().position(|it| it.dir).unwrap();
+        let n = v.items.len();
+        v.selected = Some(i);
+        assert!(v.ok().is_none());
+        assert!(v.items.get(i).is_some() && v.items.len() == n, "список сменился посреди кадра");
+        v.apply_pending();
+        assert_eq!(v.dir, sub);
+        assert!(v.items.is_empty());
         std::fs::remove_dir_all(d).ok();
     }
 
