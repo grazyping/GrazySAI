@@ -877,3 +877,4 @@ PSB (большой PSD, со слоями) = PSB (PSD grande, con capas)
 толщина кончика = grosor de la punta
 текстура (картинки нет в файле) = textura (la imagen no está en el archivo)
 Бесшовный режим (холст повторяется) = Modo envolvente (el lienzo se repite)
+PSD и PSB — 16 бит на канал (точнее, файл больше) = PSD y PSB — 16 bits por canal (más preciso, archivo más grande)

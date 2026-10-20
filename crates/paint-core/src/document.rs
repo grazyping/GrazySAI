@@ -1351,16 +1351,25 @@ impl Document {
         self.flatten_on([0.0; 4])
     }
 
+    /// Сводит все видимые слои в RGBA по 16 бит на канал (без предумножения), с подложкой фона.
+    pub fn flatten16(&self) -> Vec<u16> {
+        self.flatten_into(self.background_f32(), crate::pixel::f32_to_rgba16)
+    }
+
     fn flatten_on(&self, bg: [f32; 4]) -> Vec<u8> {
+        self.flatten_into(bg, |c| to_rgba8(from_f32(c)))
+    }
+
+    fn flatten_into<T: Copy + Default + Send>(&self, bg: [f32; 4], conv: impl Fn([f32; 4]) -> [T; 4] + Sync) -> Vec<T> {
         let (w, h) = (self.width as i32, self.height as i32);
-        let mut out = vec![0u8; (w * h * 4) as usize];
+        let mut out = vec![T::default(); (w * h * 4) as usize];
         let rows = (h + TILE - 1) / TILE;
         let cols = (w + TILE - 1) / TILE;
         let row_bytes = (w * 4 * TILE) as usize;
         // полосы по высоте плитки — каждая в своём потоке
         let threads = crate::threads();
         let next = std::sync::atomic::AtomicI32::new(0);
-        let strips: Vec<std::sync::Mutex<&mut [u8]>> = out.chunks_mut(row_bytes).map(std::sync::Mutex::new).collect();
+        let strips: Vec<std::sync::Mutex<&mut [T]>> = out.chunks_mut(row_bytes).map(std::sync::Mutex::new).collect();
         std::thread::scope(|scope| {
             for _ in 0..threads.min(rows.max(1) as usize) {
                 scope.spawn(|| {
@@ -1383,7 +1392,7 @@ impl Document {
                                     if px >= w {
                                         break;
                                     }
-                                    let c = to_rgba8(from_f32(buf[(y * TILE + x) as usize]));
+                                    let c = conv(buf[(y * TILE + x) as usize]);
                                     let o = ((y * w + px) * 4) as usize;
                                     strip[o..o + 4].copy_from_slice(&c);
                                 }

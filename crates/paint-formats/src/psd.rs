@@ -144,6 +144,36 @@ fn encode_plane(w: usize, h: usize, at: impl Fn(usize, usize) -> u8, big: bool) 
     out
 }
 
+/// Один канал по 16 бит: сжатие 3 (ZIP с предсказанием, как пишет Photoshop) — в каждой строке
+/// разности соседних отсчётов, затем zlib на весь канал.
+fn encode_plane16(w: usize, h: usize, at: impl Fn(usize, usize) -> u16) -> Vec<u8> {
+    let mut raw = Vec::with_capacity(w * h * 2);
+    for y in 0..h {
+        let mut prev = 0u16;
+        for x in 0..w {
+            let v = at(x, y);
+            raw.extend(v.wrapping_sub(prev).to_be_bytes());
+            prev = v;
+        }
+    }
+    let mut out = 3u16.to_be_bytes().to_vec();
+    out.extend(miniz_oxide::deflate::compress_to_vec_zlib(&raw, 6));
+    out
+}
+
+/// Пиксели слоя в рамке содержимого по 16 бит: (лево, верх, ширина, высота, RGBA прямой).
+fn layer_rgba16(px: &ColorMap) -> (i32, i32, usize, usize, Vec<u16>) {
+    let Some((x0, y0, x1, y1)) = paint_core::selection::content_bounds(px) else { return (0, 0, 0, 0, Vec::new()) };
+    let (w, h) = ((x1 - x0) as usize, (y1 - y0) as usize);
+    let mut out = vec![0u16; w * h * 4];
+    for y in 0..h {
+        for x in 0..w {
+            out[(y * w + x) * 4..][..4].copy_from_slice(&paint_core::pixel::to_rgba16(px.get(x0 + x as i32, y0 + y as i32)));
+        }
+    }
+    (x0, y0, w, h, out)
+}
+
 /// Пиксели слоя в рамке содержимого: (лево, верх, ширина, высота, RGBA прямой).
 pub(crate) fn layer_rgba(px: &ColorMap) -> (i32, i32, usize, usize, Vec<u8>) {
     let Some((x0, y0, x1, y1)) = paint_core::selection::content_bounds(px) else { return (0, 0, 0, 0, Vec::new()) };
@@ -171,7 +201,7 @@ struct Record {
     mask: Option<[i32; 4]>,
 }
 
-fn records(layers: &[Layer], out: &mut Vec<Record>, big: bool, canvas: (usize, usize)) {
+fn records(layers: &[Layer], out: &mut Vec<Record>, big: bool, deep: bool, canvas: (usize, usize)) {
     for l in layers {
         let base = |rect, channels, section| Record {
             rect,
@@ -188,7 +218,7 @@ fn records(layers: &[Layer], out: &mut Vec<Record>, big: bool, canvas: (usize, u
         match &l.children {
             Some(ch) => {
                 out.push(Record { name: "</Layer group>".into(), key: *b"norm", opacity: 255, clipping: false, visible: true, ..base([0; 4], empty(), 3) });
-                records(ch, out, big, canvas);
+                records(ch, out, big, deep, canvas);
                 let mut folder = base([0; 4], empty(), 1);
                 if l.pass_through {
                     folder.key = *b"pass";
@@ -196,14 +226,25 @@ fn records(layers: &[Layer], out: &mut Vec<Record>, big: bool, canvas: (usize, u
                 out.push(folder);
             }
             None => {
-                let (x, y, w, h, rgba) = layer_rgba(&l.pixels);
-                let planes = encode_planes(&rgba, w, h, &[3, 0, 1, 2], big);
+                let (x, y, w, h, planes) = if deep {
+                    let (x, y, w, h, c) = layer_rgba16(&l.pixels);
+                    (x, y, w, h, [3, 0, 1, 2].map(|k| encode_plane16(w, h, |px, py| c[(py * w + px) * 4 + k])).to_vec())
+                } else {
+                    let (x, y, w, h, rgba) = layer_rgba(&l.pixels);
+                    (x, y, w, h, encode_planes(&rgba, w, h, &[3, 0, 1, 2], big))
+                };
                 let mut channels: Vec<(i16, Vec<u8>)> = [-1i16, 0, 1, 2].into_iter().zip(planes).collect();
                 let mut rec = base([y, x, y + h as i32, x + w as i32], Vec::new(), 0);
                 if let Some(m) = &l.mask {
                     // маска GrazySAI: 0x4000 — скрыто; в PSD 255 — видно
                     let (cw, ch) = canvas;
-                    channels.push((-2, encode_plane(cw, ch, |x, y| (255 - (m.hide.get(x as i32, y as i32).min(0x4000) as u32 * 255 / 0x4000)) as u8, big)));
+                    let seen = |x: usize, y: usize| 0x4000 - m.hide.get(x as i32, y as i32).min(0x4000) as u32;
+                    let plane = if deep {
+                        encode_plane16(cw, ch, |x, y| (seen(x, y) * 65535 / 0x4000) as u16)
+                    } else {
+                        encode_plane(cw, ch, |x, y| (seen(x, y) * 255 / 0x4000) as u8, big)
+                    };
+                    channels.push((-2, plane));
                     rec.mask = Some([0, 0, ch as i32, cw as i32]);
                 }
                 rec.channels = channels;
@@ -235,15 +276,95 @@ fn block(key: &[u8; 4], data: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Профиль ICC v2 «sRGB», собранный из определения стандарта (основные цвета, приведённые к D50,
+/// кривая sRGB таблицей из 1024 точек). Нужен 16-битным файлам: без профиля Krita и другие
+/// программы считают 16-битный RGB линейным, и картинка светлеет.
+fn srgb_icc() -> Vec<u8> {
+    let fixed = |v: f64| ((v * 65536.0).round() as i32).to_be_bytes();
+    let xyz = |x: f64, y: f64, z: f64| -> Vec<u8> {
+        let mut t = b"XYZ \0\0\0\0".to_vec();
+        for v in [x, y, z] {
+            t.extend(fixed(v));
+        }
+        t
+    };
+    let mut desc = b"desc\0\0\0\0".to_vec();
+    let name = b"sRGB (GrazySAI)\0";
+    desc.extend((name.len() as u32).to_be_bytes());
+    desc.extend(name);
+    desc.extend([0u8; 4 + 4 + 2 + 1 + 67]);
+    let mut cprt = b"text\0\0\0\0".to_vec();
+    cprt.extend(b"No copyright, use freely\0");
+    let mut curv = b"curv\0\0\0\0".to_vec();
+    curv.extend(1024u32.to_be_bytes());
+    for i in 0..1024 {
+        let v = i as f64 / 1023.0;
+        let l = if v <= 0.040_45 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) };
+        curv.extend(((l * 65535.0).round() as u16).to_be_bytes());
+    }
+    let tags: Vec<(&[u8; 4], Vec<u8>)> = vec![
+        (b"desc", desc),
+        (b"cprt", cprt),
+        (b"wtpt", xyz(0.9642, 1.0, 0.8249)),
+        (b"rXYZ", xyz(0.436_074_7, 0.222_504_5, 0.013_932_2)),
+        (b"gXYZ", xyz(0.385_064_9, 0.716_878_6, 0.097_104_5)),
+        (b"bXYZ", xyz(0.143_080_4, 0.060_616_9, 0.714_173_3)),
+        (b"rTRC", curv),
+    ];
+    // gTRC и bTRC ссылаются на ту же кривую
+    let count = tags.len() + 2;
+    let mut body = Vec::new();
+    let mut table = Vec::new();
+    let start = 128 + 4 + count * 12;
+    let mut trc = (0, 0);
+    for (sig, data) in &tags {
+        let off = start + body.len();
+        table.push((**sig, off, data.len()));
+        if *sig == b"rTRC" {
+            trc = (off, data.len());
+        }
+        body.extend(data);
+        body.resize(body.len().div_ceil(4) * 4, 0);
+    }
+    table.push((*b"gTRC", trc.0, trc.1));
+    table.push((*b"bTRC", trc.0, trc.1));
+    let size = start + body.len();
+    let mut out = Vec::with_capacity(size);
+    out.extend((size as u32).to_be_bytes());
+    out.extend([0u8; 4]);
+    out.extend(0x0210_0000u32.to_be_bytes());
+    out.extend(b"mntrRGB XYZ ");
+    out.extend([0u8; 12]); // дата
+    out.extend(b"acsp");
+    out.extend([0u8; 4 + 4 + 4 + 4 + 8 + 4]);
+    for v in [0.9642, 1.0, 0.8249] {
+        out.extend(fixed(v));
+    }
+    out.resize(128, 0);
+    out.extend((count as u32).to_be_bytes());
+    for (sig, off, len) in table {
+        out.extend(sig);
+        out.extend((off as u32).to_be_bytes());
+        out.extend((len as u32).to_be_bytes());
+    }
+    out.extend(body);
+    out
+}
+
 /// Сохранить документ в PSD.
 pub fn save(doc: &Document, path: &Path) -> Res<()> {
-    save_as(doc, path, false)
+    save_as(doc, path, false, false)
+}
+
+/// Сохранить в PSD (`big` — PSB) с 8 или 16 битами на канал (`deep`).
+pub fn save_with(doc: &Document, path: &Path, big: bool, deep: bool) -> Res<()> {
+    save_as(doc, path, big, deep)
 }
 
 /// Сохранить документ в PSB (большой документ Photoshop): то же, что PSD, но версия 2, стороны до
 /// 300 000 px, длины разделов и каналов по 8 байт, длины строк PackBits по 4.
 pub fn save_psb(doc: &Document, path: &Path) -> Res<()> {
-    save_as(doc, path, true)
+    save_as(doc, path, true, false)
 }
 
 /// Длина раздела: 4 байта у PSD, 8 у PSB.
@@ -255,10 +376,10 @@ fn put_len(out: &mut Vec<u8>, n: usize, big: bool) {
     }
 }
 
-fn save_as(doc: &Document, path: &Path, big: bool) -> Res<()> {
+fn save_as(doc: &Document, path: &Path, big: bool, deep: bool) -> Res<()> {
     let (w, h) = (doc.width as usize, doc.height as usize);
     let mut recs = Vec::new();
-    records(&doc.layers, &mut recs, big, (w, h));
+    records(&doc.layers, &mut recs, big, deep, (w, h));
     // запись слоёв
     let mut info = Vec::new();
     info.extend((recs.len() as i16).to_be_bytes());
@@ -323,19 +444,44 @@ fn save_as(doc: &Document, path: &Path, big: bool) -> Res<()> {
     out.extend(4u16.to_be_bytes()); // R, G, B, альфа
     out.extend((h as u32).to_be_bytes());
     out.extend((w as u32).to_be_bytes());
-    out.extend(8u16.to_be_bytes());
+    out.extend((if deep { 16u16 } else { 8 }).to_be_bytes());
     out.extend(3u16.to_be_bytes()); // RGB
     out.extend(0u32.to_be_bytes()); // цветовой режим
-    out.extend(0u32.to_be_bytes()); // ресурсы
+    if deep {
+        // ресурс 1039 — профиль ICC: без имени (байт длины 0 и байт выравнивания)
+        let icc = srgb_icc();
+        let mut res = b"8BIM".to_vec();
+        res.extend(1039u16.to_be_bytes());
+        res.extend([0, 0]);
+        res.extend((icc.len() as u32).to_be_bytes());
+        res.extend(&icc);
+        if res.len() % 2 != 0 {
+            res.push(0);
+        }
+        out.extend((res.len() as u32).to_be_bytes());
+        out.extend(res);
+    } else {
+        out.extend(0u32.to_be_bytes()); // ресурсы
+    }
     let mut lm = Vec::new();
     put_len(&mut lm, info.len(), big);
     lm.extend(info);
     lm.extend(0u32.to_be_bytes()); // общая маска
     put_len(&mut out, lm.len(), big);
     out.extend(lm);
-    // сведённая картинка: R, G, B, A — заголовок со всеми длинами строк, затем строки
-    let flat = doc.flatten();
-    let planes = encode_planes(&flat, w, h, &[0, 1, 2, 3], big);
+    // сведённая картинка: R, G, B, A — заголовок со всеми длинами строк, затем строки; у 16 бит
+    // PackBits сжимает байты строки (по 2 на отсчёт, старший первым)
+    let planes = if deep {
+        let flat = doc.flatten16();
+        (0..4)
+            .map(|k| {
+                let bytes: Vec<u8> = flat.as_chunks::<4>().0.iter().flat_map(|p| p[k].to_be_bytes()).collect();
+                encode_plane(w * 2, h, |x, y| bytes[y * w * 2 + x], big)
+            })
+            .collect::<Vec<_>>()
+    } else {
+        encode_planes(&doc.flatten(), w, h, &[0, 1, 2, 3], big)
+    };
     out.extend(1u16.to_be_bytes());
     let cb = if big { 4 } else { 2 };
     let mut counts = Vec::new();

@@ -150,3 +150,38 @@ fn reads_krita_psd_with_mask_and_16_bits() {
         assert!(worst <= 2, "{bits} бит: наибольшая разница {worst}");
     }
 }
+
+/// 16 бит на канал: в заголовке глубина 16, пиксели слоёв (15 бит внутри) возвращаются без потерь
+/// 8-битного PSD — плавный переход тоньше 1/255 сохраняется; маска и PSB — тоже.
+#[test]
+fn psd_16_bit_keeps_fine_steps() {
+    let mut doc = sample();
+    // переход, который в 8 битах слился бы в один уровень
+    for x in 0..64 {
+        doc.layers[0].pixels.set(x, 0, [16000 + x as u16 * 3, 8000, 4000, paint_core::pixel::ONE as u16]);
+    }
+    let mut hide = paint_core::tile::MaskMap::new();
+    hide.set(3, 3, 0x1234);
+    doc.layers[1].mask = Some(paint_core::layer::LayerMask { hide, flags: [1, 1, 1, 0] });
+    let dir = std::env::temp_dir().join(format!("grazysai-psd16-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for big in [false, true] {
+        let path = dir.join(if big { "16.psb" } else { "16.psd" });
+        paint_formats::psd::save_with(&doc, &path, big, true).unwrap();
+        let raw = std::fs::read(&path).unwrap();
+        assert_eq!(u16::from_be_bytes([raw[22], raw[23]]), 16, "глубина в заголовке");
+        let back = paint_formats::psd::load(&path).unwrap();
+        for x in 0..64 {
+            let (a, b) = (back.layers[0].pixels.get(x, 0), doc.layers[0].pixels.get(x, 0));
+            assert!((a[0] as i32 - b[0] as i32).abs() <= 1, "x={x}: {a:?} против {b:?}");
+        }
+        let m = back.layers[1].mask.as_ref().expect("маска").hide.get(3, 3);
+        assert!((m as i32 - 0x1234).abs() <= 1, "маска {m:#x}");
+        let worst = back.flatten().iter().zip(doc.flatten()).map(|(a, b)| (*a as i32 - b as i32).abs()).max().unwrap();
+        assert!(worst <= 1, "сведение: {worst}");
+        if let Ok(keep) = std::env::var("PSD16_KEEP") {
+            std::fs::copy(&path, format!("{keep}.{}", if big { "psb" } else { "psd" })).unwrap();
+        }
+    }
+    std::fs::remove_dir_all(dir).ok();
+}

@@ -878,3 +878,4 @@ PSB (большой PSD, со слоями) = PSB (large PSD, with layers)
 толщина кончика = tip thickness
 текстура (картинки нет в файле) = texture (image not in the file)
 Бесшовный режим (холст повторяется) = Wrap-around mode (the canvas repeats)
+PSD и PSB — 16 бит на канал (точнее, файл больше) = PSD and PSB — 16 bits per channel (more precise, larger file)

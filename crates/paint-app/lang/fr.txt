@@ -877,3 +877,4 @@ PSB (большой PSD, со слоями) = PSB (grand PSD, avec calques)
 толщина кончика = épaisseur de la pointe
 текстура (картинки нет в файле) = texture (image absente du fichier)
 Бесшовный режим (холст повторяется) = Mode bouclage (la toile se répète)
+PSD и PSB — 16 бит на канал (точнее, файл больше) = PSD et PSB — 16 bits par canal (plus précis, fichier plus gros)

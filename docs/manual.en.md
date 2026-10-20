@@ -384,6 +384,10 @@ engines differ. A `.bfps` palette has no images (it refers to CSP materials), so
 
 “File → Save with number” saves next to the file under the next free number: `picture.sai2` → `picture_001.sai2`, `picture_009.sai2` → `picture_010.sai2`.
 
+“Help → Options…” has “PSD and PSB — 16 bits per channel”: GrazySAI works with 15 bits per channel inside,
+and a 16-bit file keeps smooth gradients without 8-bit steps; an sRGB profile is embedded so other programs
+do not take the picture as linear (checked in Krita). The file is noticeably larger.
+
 Layer masks are written to `.psd`/`.psb` (not to `.ora`). Paper, layer effects and curves do not go
 into `.psd` and `.ora` (the layer is written as pixels); other programs show a clipped layer in `.ora`
 as a normal one.
