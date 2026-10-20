@@ -275,6 +275,7 @@ Normal layers only (not folders).
   - H — flip the view.
 
   View rotation and flip change only the display, not the image.
+- “View → Pixel grid (from 800%)” — thin lines between canvas pixels at 800% zoom and above.
 - “View → New View” adds another tab of the same canvas with its own zoom, position, rotation
   and mirror (the tab shows the view number). Closing a view keeps the canvas while another view
   of it is open. A key can be assigned in Hotkeys.

@@ -847,3 +847,4 @@ PSB (большой PSD, со слоями) = PSB (grand PSD, avec calques)
 Выход, чёрное: = Sortie, noir :
 Выход, белое: = Sortie, blanc :
 Кривая: = Courbe :
+Пиксельная сетка (от 800 %) = Grille de pixels (dès 800 %)

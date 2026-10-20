@@ -111,6 +111,31 @@ fn numbered_path(path: &std::path::Path) -> PathBuf {
     }
 }
 
+/// Пиксельная сетка: линии между пикселями холста в видимой части окна (при большом увеличении).
+fn draw_pixel_grid(painter: &egui::Painter, xf: ViewXf, rect: Rect, w: f32, h: f32) {
+    let corners = [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom()].map(|p| xf.to_canvas(p));
+    let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for c in corners {
+        (x0, y0, x1, y1) = (x0.min(c.x), y0.min(c.y), x1.max(c.x), y1.max(c.y));
+    }
+    let (x0, y0) = (x0.floor().max(0.0), y0.floor().max(0.0));
+    let (x1, y1) = (x1.ceil().min(w), y1.ceil().min(h));
+    if x1 <= x0 || y1 <= y0 || (x1 - x0) * (y1 - y0) > 400_000.0 {
+        return;
+    }
+    let stroke = egui::Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(128, 128, 128, 90));
+    let mut x = x0;
+    while x <= x1 {
+        painter.line_segment([xf.to_screen(Vec2::new(x, y0)), xf.to_screen(Vec2::new(x, y1))], stroke);
+        x += 1.0;
+    }
+    let mut y = y0;
+    while y <= y1 {
+        painter.line_segment([xf.to_screen(Vec2::new(x0, y)), xf.to_screen(Vec2::new(x1, y))], stroke);
+        y += 1.0;
+    }
+}
+
 /// Расширение формата со слоями, в который программа сохраняет (`sai2`, `ora`, `psd`, `psb`).
 fn layered_ext(path: &std::path::Path) -> Option<&'static str> {
     let e = path.extension()?.to_string_lossy().to_ascii_lowercase();
@@ -1395,6 +1420,8 @@ struct PaintApp {
     dark_theme: bool,
     /// Окно истории открыто.
     show_history: bool,
+    /// Пиксельная сетка при увеличении от 800 %.
+    pixel_grid: bool,
 }
 
 impl PaintApp {
@@ -1566,6 +1593,7 @@ impl PaintApp {
             check_updates: true,
             dark_theme: false,
             show_history: false,
+            pixel_grid: false,
         };
         app.load_settings();
         app.recovery_found = recovery_files().filter(|(f, _)| f.exists()).map(|(f, info)| {
@@ -1629,6 +1657,11 @@ app.open_canvas_dialog(d == "resolution")
             let mut it = v.split(',');
             app.view_angle = it.next().and_then(|a| a.trim().parse::<f32>().ok()).unwrap_or(0.0).to_radians();
             app.view_flip = it.next().is_some_and(|f| f.trim() == "flip");
+        }
+        // PAINT_ZOOM=k — масштаб при запуске (для проверок), без вписывания в окно
+        if let Some(z) = std::env::var("PAINT_ZOOM").ok().and_then(|v| v.parse::<f32>().ok()).filter(|z| *z > 0.0) {
+            app.zoom = z;
+            app.fit_pending = false;
         }
         // PAINT_LAYER=n — выбрать слой n верхнего уровня; PAINT_LINE_TOOL — инструмент контура
         if let Some(n) = std::env::var("PAINT_LAYER").ok().and_then(|v| v.parse::<usize>().ok()) {
@@ -1780,6 +1813,7 @@ app.open_canvas_dialog(d == "resolution")
         }
         s.read_bool("check_updates", &mut self.check_updates);
         s.read_bool("dark_theme", &mut self.dark_theme);
+        s.read_bool("pixel_grid", &mut self.pixel_grid);
         sai_ui::set_dark(self.dark_theme);
         if let Some(v) = s.bool("key_hints") {
             keys::set_hints(v);
@@ -2000,6 +2034,7 @@ app.open_canvas_dialog(d == "resolution")
         s.set("gradient_s_curve", self.grad_opts.s_curve);
         s.set("check_updates", self.check_updates as u8);
         s.set("dark_theme", self.dark_theme as u8);
+        s.set("pixel_grid", self.pixel_grid as u8);
         for (a, id, _, _) in keys::ALL {
             let v = self.keymap.get(&a).copied().flatten().map_or_else(|| "none".to_string(), |b| b.text());
             s.set(&format!("key.{id}"), v);
@@ -5341,6 +5376,9 @@ app.open_canvas_dialog(d == "resolution")
                     self.fit_pending = true;
                     ui.close_menu();
                 }
+                if ui.checkbox(&mut self.pixel_grid, tr("Пиксельная сетка (от 800 %)")).clicked() {
+                    ui.close_menu();
+                }
                 ui.separator();
                 if ui.add(menu_item("Повернуть вид против часовой", "Shift+PageUp")).clicked() {
                     self.rotate_view(-15.0);
@@ -7844,6 +7882,9 @@ app.open_canvas_dialog(d == "resolution")
         if self.ruler.visible && !self.ruler.placed {
             // новый или открытый холст — линейка встаёт посреди вида
             self.reset_ruler();
+        }
+        if self.pixel_grid && shown >= 8.0 {
+            draw_pixel_grid(&painter, xf, rect, w, h);
         }
         self.draw_ruler(&painter, xf, ctrl);
         self.draw_text_box(&painter, xf);

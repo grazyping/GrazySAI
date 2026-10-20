@@ -847,3 +847,4 @@ PSB (большой PSD, со слоями) = PSB (großes PSD, mit Ebenen)
 Выход, чёрное: = Ausgabe, Schwarz:
 Выход, белое: = Ausgabe, Weiß:
 Кривая: = Kurve:
+Пиксельная сетка (от 800 %) = Pixelraster (ab 800 %)
