@@ -212,7 +212,8 @@ mod tests {
         let mut keys = Vec::new();
         for e in std::fs::read_dir(dir).unwrap() {
             let path = e.unwrap().path();
-            if path.ends_with("i18n.rs") {
+            // отчёт самопроверки — для разработчика, по-русски и по-английски сразу, без перевода
+            if path.ends_with("i18n.rs") || path.ends_with("self_test.rs") {
                 continue;
             }
             let src = std::fs::read_to_string(path).unwrap();
