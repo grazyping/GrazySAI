@@ -278,7 +278,7 @@ fn node_pos(shapes: &[paint_formats::sai2_vector::Shape], (si, pi, ni): (usize, 
     Some([c.point[0] + p.offset[0], c.point[1] + p.offset[1]])
 }
 
-/// Опорная картинка: своё окно поверх холста, непрозрачность; Alt + щелчок берёт цвет.
+/// Опорная картинка: своё окно поверх холста, непрозрачность, масштаб; пипетка или Alt + щелчок берёт цвет.
 struct RefImage {
     id: u64,
     name: String,
@@ -286,6 +286,8 @@ struct RefImage {
     rgba: Vec<u8>,
     tex: Option<egui::TextureHandle>,
     opacity: f32,
+    /// Масштаб картинки в окне (вначале — чтобы большая сторона была не больше 360 px).
+    scale: f32,
 }
 
 /// Какой фильтр открыт.
@@ -1690,6 +1692,10 @@ app.open_canvas_dialog(d == "resolution")
             let mut it = v.split(',');
             app.view_angle = it.next().and_then(|a| a.trim().parse::<f32>().ok()).unwrap_or(0.0).to_radians();
             app.view_flip = it.next().is_some_and(|f| f.trim() == "flip");
+        }
+        // PAINT_REFERENCE=файл — опорная картинка при запуске (для проверок)
+        if let Some(p) = std::env::var_os("PAINT_REFERENCE") {
+            app.add_reference(std::path::Path::new(&p));
         }
         // PAINT_ZOOM=k — масштаб при запуске (для проверок), без вписывания в окно
         if let Some(z) = std::env::var("PAINT_ZOOM").ok().and_then(|v| v.parse::<f32>().ok()).filter(|z| *z > 0.0) {
@@ -7659,6 +7665,14 @@ app.open_canvas_dialog(d == "resolution")
                 zoom_delta = 1.0;
             }
         }
+        // указатель над окном поверх холста (опорная картинка, «История», диалоги): колесо и
+        // нажатие — этому окну, не холсту; начатый мазок отпускается как обычно
+        let covered = pointer.is_some_and(|p| ui.ctx().layer_id_at(p).is_some_and(|l| l.order != egui::Order::Background));
+        if covered {
+            scroll = 0.0;
+            zoom_delta = 1.0;
+            pressed = false;
+        }
         for (phase, force) in touches {
             match phase {
                 egui::TouchPhase::Start | egui::TouchPhase::Move => {
@@ -9320,35 +9334,45 @@ impl PaintApp {
             Ok((w, h, rgba)) => {
                 let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 self.next_ref += 1;
-                self.refs.push(RefImage { id: self.next_ref, name, size: [w as usize, h as usize], rgba, tex: None, opacity: 1.0 });
+                let scale = (360.0 / w.max(h).max(1) as f32).min(1.0);
+                self.refs.push(RefImage { id: self.next_ref, name, size: [w as usize, h as usize], rgba, tex: None, opacity: 1.0, scale });
             }
             Err(e) => self.status = trf("Картинка не открылась: {0}", &[&e]),
         }
     }
 
-    /// Окна опорных картинок.
+    /// Окна опорных картинок. Непрозрачность действует на всё окно (холст виден сквозь него),
+    /// размер картинки — свой масштаб окна (колесо над картинкой или ползунок), а не размер окна.
     fn reference_windows(&mut self, ctx: &egui::Context) {
         let mut close = Vec::new();
         let mut pick = None;
+        let picker = self.tool == Tool::Picker;
         for r in self.refs.iter_mut() {
             let tex = r.tex.get_or_insert_with(|| ctx.load_texture(format!("ref{}", r.id), egui::ColorImage::from_rgba_unmultiplied(r.size, &r.rgba), egui::TextureOptions::LINEAR)).id();
-            let k = (360.0 / r.size[0].max(r.size[1]) as f32).min(1.0);
             let mut open = true;
-            egui::Window::new(&r.name).id(egui::Id::new(("ref", r.id))).open(&mut open).resizable(true).default_size([r.size[0] as f32 * k, r.size[1] as f32 * k + 24.0]).show(ctx, |ui| {
+            let frame = egui::Frame::window(&ctx.style()).fill(sai_ui::panel().gamma_multiply(r.opacity)).shadow(egui::epaint::Shadow::NONE);
+            egui::Window::new(&r.name).id(egui::Id::new(("ref", r.id))).open(&mut open).resizable(false).frame(frame).show(ctx, |ui| {
+                ui.spacing_mut().slider_width = 110.0;
                 ui.add(egui::Slider::new(&mut r.opacity, 0.1..=1.0).show_value(false).text(tr("Непрозрачность")));
-                let avail = ui.available_size();
-                let s = (avail.x / r.size[0] as f32).min(avail.y.max(40.0) / r.size[1] as f32);
-                let (rect, resp) = ui.allocate_exact_size(Vec2::new(r.size[0] as f32 * s, r.size[1] as f32 * s), egui::Sense::click());
+                ui.add(egui::Slider::new(&mut r.scale, 0.05..=4.0).logarithmic(true).show_value(false).text(tr("Масштаб")));
+                let size = Vec2::new(r.size[0] as f32, r.size[1] as f32) * r.scale;
+                let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
                 ui.painter().image(tex, rect, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::from_white_alpha((r.opacity * 255.0) as u8));
-                if resp.clicked() && ui.input(|i| i.modifiers.alt) {
+                if resp.hovered() {
+                    let wheel = ui.input(|i| i.raw_scroll_delta.y);
+                    if wheel != 0.0 {
+                        r.scale = (r.scale * if wheel > 0.0 { 1.1 } else { 1.0 / 1.1 }).clamp(0.05, 4.0);
+                    }
+                }
+                if resp.clicked() && (picker || ui.input(|i| i.modifiers.alt)) {
                     if let Some(pos) = resp.interact_pointer_pos() {
-                        let x = (((pos.x - rect.left()) / s) as usize).min(r.size[0] - 1);
-                        let y = (((pos.y - rect.top()) / s) as usize).min(r.size[1] - 1);
+                        let x = (((pos.x - rect.left()) / r.scale) as usize).min(r.size[0] - 1);
+                        let y = (((pos.y - rect.top()) / r.scale) as usize).min(r.size[1] - 1);
                         let i = (y * r.size[0] + x) * 4;
                         pick = Some(Color32::from_rgb(r.rgba[i], r.rgba[i + 1], r.rgba[i + 2]));
                     }
                 }
-                resp.on_hover_text(tr("Alt + щелчок — взять цвет"));
+                resp.on_hover_text(tr("Пипетка или Alt + щелчок — взять цвет, колесо — масштаб"));
             });
             if !open {
                 close.push(r.id);
