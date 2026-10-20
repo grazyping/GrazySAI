@@ -205,6 +205,14 @@ Textures are taken from SAI's `papertex` folder (GrazySAI does not ship them). I
 empty, type the path to that folder in the field above the list and press OK; the path is
 remembered. `.sai2` files with paper open and save with it.
 
+### Colorize by line art
+
+On a new layer put color spots in the areas to fill (one spot — one area, different colors — different
+areas) and choose “Layer → Colorize by line art”. The colors spread up to the lines of all other visible
+layers; small gaps in the outline (up to ~6 px) do not let color through when both sides have their own
+spots. The result is a new “Colorize” layer in Multiply mode below the spot layer, as plain pixels you
+can touch up with a brush. The spot layer stays — hide it if you like.
+
 ### Layer masks
 
 - **Create**: the “New Layer Mask” button under the layer list or “Layer → New Layer Mask”. A

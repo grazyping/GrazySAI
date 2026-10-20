@@ -4064,6 +4064,46 @@ app.open_canvas_dialog(d == "resolution")
         }
     }
 
+    /// Раскраска по контуру (`paint_core::colorize`): подсказки — цветные пятна текущего слоя,
+    /// контур — сведение остальных видимых слоёв. Результат — новый слой «Умножение» под текущим
+    /// (одна запись истории); слой подсказок не меняется.
+    fn colorize_by_lines(&mut self) {
+        let Some(hints) = self.doc.layer(&self.selected).filter(|l| l.children.is_none()) else { return };
+        let (w, h) = (self.doc.width as usize, self.doc.height as usize);
+        let mut hint_rgba = vec![0u8; w * h * 4];
+        if let Some((x0, y0, x1, y1)) = paint_core::selection::content_bounds(&hints.pixels) {
+            for y in y0.max(0)..y1.min(h as i32) {
+                for x in x0.max(0)..x1.min(w as i32) {
+                    let i = (y as usize * w + x as usize) * 4;
+                    hint_rgba[i..i + 4].copy_from_slice(&paint_core::pixel::to_rgba8(hints.pixels.get(x, y)));
+                }
+            }
+        }
+        let mut probe = paint_core::Document::new(self.doc.width, self.doc.height);
+        probe.effect_color = self.doc.effect_color;
+        probe.layers = self.doc.layers.clone();
+        if let Some(l) = probe.layer_mut(&self.selected) {
+            l.visible = false;
+        }
+        let Some((rgba, n)) = paint_core::colorize::colorize(&probe.flatten_clear(), &hint_rgba, w, h, 3) else {
+            self.status = tr("Нет подсказок: поставьте на текущем слое цветные пятна в областях, которые надо залить").to_string();
+            return;
+        };
+        let mut layer = Layer::new(tr("Раскраска"));
+        // «Умножение»: линии контура видны сквозь заливку, где бы ни лежал слой
+        layer.mode = paint_core::blend::BlendMode::Multiply;
+        for (i, c) in rgba.as_chunks::<4>().0.iter().enumerate() {
+            if c[3] != 0 {
+                layer.pixels.set((i % w) as i32, (i / w) as i32, paint_core::pixel::from_rgba8(*c));
+            }
+        }
+        let path = self.selected.clone();
+        let keys = self.doc.insert_layer(&path, layer);
+        self.selected = path;
+        self.after_structure(keys);
+        self.status = trf("Раскраска: {0} цветов, новый слой под подсказками", &[&n]);
+    }
+
     /// Новый слой фигур над текущим.
     fn add_shape_layer(&mut self) {
         let mut path = self.selected.clone();
@@ -5297,6 +5337,11 @@ app.open_canvas_dialog(d == "resolution")
                 }
                 if ui.add_enabled(masked, egui::Button::new(tr("Удалить маску"))).clicked() {
                     self.mask_command(2);
+                    ui.close_menu();
+                }
+                ui.separator();
+                if ui.add_enabled(raster, egui::Button::new(tr("Раскрасить по контуру"))).on_hover_text(tr("Цветные пятна текущего слоя растекаются до линий остальных видимых слоёв; результат — новый слой под текущим")).clicked() {
+                    self.colorize_by_lines();
                     ui.close_menu();
                 }
                 ui.separator();
