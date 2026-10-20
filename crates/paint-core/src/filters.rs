@@ -71,6 +71,43 @@ impl BrightnessContrast {
     }
 }
 
+/// «Уровни»: входные точки чёрного и белого (0–255), гамма середины (0,1–10; 1 — без изменений),
+/// выходные точки чёрного и белого. Каналы RGB одинаково, альфа не меняется.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Levels {
+    pub in_black: u8,
+    pub in_white: u8,
+    pub gamma: f64,
+    pub out_black: u8,
+    pub out_white: u8,
+}
+
+impl Default for Levels {
+    fn default() -> Self {
+        Self { in_black: 0, in_white: 255, gamma: 1.0, out_black: 0, out_white: 255 }
+    }
+}
+
+impl Levels {
+    pub fn map(&self, v: f64) -> f64 {
+        let (ib, iw) = (self.in_black as f64 / 255.0, (self.in_white.max(self.in_black.saturating_add(1))) as f64 / 255.0);
+        let t = ((v - ib) / (iw - ib)).clamp(0.0, 1.0).powf(1.0 / self.gamma.clamp(0.1, 10.0));
+        let (ob, ow) = (self.out_black as f64 / 255.0, self.out_white as f64 / 255.0);
+        ob + t * (ow - ob)
+    }
+
+    pub fn apply(&self, p: Px) -> Px {
+        let Some((c, a)) = straight(p) else { return p };
+        pack(c.map(|v| self.map(v)), a)
+    }
+}
+
+/// «Кривые»: тон всех каналов RGB через кривую (две точки, монотонная, как кривая нажима).
+pub fn curves(c: &crate::curve::PressureCurve, p: Px) -> Px {
+    let Some((col, a)) = straight(p) else { return p };
+    pack(col.map(|v| c.apply(v as f32) as f64), a)
+}
+
 /// Углы сектора тона: (множитель размаха, множитель доли) для R, G, B в секторах 0…5.
 const SECTORS: [[(f64, f64); 3]; 6] = [
     [(0.0, 0.0), (-1.0, 1.0), (-1.0, 0.0)],
@@ -843,6 +880,36 @@ pub fn mosaic(src: &ColorMap, w: u32, h: u32, tile: u32, sel: &(dyn Fn(i32, i32)
         }
     }
     per_pixel(src, (x0, y0, x1.min(w as i32), y1.min(h as i32)), sel, &|x, y| avg[&(x.div_euclid(t) * t, y.div_euclid(t) * t)])
+}
+
+/// «Медиана»: каждый канал (с предумноженной альфой) — медиана окна (2r+1)×(2r+1); убирает
+/// одиночные точки, сохраняя края. Радиус 1–5.
+pub fn median(src: &ColorMap, w: u32, h: u32, radius: u32, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let r = radius.clamp(1, 5) as i32;
+    let Some(b) = canvas_bounds(src, w, h, r) else { return src.clone() };
+    let k = 1.0 / ONE as f64;
+    per_pixel(src, b, sel, &|x, y| {
+        let mut ch: [Vec<u16>; 4] = Default::default();
+        for yy in (y - r).max(0)..=(y + r).min(h as i32 - 1) {
+            for xx in (x - r).max(0)..=(x + r).min(w as i32 - 1) {
+                let p = src.get(xx, yy);
+                for c in 0..4 {
+                    ch[c].push(p[c]);
+                }
+            }
+        }
+        let mut out = [0f64; 4];
+        for c in 0..4 {
+            let v = &mut ch[c];
+            let mid = v.len() / 2;
+            out[c] = *v.select_nth_unstable(mid).1 as f64 * k;
+        }
+        // предумножение: цвет не ярче альфы
+        for c in 0..3 {
+            out[c] = out[c].min(out[3]);
+        }
+        out
+    })
 }
 
 /// «Кристаллизация»: ячейки Вороного вокруг точек сетки `cell` px со сдвигом `random` (0..1);
@@ -1638,5 +1705,40 @@ mod blur_tests {
         assert_eq!(g(&sm, 10, 10), 30);
         assert!(g(&sm, 30, 10) < 220);
         let _ = (radial_blur(&m, 60, 60, (30.0, 30.0), Streak { strength: 0.2, angle: 0.0, dir: 0, smooth: true }, &all), spin_blur(&m, 60, 60, (30.0, 30.0), 20.0, 0, &all));
+    }
+}
+
+#[cfg(test)]
+mod levels_median_tests {
+    use super::*;
+    use crate::pixel::{from_rgba8, to_rgba8};
+
+    #[test]
+    fn levels_default_is_identity_and_stretches() {
+        let l = Levels::default();
+        for v in [0, 37, 128, 255] {
+            let p = from_rgba8([v, v, v, 255]);
+            assert_eq!(to_rgba8(l.apply(p)), to_rgba8(p));
+        }
+        let l = Levels { in_black: 50, in_white: 200, ..Default::default() };
+        assert_eq!(to_rgba8(l.apply(from_rgba8([50, 125, 200, 255])))[..3], [0, 128, 255]);
+        let l = Levels { out_black: 100, out_white: 150, ..Default::default() };
+        assert_eq!(to_rgba8(l.apply(from_rgba8([0, 255, 0, 255])))[..2], [100, 150]);
+    }
+
+    #[test]
+    fn median_removes_a_speck_and_keeps_an_edge() {
+        let (w, h) = (20u32, 20u32);
+        let mut m = ColorMap::new();
+        for y in 0..20 {
+            for x in 0..20 {
+                let v = if x < 10 { 0 } else { 255 };
+                m.set(x, y, from_rgba8([v, v, v, 255]));
+            }
+        }
+        m.set(4, 4, from_rgba8([255, 255, 255, 255]));
+        let out = median(&m, w, h, 1, &|_, _| ONE);
+        assert_eq!(to_rgba8(out.get(4, 4))[0], 0, "точка убрана");
+        assert_eq!((to_rgba8(out.get(9, 10))[0], to_rgba8(out.get(10, 10))[0]), (0, 255), "край на месте");
     }
 }

@@ -288,6 +288,10 @@ enum FilterKind {
     Lens,
     /// «Искажение» как в CSP.
     Distort(paint_core::filters::DistortKind),
+    /// «Уровни», «Кривые» (цветокоррекция) и «Медиана» (коррекция).
+    Levels,
+    Curves,
+    Median,
 }
 
 /// Пиксели слоя после фильтра (с учётом выделения); `color` — основной цвет (для «Удаления пыли»).
@@ -305,6 +309,15 @@ fn filter_result(f: &FilterDialog, w: u32, h: u32, color: Color32) -> paint_core
             map_pixels(&f.original, &amount, &|p| bc.apply(p))
         }
         FilterKind::GaussianBlur => gaussian_blur(&f.original, w, h, f.radius, &amount),
+        FilterKind::Levels => {
+            let l = f.levels;
+            map_pixels(&f.original, &amount, &|p| l.apply(p))
+        }
+        FilterKind::Curves => {
+            let c = f.curve;
+            map_pixels(&f.original, &amount, &|p| paint_core::filters::curves(&c, p))
+        }
+        FilterKind::Median => paint_core::filters::median(&f.original, w, h, f.median_r, &amount),
         FilterKind::Sharpen | FilterKind::SharpenMore => {
             let s = if f.kind == FilterKind::Sharpen { 0.5 } else { 1.0 };
             paint_core::filters::sharpen(&f.original, w, h, s, &amount)
@@ -404,6 +417,9 @@ struct FilterDialog {
     kind: FilterKind,
     hs: paint_core::filters::HueSaturation,
     bc: paint_core::filters::BrightnessContrast,
+    levels: paint_core::filters::Levels,
+    curve: paint_core::curve::PressureCurve,
+    median_r: u32,
     radius: f64,
     /// Нерезкая маска: сила (1 = 100 %) и порог 0–255.
     amount: f64,
@@ -4345,6 +4361,9 @@ app.open_canvas_dialog(d == "resolution")
             kind,
             hs: Default::default(),
             bc: Default::default(),
+            levels: Default::default(),
+            curve: Default::default(),
+            median_r: 1,
             radius: if kind == FilterKind::Unsharp { 2.0 } else { 1.0 },
             amount: 1.0,
             threshold: 0,
@@ -5225,7 +5244,7 @@ app.open_canvas_dialog(d == "resolution")
                 }
             });
             ui.menu_button(keys::hint(tr("Фильтр(T)")), |ui| {
-                for (item, key, kind) in [("Тон и насыщенность…", "Ctrl+U", FilterKind::HueSaturation), ("Яркость и контраст…", "", FilterKind::BrightnessContrast)] {
+                for (item, key, kind) in [("Тон и насыщенность…", "Ctrl+U", FilterKind::HueSaturation), ("Яркость и контраст…", "", FilterKind::BrightnessContrast), ("Уровни…", "", FilterKind::Levels), ("Кривые…", "", FilterKind::Curves)] {
                     if ui.add(menu_item(item, key)).clicked() {
                         self.open_filter(kind);
                         ui.close_menu();
@@ -5289,7 +5308,7 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 });
                 icons::submenu(ui, "f_correct", tr("Коррекция"), |ui| {
-                    for (item, kind) in [("Удаление пыли…", FilterKind::Dust), ("Изменение толщины линий…", FilterKind::LineWidth)] {
+                    for (item, kind) in [("Удаление пыли…", FilterKind::Dust), ("Изменение толщины линий…", FilterKind::LineWidth), ("Медиана…", FilterKind::Median)] {
                         if ui.button(tr(item)).clicked() {
                             self.open_filter(kind);
                             ui.close_menu();
@@ -8327,6 +8346,9 @@ impl PaintApp {
                 FilterKind::Unsharp => tr("Нерезкая маска"),
                 FilterKind::LineWidth => tr("Изменение толщины линий"),
                 FilterKind::Dust => tr("Удаление пыли"),
+                FilterKind::Levels => tr("Уровни"),
+                FilterKind::Curves => tr("Кривые"),
+                FilterKind::Median => tr("Медиана"),
                 FilterKind::Aberration => tr("Хроматическая аберрация"),
                 FilterKind::Noise => tr("Шум"),
                 FilterKind::Mosaic => tr("Мозаика"),
@@ -8636,6 +8658,39 @@ impl PaintApp {
                             ui.end_row();
                             ui.label(tr("На сколько:"));
                             ui.add(egui::Slider::new(&mut f.width_px, 1..=20).suffix(" px"));
+                            ui.end_row();
+                        }
+                        FilterKind::Levels => {
+                            let l = &mut f.levels;
+                            ui.label(tr("Вход, чёрное:"));
+                            ui.add(egui::Slider::new(&mut l.in_black, 0..=254));
+                            ui.end_row();
+                            ui.label(tr("Вход, белое:"));
+                            ui.add(egui::Slider::new(&mut l.in_white, 1..=255));
+                            ui.end_row();
+                            ui.label(tr("Гамма:"));
+                            ui.add(egui::Slider::new(&mut l.gamma, 0.1..=10.0).logarithmic(true));
+                            ui.end_row();
+                            ui.label(tr("Выход, чёрное:"));
+                            ui.add(egui::Slider::new(&mut l.out_black, 0..=255));
+                            ui.end_row();
+                            ui.label(tr("Выход, белое:"));
+                            ui.add(egui::Slider::new(&mut l.out_white, 0..=255));
+                            ui.end_row();
+                        }
+                        FilterKind::Curves => {
+                            ui.label(tr("Кривая:"));
+                            ui.vertical(|ui| {
+                                sai_ui::curve_editor(ui, &mut f.curve, 160.0);
+                                if ui.button(tr("Прямая")).clicked() {
+                                    f.curve = Default::default();
+                                }
+                            });
+                            ui.end_row();
+                        }
+                        FilterKind::Median => {
+                            ui.label(tr("Радиус:"));
+                            ui.add(egui::Slider::new(&mut f.median_r, 1..=5).suffix(" px"));
                             ui.end_row();
                         }
                         FilterKind::Dust => {

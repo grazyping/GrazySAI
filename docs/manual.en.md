@@ -312,11 +312,14 @@ the defaults. The preview is computed in the background, so the window does not 
 
 - **Hue and Saturation** (Ctrl+U), with a “Colorize” mode.
 - **Brightness and Contrast** (and color “Depth”).
+- **Levels** (input and output black and white points, gamma) and **Curves** (tone through a curve
+  with two points, like the pressure curve).
 - **Gaussian Blur** (radius 0.1–40) in the Blur submenu; next to it, as in Clip Studio Paint:
   Average, Blur and Blur More, Lens Blur (bokeh), Motion, Radial and Spin Blur, Smoothing.
 - **Sharpen**, **Sharpen More**, **Unsharp Mask** (radius, amount, threshold) in the Sharpen submenu.
 - **Remove Dust** (small specks or holes up to a size) and **Adjust Line Width** (thin or thicken by
   1–20 px) in the Correction submenu.
+- **Median** (Correction, radius 1–5): removes isolated specks without blurring edges.
 - Effect: chromatic aberration, noise, mosaic, crystallize, retro film; Render: Perlin noise (the
   pattern replaces the layer content).
 - Pencil Drawing (thickness, darkness, hatching, keep color) and Artistic (stroke, brightness
