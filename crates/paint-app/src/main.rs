@@ -278,6 +278,16 @@ fn node_pos(shapes: &[paint_formats::sai2_vector::Shape], (si, pi, ni): (usize, 
     Some([c.point[0] + p.offset[0], c.point[1] + p.offset[1]])
 }
 
+/// Опорная картинка: своё окно поверх холста, непрозрачность; Alt + щелчок берёт цвет.
+struct RefImage {
+    id: u64,
+    name: String,
+    size: [usize; 2],
+    rgba: Vec<u8>,
+    tex: Option<egui::TextureHandle>,
+    opacity: f32,
+}
+
 /// Какой фильтр открыт.
 #[derive(Clone, Copy, PartialEq)]
 enum FilterKind {
@@ -1427,6 +1437,9 @@ struct PaintApp {
     show_history: bool,
     /// Пиксельная сетка при увеличении от 800 %.
     pixel_grid: bool,
+    /// Опорные картинки поверх холста.
+    refs: Vec<RefImage>,
+    next_ref: u64,
     /// Где открыта палитра по правому щелчку (точка экрана) и в каком кадре.
     popup_at: Option<Pos2>,
     popup_frame: u64,
@@ -1606,6 +1619,8 @@ impl PaintApp {
             dark_theme: false,
             show_history: false,
             pixel_grid: false,
+            refs: Vec::new(),
+            next_ref: 0,
             popup_at: None,
             popup_frame: 0,
             symmetry: 0,
@@ -3232,12 +3247,14 @@ app.open_canvas_dialog(d == "resolution")
                 self.save_to(files::with_ext(p, ext));
             }
             (files::Answer::Path(p), files::Ask::Export(ext)) => self.export_to(files::with_ext(p, ext), ext),
+            (files::Answer::Path(p), files::Ask::Reference) => self.add_reference(&p),
             (files::Answer::Unavailable, files::Ask::Open) => self.show_open = true,
             (files::Answer::Unavailable, files::Ask::SaveAs) => self.show_save_as = true,
             (files::Answer::Unavailable, files::Ask::Export(ext)) => {
                 let path = self.export_default(ext);
                 self.export_to(path, ext);
             }
+            (files::Answer::Unavailable, files::Ask::Reference) => self.status = String::from(tr("Перетащите картинку в окно с Ctrl")),
             (files::Answer::Cancelled, _) => {}
         }
     }
@@ -5523,6 +5540,13 @@ app.open_canvas_dialog(d == "resolution")
                 }
                 ui.separator();
                 if ui.checkbox(&mut self.show_history, tr("История")).clicked() {
+                    ui.close_menu();
+                }
+                if ui.button(tr("Опорная картинка…")).on_hover_text(tr("Или перетащите картинку в окно с Ctrl")).clicked() {
+                    let dir = self.file.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("x"));
+                    if !self.native_dialog(files::Ask::Reference, &dir) {
+                        self.status = String::from(tr("Перетащите картинку в окно с Ctrl"));
+                    }
                     ui.close_menu();
                 }
                 if ui.checkbox(&mut self.dark_theme, tr("Тёмная тема")).changed() {
@@ -9090,6 +9114,9 @@ impl PaintApp {
         if self.popup_at.is_some() {
             self.popup_palette(ctx);
         }
+        if !self.refs.is_empty() {
+            self.reference_windows(ctx);
+        }
         if self.viewer.is_some() {
             self.viewer_window(ctx);
         }
@@ -9185,6 +9212,51 @@ impl PaintApp {
     }
 
     /// Окно «Настройки» (как Options в SAI 2017).
+    fn add_reference(&mut self, path: &std::path::Path) {
+        match paint_core::io::load_image(path) {
+            Ok((w, h, rgba)) => {
+                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                self.next_ref += 1;
+                self.refs.push(RefImage { id: self.next_ref, name, size: [w as usize, h as usize], rgba, tex: None, opacity: 1.0 });
+            }
+            Err(e) => self.status = trf("Картинка не открылась: {0}", &[&e]),
+        }
+    }
+
+    /// Окна опорных картинок.
+    fn reference_windows(&mut self, ctx: &egui::Context) {
+        let mut close = Vec::new();
+        let mut pick = None;
+        for r in self.refs.iter_mut() {
+            let tex = r.tex.get_or_insert_with(|| ctx.load_texture(format!("ref{}", r.id), egui::ColorImage::from_rgba_unmultiplied(r.size, &r.rgba), egui::TextureOptions::LINEAR)).id();
+            let k = (360.0 / r.size[0].max(r.size[1]) as f32).min(1.0);
+            let mut open = true;
+            egui::Window::new(&r.name).id(egui::Id::new(("ref", r.id))).open(&mut open).resizable(true).default_size([r.size[0] as f32 * k, r.size[1] as f32 * k + 24.0]).show(ctx, |ui| {
+                ui.add(egui::Slider::new(&mut r.opacity, 0.1..=1.0).show_value(false).text(tr("Непрозрачность")));
+                let avail = ui.available_size();
+                let s = (avail.x / r.size[0] as f32).min(avail.y.max(40.0) / r.size[1] as f32);
+                let (rect, resp) = ui.allocate_exact_size(Vec2::new(r.size[0] as f32 * s, r.size[1] as f32 * s), egui::Sense::click());
+                ui.painter().image(tex, rect, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::from_white_alpha((r.opacity * 255.0) as u8));
+                if resp.clicked() && ui.input(|i| i.modifiers.alt) {
+                    if let Some(pos) = resp.interact_pointer_pos() {
+                        let x = (((pos.x - rect.left()) / s) as usize).min(r.size[0] - 1);
+                        let y = (((pos.y - rect.top()) / s) as usize).min(r.size[1] - 1);
+                        let i = (y * r.size[0] + x) * 4;
+                        pick = Some(Color32::from_rgb(r.rgba[i], r.rgba[i + 1], r.rgba[i + 2]));
+                    }
+                }
+                resp.on_hover_text(tr("Alt + щелчок — взять цвет"));
+            });
+            if !open {
+                close.push(r.id);
+            }
+        }
+        self.refs.retain(|r| !close.contains(&r.id));
+        if let Some(c) = pick {
+            self.set_color(c);
+        }
+    }
+
     /// Палитра у курсора: недавние цвета, образцы, кисти сетки; выбор или щелчок мимо — закрыть.
     fn popup_palette(&mut self, ctx: &egui::Context) {
         let Some(at) = self.popup_at else { return };
@@ -9685,8 +9757,13 @@ impl eframe::App for PaintApp {
         self.autosave();
         let dropped = ctx.input(|i| i.raw.dropped_files.iter().find_map(|f| f.path.clone()));
         if let Some(path) = dropped {
-            self.open_path = path.display().to_string();
-            self.open(path);
+            // с Ctrl картинка становится опорной, а не открывается
+            if ctx.input(|i| i.modifiers.command) {
+                self.add_reference(&path);
+            } else {
+                self.open_path = path.display().to_string();
+                self.open(path);
+            }
         }
         'shortcuts: {
         // клавиша для инструмента сетки (окно «Свойства»)

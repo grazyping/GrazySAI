@@ -207,5 +207,5 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 - [ ] Wrap-around mode (the canvas repeats at its edges)
 - [x] Filters: levels, curves, median (1.0.8)
 - [ ] Colouring by line art (like Krita's colorize mask); the result is plain pixels
-- [ ] Reference images over the canvas
+- [x] Reference images over the canvas (1.0.12)
 - [x] Pop-up palette on right click (off by default) (1.0.11)

@@ -18,6 +18,8 @@ pub enum Ask {
     SaveAs,
     /// Экспорт: расширение `png`, `jpg` или `psd`.
     Export(&'static str),
+    /// Опорная картинка поверх холста.
+    Reference,
 }
 
 pub struct Pending {
@@ -52,6 +54,10 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
                 (tr("Все файлы").to_string(), vec!["*"]),
             ],
         ),
+        Ask::Reference => (
+            tr("Опорная картинка"),
+            vec![(tr("Картинки").to_string(), vec!["png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi"])],
+        ),
         Ask::SaveAs => (
             tr("Сохранить как"),
             vec![("SAI 2 (.sai2)".to_string(), vec!["sai2"]), ("OpenRaster (.ora)".to_string(), vec!["ora"]), ("Photoshop (.psd)".to_string(), vec!["psd"]), ("Photoshop PSB (.psb)".to_string(), vec!["psb"])],
@@ -81,7 +87,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
             d = d.set_directory(dir);
         }
         let picked = match kind {
-            Ask::Open => d.pick_file(),
+            Ask::Open | Ask::Reference => d.pick_file(),
             _ => {
                 if let Some(n) = name {
                     d = d.set_file_name(n);
