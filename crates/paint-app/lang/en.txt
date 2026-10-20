@@ -856,3 +856,4 @@ PSB (большой PSD, со слоями) = PSB (large PSD, with layers)
 Обе оси = Both axes
 Закрыть щели = Close gaps
 Под линию = Under line
+Правый щелчок по холсту открывает палитру: цвета и кисти = Right-click on the canvas opens a palette: colors and brushes

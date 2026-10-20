@@ -543,11 +543,13 @@ struct Options {
     recovery_min: u32,
     /// Кривая нажима пера (прямая — нажим как есть).
     pressure_curve: paint_core::curve::PressureCurve,
+    /// Правый щелчок по холсту — палитра у курсора (недавние цвета, образцы, кисти).
+    popup_palette: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default() }
+        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false }
     }
 }
 
@@ -1425,6 +1427,9 @@ struct PaintApp {
     show_history: bool,
     /// Пиксельная сетка при увеличении от 800 %.
     pixel_grid: bool,
+    /// Где открыта палитра по правому щелчку (точка экрана) и в каком кадре.
+    popup_at: Option<Pos2>,
+    popup_frame: u64,
     /// Симметрия: 0 — нет, 1 — ось по вертикали (лево ↔ право), 2 — по горизонтали, 3 — обе.
     symmetry: u8,
 }
@@ -1601,6 +1606,8 @@ impl PaintApp {
             dark_theme: false,
             show_history: false,
             pixel_grid: false,
+            popup_at: None,
+            popup_frame: 0,
             symmetry: 0,
         };
         app.load_settings();
@@ -1848,7 +1855,7 @@ app.open_canvas_dialog(d == "resolution")
             self.viewer_view = ((v >> 8) as u8, v as u8);
         }
         let o = &mut self.opts;
-        for (k, v) in [("opt.dbl_props", &mut o.dbl_props), ("opt.swap_zoom", &mut o.swap_zoom), ("opt.size_relative", &mut o.size_relative), ("opt.spring_tools", &mut o.spring_tools), ("opt.spring_color", &mut o.spring_color), ("opt.spring_funcs", &mut o.spring_funcs), ("opt.duplex_revert", &mut o.duplex_revert)] {
+        for (k, v) in [("opt.dbl_props", &mut o.dbl_props), ("opt.swap_zoom", &mut o.swap_zoom), ("opt.size_relative", &mut o.size_relative), ("opt.spring_tools", &mut o.spring_tools), ("opt.spring_color", &mut o.spring_color), ("opt.spring_funcs", &mut o.spring_funcs), ("opt.duplex_revert", &mut o.duplex_revert), ("opt.popup_palette", &mut o.popup_palette)] {
             s.read_bool(k, v);
         }
         for (k, v) in [("opt.spring_ms", &mut o.spring_ms), ("opt.move_guard_ms", &mut o.move_guard_ms), ("opt.history_mb", &mut o.history_mb), ("opt.recovery_min", &mut o.recovery_min)] {
@@ -2030,7 +2037,7 @@ app.open_canvas_dialog(d == "resolution")
         }
         s.set("viewer.view", ((self.viewer_view.0 as u16) << 8) | self.viewer_view.1 as u16);
         let o = self.opts;
-        for (k, v) in [("opt.dbl_props", o.dbl_props), ("opt.swap_zoom", o.swap_zoom), ("opt.size_relative", o.size_relative), ("opt.spring_tools", o.spring_tools), ("opt.spring_color", o.spring_color), ("opt.spring_funcs", o.spring_funcs), ("opt.duplex_revert", o.duplex_revert)] {
+        for (k, v) in [("opt.dbl_props", o.dbl_props), ("opt.swap_zoom", o.swap_zoom), ("opt.size_relative", o.size_relative), ("opt.spring_tools", o.spring_tools), ("opt.spring_color", o.spring_color), ("opt.spring_funcs", o.spring_funcs), ("opt.duplex_revert", o.duplex_revert), ("opt.popup_palette", o.popup_palette)] {
             s.set(k, v as u8);
         }
         for (k, v) in [("opt.spring_ms", o.spring_ms), ("opt.move_guard_ms", o.move_guard_ms), ("opt.history_mb", o.history_mb), ("opt.recovery_min", o.recovery_min)] {
@@ -7471,6 +7478,11 @@ app.open_canvas_dialog(d == "resolution")
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         self.view = rect;
+        if self.opts.popup_palette && response.secondary_clicked() {
+            self.popup_at = response.interact_pointer_pos();
+            self.popup_frame = ui.ctx().cumulative_pass_nr();
+            ui.ctx().request_repaint();
+        }
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, sai_ui::field());
         let (w, h) = (self.doc.width as f32, self.doc.height as f32);
@@ -9075,6 +9087,9 @@ impl PaintApp {
         if self.show_history {
             self.history_window(ctx);
         }
+        if self.popup_at.is_some() {
+            self.popup_palette(ctx);
+        }
         if self.viewer.is_some() {
             self.viewer_window(ctx);
         }
@@ -9170,6 +9185,61 @@ impl PaintApp {
     }
 
     /// Окно «Настройки» (как Options в SAI 2017).
+    /// Палитра у курсора: недавние цвета, образцы, кисти сетки; выбор или щелчок мимо — закрыть.
+    fn popup_palette(&mut self, ctx: &egui::Context) {
+        let Some(at) = self.popup_at else { return };
+        let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        let mut pick: Option<Color32> = None;
+        let mut tool: Option<usize> = None;
+        let swatches: Vec<Color32> = self.swatches.iter().flatten().copied().take(32).collect();
+        let names: Vec<String> = self.brushes.iter().map(|b| b.custom.clone().unwrap_or_else(|| tr(b.name).to_string())).collect();
+        let area = egui::Area::new(egui::Id::new("popup_palette")).fixed_pos(at).order(egui::Order::Foreground).show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_max_width(16.0 * 12.0);
+                let cell = 16.0;
+                for row in [self.recent_colors.clone(), swatches] {
+                    if row.is_empty() {
+                        continue;
+                    }
+                    for chunk in row.chunks(12) {
+                        if let Some(c) = sai_ui::recent_row(ui, chunk, cell) {
+                            pick = Some(c);
+                        }
+                    }
+                    ui.add_space(3.0);
+                }
+                ui.separator();
+                egui::Grid::new("popup_tools").num_columns(3).spacing([2.0, 2.0]).show(ui, |ui| {
+                    for (i, n) in names.iter().enumerate() {
+                        if ui.selectable_label(i == self.brush && self.tool == Tool::Brush, n).clicked() {
+                            tool = Some(i);
+                        }
+                        if i % 3 == 2 {
+                            ui.end_row();
+                        }
+                    }
+                });
+            });
+        });
+        // щелчок мимо окошка закрывает его (кроме кадра, где оно открылось: нажатие и отпускание
+        // правой кнопки могут прийти в одном кадре)
+        if ctx.cumulative_pass_nr() != self.popup_frame && ctx.input(|i| i.pointer.any_pressed()) && !area.response.contains_pointer() {
+            close = true;
+        }
+        if let Some(c) = pick {
+            self.set_color(c);
+            close = true;
+        }
+        if let Some(i) = tool {
+            self.tool = Tool::Brush;
+            self.brush = i;
+            close = true;
+        }
+        if close {
+            self.popup_at = None;
+        }
+    }
+
     /// Окно истории: шаги по порядку, щелчок — вернуться к состоянию после шага.
     fn history_window(&mut self, ctx: &egui::Context) {
         let (undo, redo) = self.doc.history_steps();
@@ -9243,6 +9313,7 @@ impl PaintApp {
                 ui.label(tr("Удержание считается с, мс:"));
                 ui.add(egui::DragValue::new(&mut o.spring_ms).range(50..=2000));
             });
+            ui.checkbox(&mut o.popup_palette, tr("Правый щелчок по холсту открывает палитру: цвета и кисти"));
             ui.checkbox(&mut o.duplex_revert, tr("Повторное нажатие клавиши инструмента возвращает прежний"));
             ui.weak(tr("(*) Зеркало вида, «Не замечать линейку», «Прямая линия»"));
             head(ui, tr("Защита от случайного сдвига слоя"));

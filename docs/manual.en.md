@@ -382,6 +382,8 @@ The “New” window remembers the last size, also after a restart.
 keys by a quarter, temporary tool, color and function switching while a key is held (threshold in
 ms), returning to the previous tool by pressing its key again, protection from accidental layer
 moves after Ctrl/Alt shortcuts, history memory and the recovery copy interval.
+“Right-click on the canvas opens a palette” (off by default): recent colors, swatches and the grid
+brushes appear at the cursor — click to pick, Esc or a click elsewhere closes it.
 There is also “Pen pressure curve”: two points on the graph change how the brush answers pressure
 (above the line — softer, below — harder); “Straight” restores pressure as is. It affects the pen, not the mouse.
 

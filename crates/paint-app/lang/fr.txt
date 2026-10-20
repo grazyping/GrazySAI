@@ -855,3 +855,4 @@ PSB (большой PSD, со слоями) = PSB (grand PSD, avec calques)
 Обе оси = Les deux axes
 Закрыть щели = Fermer les trous
 Под линию = Sous la ligne
+Правый щелчок по холсту открывает палитру: цвета и кисти = Un clic droit sur la toile ouvre une palette : couleurs et pinceaux
