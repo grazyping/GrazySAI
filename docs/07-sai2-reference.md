@@ -169,6 +169,15 @@ Room» и журналы изменений. Вики `painttoolsai.readthedocs.
 | Color (клавиши) | Change Foreground Color, Change Background Color, Exchange Foreground Color and Background Color, Switch to Transparent, Pick Color (Same as Syringe Tool), Pick Color from Merged Image, Pick Color from Current layer |
 | Brush Tool (клавиши) | Switch to Straight Line Mode, Temporarily Ignore Ruler, Detect/Ignore и Detect Only для зелёной, синей, красной точки схода, Disable Snap for Grid, Snap to Line / Knot of Grid, Temporarily Ignore Snap for Grid, Select Previous/Next Size in Brush Size List, Change Brush Density to 10 … 100 |
 
+**Поправка 20.10.2026.** Таблица выше собрана по таблице надписей программы, а не по живому меню.
+Просмотр меню работающей сборки 2017 показал, что часть записей — заготовки без пунктов меню:
+перспективные линейки и сетки (New 1VP/2VP/3VP Perspective Ruler, New 2VP/3VP Perspective Grid,
+Move Pivot to … Vanishing Point, Change Grid Surface, Move Perspective Grid, Lock/Fit Vanishing
+Point, привязка Line/Knot) — в меню Layer и Ruler их нет; Layer Mask в меню Layer тоже не виден.
+Так же заготовками в 2017 остаются Scatter Brush (нет в списке создания инструмента в пустой
+ячейке), режимы Hue/Saturation/Color/Luminosity (в списке режимов слоя 28 пунктов) и фильтры
+кроме трёх работающих. Сверка — `32-sai-comparison.md`, раздел «Сверка 20.10.2026».
+
 Инструменты слоя контура и фигур с их удерживаемыми клавишами (**Б**): правка узлов — Move/Add CP
 (Ctrl), Pointed/Rounded (Ctrl+Alt), Connect CPs (Shift+Ctrl), Delete Path (Shift+Ctrl+Alt), Duplicate
 Path (Shift+Ctrl), Move Path (Shift+Alt), Deform Anchor (Shift+Alt); инструмент цвета меняет цвет

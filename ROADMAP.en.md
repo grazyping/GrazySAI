@@ -181,6 +181,10 @@ A Filter menu with CSP's submenus; windows with a preview, like our current filt
 - [x] Correction filters: remove dust, adjust line width (0.8.33)
 - [x] Stylizing filters “Pencil drawing” and “Artistic” (our own take — CSP's method is closed) (0.8.36)
 
+### Remaining SAI 2017 features (check of 20 Oct 2026)
+
+- [ ] PSB: export and opening of large Photoshop files (side over 30,000 px)
+
 ### Beyond SAI — ideas from Krita (after 1.0)
 
 Everything SAI has comes first; these come later. They do not hurt compatibility: in `.sai2` everything lands as plain pixels, the rest goes to the program settings. The window keeps SAI's look: new things live in menus and windows, not on the panels. No Krita code (GPL) is copied — only ideas and formulas, checked against SAI or Krita.
