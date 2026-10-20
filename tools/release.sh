@@ -4,6 +4,7 @@
 set -e
 V=$1; [ -n "$V" ] || { echo "нужна версия"; exit 1; }
 cd "$(dirname "$0")/.."
+ROOT=$(pwd)
 # адреса из разбора SAI в открытый репозиторий не попадают — правила описываются своими словами
 if git ls-files -z | xargs -0 grep -l -E '(FUN|DAT|LAB)_14[0-9a-f]{5,}'; then
   echo "в файлах выше — адреса SAI; убрать перед выпуском"; exit 1
@@ -24,7 +25,7 @@ cp ../../target/release/GrazySAI GrazySAI-$V-linux-x86_64/
 cp ../../target/x86_64-pc-windows-gnullvm/release/GrazySAI.exe GrazySAI-$V-windows-x86_64/
 rm -f GrazySAI-$V-*.tar.gz GrazySAI-$V-*.zip
 tar czf GrazySAI-$V-linux-x86_64.tar.gz GrazySAI-$V-linux-x86_64
-zip -qr GrazySAI-$V-windows-x86_64.zip GrazySAI-$V-windows-x86_64
+python3 -I "$ROOT/tools/mkzip.py" GrazySAI-$V-windows-x86_64.zip GrazySAI-$V-windows-x86_64
 # переход со старого имени: версии до 0.8.42 (SOsai) ищут архив SOsai-…, в нём папку SOsai-…
 # и файл SOsai(.exe) — кладём туда новую программу под старым именем
 for os in linux windows; do
@@ -34,5 +35,5 @@ mv SOsai-$V-linux-x86_64/GrazySAI SOsai-$V-linux-x86_64/SOsai
 mv SOsai-$V-windows-x86_64/GrazySAI.exe SOsai-$V-windows-x86_64/SOsai.exe
 rm -f SOsai-$V-*.tar.gz SOsai-$V-*.zip
 tar czf SOsai-$V-linux-x86_64.tar.gz SOsai-$V-linux-x86_64
-zip -qr SOsai-$V-windows-x86_64.zip SOsai-$V-windows-x86_64
+python3 -I "$ROOT/tools/mkzip.py" SOsai-$V-windows-x86_64.zip SOsai-$V-windows-x86_64
 ls -la GrazySAI-$V-*.tar.gz GrazySAI-$V-*.zip SOsai-$V-*.tar.gz SOsai-$V-*.zip
