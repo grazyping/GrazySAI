@@ -1256,3 +1256,25 @@ fn binary_pen_lines_like_sai() {
     sai.push((70, 112, 2));
     assert_eq!(rows(&run(14.5, 50.5, (5.0, 1.0), 20), 45..75), sai, "наклон 0,2");
 }
+
+/// Окно истории: шаги подписаны видом действия и слоем; отменённый шаг уходит в повтор.
+#[test]
+fn history_steps_describe_actions() {
+    use paint_core::{StepKind, Layer};
+    let mut doc = Document::new(64, 64);
+    doc.layers[0].name = "Фон".into();
+    let mut s = Stroke::new(BrushParams::default());
+    s.add_point(InputPoint { x: 10.0, y: 10.0, pressure: 1.0 });
+    s.add_point(InputPoint { x: 40.0, y: 30.0, pressure: 1.0 });
+    doc.commit_stroke(0, &s, [0, 0, 0]);
+    doc.insert_layer(&[1], Layer::new("Линии"));
+    let (undo, redo) = doc.history_steps();
+    assert_eq!(undo.iter().map(|i| i.kind).collect::<Vec<_>>(), [StepKind::Paint, StepKind::NewLayer]);
+    assert_eq!(undo[0].layer.as_deref(), Some("Фон"));
+    assert_eq!(undo[1].layer.as_deref(), Some("Линии"));
+    assert!(redo.is_empty());
+    doc.undo();
+    let (undo, redo) = doc.history_steps();
+    assert_eq!((undo.len(), redo.len()), (1, 1));
+    assert_eq!(redo[0].kind, StepKind::NewLayer);
+}

@@ -1377,6 +1377,8 @@ struct PaintApp {
     check_updates: bool,
     /// Тёмная тема интерфейса.
     dark_theme: bool,
+    /// Окно истории открыто.
+    show_history: bool,
 }
 
 impl PaintApp {
@@ -1547,6 +1549,7 @@ impl PaintApp {
             show_update: false,
             check_updates: true,
             dark_theme: false,
+            show_history: false,
         };
         app.load_settings();
         app.recovery_found = recovery_files().filter(|(f, _)| f.exists()).map(|(f, info)| {
@@ -5405,6 +5408,9 @@ app.open_canvas_dialog(d == "resolution")
                     s.save();
                 }
                 ui.separator();
+                if ui.checkbox(&mut self.show_history, tr("История")).clicked() {
+                    ui.close_menu();
+                }
                 if ui.checkbox(&mut self.dark_theme, tr("Тёмная тема")).changed() {
                     sai_ui::set_dark(self.dark_theme);
                     sai_ui::apply_style(ui.ctx());
@@ -8910,6 +8916,9 @@ impl PaintApp {
         if self.opts_edit.is_some() {
             self.options_window(ctx);
         }
+        if self.show_history {
+            self.history_window(ctx);
+        }
         if self.viewer.is_some() {
             self.viewer_window(ctx);
         }
@@ -9005,6 +9014,58 @@ impl PaintApp {
     }
 
     /// Окно «Настройки» (как Options в SAI 2017).
+    /// Окно истории: шаги по порядку, щелчок — вернуться к состоянию после шага.
+    fn history_window(&mut self, ctx: &egui::Context) {
+        let (undo, redo) = self.doc.history_steps();
+        let label = |i: &paint_core::StepInfo| {
+            use paint_core::StepKind as K;
+            let what = match i.kind {
+                K::Paint => tr("Рисование"),
+                K::NewLayer => tr("Новый слой"),
+                K::DeleteLayer => tr("Удаление слоя"),
+                K::Mask => tr("Маска слоя"),
+                K::Vector => tr("Контур"),
+                K::Selection => tr("Выделение"),
+                K::Canvas => tr("Холст"),
+                K::Other => tr("Изменение"),
+            };
+            match &i.layer {
+                Some(l) => format!("{what} — {l}"),
+                None => what.to_string(),
+            }
+        };
+        let mut open = true;
+        // сколько шагов отменить (+) или повторить (−)
+        let mut go: Option<i64> = None;
+        egui::Window::new(tr("История")).id(egui::Id::new("history_window")).open(&mut open).default_width(240.0).default_height(360.0).resizable(true).show(ctx, |ui| {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).stick_to_bottom(true).show(ui, |ui| {
+                let n = undo.len() as i64;
+                if ui.selectable_label(undo.is_empty(), tr("Исходное состояние")).clicked() {
+                    go = Some(n);
+                }
+                for (i, step) in undo.iter().enumerate() {
+                    if ui.selectable_label(i + 1 == undo.len(), format!("{}. {}", i + 1, label(step))).clicked() {
+                        go = Some(n - 1 - i as i64);
+                    }
+                }
+                for (j, step) in redo.iter().enumerate() {
+                    let text = egui::RichText::new(format!("{}. {}", undo.len() + j + 1, label(step))).color(sai_ui::dim());
+                    if ui.selectable_label(false, text).clicked() {
+                        go = Some(-(j as i64 + 1));
+                    }
+                }
+            });
+        });
+        if !open {
+            self.show_history = false;
+        }
+        match go {
+            Some(k) if k > 0 => (0..k).for_each(|_| self.undo()),
+            Some(k) if k < 0 => (0..-k).for_each(|_| self.redo()),
+            _ => {}
+        }
+    }
+
     fn options_window(&mut self, ctx: &egui::Context) {
         let Some(mut o) = self.opts_edit else { return };
         let (mut ok, mut cancel) = (false, false);

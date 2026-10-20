@@ -196,7 +196,7 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 - [ ] Mirror painting (symmetry)
 - [ ] Fill: closing gaps in line art and growing the edge under the line
 - [x] Recent colours; GIMP (`.gpl`) and Krita (`.kpl`) palettes (1.0.6)
-- [ ] History window: list of steps, jump back with a click
+- [x] History window: list of steps, jump back with a click (1.0.7)
 - [x] Pen pressure curve in the settings (1.0.6)
 - [ ] PSD: layer masks and 16 bits on export; “Keep the exact look” for SAI-only modes
 - [x] OpenRaster (`.ora`): open and save with layers (0.8.43)

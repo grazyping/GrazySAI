@@ -63,6 +63,8 @@ Shortcut keys in menu items and tooltips can be hidden: “Window → Show short
 “Window → Separate User Interface Panel” (as in SAI): tools, color, layers or navigator — each
 panel in its own window that can go to another monitor; closing that window puts the panel back.
 
+“Window → History” lists the steps: click a step to return the picture to the state after it (undone steps are shown dimmed and can be clicked too); “Initial state” goes back to the start.
+
 The “Window” menu has “Dark theme”: dark panels and menus; the canvas, paper and drawing colors stay unchanged.
 
 The “Window” menu, as in SAI: UI scale (100–200%), the color and tool panel and the navigator and

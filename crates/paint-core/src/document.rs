@@ -28,6 +28,26 @@ enum Op {
     Canvas { width: u32, height: u32, layers: Vec<Layer>, selection: MaskMap },
 }
 
+/// Вид шага истории (по убыванию важности для подписи).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepKind {
+    Canvas,
+    NewLayer,
+    DeleteLayer,
+    Mask,
+    Vector,
+    Paint,
+    Selection,
+    Other,
+}
+
+/// Подпись шага: вид и слой, если он понятен.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StepInfo {
+    pub kind: StepKind,
+    pub layer: Option<String>,
+}
+
 /// Одно действие пользователя: шаги выполняются по порядку, отмена — обратными шагами в обратном
 /// порядке.
 struct HistoryEntry(Vec<Op>);
@@ -1213,6 +1233,41 @@ impl Document {
         ops.push(second);
         let k = self.perform(ops);
         Some((below, k))
+    }
+
+    /// Что делал шаг истории — для окна истории. В шаге отмены лежит обратная операция (возврат
+    /// слоя — значит, его удалили), в шаге повтора — прямая (`forward`).
+    fn step_info(&self, e: &HistoryEntry, forward: bool) -> StepInfo {
+        let name = |path: &[usize]| self.layer(path).map(|l| l.name.clone());
+        let mut kind = StepKind::Other;
+        let mut layer = None;
+        for op in &e.0 {
+            let (k, path): (StepKind, Option<&[usize]>) = match op {
+                Op::Tiles { path, .. } | Op::TilesOnDisk { path, .. } => (StepKind::Paint, Some(path)),
+                Op::Insert { layer: l, .. } => {
+                    layer = layer.or(Some(l.name.clone()));
+                    (if forward { StepKind::NewLayer } else { StepKind::DeleteLayer }, None)
+                }
+                Op::Remove { path } => (if forward { StepKind::DeleteLayer } else { StepKind::NewLayer }, Some(path)),
+                Op::Selection { .. } => (StepKind::Selection, None),
+                Op::Vector { path, .. } => (StepKind::Vector, Some(path)),
+                Op::Mask { path, .. } => (StepKind::Mask, Some(path)),
+                Op::Canvas { .. } => (StepKind::Canvas, None),
+            };
+            // главное действие шага: холст и слои важнее рисования и выделения
+            if kind == StepKind::Other || (k as u8) < (kind as u8) {
+                kind = k;
+            }
+            if layer.is_none() {
+                layer = path.and_then(name);
+            }
+        }
+        StepInfo { kind, layer }
+    }
+
+    /// Шаги отмены (самый старый первым) и повтора (ближайший первым).
+    pub fn history_steps(&self) -> (Vec<StepInfo>, Vec<StepInfo>) {
+        (self.undo.iter().map(|e| self.step_info(e, false)).collect(), self.redo.iter().rev().map(|e| self.step_info(e, true)).collect())
     }
 
     pub fn can_undo(&self) -> bool {

@@ -25,7 +25,7 @@ pub mod vectorize;
 
 pub use blend::BlendMode;
 pub use brush::BrushParams;
-pub use document::{Document, LiveStroke};
+pub use document::{Document, LiveStroke, StepInfo, StepKind};
 pub use layer::Layer;
 pub use stabilizer::Stabilizer;
 pub use stroke::{InputPoint, Stroke};
