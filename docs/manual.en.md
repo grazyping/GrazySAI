@@ -533,3 +533,9 @@ Russian):
 - the GrazySAI version (in the window title) and the system (Windows or Linux).
 
 If you can, attach the file or a screenshot.
+
+**Self-test.** `GrazySAI --self-test report.txt` (on Windows: `Start-Process -Wait .\GrazySAI.exe
+"--self-test report.txt"` in PowerShell) checks without a window what depends on the system: the temp and
+settings folders, writing and reading every format (with non-Latin file names), SQLite for CSP brushes,
+brush tips, system fonts. The result is OK/FAIL lines in the report (without a file name —
+`self-test.txt` in the settings folder); your files are not touched. Attach the report to a bug report.

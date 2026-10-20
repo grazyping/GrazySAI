@@ -14,7 +14,9 @@ fn tmp_path(path: &Path) -> PathBuf {
 /// Подменить `path` готовым временным файлом: сначала данные — на диск (`sync_all`), потом
 /// переименование. Сбой или пропажа питания посреди записи оставляют прежний файл целым.
 pub fn replace_with(tmp: &Path, path: &Path) -> std::io::Result<()> {
-    File::open(tmp)?.sync_all()?;
+    // открыть для записи: в Windows сброс на диск (FlushFileBuffers) без права записи — «Доступ
+    // запрещён» (os error 5), и сохранение не проходило (с 0.9.13 до 1.0.22; найдено самопроверкой)
+    std::fs::OpenOptions::new().write(true).open(tmp)?.sync_all()?;
     std::fs::rename(tmp, path)?;
     #[cfg(unix)]
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {

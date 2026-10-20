@@ -14,6 +14,7 @@ mod update;
 mod files;
 mod virtual_pen;
 mod clip;
+mod self_test;
 
 use i18n::{tr, trf};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
@@ -10712,6 +10713,11 @@ fn main() -> eframe::Result {
         }
         default_hook(info);
     }));
+    // самопроверка без окна (для проверки на другой машине): отчёт в файл и код выхода
+    if std::env::args().nth(1).as_deref() == Some("--self-test") {
+        let ok = self_test::run(std::env::args().nth(2).map(PathBuf::from));
+        std::process::exit(if ok { 0 } else { 1 });
+    }
     let path = std::env::args().nth(1).map(PathBuf::from);
     // Язык: PAINT_LANG, иначе выбранный в меню, иначе язык системы.
     let lang = std::env::var("PAINT_LANG")

@@ -1869,6 +1869,7 @@ dependencies = [
  "paint-core",
  "paint-formats",
  "rfd",
+ "rusqlite",
  "x11rb",
 ]
 
