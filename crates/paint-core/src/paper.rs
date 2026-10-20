@@ -419,6 +419,62 @@ pub fn texture_of(kind: &str, name: &str) -> Option<Arc<PaperTexture>> {
     found
 }
 
+/// Отпечаток-картинка по имени: `tips/<имя>.png` в своей папке программы (или рядом с SAI).
+pub fn stamp_of(name: &str) -> Option<Arc<crate::stroke::Stamp>> {
+    type Stamps = HashMap<String, Arc<crate::stroke::Stamp>>;
+    static CACHE: OnceLock<Mutex<Stamps>> = OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(s) = cache.lock().unwrap().get(name) {
+        return Some(s.clone());
+    }
+    let found = dirs("tips").into_iter().find_map(|d| {
+        let (w, h, rgba) = crate::io::decode_png(&std::fs::read(d.join(format!("{name}.png"))).ok()?).ok()?;
+        Some(Arc::new(crate::stroke::Stamp::from_rgba(w as usize, h as usize, &rgba)))
+    });
+    if let Some(s) = &found {
+        cache.lock().unwrap().insert(name.to_string(), s.clone());
+    }
+    found
+}
+
+/// Имена отпечатков-картинок (`tips/*.png`), по алфавиту.
+pub fn tip_names() -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for d in dirs("tips") {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("png")) {
+                if let Some(n) = p.file_stem().and_then(|n| n.to_str()) {
+                    if !out.iter().any(|o| o == n) {
+                        out.push(n.to_string());
+                    }
+                }
+            }
+        }
+    }
+    out.sort_by_key(|n| n.to_lowercase());
+    out
+}
+
+/// Сохранить отпечаток в свою папку программы (`tips/<имя>.png`: чёрное с прозрачностью) под
+/// свободным именем; возвращает имя.
+pub fn save_tip(name: &str, s: &crate::stroke::Stamp) -> Result<String, Box<dyn std::error::Error>> {
+    let dir = user_dir("tips").ok_or("нет папки настроек")?;
+    std::fs::create_dir_all(&dir)?;
+    let clean: String = name.chars().map(|c| if c.is_alphanumeric() || " -_().".contains(c) { c } else { '_' }).collect();
+    let clean = if clean.trim().is_empty() { "tip".to_string() } else { clean.trim().to_string() };
+    let mut n = clean.clone();
+    let mut i = 2;
+    while dir.join(format!("{n}.png")).exists() {
+        n = format!("{clean} {i}");
+        i += 1;
+    }
+    let rgba: Vec<u8> = s.alpha.iter().flat_map(|&a| [0, 0, 0, a]).collect();
+    crate::io::save_image(&dir.join(format!("{n}.png")), s.width as u32, s.height as u32, &rgba)?;
+    Ok(n)
+}
+
 /// Волоски щетины из папки `bristle` (BMP 63×63, 24 или 32 бита, как проверяет SAI 2017):
 /// каждый чёрный пиксель — волосок, не больше 63. Координаты — (x − 31, y − 31) / 31, y вниз.
 pub fn bristle_of(name: &str) -> Option<Arc<Vec<(f32, f32)>>> {

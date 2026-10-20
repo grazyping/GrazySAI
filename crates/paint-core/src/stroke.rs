@@ -63,31 +63,93 @@ enum Shape {
     /// Двоичное перо: круг радиуса `r` без сглаживания (точка закрашена, если её центр в круге),
     /// непрозрачность `o`.
     Binary(f32, f32),
+    /// Отпечаток-картинка: картинка, радиус (половина большей стороны в пикселях холста), косинус и
+    /// синус поворота.
+    Stamp(Arc<Stamp>, f32, f32, f32),
+}
+
+/// Отпечаток-картинка (кончик кисти CSP, Photoshop, GIMP, Krita): значения 0..=255, 255 — краска.
+/// Большая сторона картинки вписывается в диаметр кисти.
+#[derive(Clone, Debug)]
+pub struct Stamp {
+    pub width: usize,
+    pub height: usize,
+    pub alpha: Vec<u8>,
+}
+
+impl Stamp {
+    /// Значение в точке (u, v) картинки (в её пикселях, центр пикселя — +0,5), билинейно; за
+    /// краем — 0.
+    fn sample(&self, u: f32, v: f32) -> f32 {
+        let (x, y) = (u - 0.5, v - 0.5);
+        let (x0, y0) = (x.floor(), y.floor());
+        let (fx, fy) = (x - x0, y - y0);
+        let at = |xi: f32, yi: f32| -> f32 {
+            if xi < 0.0 || yi < 0.0 || xi >= self.width as f32 || yi >= self.height as f32 {
+                0.0
+            } else {
+                self.alpha[yi as usize * self.width + xi as usize] as f32
+            }
+        };
+        let top = at(x0, y0) * (1.0 - fx) + at(x0 + 1.0, y0) * fx;
+        let bottom = at(x0, y0 + 1.0) * (1.0 - fx) + at(x0 + 1.0, y0 + 1.0) * fx;
+        (top * (1.0 - fy) + bottom * fy) / 255.0
+    }
+
+    /// Отпечаток из RGBA: у картинки с прозрачностью краска — непрозрачное, у непрозрачной —
+    /// тёмное (чёрное на белом, как у кистей GIMP и Photoshop).
+    pub fn from_rgba(w: usize, h: usize, rgba: &[u8]) -> Self {
+        let px = rgba.as_chunks::<4>().0;
+        let opaque = px.iter().all(|p| p[3] == 255);
+        let alpha = px
+            .iter()
+            .map(|p| if opaque { 255 - ((p[0] as u32 * 77 + p[1] as u32 * 150 + p[2] as u32 * 29) >> 8) as u8 } else { p[3] })
+            .collect();
+        Self { width: w, height: h, alpha }
+    }
 }
 
 impl Shape {
     fn opacity(&self) -> f32 {
         match self {
             Shape::Sai(_, o) | Shape::Binary(_, o) => *o,
+            Shape::Stamp(..) => 1.0,
         }
     }
     fn outer(&self) -> f32 {
         match self {
             Shape::Sai(d, _) => d.outer(),
             Shape::Binary(r, _) => *r,
+            // углы повёрнутого квадрата
+            Shape::Stamp(_, r, ..) => r * std::f32::consts::SQRT_2,
         }
     }
     /// Форма для маски штриха у самой жёсткой ступени от 20 px.
     fn mask(&self) -> Option<(f32, f32, f32)> {
         match self {
             Shape::Sai(d, _) => d.mask,
-            Shape::Binary(..) => None,
+            Shape::Binary(..) | Shape::Stamp(..) => None,
         }
     }
     fn coverage(&self, dist: f32) -> f32 {
         match self {
             Shape::Sai(d, _) => d.coverage(dist),
             Shape::Binary(r, _) => (dist <= *r) as u8 as f32,
+            // у картинки покрытие зависит не от расстояния: обход — весь квадрат, без «плоской» середины
+            Shape::Stamp(..) => 1.0,
+        }
+    }
+
+    /// Покрытие точки со смещением (cx, cy) от центра отпечатка; `d2` — квадрат расстояния.
+    fn coverage_at(&self, cx: f32, cy: f32, d2: f32) -> f32 {
+        match self {
+            Shape::Stamp(st, r, cos, sin) => {
+                let k = st.width.max(st.height) as f32 / (2.0 * r.max(0.01));
+                let u = (cx * cos + cy * sin) * k + st.width as f32 / 2.0;
+                let v = (-cx * sin + cy * cos) * k + st.height as f32 / 2.0;
+                st.sample(u, v)
+            }
+            _ => self.coverage(d2.sqrt()),
         }
     }
     /// Квадрат радиуса, внутри которого покрытие постоянно (`coverage(0)`): там не нужны ни
@@ -96,6 +158,7 @@ impl Shape {
         let r = match self {
             Shape::Sai(d, _) => d.inner_radius(),
             Shape::Binary(r, _) => *r,
+            Shape::Stamp(..) => return -1.0,
         };
         // чуть меньше, чтобы округление квадрата не задело край
         let r = (r - 1e-3).max(0.0);
@@ -123,6 +186,8 @@ pub struct Grain {
     pub by_min_density: bool,
     /// Форма «щетина» (`bristle`); вместо «пятна».
     pub bristle: Option<Bristle>,
+    /// Отпечаток-картинка и его поворот в радианах; вместо круглого отпечатка.
+    pub tip: Option<(Arc<Stamp>, f32)>,
 }
 
 /// Щетина, как форма вида 3 в SAI 2017: каждый
@@ -309,7 +374,7 @@ impl Placed {
                     }
                     self.flat_a
                 } else {
-                    let mut cov = self.shape.coverage(d2.sqrt());
+                    let mut cov = self.shape.coverage_at(cx, cy, d2);
                     if masked {
                         // не больше маски штриха (в 1/16384)
                         let m = mask.map_or(0, |t| t.0[(row + x) as usize]) as f32 / 16384.0;
@@ -407,7 +472,7 @@ impl Stroke {
 
     /// Форма «пятно» и текстура кисти для этого штриха.
     pub fn set_grain(&mut self, grain: Option<Grain>) {
-        self.grain = grain.filter(|g| g.blot.is_some() || g.texture.is_some() || g.bristle.is_some());
+        self.grain = grain.filter(|g| g.blot.is_some() || g.texture.is_some() || g.bristle.is_some() || g.tip.is_some());
         self.hairs = None;
         self.grain_cache = Default::default();
     }
@@ -532,6 +597,10 @@ impl Stroke {
         }
         if self.params.spacing > 0.0 {
             return (self.params.spacing * d.max(1.0)).max(0.05);
+        }
+        if self.grain.as_ref().is_some_and(|g| g.tip.is_some()) {
+            // отпечаток-картинка без своего шага — десятая доля диаметра
+            return (0.1 * d).max(0.5);
         }
         let dab = self.sai_dab(pressure);
         (step_factor(dab.step_diameter, 1.0 - self.params.hardness.clamp(0.0, 1.0)) * dab.step_size).max(0.05)
@@ -712,9 +781,12 @@ impl Stroke {
                 return self.bristle_dab(p, &b, diameter, density);
             }
         }
+        let tip = if self.params.binary { None } else { self.grain.as_ref().and_then(|g| g.tip.clone()) };
         let (p, shape) = if self.params.binary {
             let Some((cx, cy, r)) = self.binary_point(p.x as f64, p.y as f64, diameter) else { return };
             (InputPoint { x: cx, y: cy, ..p }, Shape::Binary(r, 1.0))
+        } else if let Some((st, angle)) = tip {
+            (p, Shape::Stamp(st, (diameter / 2.0).max(0.5), angle.cos(), angle.sin()))
         } else {
             let d = self.sai_dab(p.pressure);
             let o = d.opacity(self.step_at(p.pressure));
@@ -1293,7 +1365,7 @@ fn for_rows(d: &Pending, mask: &MaskMap, rows: std::ops::Range<i32>, cols: std::
         covs.extend((ra..=rb).map(|x| {
             let cx = x as f32 + 0.5 - d.x;
             let d2 = cx * cx + cy * cy;
-            let mut cov = if d2 < flat_r2 { flat_cov } else { d.shape.coverage(d2.sqrt()) };
+            let mut cov = if d2 < flat_r2 { flat_cov } else { d.shape.coverage_at(cx, cy, d2) };
             if masked {
                 cov = cov.min(mrow[(x - ra) as usize] as f32 / 16384.0);
             }

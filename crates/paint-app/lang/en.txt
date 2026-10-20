@@ -885,3 +885,11 @@ PSD и PSB: сохранить вид точно — слои с режимам�
 Нет подсказок: поставьте на текущем слое цветные пятна в областях, которые надо залить = No hints: put color spots on the current layer in the areas to fill
 Раскраска = Colorize
 Раскраска: {0} цветов, новый слой под подсказками = Colorize: {0} colors, new layer below the hints
+Отпечаток = Tip
+[ Круг ] = [ Circle ]
+Добавить картинку… = Add picture…
+PNG, BMP и др.: тёмное на белом или непрозрачное на прозрачном; кисти GIMP .gbr = PNG, BMP etc.: dark on white or opaque on transparent; GIMP brushes .gbr
+Картинки и кисти GIMP = Pictures and GIMP brushes
+Отпечаток кисти = Brush tip
+Отпечаток «{0}» добавлен = Tip “{0}” added
+Перетащите картинку в окно с Shift — она станет отпечатком кисти = Drag a picture onto the window with Shift — it becomes the brush tip

@@ -884,3 +884,11 @@ PSD и PSB: сохранить вид точно — слои с режимам�
 Нет подсказок: поставьте на текущем слое цветные пятна в областях, которые надо залить = Sin indicaciones: ponga manchas de color en la capa actual en las zonas que quiere rellenar
 Раскраска = Coloreado
 Раскраска: {0} цветов, новый слой под подсказками = Coloreado: {0} colores, capa nueva debajo de las indicaciones
+Отпечаток = Punta
+[ Круг ] = [ Círculo ]
+Добавить картинку… = Añadir imagen…
+PNG, BMP и др.: тёмное на белом или непрозрачное на прозрачном; кисти GIMP .gbr = PNG, BMP, etc.: oscuro sobre blanco u opaco sobre transparente; pinceles de GIMP .gbr
+Картинки и кисти GIMP = Imágenes y pinceles de GIMP
+Отпечаток кисти = Punta del pincel
+Отпечаток «{0}» добавлен = Punta «{0}» añadida
+Перетащите картинку в окно с Shift — она станет отпечатком кисти = Arrastre una imagen a la ventana con Mayús: se convertirá en la punta del pincel

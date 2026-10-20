@@ -20,6 +20,8 @@ pub enum Ask {
     Export(&'static str),
     /// Опорная картинка поверх холста.
     Reference,
+    /// Картинка — отпечаток кисти.
+    Tip,
 }
 
 pub struct Pending {
@@ -55,6 +57,10 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
                 (tr("Все файлы").to_string(), vec!["*"]),
             ],
         ),
+        Ask::Tip => (
+            tr("Отпечаток кисти"),
+            vec![(tr("Картинки и кисти GIMP").to_string(), vec!["png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi", "gbr"])],
+        ),
         Ask::Reference => (
             tr("Опорная картинка"),
             vec![(tr("Картинки").to_string(), vec!["png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi"])],
@@ -88,7 +94,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
             d = d.set_directory(dir);
         }
         let picked = match kind {
-            Ask::Open | Ask::Reference => d.pick_file(),
+            Ask::Open | Ask::Reference | Ask::Tip => d.pick_file(),
             _ => {
                 if let Some(n) = name {
                     d = d.set_file_name(n);

@@ -122,6 +122,11 @@ Water also blurs the layer under the stroke.
 - “Texture” — a pattern from the `brushtex` folder or the current layer's paper: light parts of
   the pattern let less paint through. “Strength”, “Zoom”, “Affect by MinDens” (the pattern is
   weaker on thin brushes and at light pressure).
+- “Tip” (in the “Form” section) — a circle or a picture: every dab of the stroke is drawn with that
+  picture (its longer side is the brush size), “Rotate” sets its angle. “Add picture…” in the list,
+  dragging a picture onto the window with Shift, or opening a GIMP brush `.gbr` turns a picture into the
+  current tool's tip: dark on white or opaque on transparent is paint. Tips are kept in the settings
+  folder under `tips`. The default dab spacing is 10 % of the size.
 - Patterns are fixed to the canvas, not to the stroke. The pattern files come from SAI: if the
   lists are empty, enter the SAI folder (with `blotmap` and `brushtex`) right in the section;
   the paper folder works too.
@@ -386,8 +391,8 @@ Clip Studio Paint brushes: an exported brush `.sut` (in CSP: Sub tool palette �
 or the `BrushPreset.bfps` palette open with “File → Open” or by drag and drop. Carried over: size
 (millimetres at 350 dpi), opacity and flow (into density), hardness (to the nearest step), fixed spacing,
 pressure on size and opacity, color mixing, and the paper texture from a `.sut` (stored in the settings
-folder under `brushtex`). What GrazySAI lacks — spray, dual brush, image tip, tip thickness, watercolor
-edge — is skipped, and the status bar lists it. The stroke looks like CSP but is not identical: the
+folder under `brushtex`). The image tip is taken from the CSP material thumbnail (an approximation). What GrazySAI lacks — spray,
+dual brush, tip thickness, watercolor edge — is skipped, and the status bar lists it. The stroke looks like CSP but is not identical: the
 engines differ. A `.bfps` palette has no images (it refers to CSP materials), so only settings are taken.
 
 “File → Save with number” saves next to the file under the next free number: `picture.sai2` → `picture_001.sai2`, `picture_009.sai2` → `picture_010.sai2`.

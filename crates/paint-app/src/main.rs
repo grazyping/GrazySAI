@@ -1092,6 +1092,9 @@ impl BrushTool {
     }
 }
 
+/// Имена файлов форм (`blotmap`), текстур (`brushtex`), щетин (`bristle`) и отпечатков (`tips`).
+type GrainNames = (Vec<String>, Vec<String>, Vec<String>, Vec<String>);
+
 /// Текстура кисти: нет, бумага слоя или файл из `brushtex`.
 #[derive(Clone, PartialEq)]
 enum TexChoice {
@@ -1117,6 +1120,9 @@ struct GrainSettings {
     hair_min: f32,
     randomize: f32,
     direction: u8,
+    /// Отпечаток-картинка из `tips` (вместо круга) и его поворот в градусах.
+    tip: Option<String>,
+    tip_angle: f32,
 }
 
 impl Default for GrainSettings {
@@ -1134,6 +1140,8 @@ impl Default for GrainSettings {
             hair_min: 0.0,
             randomize: 0.0,
             direction: 1,
+            tip: None,
+            tip_angle: 0.0,
         }
     }
 }
@@ -1197,7 +1205,7 @@ struct PaintApp {
     paper_dir: String,
     paper_names: Option<Vec<String>>,
     /// Имена форм (`blotmap`) и текстур кисти (`brushtex`) из папки SAI.
-    grain_names: Option<(Vec<String>, Vec<String>, Vec<String>)>,
+    grain_names: Option<GrainNames>,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
     /// Линейка (прямая или эллипс) и её правка Ctrl + перетаскиванием: что взяли и где было.
@@ -1766,6 +1774,8 @@ app.open_canvas_dialog(d == "resolution")
 
     /// Настройки прошлого запуска: кисти, цвета, сглаживание, допуск палочки.
     fn load_settings(&mut self) {
+        // своя папка программы (текстуры и отпечатки из кистей CSP, GIMP) — всегда, даже без папки SAI
+        paint_core::paper::set_user_dir(settings::dir());
         let s = settings::Settings::load();
         // свой список инструментов сетки (без него — сетка по умолчанию)
         if let Some(n) = s.f32("tools.count").map(|v| v as usize).filter(|&n| n > 0 && n < 1000) {
@@ -1814,6 +1824,10 @@ app.open_canvas_dialog(d == "resolution")
             if let Some(v) = s.f32(&k("direction")) {
                 g.direction = (v as u8).min(2);
             }
+            if let Some(v) = s.str(&k("tip")) {
+                g.tip = (!v.is_empty()).then(|| v.to_string());
+            }
+            s.read_f32(&k("tip_angle"), &mut g.tip_angle);
             if let Some(v) = s.str(&k("form")) {
                 g.form = (!v.is_empty()).then(|| v.to_string());
             }
@@ -2028,6 +2042,8 @@ app.open_canvas_dialog(d == "resolution")
             s.set(&k("hair_min"), g.hair_min);
             s.set(&k("randomize"), g.randomize);
             s.set(&k("direction"), g.direction);
+            s.set(&k("tip"), g.tip.as_deref().unwrap_or(""));
+            s.set(&k("tip_angle"), g.tip_angle);
             s.set(&k("form_strength"), g.form_strength);
             s.set(&k("form_scale"), g.form_scale);
             let tex = match &g.tex {
@@ -2281,12 +2297,14 @@ app.open_canvas_dialog(d == "resolution")
             direction: g.direction,
         });
         let blot = if bristle.is_some() { None } else { blot };
-        (blot.is_some() || texture.is_some() || bristle.is_some()).then(|| paint_core::stroke::Grain {
+        let tip = g.tip.as_deref().and_then(paint_core::paper::stamp_of).map(|s| (s, g.tip_angle.to_radians()));
+        (blot.is_some() || texture.is_some() || bristle.is_some() || tip.is_some()).then(|| paint_core::stroke::Grain {
             blot,
             texture,
             paper: g.tex == TexChoice::Paper,
             by_min_density: g.by_min_density,
             bristle,
+            tip,
         })
     }
 
@@ -2860,6 +2878,12 @@ app.open_canvas_dialog(d == "resolution")
                     t.grain.tex_scale = b.texture_scale;
                 }
             }
+            if let Some(tip) = &b.tip {
+                if let Ok(name) = paint_core::paper::save_tip(&format!("CSP {}", b.name), tip) {
+                    t.grain.tip = Some(name);
+                    t.grain.tip_angle = b.tip_angle;
+                }
+            }
             for s in &b.skipped {
                 if !skipped.contains(s) {
                     skipped.push(s);
@@ -2925,6 +2949,10 @@ app.open_canvas_dialog(d == "resolution")
         let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
         if ext == "gpl" || ext == "kpl" {
             self.load_palette(&path);
+            return;
+        }
+        if ext == "gbr" {
+            self.add_tip(&path);
             return;
         }
         if ext == "sut" || ext == "bfps" {
@@ -3346,6 +3374,7 @@ app.open_canvas_dialog(d == "resolution")
             }
             (files::Answer::Path(p), files::Ask::Export(ext)) => self.export_to(files::with_ext(p, ext), ext),
             (files::Answer::Path(p), files::Ask::Reference) => self.add_reference(&p),
+            (files::Answer::Path(p), files::Ask::Tip) => self.add_tip(&p),
             (files::Answer::Unavailable, files::Ask::Open) => self.show_open = true,
             (files::Answer::Unavailable, files::Ask::SaveAs) => self.show_save_as = true,
             (files::Answer::Unavailable, files::Ask::Export(ext)) => {
@@ -3353,6 +3382,7 @@ app.open_canvas_dialog(d == "resolution")
                 self.export_to(path, ext);
             }
             (files::Answer::Unavailable, files::Ask::Reference) => self.status = String::from(tr("Перетащите картинку в окно с Ctrl")),
+            (files::Answer::Unavailable, files::Ask::Tip) => self.status = String::from(tr("Перетащите картинку в окно с Shift — она станет отпечатком кисти")),
             (files::Answer::Cancelled, _) => {}
         }
     }
@@ -6422,10 +6452,11 @@ app.open_canvas_dialog(d == "resolution")
         }
         if self.grain_names.is_none() {
             use paint_core::paper::names_of;
-            self.grain_names = Some((names_of("blotmap"), names_of("brushtex"), names_of("bristle")));
+            self.grain_names = Some((names_of("blotmap"), names_of("brushtex"), names_of("bristle"), paint_core::paper::tip_names()));
         }
-        let (blot_names, tex_names, bristle_names) = self.grain_names.clone().unwrap_or_default();
+        let (blot_names, tex_names, bristle_names, tip_names) = self.grain_names.clone().unwrap_or_default();
         let mut set_dir = false;
+        let mut add_tip = false;
         let tool = &mut self.brushes[self.brush];
         let (brush, grain) = (&mut tool.params, &mut tool.grain);
         sai_ui::row(ui, tr("Режим"), lw, false, |ui| {
@@ -6571,6 +6602,28 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 });
             });
+            sai_ui::row(ui, tr("   Отпечаток"), lw, true, |ui| {
+                let round = tr("[ Круг ]");
+                egui::ComboBox::from_id_salt("tip").selected_text(grain.tip.clone().unwrap_or_else(|| round.to_string())).width(w - 8.0).height(400.0).show_ui(ui, |ui| {
+                    if ui.selectable_label(grain.tip.is_none(), round).clicked() {
+                        grain.tip = None;
+                    }
+                    for n in &tip_names {
+                        if ui.selectable_label(grain.tip.as_deref() == Some(n), n).clicked() {
+                            grain.tip = Some(n.clone());
+                        }
+                    }
+                    ui.separator();
+                    if ui.button(tr("Добавить картинку…")).on_hover_text(tr("PNG, BMP и др.: тёмное на белом или непрозрачное на прозрачном; кисти GIMP .gbr")).clicked() {
+                        add_tip = true;
+                    }
+                });
+            });
+            if grain.tip.is_some() {
+                sai_ui::row(ui, tr("   Поворот"), lw, true, |ui| {
+                    ui.add(egui::DragValue::new(&mut grain.tip_angle).range(-180.0..=180.0).suffix("°").speed(1.0));
+                });
+            }
             if grain.bristle.is_some() {
                 pct_bar(ui, tr("   Размер волоска"), &mut grain.hair_size, true);
                 pct_bar(ui, tr("   Мин. волоска"), &mut grain.hair_min, true);
@@ -6718,6 +6771,25 @@ app.open_canvas_dialog(d == "resolution")
         }
         if set_dir {
             self.set_paper_dir();
+        }
+        if add_tip {
+            let dir = self.file.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("x"));
+            if !self.native_dialog(files::Ask::Tip, &dir) {
+                self.status = String::from(tr("Перетащите картинку в окно с Shift — она станет отпечатком кисти"));
+            }
+        }
+    }
+
+    /// Картинка или кисть GIMP — новый отпечаток текущего инструмента (копия в своей папке `tips`).
+    fn add_tip(&mut self, path: &std::path::Path) {
+        let saved = paint_formats::brush_tip::load(path).and_then(|(name, stamp)| paint_core::paper::save_tip(&name, &stamp));
+        match saved {
+            Ok(name) => {
+                self.brushes[self.brush].grain.tip = Some(name.clone());
+                self.grain_names = None;
+                self.status = trf("Отпечаток «{0}» добавлен", &[&name]);
+            }
+            Err(e) => self.status = trf("Картинка не открылась: {0}", &[&e]),
         }
     }
 
@@ -9938,6 +10010,9 @@ impl eframe::App for PaintApp {
             // с Ctrl картинка становится опорной, а не открывается
             if ctx.input(|i| i.modifiers.command) {
                 self.add_reference(&path);
+            } else if ctx.input(|i| i.modifiers.shift) {
+                // с Shift — отпечаток текущей кисти
+                self.add_tip(&path);
             } else {
                 self.open_path = path.display().to_string();
                 self.open(path);

@@ -1111,7 +1111,7 @@ fn bristle_hairs_from_bmp_and_strokes() {
     // повороту (−y, x) волоски идут друг за другом по одной линии
     let b = paint_core::stroke::Bristle { hairs: std::sync::Arc::new(hairs), hair_size: 0.5, hair_min: 0.0, randomize: 0.0, direction: 1 };
     let mut s = Stroke::new(BrushParams { size: 40.0, size_by_pressure: false, ..Default::default() });
-    s.set_grain(Some(paint_core::stroke::Grain { blot: None, texture: None, paper: false, by_min_density: true, bristle: Some(b) }));
+    s.set_grain(Some(paint_core::stroke::Grain { blot: None, texture: None, paper: false, by_min_density: true, tip: None, bristle: Some(b) }));
     for i in 0..=30 {
         s.add_point(InputPoint { x: 50.0 + i as f32 * 4.0, y: 60.0, pressure: 1.0 });
     }
@@ -1331,4 +1331,30 @@ fn wrap_stroke_continues_at_the_opposite_edge() {
     }
     assert!(worst <= 1, "разница {worst}");
     assert!(px(&across, 4, 24) < 128 && px(&across, 60, 24) < 128, "мазок есть у обоих краёв");
+}
+
+/// Отпечаток-картинка: краска только там, где она в картинке (левая половина), и поворачивается
+/// вместе с отпечатком (на 90° — верхняя половина).
+#[test]
+fn stamp_tip_paints_its_picture() {
+    use paint_core::stroke::Grain;
+    use std::sync::Arc;
+    let (n, w) = (16usize, 64u32);
+    let stamp = Arc::new(paint_core::Stamp { width: n, height: n, alpha: (0..n * n).map(|i| if i % n < n / 2 { 255 } else { 0 }).collect() });
+    let draw = |angle: f32| {
+        let mut doc = Document::new(w, w);
+        let mut s = Stroke::new(BrushParams { size: 40.0, size_by_pressure: false, ..Default::default() });
+        s.set_grain(Some(Grain { blot: None, texture: None, paper: false, by_min_density: true, tip: Some((stamp.clone(), angle)), bristle: None }));
+        s.add_point(InputPoint { x: 32.0, y: 32.0, pressure: 1.0 });
+        doc.commit_stroke(0, &s, [0, 0, 0]);
+        doc
+    };
+    let plain = draw(0.0);
+    assert!(pixel(&plain, 22, 32)[0] < 60, "слева краска: {:?}", pixel(&plain, 22, 32));
+    assert!(pixel(&plain, 42, 32)[0] > 250, "справа пусто: {:?}", pixel(&plain, 42, 32));
+    assert!(pixel(&plain, 22, 32)[0] == pixel(&plain, 22, 20)[0], "квадрат, а не круг");
+    let turned = draw(std::f32::consts::FRAC_PI_2);
+    // поворот на 90° по часовой (y вниз): левая половина уходит наверх
+    let (top, bottom) = (pixel(&turned, 32, 22)[0], pixel(&turned, 32, 42)[0]);
+    assert!((top < 60) != (bottom < 60), "после поворота половина сверху или снизу: {top} {bottom}");
 }
