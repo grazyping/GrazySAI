@@ -123,6 +123,43 @@ pub fn bar(
     response
 }
 
+/// Ползунок навигатора как у SAI: сверху подпись слева и значение справа, под ними тонкая линия
+/// с треугольным бегунком. Щелчок и перетаскивание ставят значение, колесо — шаг в 1 %.
+pub fn nav_slider(ui: &mut Ui, label: &str, value: &mut f32, min: f32, max: f32, text: String, width: f32) -> Response {
+    let (rect, mut response) = ui.allocate_exact_size(Vec2::new(width, 28.0), Sense::click_and_drag());
+    let track = egui::Rangef::new(rect.left() + 5.0, rect.right() - 5.0);
+    if let Some(pos) = response.interact_pointer_pos() {
+        let t = ((pos.x - track.min) / track.span()).clamp(0.0, 1.0);
+        let new = min + t * (max - min);
+        if (new - *value).abs() > f32::EPSILON {
+            *value = new;
+            response.mark_changed();
+        }
+    }
+    if response.hovered() {
+        let scroll = ui.input(|i| i.raw_scroll_delta.y);
+        if scroll != 0.0 {
+            *value = (*value + scroll.signum() * (max - min) / 100.0).clamp(min, max);
+            response.mark_changed();
+        }
+    }
+    let p = ui.painter();
+    let ink = if ui.is_enabled() { INK } else { DIM };
+    let top = rect.top() + 7.0;
+    let value_w = text_w(p, &text, 12.0) + 4.0;
+    p.text(Pos2::new(rect.right() - 2.0, top), egui::Align2::RIGHT_CENTER, &text, egui::FontId::proportional(12.0), ink);
+    fit_text(p, Pos2::new(rect.left() + 2.0, top), egui::Align2::LEFT_CENTER, label, rect.width() - value_w - 6.0, 12.0, ink);
+    let y = rect.top() + 18.0;
+    p.line_segment([Pos2::new(track.min, y), Pos2::new(track.max, y)], Stroke::new(1.0_f32, Color32::from_gray(150)));
+    p.line_segment([Pos2::new(track.min, y + 1.0), Pos2::new(track.max, y + 1.0)], Stroke::new(1.0_f32, Color32::WHITE));
+    let t = ((*value - min) / (max - min)).clamp(0.0, 1.0);
+    let x = (track.min + t * track.span()).round() + 0.5;
+    let tri = vec![Pos2::new(x, y - 1.0), Pos2::new(x + 4.5, y + 6.0), Pos2::new(x - 4.5, y + 6.0)];
+    let fill = if response.dragged() || response.hovered() { Color32::from_gray(225) } else { Color32::WHITE };
+    p.add(egui::Shape::convex_polygon(tri, fill, Stroke::new(1.0_f32, ink)));
+    response
+}
+
 /// Подпись слева и элемент справа в одну строку фиксированной ширины. Слишком длинная подпись
 /// (перевод) ужимается, а не наезжает на элемент.
 pub fn row(ui: &mut Ui, label: &str, label_w: f32, enabled: bool, add: impl FnOnce(&mut Ui)) {

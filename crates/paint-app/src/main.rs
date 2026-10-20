@@ -6640,13 +6640,14 @@ app.open_canvas_dialog(d == "resolution")
             &[tr("   Эффект"), tr("   Ширина"), tr("   Сила"), tr("   Порог"), tr("   Выбрать"), tr("   Масштаб")],
         ) - 10.0;
         let b = Vec2::splat(18.0);
-        let w = ui.available_width() - lw - 3.0 * 20.0 - 10.0;
         if show_nav {
-        sai_ui::row(ui, tr("Масштаб"), lw, true, |ui| {
+        // как навигатор SAI: подпись и значение над линией с треугольным бегунком
+        let wn = ui.available_width() - 3.0 * 20.0 - 4.0;
+        ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             let mut z = self.zoom.ln();
             let text = format!("{:.0}%", self.zoom * self.ppp * 100.0);
-            if sai_ui::bar(ui, &mut z, 0.02f32.ln(), 32f32.ln(), text, w, true).changed() {
+            if sai_ui::nav_slider(ui, tr("Масштаб"), &mut z, 0.02f32.ln(), 32f32.ln(), text, wn).changed() {
                 self.set_zoom(z.exp());
             }
             if sai_ui::icon_button(ui, b, false, true, tr("Уменьшить"), |p, r, c| {
@@ -6671,11 +6672,11 @@ app.open_canvas_dialog(d == "resolution")
                 self.set_zoom(1.0 / self.ppp);
             }
         });
-        sai_ui::row(ui, tr("Угол"), lw, true, |ui| {
+        ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 2.0;
             let mut a = self.view_angle.to_degrees();
             let text = format!("{a:+.0}°");
-            if sai_ui::bar(ui, &mut a, -180.0, 180.0, text, w, true).changed() {
+            if sai_ui::nav_slider(ui, tr("Угол"), &mut a, -180.0, 180.0, text, wn).changed() {
                 self.view_angle = a.round().to_radians();
             }
             for (g, tip, step) in [("ccw", tr("Повернуть вид против часовой"), -15.0), ("cw", tr("Повернуть вид по часовой"), 15.0), ("reset", tr("Сбросить угол вида"), 0.0)] {
