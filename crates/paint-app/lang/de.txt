@@ -876,3 +876,4 @@ Alt + щелчок — взять цвет = Alt + Klick — Farbe aufnehmen
 кайма акварели = Aquarellrand
 толщина кончика = Spitzendicke
 текстура (картинки нет в файле) = Textur (Bild nicht in der Datei)
+Бесшовный режим (холст повторяется) = Endlosmodus (Leinwand wiederholt sich)

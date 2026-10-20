@@ -14,11 +14,34 @@ use crate::dab::{step_factor, Dab, DabInput};
 pub struct Mirror {
     pub x: Option<f32>,
     pub y: Option<f32>,
+    /// Бесшовный режим: размер холста (ширина, высота). Отпечаток переносится внутрь холста, а у
+    /// края повторяется с другой стороны.
+    pub wrap: Option<(f32, f32)>,
 }
 
 impl Mirror {
-    /// Точка и её отражения (сама точка — первой).
-    fn images(&self, p: InputPoint) -> Vec<InputPoint> {
+    /// Точка и её отражения (сама точка — первой); в бесшовном режиме — ещё и копии со сдвигом на
+    /// размер холста, которые достают до холста отпечатком радиуса `reach`.
+    fn images(&self, p: InputPoint, reach: f32) -> Vec<InputPoint> {
+        let mut out = self.reflections(p);
+        if let Some((w, h)) = self.wrap.filter(|&(w, h)| w > 0.0 && h > 0.0) {
+            let near = |v: f32, size: f32| v > -reach && v < size + reach;
+            out = out
+                .into_iter()
+                .flat_map(|q| {
+                    let base = InputPoint { x: q.x.rem_euclid(w), y: q.y.rem_euclid(h), ..q };
+                    let shifts = [0.0, -1.0, 1.0];
+                    shifts.into_iter().flat_map(move |kx| shifts.into_iter().map(move |ky| (kx, ky))).filter_map(move |(kx, ky)| {
+                        let c = InputPoint { x: base.x + kx * w, y: base.y + ky * h, ..base };
+                        (near(c.x, w) && near(c.y, h)).then_some(c)
+                    })
+                })
+                .collect();
+        }
+        out
+    }
+
+    fn reflections(&self, p: InputPoint) -> Vec<InputPoint> {
         let mut out = vec![p];
         if let Some(ax) = self.x {
             out.push(InputPoint { x: 2.0 * ax - p.x, ..p });
@@ -666,7 +689,7 @@ impl Stroke {
     /// Отпечаток — в маску штриха и в очередь; при симметрии — и его отражения (как один штрих,
     /// пересекающий сам себя: у оси покрытие не удваивается).
     fn emit(&mut self, p: InputPoint, shape: Shape, density: f32, diameter: f32, with_grain: bool) {
-        for q in self.mirror.images(p) {
+        for q in self.mirror.images(p, shape.outer() + 1.0) {
             add_to_hard_mask(&mut self.hard_mask, q.x, q.y, &shape);
             self.dab_count += 1;
             let grain = if with_grain { self.dab_grain(q, diameter, shape.outer() + 1.0) } else { None };

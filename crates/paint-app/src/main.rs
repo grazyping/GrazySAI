@@ -1437,6 +1437,8 @@ struct PaintApp {
     show_history: bool,
     /// Пиксельная сетка при увеличении от 800 %.
     pixel_grid: bool,
+    /// Бесшовный режим: холст показан плиткой 3×3, мазки переходят через края.
+    wrap_around: bool,
     /// Опорные картинки поверх холста.
     refs: Vec<RefImage>,
     next_ref: u64,
@@ -1619,6 +1621,7 @@ impl PaintApp {
             dark_theme: false,
             show_history: false,
             pixel_grid: false,
+            wrap_around: false,
             refs: Vec::new(),
             next_ref: 0,
             popup_at: None,
@@ -1845,6 +1848,7 @@ app.open_canvas_dialog(d == "resolution")
         s.read_bool("check_updates", &mut self.check_updates);
         s.read_bool("dark_theme", &mut self.dark_theme);
         s.read_bool("pixel_grid", &mut self.pixel_grid);
+        s.read_bool("wrap_around", &mut self.wrap_around);
         if let Some(v) = s.f32("symmetry") {
             self.symmetry = (v as u8).min(3);
         }
@@ -2078,6 +2082,7 @@ app.open_canvas_dialog(d == "resolution")
         s.set("check_updates", self.check_updates as u8);
         s.set("dark_theme", self.dark_theme as u8);
         s.set("pixel_grid", self.pixel_grid as u8);
+        s.set("wrap_around", self.wrap_around as u8);
         s.set("symmetry", self.symmetry);
         for (a, id, _, _) in keys::ALL {
             let v = self.keymap.get(&a).copied().flatten().map_or_else(|| "none".to_string(), |b| b.text());
@@ -2787,7 +2792,11 @@ app.open_canvas_dialog(d == "resolution")
     /// Оси симметрии — по середине холста.
     fn mirror(&self) -> paint_core::Mirror {
         let (cx, cy) = (self.doc.width as f32 / 2.0, self.doc.height as f32 / 2.0);
-        paint_core::Mirror { x: (self.symmetry & 1 != 0).then_some(cx), y: (self.symmetry & 2 != 0).then_some(cy) }
+        paint_core::Mirror {
+            x: (self.symmetry & 1 != 0).then_some(cx),
+            y: (self.symmetry & 2 != 0).then_some(cy),
+            wrap: self.wrap_around.then_some((self.doc.width as f32, self.doc.height as f32)),
+        }
     }
 
     /// Цвет мазка — в начало недавних (без повторов).
@@ -5532,6 +5541,9 @@ app.open_canvas_dialog(d == "resolution")
                 if ui.checkbox(&mut self.pixel_grid, tr("Пиксельная сетка (от 800 %)")).clicked() {
                     ui.close_menu();
                 }
+                if ui.checkbox(&mut self.wrap_around, tr("Бесшовный режим (холст повторяется)")).clicked() {
+                    ui.close_menu();
+                }
                 ui.separator();
                 if ui.add(menu_item("Повернуть вид против часовой", "Shift+PageUp")).clicked() {
                     self.rotate_view(-15.0);
@@ -7976,17 +7988,31 @@ app.open_canvas_dialog(d == "resolution")
             egui::TextureOptions::LINEAR
         };
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-        painter.add(egui::Shape::convex_polygon(
-            [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)].map(|(x, y)| xf.to_screen(Vec2::new(x, y))).to_vec(),
-            Color32::WHITE,
-            egui::Stroke::NONE,
-        ));
+        // бесшовный режим — холст и восемь его копий вокруг
+        let copies: Vec<(f32, f32)> = if self.wrap_around {
+            [-1.0, 0.0, 1.0].into_iter().flat_map(|kx| [-1.0, 0.0, 1.0].map(|ky| (kx * w, ky * h))).collect()
+        } else {
+            vec![(0.0, 0.0)]
+        };
+        for &(ox, oy) in &copies {
+            painter.add(egui::Shape::convex_polygon(
+                [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)].map(|(x, y)| xf.to_screen(Vec2::new(x + ox, y + oy))).to_vec(),
+                Color32::WHITE,
+                egui::Stroke::NONE,
+            ));
+        }
         for (&(dx, dy), tile) in self.display.iter_mut() {
-            let (x0, y0) = ((dx * DT) as f32, (dy * DT) as f32);
-            let quad = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
-                .map(|(a, b): (f32, f32)| xf.to_screen(Vec2::new(x0 + a * DT as f32, y0 + b * DT as f32)));
-            let screen = Rect::from_points(&quad);
-            if !screen.intersects(rect) {
+            let (tx, ty) = ((dx * DT) as f32, (dy * DT) as f32);
+            let shown_at: Vec<(f32, f32)> = copies
+                .iter()
+                .copied()
+                .filter(|&(ox, oy)| {
+                    let quad = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+                        .map(|(a, b): (f32, f32)| xf.to_screen(Vec2::new(tx + ox + a * DT as f32, ty + oy + b * DT as f32)));
+                    Rect::from_points(&quad).intersects(rect)
+                })
+                .collect();
+            if shown_at.is_empty() {
                 continue;
             }
             // больше половины кусочков изменилось — одна загрузка целиком дешевле многих мелких
@@ -8028,17 +8054,20 @@ app.open_canvas_dialog(d == "resolution")
                     (h - (dy * DT) as f32).min(DT as f32),
                 );
                 let (u, v) = (part.x / DT as f32, part.y / DT as f32);
-                let mut mesh = egui::Mesh::with_texture(t.id());
-                for (a, b) in [(0.0, 0.0), (u, 0.0), (u, v), (0.0, v)] {
-                    mesh.vertices.push(egui::epaint::Vertex {
-                        pos: xf.to_screen(Vec2::new(x0 + a * DT as f32, y0 + b * DT as f32)),
-                        uv: Pos2::new(uv.min.x + a, uv.min.y + b),
-                        color: Color32::WHITE,
-                    });
+                for &(x0, y0) in &shown_at {
+                    let (x0, y0) = (tx + x0, ty + y0);
+                    let mut mesh = egui::Mesh::with_texture(t.id());
+                    for (a, b) in [(0.0, 0.0), (u, 0.0), (u, v), (0.0, v)] {
+                        mesh.vertices.push(egui::epaint::Vertex {
+                            pos: xf.to_screen(Vec2::new(x0 + a * DT as f32, y0 + b * DT as f32)),
+                            uv: Pos2::new(uv.min.x + a, uv.min.y + b),
+                            color: Color32::WHITE,
+                        });
+                    }
+                    mesh.add_triangle(0, 1, 2);
+                    mesh.add_triangle(0, 2, 3);
+                    painter.add(egui::Shape::mesh(mesh));
                 }
-                mesh.add_triangle(0, 1, 2);
-                mesh.add_triangle(0, 2, 3);
-                painter.add(egui::Shape::mesh(mesh));
             }
         }
         if self.ruler.visible && !self.ruler.placed {

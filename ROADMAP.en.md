@@ -205,7 +205,7 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 - [x] “Save incremental” (picture_002.sai2) (1.0.6)
 - [x] History memory and recovery copy interval in a settings window (0.9.2)
 - [x] Pixel grid at high zoom (1.0.9)
-- [ ] Wrap-around mode (the canvas repeats at its edges)
+- [x] Wrap-around mode (the canvas repeats at its edges) (1.0.15)
 - [x] Filters: levels, curves, median (1.0.8)
 - [ ] Colouring by line art (like Krita's colorize mask); the result is plain pixels
 - [x] Reference images over the canvas (1.0.12)

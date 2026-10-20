@@ -280,6 +280,9 @@ Normal layers only (not folders).
   View rotation and flip change only the display, not the image.
 - “Window → Reference image…” (or drag an image onto the window with Ctrl) — a reference picture in its
   own small window over the canvas: its own opacity, Alt + click on it picks a color. Several can be open.
+- “View → Wrap-around mode (the canvas repeats)” — the canvas is shown tiled 3×3, and a stroke that leaves
+  one edge continues from the opposite one: handy for seamless textures. Fill, selection and filters work
+  as usual.
 - “View → Pixel grid (from 800%)” — thin lines between canvas pixels at 800% zoom and above.
 - “Ruler → Symmetry” repeats every stroke mirrored: “Left ↔ right”, “Top ↔ bottom” or “Both axes”
   (the axis is the middle of the canvas, shown dashed). Works for all brushes, the selection pen and masks.

@@ -876,3 +876,4 @@ Alt + щелчок — взять цвет = Alt + clique — pegar cor
 кайма акварели = borda de aquarela
 толщина кончика = espessura da ponta
 текстура (картинки нет в файле) = textura (imagem ausente do arquivo)
+Бесшовный режим (холст повторяется) = Modo contínuo (a tela se repete)

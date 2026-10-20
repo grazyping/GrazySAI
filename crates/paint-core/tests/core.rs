@@ -1294,7 +1294,7 @@ fn mirror_stroke_is_symmetric() {
         doc.flatten()
     };
     let plain = draw(Mirror::default());
-    let mirrored = draw(Mirror { x: Some(w as f32 / 2.0), y: None });
+    let mirrored = draw(Mirror { x: Some(w as f32 / 2.0), ..Default::default() });
     let px = |img: &[u8], x: u32, y: u32| img[((y * w + x) * 4) as usize];
     for y in 0..h {
         for x in 0..w / 2 {
@@ -1303,4 +1303,32 @@ fn mirror_stroke_is_symmetric() {
         }
     }
     assert!((0..w * h).any(|i| px(&mirrored, i % w, i / w) < 250 && i % w > w / 2));
+}
+
+/// Бесшовный режим: мазок через правый край продолжается слева, и холст, сдвинутый по кругу,
+/// совпадает с мазком, нарисованным посередине.
+#[test]
+fn wrap_stroke_continues_at_the_opposite_edge() {
+    use paint_core::Mirror;
+    let (w, h) = (64u32, 48u32);
+    let draw = |from: (f32, f32), to: (f32, f32)| {
+        let mut doc = Document::new(w, h);
+        let mut s = Stroke::new(BrushParams { size: 9.0, size_by_pressure: false, ..Default::default() });
+        s.mirror = Mirror { wrap: Some((w as f32, h as f32)), ..Default::default() };
+        line(&mut s, from, to, 1.0);
+        doc.commit_stroke(0, &s, [0, 0, 0]);
+        doc.flatten()
+    };
+    let middle = draw((20.0, 24.0), (44.0, 24.0));
+    // тот же мазок, сдвинутый на 32 px: проходит через правый край и выходит слева
+    let across = draw((52.0, 24.0), (76.0, 24.0));
+    let px = |img: &[u8], x: u32, y: u32| img[((y * w + x) * 4) as usize];
+    let mut worst = 0i32;
+    for y in 0..h {
+        for x in 0..w {
+            worst = worst.max((px(&middle, x, y) as i32 - px(&across, (x + 32) % w, y) as i32).abs());
+        }
+    }
+    assert!(worst <= 1, "разница {worst}");
+    assert!(px(&across, 4, 24) < 128 && px(&across, 60, 24) < 128, "мазок есть у обоих краёв");
 }

@@ -877,3 +877,4 @@ Alt + щелчок — взять цвет = Alt + click — pick color
 кайма акварели = watercolor edge
 толщина кончика = tip thickness
 текстура (картинки нет в файле) = texture (image not in the file)
+Бесшовный режим (холст повторяется) = Wrap-around mode (the canvas repeats)
