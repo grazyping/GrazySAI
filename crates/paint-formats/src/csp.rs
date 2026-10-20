@@ -19,7 +19,7 @@ pub fn load(path: &Path) -> Res<Vec<CspBrush>> {
         return Err("в файле не кисти CSP".into());
     }
     let cols: Vec<String> = db.prepare("PRAGMA table_info(Variant)")?.query_map([], |r| r.get(1))?.collect::<Result<_, _>>()?;
-    let (texture, tip) = materials(&db);
+    let (texture, tips) = materials(&db);
     let mut nodes = db.prepare("SELECT NodeName, NodeVariantID, NodeInitVariantID FROM Node WHERE NodeVariantID > 0")?;
     let nodes: Vec<(String, i64, Option<i64>)> =
         nodes.query_map([], |r| Ok((r.get::<_, Option<String>>(0)?.unwrap_or_default(), r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
@@ -30,7 +30,7 @@ pub fn load(path: &Path) -> Res<Vec<CspBrush>> {
         let id = if nodes.len() > 1 { initial.unwrap_or(*active) } else { *active };
         let v = Variant::read(&db, &cols, id)?;
         let one = nodes.len() == 1;
-        out.push(v.brush(name, if one { texture.clone() } else { None }, if one { tip.clone() } else { None }));
+        out.push(v.brush(name, if one { texture.clone() } else { None }, if one { tips.clone() } else { Vec::new() }));
     }
     if out.is_empty() {
         return Err("в файле нет кистей".into());
@@ -80,7 +80,7 @@ impl Variant {
         e.pressure.then_some((e.min as f32 / 100.0).clamp(0.0, 1.0))
     }
 
-    fn brush(&self, name: &str, texture: Option<PaperTexture>, tip: Option<paint_core::Stamp>) -> CspBrush {
+    fn brush(&self, name: &str, texture: Option<PaperTexture>, tips: Vec<paint_core::Stamp>) -> CspBrush {
         let mut skipped = Vec::new();
         let raw = self.num("BrushSize").unwrap_or(10.0) as f32;
         let size = match self.num("BrushSizeUnit").unwrap_or(0.0) as i64 {
@@ -100,7 +100,10 @@ impl Variant {
                 skipped.push(what);
             }
         }
-        let tip = tip.filter(|_| self.on("BrushUsePatternImage"));
+        // столько картинок, сколько перечислено в кисти (остальные — двойной кисти)
+        let count = self.blob("BrushPatternImageArray").and_then(|b| b.get(4..8)).map_or(1, |c| u32::from_be_bytes([c[0], c[1], c[2], c[3]]) as usize).clamp(1, 64);
+        let mut cells: Vec<paint_core::Stamp> = if self.on("BrushUsePatternImage") { tips.into_iter().take(count).collect() } else { Vec::new() };
+        let tip = (!cells.is_empty()).then(|| cells.remove(0));
         if self.on("BrushUsePatternImage") && tip.is_none() {
             skipped.push("форма кончика из картинки");
         }
@@ -129,6 +132,8 @@ impl Variant {
             texture,
             tip,
             tip_angle: self.num("BrushRotation").unwrap_or(0.0) as f32 + turn,
+            tip_more: cells,
+            tip_random: false,
             tip_ratio,
             tip_follow: false,
             texture_density: pct("TextureDensity", 100.0),
@@ -161,21 +166,23 @@ impl Effector {
 /// кисти; вид материала узнаётся по метке в `icedata/layerData.xml` (`PaperTexture`,
 /// `BrushPattern`). Картинка — миниатюра `thumbnail/thumbnail.png`: сам слой материала обычным
 /// PNG не читается.
-fn materials(db: &Connection) -> (Option<PaperTexture>, Option<paint_core::Stamp>) {
-    let (mut texture, mut tip) = (None, None);
-    let Ok(mut q) = db.prepare("SELECT FileData FROM MaterialFile ORDER BY _PW_ID") else { return (None, None) };
-    let Ok(rows) = q.query_map([], |r| r.get::<_, Option<Vec<u8>>>(0)) else { return (None, None) };
+fn materials(db: &Connection) -> (Option<PaperTexture>, Vec<paint_core::Stamp>) {
+    let (mut texture, mut tips) = (None, Vec::new());
+    let Ok(mut q) = db.prepare("SELECT FileData FROM MaterialFile ORDER BY _PW_ID") else { return (None, Vec::new()) };
+    let Ok(rows) = q.query_map([], |r| r.get::<_, Option<Vec<u8>>>(0)) else { return (None, Vec::new()) };
     for data in rows.flatten().flatten() {
         let files = untar(&data);
         let tag = files.iter().find(|(n, _)| n.ends_with("layerData.xml")).map(|(_, d)| String::from_utf8_lossy(d).into_owned()).unwrap_or_default();
         let Some((_, png)) = files.iter().find(|(n, _)| n.ends_with("thumbnail.png")) else { continue };
         if tag.contains("PaperTexture") && texture.is_none() {
             texture = gray_of_png(png);
-        } else if tag.contains("BrushPattern") && tip.is_none() {
-            tip = paint_core::io::decode_png(png).ok().map(|(w, h, rgba)| paint_core::Stamp::from_rgba(w as usize, h as usize, &rgba));
+        } else if tag.contains("BrushPattern") {
+            if let Ok((w, h, rgba)) = paint_core::io::decode_png(png) {
+                tips.push(paint_core::Stamp::from_rgba(w as usize, h as usize, &rgba));
+            }
         }
     }
-    (texture, tip)
+    (texture, tips)
 }
 
 /// Серая картинка по PNG: прозрачное — как белое (краска ложится), яркость по BT.601.

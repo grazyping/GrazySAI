@@ -901,3 +901,7 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 текстура = texture
 Отпечаток поворачивается по направлению мазка = La pointe tourne selon la direction du trait
 по мазку = selon le trait
+Набор = Jeu
+{0} картинок = {0} images
+вразнобой = au hasard
+Картинки набора сменяются вразнобой, а не по порядку = Les images du jeu changent au hasard et non dans l’ordre

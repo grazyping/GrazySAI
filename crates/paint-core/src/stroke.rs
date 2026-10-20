@@ -78,11 +78,30 @@ pub struct Tip {
     pub ratio: f32,
     /// Поворот ещё и по направлению мазка.
     pub follow: bool,
+    /// Следующие картинки набора (кисти GIMP `.gih`, наборы CSP): отпечатки меняются по ходу мазка.
+    pub more: Vec<Arc<Stamp>>,
+    /// Смена картинок набора вразнобой, а не по порядку.
+    pub random: bool,
 }
 
 impl Tip {
     pub fn new(stamp: Arc<Stamp>) -> Self {
-        Self { stamp, angle: 0.0, ratio: 1.0, follow: false }
+        Self { stamp, angle: 0.0, ratio: 1.0, follow: false, more: Vec::new(), random: false }
+    }
+
+    /// Картинка для отпечатка номер `n` штриха.
+    fn pick(&self, n: u64) -> Arc<Stamp> {
+        let count = self.more.len() as u64 + 1;
+        let i = if self.random {
+            // перемешивание номера (splitmix64): повторяется от штриха к штриху, без генератора
+            let mut z = n.wrapping_add(0x9e37_79b9_7f4a_7c15);
+            z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+            (z ^ (z >> 31)) % count
+        } else {
+            n % count
+        };
+        if i == 0 { self.stamp.clone() } else { self.more[i as usize - 1].clone() }
     }
 }
 
@@ -829,7 +848,7 @@ impl Stroke {
             (InputPoint { x: cx, y: cy, ..p }, Shape::Binary(r, 1.0))
         } else if let Some(t) = tip {
             let angle = t.angle + if t.follow { self.heading.unwrap_or(0.0) } else { 0.0 };
-            (p, Shape::Stamp(t.stamp, (diameter / 2.0).max(0.5), angle.cos(), angle.sin(), t.ratio.clamp(0.01, 1.0)))
+            (p, Shape::Stamp(t.pick(self.dab_count as u64), (diameter / 2.0).max(0.5), angle.cos(), angle.sin(), t.ratio.clamp(0.01, 1.0)))
         } else {
             let d = self.sai_dab(p.pressure);
             let o = d.opacity(self.step_at(p.pressure));

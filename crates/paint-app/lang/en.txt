@@ -902,3 +902,7 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 текстура = texture
 Отпечаток поворачивается по направлению мазка = The tip turns along the stroke direction
 по мазку = along stroke
+Набор = Set
+{0} картинок = {0} pictures
+вразнобой = random
+Картинки набора сменяются вразнобой, а не по порядку = The set's pictures change in random order, not in sequence

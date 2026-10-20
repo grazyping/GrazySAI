@@ -901,3 +901,7 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 текстура = textura
 Отпечаток поворачивается по направлению мазка = La punta gira según la dirección del trazo
 по мазку = con el trazo
+Набор = Conjunto
+{0} картинок = {0} imágenes
+вразнобой = al azar
+Картинки набора сменяются вразнобой, а не по порядку = Las imágenes del conjunto cambian al azar, no en orden

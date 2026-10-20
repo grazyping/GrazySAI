@@ -29,6 +29,9 @@ pub struct ImportedBrush {
     /// Отпечаток-картинка (миниатюра материала-отпечатка; приближение) и его поворот в градусах.
     pub tip: Option<paint_core::Stamp>,
     pub tip_angle: f32,
+    /// Следующие картинки набора и смена вразнобой (иначе по порядку).
+    pub tip_more: Vec<paint_core::Stamp>,
+    pub tip_random: bool,
     /// Толщина кончика (1 — как есть, меньше — сплюснут) и поворот по направлению мазка.
     pub tip_ratio: f32,
     pub tip_follow: bool,
@@ -47,6 +50,40 @@ pub struct ImportedBrush {
 /// Наибольшая сторона хранимого отпечатка: крупнее — уменьшается (кисть всё равно рисует
 /// отпечаток размером с кисть, а уменьшение из огромной картинки давало бы рябь).
 pub const MAX_SIDE: usize = 512;
+
+/// Имя, все картинки набора и смена вразнобой: у `.gih` — все клетки, у остальных — одна.
+pub fn load_all(path: &Path) -> Res<(String, Vec<Stamp>, bool)> {
+    let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
+    if ext == "gih" {
+        let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let (name, cells, random) = gih_all(&std::fs::read(path)?)?;
+        let cells = cells.into_iter().map(|s| shrink(s, MAX_SIDE)).collect();
+        return Ok((if name.trim().is_empty() { stem } else { name }, cells, random));
+    }
+    load(path).map(|(n, s)| (n, vec![s], false))
+}
+
+/// Все клетки набора GIMP и смена вразнобой (`sel0:random` в строке параметров).
+pub fn gih_all(d: &[u8]) -> Res<(String, Vec<Stamp>, bool)> {
+    let mut lines = d.splitn(3, |&b| b == b'\n');
+    let name = String::from_utf8_lossy(lines.next().ok_or("GIH: пусто")?).trim().to_string();
+    let params = String::from_utf8_lossy(lines.next().ok_or("GIH: нет строки параметров")?).into_owned();
+    let mut rest = lines.next().ok_or("GIH: нет клеток")?;
+    let mut cells = Vec::new();
+    // клеток не больше заявленного и не больше 256 (испорченный файл не займёт память без меры)
+    let want = params.split_whitespace().next().and_then(|n| n.parse::<usize>().ok()).unwrap_or(1).clamp(1, 256);
+    while cells.len() < want && rest.len() >= 28 {
+        let be = |o: usize| u32::from_be_bytes([rest[o], rest[o + 1], rest[o + 2], rest[o + 3]]) as usize;
+        let size = be(0).saturating_add(be(8).saturating_mul(be(12)).saturating_mul(be(16)));
+        let (_, s) = gbr(rest)?;
+        cells.push(s);
+        rest = rest.get(size..).unwrap_or(&[]);
+    }
+    if cells.is_empty() {
+        return Err("GIH: нет клеток".into());
+    }
+    Ok((name, cells, params.contains(":random")))
+}
 
 /// Имя и отпечаток из файла.
 pub fn load(path: &Path) -> Res<(String, Stamp)> {
@@ -160,8 +197,8 @@ mod tests {
                 if p.is_dir() {
                     stack.push(p);
                 } else if p.extension().is_some_and(|x| x == "gbr" || x == "gih" || x == "abr") {
-                    match load(&p) {
-                        Ok((n, s)) => println!("OK {} «{n}» {}x{} max={}", p.display(), s.width, s.height, s.alpha.iter().max().unwrap()),
+                    match load_all(&p) {
+                        Ok((n, c, r)) => println!("OK {} «{n}» {}x{} клеток {} вразнобой {r}", p.display(), c[0].width, c[0].height, c.len()),
                         Err(e) => println!("ERR {} {e}", p.display()),
                     }
                 }

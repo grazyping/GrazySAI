@@ -172,6 +172,7 @@ fn parse(xml: &str, fallback_name: &str, find: impl Fn(&str) -> Option<Vec<u8>>)
     let auto_spacing = attr(def, "<Brush", "useAutoSpacing").as_deref() == Some("1");
     let angle = attr(def, "<Brush", "angle").and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0).to_degrees();
     let (mut size, mut hardness, mut tip, mut ratio) = (20.0f32, 1.0f32, None, 1.0f32);
+    let (mut more, mut tip_random) = (Vec::new(), false);
     match kind.as_str() {
         "auto_brush" => {
             size = attr(def, "<MaskGenerator", "diameter").and_then(|v| v.parse().ok()).unwrap_or(20.0);
@@ -183,11 +184,14 @@ fn parse(xml: &str, fallback_name: &str, find: impl Fn(&str) -> Option<Vec<u8>>)
         "png_brush" | "gbr_brush" | "abr_brush" => {
             let file = attr(def, "<Brush", "filename").unwrap_or_default();
             let scale: f32 = attr(def, "<Brush", "scale").and_then(|v| v.parse().ok()).unwrap_or(1.0);
-            let stamp = find(&file).and_then(|d| tip_from(&file, &d));
-            match stamp {
-                Some(s) => {
+            let cells = find(&file).and_then(|d| tip_from(&file, &d));
+            match cells {
+                Some((mut c, random)) => {
+                    let s = c.remove(0);
                     size = s.width.max(s.height) as f32 * scale;
                     tip = Some(crate::brush_tip::shrink(s, crate::brush_tip::MAX_SIDE));
+                    more = c.into_iter().map(|s| crate::brush_tip::shrink(s, crate::brush_tip::MAX_SIDE)).collect();
+                    tip_random = random;
                 }
                 None => skipped.push("кончик (файла нет рядом с пресетом и в папках Krita)"),
             }
@@ -215,6 +219,8 @@ fn parse(xml: &str, fallback_name: &str, find: impl Fn(&str) -> Option<Vec<u8>>)
         texture: None,
         tip,
         tip_angle: angle,
+        tip_more: more,
+        tip_random,
         tip_ratio: ratio,
         // поворот по направлению мазка — датчик «drawingangle» у параметра поворота
         tip_follow: param(xml, "PressureRotation") != Some("false") && param(xml, "RotationSensor").is_some_and(|v| v.contains("id=\"drawingangle\"")),
@@ -227,15 +233,15 @@ fn parse(xml: &str, fallback_name: &str, find: impl Fn(&str) -> Option<Vec<u8>>)
 }
 
 /// Кончик из файла Krita по расширению: PNG (серый — тёмное краска, с прозрачностью —
-/// непрозрачное), GIMP `.gbr` / `.gih`.
-fn tip_from(name: &str, d: &[u8]) -> Option<Stamp> {
+/// непрозрачное), GIMP `.gbr` / `.gih` (все клетки набора). Возвращает картинки и смену вразнобой.
+fn tip_from(name: &str, d: &[u8]) -> Option<(Vec<Stamp>, bool)> {
     let lower = name.to_ascii_lowercase();
     if lower.ends_with(".gbr") {
-        crate::brush_tip::gbr(d).ok().map(|(_, s)| s)
+        crate::brush_tip::gbr(d).ok().map(|(_, s)| (vec![s], false))
     } else if lower.ends_with(".gih") {
-        crate::brush_tip::gih(d).ok().map(|(_, s)| s)
+        crate::brush_tip::gih_all(d).ok().map(|(_, c, r)| (c, r))
     } else if lower.ends_with(".png") {
-        paint_core::io::decode_png(d).ok().map(|(w, h, rgba)| Stamp::from_rgba(w as usize, h as usize, &rgba))
+        paint_core::io::decode_png(d).ok().map(|(w, h, rgba)| (vec![Stamp::from_rgba(w as usize, h as usize, &rgba)], false))
     } else {
         None
     }

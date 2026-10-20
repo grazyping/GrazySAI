@@ -1385,3 +1385,20 @@ fn flat_tip_follows_the_stroke() {
     let wd = painted(&down, 0..w, 50..51);
     assert!((9..=12).contains(&wd), "ширина полосы {wd}");
 }
+
+/// Набор картинок отпечатка сменяется по порядку: чётные отпечатки — левая половина, нечётные —
+/// правая (видно по двум далеко разнесённым отпечаткам).
+#[test]
+fn tip_set_changes_along_the_stroke() {
+    use paint_core::stroke::Grain;
+    use std::sync::Arc;
+    let half = |left: bool| Arc::new(paint_core::Stamp { width: 8, height: 8, alpha: (0..64).map(|i| if (i % 8 < 4) == left { 255 } else { 0 }).collect() });
+    let mut doc = Document::new(120, 40);
+    let mut s = Stroke::new(BrushParams { size: 20.0, size_by_pressure: false, spacing: 3.0, ..Default::default() });
+    s.set_grain(Some(Grain { blot: None, texture: None, paper: false, by_min_density: true, tip: Some(paint_core::Tip { more: vec![half(false)], ..paint_core::Tip::new(half(true)) }), bristle: None }));
+    line(&mut s, (20.0, 20.0), (80.0, 20.0), 1.0);
+    doc.commit_stroke(0, &s, [0, 0, 0]);
+    // первый отпечаток (x = 20) — левая половина, второй (x = 80) — правая
+    assert!(pixel(&doc, 15, 20)[0] < 128 && pixel(&doc, 25, 20)[0] > 200, "первый: {:?} {:?}", pixel(&doc, 15, 20), pixel(&doc, 25, 20));
+    assert!(pixel(&doc, 75, 20)[0] > 200 && pixel(&doc, 85, 20)[0] < 128, "второй: {:?} {:?}", pixel(&doc, 75, 20), pixel(&doc, 85, 20));
+}

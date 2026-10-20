@@ -131,6 +131,8 @@ Water also blurs the layer under the stroke.
 - “Thickness” squashes the tip along its second axis (a round brush becomes an ellipse), “Rotate” sets the
   angle, “along stroke” turns the tip with the stroke direction: that makes a calligraphy pen (for
   example, thickness 20 %, rotation 45°).
+- A picture set (GIMP `.gih` brushes, sets inside Krita and CSP brushes) — the dabs change along the
+  stroke: in order or “random” (the “Set” row in the “Form” section).
 - Patterns are fixed to the canvas, not to the stroke. The pattern files come from SAI: if the
   lists are empty, enter the SAI folder (with `blotmap` and `brushtex`) right in the section;
   the paper folder works too.

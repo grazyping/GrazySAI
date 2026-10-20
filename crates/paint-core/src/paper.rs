@@ -437,6 +437,28 @@ pub fn stamp_of(name: &str) -> Option<Arc<crate::stroke::Stamp>> {
     found
 }
 
+/// Все картинки отпечатка: `<имя>.png`, затем `<имя>.2.png`, `<имя>.3.png`… (набор, меняется по
+/// ходу мазка).
+pub fn stamps_of(name: &str) -> Vec<Arc<crate::stroke::Stamp>> {
+    type Sets = HashMap<String, Vec<Arc<crate::stroke::Stamp>>>;
+    static CACHE: OnceLock<Mutex<Sets>> = OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(v) = cache.lock().unwrap().get(name) {
+        return v.clone();
+    }
+    let mut out: Vec<Arc<crate::stroke::Stamp>> = stamp_of(name).into_iter().collect();
+    if !out.is_empty() {
+        for i in 2.. {
+            match stamp_of(&format!("{name}.{i}")) {
+                Some(s) => out.push(s),
+                None => break,
+            }
+        }
+        cache.lock().unwrap().insert(name.to_string(), out.clone());
+    }
+    out
+}
+
 /// Имена отпечатков-картинок (`tips/*.png`), по алфавиту.
 pub fn tip_names() -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -446,7 +468,9 @@ pub fn tip_names() -> Vec<String> {
             let p = e.path();
             if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("png")) {
                 if let Some(n) = p.file_stem().and_then(|n| n.to_str()) {
-                    if !out.iter().any(|o| o == n) {
+                    // «имя.2», «имя.3» — следующие картинки набора, не отдельные отпечатки
+                    let cell = n.rsplit_once('.').is_some_and(|(_, k)| !k.is_empty() && k.bytes().all(|b| b.is_ascii_digit()));
+                    if !cell && !out.iter().any(|o| o == n) {
                         out.push(n.to_string());
                     }
                 }
@@ -455,6 +479,24 @@ pub fn tip_names() -> Vec<String> {
     }
     out.sort_by_key(|n| n.to_lowercase());
     out
+}
+
+/// Сохранить набор картинок отпечатка (первая — `<имя>.png`, следующие — `<имя>.2.png`…).
+pub fn save_tips(name: &str, cells: &[crate::stroke::Stamp]) -> Result<String, Box<dyn std::error::Error>> {
+    let first = cells.first().ok_or("нет картинок")?;
+    let n = save_tip(name, first)?;
+    let dir = user_dir("tips").ok_or("нет папки настроек")?;
+    for (i, s) in cells.iter().enumerate().skip(1) {
+        let rgba: Vec<u8> = s.alpha.iter().flat_map(|&a| [0, 0, 0, a]).collect();
+        crate::io::save_image(&dir.join(format!("{n}.{}.png", i + 1)), s.width as u32, s.height as u32, &rgba)?;
+    }
+    // лишние картинки прежнего набора с тем же именем
+    for i in cells.len() + 1.. {
+        if std::fs::remove_file(dir.join(format!("{n}.{i}.png"))).is_err() {
+            break;
+        }
+    }
+    Ok(n)
 }
 
 /// Сохранить отпечаток в свою папку программы (`tips/<имя>.png`: чёрное с прозрачностью) под

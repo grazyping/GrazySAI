@@ -1127,6 +1127,8 @@ struct GrainSettings {
     /// Толщина отпечатка (1 — круглый или как картинка; меньше — сплюснут) и поворот по мазку.
     tip_ratio: f32,
     tip_follow: bool,
+    /// У набора картинок — смена вразнобой (иначе по порядку).
+    tip_random: bool,
 }
 
 impl Default for GrainSettings {
@@ -1148,6 +1150,7 @@ impl Default for GrainSettings {
             tip_angle: 0.0,
             tip_ratio: 1.0,
             tip_follow: false,
+            tip_random: false,
         }
     }
 }
@@ -1837,6 +1840,7 @@ app.open_canvas_dialog(d == "resolution")
             s.read_f32(&k("tip_ratio"), &mut g.tip_ratio);
             g.tip_ratio = g.tip_ratio.clamp(0.01, 1.0);
             s.read_bool(&k("tip_follow"), &mut g.tip_follow);
+            s.read_bool(&k("tip_random"), &mut g.tip_random);
             if let Some(v) = s.str(&k("form")) {
                 g.form = (!v.is_empty()).then(|| v.to_string());
             }
@@ -2055,6 +2059,7 @@ app.open_canvas_dialog(d == "resolution")
             s.set(&k("tip_angle"), g.tip_angle);
             s.set(&k("tip_ratio"), g.tip_ratio);
             s.set(&k("tip_follow"), g.tip_follow as u8);
+            s.set(&k("tip_random"), g.tip_random as u8);
             s.set(&k("form_strength"), g.form_strength);
             s.set(&k("form_scale"), g.form_scale);
             let tex = match &g.tex {
@@ -2309,10 +2314,14 @@ app.open_canvas_dialog(d == "resolution")
         });
         let blot = if bristle.is_some() { None } else { blot };
         // картинка или (у сплюснутой круглой кисти) круг с краем по жёсткости
-        let stamp = g.tip.as_deref().and_then(paint_core::paper::stamp_of).or_else(|| {
-            (g.tip_ratio < 0.999 || g.tip_follow).then(|| std::sync::Arc::new(paint_core::Stamp::disc(self.brushes[tool].params.hardness)))
+        let mut cells = g.tip.as_deref().map(paint_core::paper::stamps_of).unwrap_or_default();
+        if cells.is_empty() && (g.tip_ratio < 0.999 || g.tip_follow) {
+            cells.push(std::sync::Arc::new(paint_core::Stamp::disc(self.brushes[tool].params.hardness)));
+        }
+        let tip = (!cells.is_empty()).then(|| {
+            let stamp = cells.remove(0);
+            paint_core::Tip { stamp, angle: g.tip_angle.to_radians(), ratio: g.tip_ratio.clamp(0.01, 1.0), follow: g.tip_follow, more: cells, random: g.tip_random }
         });
-        let tip = stamp.map(|stamp| paint_core::Tip { stamp, angle: g.tip_angle.to_radians(), ratio: g.tip_ratio.clamp(0.01, 1.0), follow: g.tip_follow });
         (blot.is_some() || texture.is_some() || bristle.is_some() || tip.is_some()).then(|| paint_core::stroke::Grain {
             blot,
             texture,
@@ -2911,8 +2920,10 @@ app.open_canvas_dialog(d == "resolution")
                 }
             }
             if let Some(tip) = &b.tip {
-                if let Ok(name) = paint_core::paper::save_tip(&format!("{from} {}", b.name), tip) {
+                let cells: Vec<paint_core::Stamp> = std::iter::once(tip.clone()).chain(b.tip_more.iter().cloned()).collect();
+                if let Ok(name) = paint_core::paper::save_tips(&format!("{from} {}", b.name), &cells) {
                     t.grain.tip = Some(name);
+                    t.grain.tip_random = b.tip_random;
                 }
             }
             t.grain.tip_angle = b.tip_angle;
@@ -6668,6 +6679,13 @@ app.open_canvas_dialog(d == "resolution")
                 ui.add(egui::DragValue::new(&mut grain.tip_angle).range(-180.0..=180.0).suffix("°").speed(1.0));
                 ui.checkbox(&mut grain.tip_follow, tr("по мазку")).on_hover_text(tr("Отпечаток поворачивается по направлению мазка"));
             });
+            let cells = grain.tip.as_deref().map_or(0, |n| paint_core::paper::stamps_of(n).len());
+            if cells > 1 {
+                sai_ui::row(ui, tr("   Набор"), lw, true, |ui| {
+                    ui.label(trf("{0} картинок", &[&cells]));
+                    ui.checkbox(&mut grain.tip_random, tr("вразнобой")).on_hover_text(tr("Картинки набора сменяются вразнобой, а не по порядку"));
+                });
+            }
             if grain.bristle.is_some() {
                 pct_bar(ui, tr("   Размер волоска"), &mut grain.hair_size, true);
                 pct_bar(ui, tr("   Мин. волоска"), &mut grain.hair_min, true);
@@ -6826,10 +6844,11 @@ app.open_canvas_dialog(d == "resolution")
 
     /// Картинка или кисть GIMP — новый отпечаток текущего инструмента (копия в своей папке `tips`).
     fn add_tip(&mut self, path: &std::path::Path) {
-        let saved = paint_formats::brush_tip::load(path).and_then(|(name, stamp)| paint_core::paper::save_tip(&name, &stamp));
+        let saved = paint_formats::brush_tip::load_all(path).and_then(|(name, cells, random)| Ok((paint_core::paper::save_tips(&name, &cells)?, random)));
         match saved {
-            Ok(name) => {
+            Ok((name, random)) => {
                 self.brushes[self.brush].grain.tip = Some(name.clone());
+                self.brushes[self.brush].grain.tip_random = random;
                 self.grain_names = None;
                 self.status = trf("Отпечаток «{0}» добавлен", &[&name]);
             }
