@@ -1,0 +1,36 @@
+# Проверка на каждый PR и push в main: тесты, clippy, редактор виртуальным пером (Xvfb).
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      # версия закреплена, чтобы новые замечания clippy не ломали проверку сами по себе
+      - uses: dtolnay/rust-toolchain@1.97.0
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Системные библиотеки (окно на скрытом экране)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb libxkbcommon-x11-0 libgl1 libegl1 libgl1-mesa-dri python3-pil
+      - name: Тесты
+        run: cargo test --workspace --release
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Сборка редактора
+        run: cargo build --release -p paint-app
+      - name: Виртуальное перо
+        run: tools/virtual-pen-check.sh
