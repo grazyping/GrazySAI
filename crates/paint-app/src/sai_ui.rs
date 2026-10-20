@@ -1290,26 +1290,6 @@ pub fn swatches(ui: &mut Ui, cells: &[Option<Color32>], selected: &mut usize, la
     action
 }
 
-#[cfg(test)]
-mod slider_tests {
-    use super::*;
-
-    #[test]
-    fn v_hsv_matches_sai() {
-        // живая SAI 2017, режим V-HSV: (R, G, B) → S в процентах
-        for (rgb, want) in [([13u8, 7, 243], 95), ([200, 98, 48], 64), ([58, 180, 118], 52), ([240, 230, 38], 81), ([88, 88, 160], 30)] {
-            let [_, s, v] = rgb_to_hsv(Color32::from_rgb(rgb[0], rgb[1], rgb[2]));
-            let (sv, vv) = sliders_from_hsv(0, s, v);
-            assert_eq!((sv * 100.0).round() as i32, want, "{rgb:?}");
-            let (s2, v2) = hsv_from_sliders(0, sv, vv);
-            assert!((s2 - s).abs() < 1e-4 && (v2 - v).abs() < 1e-6);
-        }
-        // HSL: L = 49 у (13, 7, 243)
-        let [_, s, v] = rgb_to_hsv(Color32::from_rgb(13, 7, 243));
-        assert_eq!((sliders_from_hsv(1, s, v).1 * 100.0).round() as i32, 49);
-    }
-}
-
 /// Редактор кривой нажима: квадрат `size`, по горизонтали — нажим пера, по вертикали — отклик;
 /// две точки тянутся мышью. `true` — кривая изменилась.
 pub fn curve_editor(ui: &mut Ui, curve: &mut paint_core::curve::PressureCurve, size: f32) -> bool {
@@ -1347,4 +1327,24 @@ pub fn curve_editor(ui: &mut Ui, curve: &mut paint_core::curve::PressureCurve, s
         p.circle_stroke(at, 4.5, Stroke::new(1.0_f32, ink()));
     }
     changed
+}
+
+#[cfg(test)]
+mod slider_tests {
+    use super::*;
+
+    #[test]
+    fn v_hsv_matches_sai() {
+        // живая SAI 2017, режим V-HSV: (R, G, B) → S в процентах
+        for (rgb, want) in [([13u8, 7, 243], 95), ([200, 98, 48], 64), ([58, 180, 118], 52), ([240, 230, 38], 81), ([88, 88, 160], 30)] {
+            let [_, s, v] = rgb_to_hsv(Color32::from_rgb(rgb[0], rgb[1], rgb[2]));
+            let (sv, vv) = sliders_from_hsv(0, s, v);
+            assert_eq!((sv * 100.0).round() as i32, want, "{rgb:?}");
+            let (s2, v2) = hsv_from_sliders(0, sv, vv);
+            assert!((s2 - s).abs() < 1e-4 && (v2 - v).abs() < 1e-6);
+        }
+        // HSL: L = 49 у (13, 7, 243)
+        let [_, s, v] = rgb_to_hsv(Color32::from_rgb(13, 7, 243));
+        assert_eq!((sliders_from_hsv(1, s, v).1 * 100.0).round() as i32, 49);
+    }
 }
