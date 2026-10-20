@@ -127,11 +127,6 @@ pub fn gbr(d: &[u8]) -> Res<(String, Stamp)> {
 /// `8BIM samp` с картинками. Значение точки — количество краски (255 — полная), 8 или 16 бит,
 /// без сжатия или PackBits по строкам.
 pub fn abr(d: &[u8]) -> Res<Vec<(String, Stamp)>> {
-    let list = abr_raw(d)?;
-    Ok(list.into_iter().map(|(n, s)| (n, shrink(s, MAX_SIDE))).collect())
-}
-
-fn abr_raw(d: &[u8]) -> Res<Vec<(String, Stamp)>> {
     struct R<'a> {
         d: &'a [u8],
         p: usize,
@@ -168,6 +163,11 @@ fn abr_raw(d: &[u8]) -> Res<Vec<(String, Stamp)>> {
                 self.take(row * h)?.to_vec()
             } else {
                 let counts: Vec<usize> = (0..h).map(|_| self.u16().map(|c| c as usize)).collect::<Res<_>>()?;
+                // PackBits разворачивается не больше чем в 128 раз: иначе файл испорчен, а память под
+                // заявленный размер не нужна
+                if row * h > counts.iter().sum::<usize>().saturating_mul(128) {
+                    return Err("ABR: размер картинки не сходится с данными".into());
+                }
                 let mut out = Vec::with_capacity(row * h);
                 for c in counts {
                     out.extend(crate::psd::unpackbits(self.take(c)?, row)?);
@@ -175,7 +175,8 @@ fn abr_raw(d: &[u8]) -> Res<Vec<(String, Stamp)>> {
                 out
             };
             let alpha = if bpp == 1 { raw } else { raw.as_chunks::<2>().0.iter().map(|c| c[0]).collect() };
-            Ok(Stamp { width: w, height: h, alpha })
+            // уменьшить сразу: в наборе до тысячи кистей, а держать нужно только хранимый размер
+            Ok(shrink(Stamp { width: w, height: h, alpha }, MAX_SIDE))
         }
     }
     let mut r = R { d, p: 0 };

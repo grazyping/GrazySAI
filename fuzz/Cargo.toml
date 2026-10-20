@@ -47,3 +47,9 @@ path = "fuzz_targets/image.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "brushes"
+path = "fuzz_targets/brushes.rs"
+test = false
+doc = false
