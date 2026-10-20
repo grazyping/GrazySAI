@@ -853,3 +853,5 @@ PSB (большой PSD, со слоями) = PSB (PSD grande, com camadas)
 Лево ↔ право = Esquerda ↔ direita
 Верх ↔ низ = Cima ↔ baixo
 Обе оси = Ambos os eixos
+Закрыть щели = Fechar lacunas
+Под линию = Sob a linha

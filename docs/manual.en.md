@@ -154,6 +154,9 @@ Water also blurs the layer under the stroke.
 
 - The **bucket** fills a connected area of similar color with the main color. Tolerance works
   as for the magic wand.
+- **Close gaps** (bucket and wand): the fill does not leak through breaks in the line art up to twice
+  that width; **Under line** — the fill goes that many pixels under the line edge so no light rim is
+  left. On very large canvases filling with these options is slower.
 - **Alt+Delete** fills the selection (without a selection — the whole layer).
 
 ### Gradation

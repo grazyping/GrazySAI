@@ -853,3 +853,5 @@ PSB (большой PSD, со слоями) = PSB (großes PSD, mit Ebenen)
 Лево ↔ право = Links ↔ rechts
 Верх ↔ низ = Oben ↔ unten
 Обе оси = Beide Achsen
+Закрыть щели = Lücken schließen
+Под линию = Unter die Linie

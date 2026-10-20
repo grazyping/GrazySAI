@@ -321,6 +321,92 @@ pub fn magic_wand(pixels: &ColorMap, width: u32, height: u32, x: i32, y: i32, to
     out
 }
 
+/// Допуск палочки и заливки, закрытие щелей (px) и запас под линию (px).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct WandOptions {
+    pub tolerance: u8,
+    pub gap: u32,
+    pub expand: u32,
+}
+
+/// Заливка с закрытием щелей: как волшебная палочка, но щели в контуре до `2·gap` px не дают
+/// заливке вытечь (контур мысленно утолщается на `gap`, область находится внутри, затем
+/// возвращается к краю линии на те же `gap` px), а `expand` px — запас под линию, чтобы у края
+/// не оставалось каймы. `gap = 0` и `expand = 0` — обычная палочка.
+pub fn magic_wand_closing(pixels: &ColorMap, width: u32, height: u32, x: i32, y: i32, o: WandOptions) -> MaskMap {
+    let WandOptions { tolerance, gap, expand } = o;
+    if gap == 0 && expand == 0 {
+        return magic_wand(pixels, width, height, x, y, tolerance);
+    }
+    let (w, h) = (width as i32, height as i32);
+    if x < 0 || y < 0 || x >= w || y >= h {
+        return MaskMap::new();
+    }
+    let n = (w * h) as usize;
+    let idx = |x: i32, y: i32| (y * w + x) as usize;
+    let seed = to_rgba8(pixels.get(x, y));
+    let mut fillable = vec![false; n];
+    for yy in 0..h {
+        for xx in 0..w {
+            let c = to_rgba8(pixels.get(xx, yy));
+            fillable[idx(xx, yy)] = (0..4).all(|i| (c[i] as i32 - seed[i] as i32).abs() <= tolerance as i32);
+        }
+    }
+    const N8: [(i32, i32); 8] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)];
+    // поиск в ширину по 8 соседям от `from` на `steps` шагов по точкам, где `pass`
+    let grow = |from: &mut Vec<bool>, steps: u32, pass: &dyn Fn(usize) -> bool| {
+        let mut front: Vec<(i32, i32)> = (0..n).filter(|&i| from[i]).map(|i| (i as i32 % w, i as i32 / w)).collect();
+        for _ in 0..steps {
+            let mut next = Vec::new();
+            for (px, py) in front {
+                for (dx, dy) in N8 {
+                    let (nx, ny) = (px + dx, py + dy);
+                    if nx >= 0 && ny >= 0 && nx < w && ny < h && !from[idx(nx, ny)] && pass(idx(nx, ny)) {
+                        from[idx(nx, ny)] = true;
+                        next.push((nx, ny));
+                    }
+                }
+            }
+            if next.is_empty() {
+                break;
+            }
+            front = next;
+        }
+    };
+    // 1. контур, утолщённый на gap
+    let mut thick: Vec<bool> = fillable.iter().map(|f| !f).collect();
+    grow(&mut thick, gap, &|_| true);
+    // 2. связная область вне утолщённого контура (если щелчок у самой линии — без закрытия)
+    let start_ok = !thick[idx(x, y)];
+    let mut region = vec![false; n];
+    let mut stack = vec![(x, y)];
+    while let Some((px, py)) = stack.pop() {
+        let i = idx(px, py);
+        if region[i] || !fillable[i] || (start_ok && thick[i]) {
+            continue;
+        }
+        region[i] = true;
+        for (nx, ny) in [(px + 1, py), (px - 1, py), (px, py + 1), (px, py - 1)] {
+            if nx >= 0 && ny >= 0 && nx < w && ny < h {
+                stack.push((nx, ny));
+            }
+        }
+    }
+    // 3. назад к краю линии — только по заливаемым точкам
+    if start_ok {
+        grow(&mut region, gap, &|i| fillable[i]);
+    }
+    // 4. запас под линию
+    grow(&mut region, expand, &|_| true);
+    let mut out = MaskMap::new();
+    for (i, &r) in region.iter().enumerate() {
+        if r {
+            out.set(i as i32 % w, i as i32 / w, ONE as u16);
+        }
+    }
+    out
+}
+
 /// Маска, сдвинутая на целые (`dx`, `dy`).
 pub fn shift_mask(src: &MaskMap, dx: i32, dy: i32) -> MaskMap {
     let mut out = MaskMap::new();
@@ -652,3 +738,40 @@ mod tests {
         assert_eq!(m.get(3, 1), 0);
     }
 }
+
+#[cfg(test)]
+mod closing_tests {
+    use super::*;
+    use crate::pixel::from_rgba8;
+
+    /// Квадратная рамка с щелью 3 px: обычная заливка вытекает наружу, с закрытием — нет.
+    #[test]
+    fn closing_gaps_keeps_fill_inside() {
+        let (w, h) = (40u32, 40u32);
+        let mut m = ColorMap::new();
+        for y in 0..40 {
+            for x in 0..40 {
+                m.set(x, y, from_rgba8([255, 255, 255, 255]));
+            }
+        }
+        for i in 10..30 {
+            for (x, y) in [(i, 10), (i, 29), (10, i), (29, i)] {
+                if !(x == 29 && (18..21).contains(&y)) {
+                    m.set(x, y, from_rgba8([0, 0, 0, 255]));
+                }
+            }
+        }
+        let count = |mask: &MaskMap| mask.tiles.values().map(|t| t.0.iter().filter(|&&v| v > 0).count()).sum::<usize>();
+        let leak = magic_wand(&m, w, h, 20, 20, 10);
+        assert!(leak.get(2, 2) > 0, "без закрытия заливка вытекает");
+        let shut = magic_wand_closing(&m, w, h, 20, 20, WandOptions { tolerance: 10, gap: 2, expand: 0 });
+        assert_eq!(shut.get(2, 2), 0, "с закрытием наружу не вытекает");
+        assert!(shut.get(11, 11) > 0 && shut.get(28, 28) > 0, "углы внутри залиты до линии");
+        // внутри рамки 18×18 залито целиком; в щель и за неё — не дальше gap
+        assert!((11..29).all(|y| (11..29).all(|x| shut.get(x, y) > 0)));
+        assert!((18 * 18..=18 * 18 + 3 * 2 + 4).contains(&count(&shut)), "лишнее: {}", count(&shut) - 18 * 18);
+        let grown = magic_wand_closing(&m, w, h, 20, 20, WandOptions { tolerance: 10, gap: 2, expand: 1 });
+        assert!(grown.get(10, 15) > 0 && count(&grown) > count(&shut), "запас уходит под линию");
+    }
+}
+

@@ -853,3 +853,5 @@ PSB (большой PSD, со слоями) = PSB (grand PSD, avec calques)
 Лево ↔ право = Gauche ↔ droite
 Верх ↔ низ = Haut ↔ bas
 Обе оси = Les deux axes
+Закрыть щели = Fermer les trous
+Под линию = Sous la ligne

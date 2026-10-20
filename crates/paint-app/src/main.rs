@@ -1412,6 +1412,9 @@ struct PaintApp {
     show_selection: bool,
     /// Допуск волшебной палочки, 0..=255.
     wand_tolerance: u8,
+    /// Палочка и заливка: закрывать щели контура до 2·N px; расширять под линию на N px.
+    fill_gap: u32,
+    fill_expand: u32,
     /// Обновление с GitHub: состояние фоновой проверки и загрузки.
     update: update::Shared,
     show_update: bool,
@@ -1590,6 +1593,8 @@ impl PaintApp {
             sel_dirty: false,
             show_selection: true,
             wand_tolerance: 10,
+            fill_gap: 0,
+            fill_expand: 0,
             update: std::sync::Arc::new(std::sync::Mutex::new(update::State::Idle)),
             show_update: false,
             check_updates: true,
@@ -1879,6 +1884,12 @@ app.open_canvas_dialog(d == "resolution")
         s.read_bool("gradient_transparent", &mut self.grad_opts.to_transparent);
         s.read_bool("gradient_reverse", &mut self.grad_opts.reverse);
         s.read_bool("gradient_s_curve", &mut self.grad_opts.s_curve);
+        if let Some(t) = s.f32("fill_gap") {
+            self.fill_gap = t.clamp(0.0, 20.0) as u32;
+        }
+        if let Some(t) = s.f32("fill_expand") {
+            self.fill_expand = t.clamp(0.0, 10.0) as u32;
+        }
         if let Some(t) = s.f32("wand_tolerance") {
             self.wand_tolerance = t.clamp(0.0, 255.0) as u8;
         }
@@ -2000,6 +2011,8 @@ app.open_canvas_dialog(d == "resolution")
         s.set("back.b", self.back.b());
         s.set("stabilizer", self.stabilizer.label());
         s.set("wand_tolerance", self.wand_tolerance);
+        s.set("fill_gap", self.fill_gap);
+        s.set("fill_expand", self.fill_expand);
         s.set("transform_perspective", self.transform_perspective);
         let w = &self.win;
         s.set("ui_scale", w.ui_scale);
@@ -4691,9 +4704,22 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     /// Заливка «ведром» с точки (x, y).
+    /// «Закрыть щели» и «Под линию» у палочки и заливки.
+    fn gap_rows(&mut self, ui: &mut egui::Ui, lw: f32, w: f32) {
+        for (label, v, max) in [(tr("Закрыть щели"), &mut self.fill_gap, 20u32), (tr("Под линию"), &mut self.fill_expand, 10)] {
+            sai_ui::row(ui, label, lw, true, |ui| {
+                let mut f = *v as f32;
+                let text = if *v == 0 { tr("нет").to_string() } else { format!("{} px", *v) };
+                if sai_ui::bar(ui, &mut f, 0.0, max as f32, text, w, true).changed() {
+                    *v = f.round().clamp(0.0, max as f32) as u32;
+                }
+            });
+        }
+    }
+
     fn fill_at(&mut self, x: f32, y: f32) {
         let src = self.doc.pick_source(&self.selected);
-        let area = paint_core::selection::magic_wand(&src, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, self.wand_tolerance);
+        let area = paint_core::selection::magic_wand_closing(&src, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, paint_core::selection::WandOptions { tolerance: self.wand_tolerance, gap: self.fill_gap, expand: self.fill_expand });
         self.fill_area(&area);
     }
 
@@ -4716,7 +4742,7 @@ app.open_canvas_dialog(d == "resolution")
     /// Волшебная палочка по текущему слою.
     fn wand_at(&mut self, x: f32, y: f32, mode: Combine) {
         let src = self.doc.pick_source(&self.selected);
-        let area = paint_core::selection::magic_wand(&src, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, self.wand_tolerance);
+        let area = paint_core::selection::magic_wand_closing(&src, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, paint_core::selection::WandOptions { tolerance: self.wand_tolerance, gap: self.fill_gap, expand: self.fill_expand });
         self.apply_selection(&area, mode);
     }
 
@@ -6186,6 +6212,7 @@ app.open_canvas_dialog(d == "resolution")
                     *tol = v.round().clamp(0.0, 255.0) as u8;
                 }
             });
+            self.gap_rows(ui, lw, w);
             ui.add_space(4.0);
         }
         self.tool_buttons(ui);
@@ -6215,6 +6242,7 @@ app.open_canvas_dialog(d == "resolution")
                     *tol = v.round().clamp(0.0, 255.0) as u8;
                 }
             });
+            self.gap_rows(ui, lw, w);
             return;
         }
         // настройки кисти — только у кистей (как в SAI: у выделения, перемещения, вида их нет)
