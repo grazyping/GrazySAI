@@ -47,6 +47,22 @@ pub fn run(report: Option<PathBuf>) -> bool {
             Ok(format!("{dark} тёмных точек"))
         })),
         ("форматы: запись и чтение", Box::new(formats)),
+        ("сохранение поверх прежнего файла", Box::new(|d| {
+            std::fs::create_dir_all(d)?;
+            let p = d.join("поверх.sai2");
+            let mut doc = sample();
+            paint_formats::sai2_write::save(&doc, &p)?;
+            doc.layers[1].name = "Второй раз".into();
+            paint_formats::sai2_write::save(&doc, &p)?;
+            let back = paint_formats::sai2_doc::load(&p)?.document;
+            if back.layers[1].name != "Второй раз" {
+                return Err("остался прежний файл".into());
+            }
+            if d.join("поверх.sai2.tmp").exists() {
+                return Err("остался временный файл".into());
+            }
+            Ok("ок".into())
+        })),
         ("кисти CSP (SQLite)", Box::new(|d| {
             let p = d.join("кисть.sut");
             let db = rusqlite::Connection::open(&p)?;
