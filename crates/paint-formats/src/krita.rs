@@ -171,16 +171,14 @@ fn parse(xml: &str, fallback_name: &str, find: impl Fn(&str) -> Option<Vec<u8>>)
     let spacing = attr(def, "<Brush", "spacing").and_then(|v| v.parse::<f32>().ok());
     let auto_spacing = attr(def, "<Brush", "useAutoSpacing").as_deref() == Some("1");
     let angle = attr(def, "<Brush", "angle").and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0).to_degrees();
-    let (mut size, mut hardness, mut tip) = (20.0f32, 1.0f32, None);
+    let (mut size, mut hardness, mut tip, mut ratio) = (20.0f32, 1.0f32, None, 1.0f32);
     match kind.as_str() {
         "auto_brush" => {
             size = attr(def, "<MaskGenerator", "diameter").and_then(|v| v.parse().ok()).unwrap_or(20.0);
             // «Fade» круглой кисти: 1 — край резкий, меньше — мягче
             let fade: f32 = attr(def, "<MaskGenerator", "hfade").and_then(|v| v.parse().ok()).unwrap_or(1.0);
             hardness = fade.clamp(0.0, 1.0);
-            if attr(def, "<MaskGenerator", "ratio").and_then(|v| v.parse::<f32>().ok()).is_some_and(|r| (r - 1.0).abs() > 0.01) {
-                skipped.push("сплюснутый кончик");
-            }
+            ratio = attr(def, "<MaskGenerator", "ratio").and_then(|v| v.parse::<f32>().ok()).unwrap_or(1.0).clamp(0.01, 1.0);
         }
         "png_brush" | "gbr_brush" | "abr_brush" => {
             let file = attr(def, "<Brush", "filename").unwrap_or_default();
@@ -217,6 +215,9 @@ fn parse(xml: &str, fallback_name: &str, find: impl Fn(&str) -> Option<Vec<u8>>)
         texture: None,
         tip,
         tip_angle: angle,
+        tip_ratio: ratio,
+        // поворот по направлению мазка — датчик «drawingangle» у параметра поворота
+        tip_follow: param(xml, "PressureRotation") != Some("false") && param(xml, "RotationSensor").is_some_and(|v| v.contains("id=\"drawingangle\"")),
         texture_density: 1.0,
         texture_scale: 100,
         erase: param(xml, "EraserMode") == Some("true") || param(xml, "CompositeOp") == Some("erase"),

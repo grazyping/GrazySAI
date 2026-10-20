@@ -104,9 +104,9 @@ impl Variant {
         if self.on("BrushUsePatternImage") && tip.is_none() {
             skipped.push("форма кончика из картинки");
         }
-        if self.num("BrushThickness").is_some_and(|t| t != 100.0) {
-            skipped.push("толщина кончика");
-        }
+        // толщина больше 100 % — сплюснут по другой оси: та же доля, поворот на 90°
+        let thickness = self.num("BrushThickness").unwrap_or(100.0).clamp(1.0, 10_000.0) as f32;
+        let (tip_ratio, turn) = if thickness > 100.0 { (100.0 / thickness, 90.0) } else { (thickness / 100.0, 0.0) };
         let texture = texture.filter(|_| self.blob("TextureImage").is_some()).map(|t| {
             if self.on("TextureReverseDensity") {
                 PaperTexture { gray: t.gray.iter().map(|g| 255 - g).collect(), ..t }
@@ -128,7 +128,9 @@ impl Variant {
             mix,
             texture,
             tip,
-            tip_angle: self.num("BrushRotation").unwrap_or(0.0) as f32,
+            tip_angle: self.num("BrushRotation").unwrap_or(0.0) as f32 + turn,
+            tip_ratio,
+            tip_follow: false,
             texture_density: pct("TextureDensity", 100.0),
             texture_scale: self.num("TextureScale").unwrap_or(100.0).clamp(1.0, 1000.0) as u16,
             erase: false,
@@ -315,7 +317,8 @@ mod tests {
         assert!((blend - 0.3).abs() < 1e-6 && dilute.abs() < 1e-6);
         let t = b.texture.as_ref().unwrap();
         assert_eq!((t.width, t.height, t.gray.clone()), (2, 1, vec![0, 255]));
-        assert!(b.skipped.contains(&"двойная кисть") && b.skipped.contains(&"толщина кончика"));
+        assert!(b.skipped.contains(&"двойная кисть"));
+        assert_eq!(b.tip_ratio, 0.5, "толщина 50 %");
         let tip = b.tip.as_ref().expect("отпечаток из BrushPattern");
         assert_eq!((tip.width, tip.alpha.clone()), (2, vec![255, 0]));
         assert_eq!(b.tip_angle, 30.0);

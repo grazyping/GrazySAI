@@ -64,8 +64,26 @@ enum Shape {
     /// непрозрачность `o`.
     Binary(f32, f32),
     /// Отпечаток-картинка: картинка, радиус (половина большей стороны в пикселях холста), косинус и
-    /// синус поворота.
-    Stamp(Arc<Stamp>, f32, f32, f32),
+    /// синус поворота, толщина (доля по второй оси, 1 — как есть).
+    Stamp(Arc<Stamp>, f32, f32, f32, f32),
+}
+
+/// Отпечаток-картинка с его настройками.
+#[derive(Clone, Debug)]
+pub struct Tip {
+    pub stamp: Arc<Stamp>,
+    /// Поворот, радианы (по часовой при y вниз).
+    pub angle: f32,
+    /// Толщина: доля по второй оси (1 — как есть, 0.2 — сплюснут впятеро).
+    pub ratio: f32,
+    /// Поворот ещё и по направлению мазка.
+    pub follow: bool,
+}
+
+impl Tip {
+    pub fn new(stamp: Arc<Stamp>) -> Self {
+        Self { stamp, angle: 0.0, ratio: 1.0, follow: false }
+    }
 }
 
 /// Отпечаток-картинка (кончик кисти CSP, Photoshop, GIMP, Krita): значения 0..=255, 255 — краска.
@@ -94,6 +112,24 @@ impl Stamp {
         let top = at(x0, y0) * (1.0 - fx) + at(x0 + 1.0, y0) * fx;
         let bottom = at(x0, y0 + 1.0) * (1.0 - fx) + at(x0 + 1.0, y0 + 1.0) * fx;
         (top * (1.0 - fy) + bottom * fy) / 255.0
+    }
+
+    /// Круг 128×128 с краем по жёсткости (1 — резкий, 0 — мягкий от центра): для сплюснутой
+    /// круглой кисти, у которой нет картинки.
+    pub fn disc(hardness: f32) -> Self {
+        let n = 128usize;
+        let h = hardness.clamp(0.0, 1.0);
+        let alpha = (0..n * n)
+            .map(|i| {
+                let (x, y) = ((i % n) as f32 + 0.5 - 64.0, (i / n) as f32 + 0.5 - 64.0);
+                let d = (x * x + y * y).sqrt() / 64.0;
+                // внутри h — полная краска, к краю — плавно (с запасом в 1 px на сглаживание)
+                let edge = (1.0 - h).max(1.0 / 64.0);
+                let t = ((1.0 - d) / edge).clamp(0.0, 1.0);
+                (t * t * (3.0 - 2.0 * t) * 255.0 + 0.5) as u8
+            })
+            .collect();
+        Self { width: n, height: n, alpha }
     }
 
     /// Отпечаток из RGBA: у картинки с прозрачностью краска — непрозрачное, у непрозрачной —
@@ -143,10 +179,10 @@ impl Shape {
     /// Покрытие точки со смещением (cx, cy) от центра отпечатка; `d2` — квадрат расстояния.
     fn coverage_at(&self, cx: f32, cy: f32, d2: f32) -> f32 {
         match self {
-            Shape::Stamp(st, r, cos, sin) => {
+            Shape::Stamp(st, r, cos, sin, ratio) => {
                 let k = st.width.max(st.height) as f32 / (2.0 * r.max(0.01));
                 let u = (cx * cos + cy * sin) * k + st.width as f32 / 2.0;
-                let v = (-cx * sin + cy * cos) * k + st.height as f32 / 2.0;
+                let v = (-cx * sin + cy * cos) * k / ratio.max(0.01) + st.height as f32 / 2.0;
                 st.sample(u, v)
             }
             _ => self.coverage(d2.sqrt()),
@@ -186,8 +222,8 @@ pub struct Grain {
     pub by_min_density: bool,
     /// Форма «щетина» (`bristle`); вместо «пятна».
     pub bristle: Option<Bristle>,
-    /// Отпечаток-картинка и его поворот в радианах; вместо круглого отпечатка.
-    pub tip: Option<(Arc<Stamp>, f32)>,
+    /// Отпечаток-картинка; вместо круглого отпечатка.
+    pub tip: Option<Tip>,
 }
 
 /// Щетина, как форма вида 3 в SAI 2017: каждый
@@ -446,6 +482,8 @@ pub struct Stroke {
     level_cache: HashMap<(u32, Key), Box<[[f64; 4]]>>,
     /// Самая жёсткая ступень от 20 px: максимум «жёстких» форм отпечатков (0..=16384).
     hard_mask: MaskMap,
+    /// Направление последнего отрезка штриха, радианы (для отпечатка «по направлению»).
+    heading: Option<f32>,
 }
 
 impl Stroke {
@@ -466,6 +504,7 @@ impl Stroke {
             grain_cache: Default::default(),
             level_cache: HashMap::new(),
             hard_mask: MaskMap::new(),
+            heading: None,
             mirror: Mirror::default(),
         }
     }
@@ -615,6 +654,9 @@ impl Stroke {
         };
         let (dx, dy) = (p.x - prev.x, p.y - prev.y);
         let len = (dx * dx + dy * dy).sqrt();
+        if len > 0.0 {
+            self.heading = Some(dy.atan2(dx));
+        }
         if len <= 0.0 {
             // перо стоит на месте: отпечатков нет, но нажим новой точки запоминается
             self.last = Some(p);
@@ -785,8 +827,9 @@ impl Stroke {
         let (p, shape) = if self.params.binary {
             let Some((cx, cy, r)) = self.binary_point(p.x as f64, p.y as f64, diameter) else { return };
             (InputPoint { x: cx, y: cy, ..p }, Shape::Binary(r, 1.0))
-        } else if let Some((st, angle)) = tip {
-            (p, Shape::Stamp(st, (diameter / 2.0).max(0.5), angle.cos(), angle.sin()))
+        } else if let Some(t) = tip {
+            let angle = t.angle + if t.follow { self.heading.unwrap_or(0.0) } else { 0.0 };
+            (p, Shape::Stamp(t.stamp, (diameter / 2.0).max(0.5), angle.cos(), angle.sin(), t.ratio.clamp(0.01, 1.0)))
         } else {
             let d = self.sai_dab(p.pressure);
             let o = d.opacity(self.step_at(p.pressure));

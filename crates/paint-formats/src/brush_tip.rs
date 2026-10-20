@@ -29,6 +29,9 @@ pub struct ImportedBrush {
     /// Отпечаток-картинка (миниатюра материала-отпечатка; приближение) и его поворот в градусах.
     pub tip: Option<paint_core::Stamp>,
     pub tip_angle: f32,
+    /// Толщина кончика (1 — как есть, меньше — сплюснут) и поворот по направлению мазка.
+    pub tip_ratio: f32,
+    pub tip_follow: bool,
     /// Сила текстуры 0..=1 и масштаб, %.
     pub texture_density: f32,
     pub texture_scale: u16,

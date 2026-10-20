@@ -899,3 +899,5 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 кончик (файла нет рядом с пресетом и в папках Krita) = pointe (le fichier n’est ni à côté du préréglage ni dans les dossiers de Krita)
 сплюснутый кончик = pointe aplatie
 текстура = texture
+Отпечаток поворачивается по направлению мазка = La pointe tourne selon la direction du trait
+по мазку = selon le trait

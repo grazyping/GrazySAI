@@ -1344,7 +1344,7 @@ fn stamp_tip_paints_its_picture() {
     let draw = |angle: f32| {
         let mut doc = Document::new(w, w);
         let mut s = Stroke::new(BrushParams { size: 40.0, size_by_pressure: false, ..Default::default() });
-        s.set_grain(Some(Grain { blot: None, texture: None, paper: false, by_min_density: true, tip: Some((stamp.clone(), angle)), bristle: None }));
+        s.set_grain(Some(Grain { blot: None, texture: None, paper: false, by_min_density: true, tip: Some(paint_core::Tip { angle, ..paint_core::Tip::new(stamp.clone()) }), bristle: None }));
         s.add_point(InputPoint { x: 32.0, y: 32.0, pressure: 1.0 });
         doc.commit_stroke(0, &s, [0, 0, 0]);
         doc
@@ -1357,4 +1357,31 @@ fn stamp_tip_paints_its_picture() {
     // поворот на 90° по часовой (y вниз): левая половина уходит наверх
     let (top, bottom) = (pixel(&turned, 32, 22)[0], pixel(&turned, 32, 42)[0]);
     assert!((top < 60) != (bottom < 60), "после поворота половина сверху или снизу: {top} {bottom}");
+}
+
+/// Толщина отпечатка сплющивает его по второй оси; «по мазку» поворачивает вдоль направления.
+#[test]
+fn flat_tip_follows_the_stroke() {
+    use paint_core::stroke::Grain;
+    use std::sync::Arc;
+    let stamp = Arc::new(paint_core::Stamp { width: 8, height: 8, alpha: vec![255; 64] });
+    let w = 100u32;
+    // ширина закрашенного поперёк мазка в точке (x, y): по вертикали или по горизонтали
+    let draw = |from: (f32, f32), to: (f32, f32), follow: bool| {
+        let mut doc = Document::new(w, w);
+        let mut s = Stroke::new(BrushParams { size: 40.0, size_by_pressure: false, ..Default::default() });
+        s.set_grain(Some(Grain { blot: None, texture: None, paper: false, by_min_density: true, tip: Some(paint_core::Tip { ratio: 0.25, follow, ..paint_core::Tip::new(stamp.clone()) }), bristle: None }));
+        line(&mut s, from, to, 1.0);
+        doc.commit_stroke(0, &s, [0, 0, 0]);
+        doc
+    };
+    let painted = |d: &Document, xs: std::ops::Range<u32>, ys: std::ops::Range<u32>| xs.flat_map(|x| ys.clone().map(move |y| (x, y))).filter(|&(x, y)| pixel(d, x, y)[0] < 128).count();
+    // мазок слева направо, без поворота: полоса высотой 40 × 0,25 = 10 px (+ сглаженные края)
+    let flat = draw((20.0, 50.0), (80.0, 50.0), false);
+    let h = painted(&flat, 50..51, 0..w);
+    assert!((9..=12).contains(&h), "высота полосы {h}");
+    // мазок сверху вниз с поворотом по мазку: полоса шириной 10 px, а не 40
+    let down = draw((50.0, 20.0), (50.0, 80.0), true);
+    let wd = painted(&down, 0..w, 50..51);
+    assert!((9..=12).contains(&wd), "ширина полосы {wd}");
 }

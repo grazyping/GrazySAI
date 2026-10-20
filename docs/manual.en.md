@@ -128,6 +128,9 @@ Water also blurs the layer under the stroke.
   current tool's tip: dark on white or opaque on transparent is paint. Tips are kept in the settings
   folder under `tips`. The default dab spacing is 10 % of the size. With a tip, the brush cursor is the
   picture's frame with its rotation.
+- “Thickness” squashes the tip along its second axis (a round brush becomes an ellipse), “Rotate” sets the
+  angle, “along stroke” turns the tip with the stroke direction: that makes a calligraphy pen (for
+  example, thickness 20 %, rotation 45°).
 - Patterns are fixed to the canvas, not to the stroke. The pattern files come from SAI: if the
   lists are empty, enter the SAI folder (with `blotmap` and `brushtex`) right in the section;
   the paper folder works too.

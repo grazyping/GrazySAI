@@ -900,3 +900,5 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 кончик (файла нет рядом с пресетом и в папках Krita) = tip (the file is neither next to the preset nor in the Krita folders)
 сплюснутый кончик = squashed tip
 текстура = texture
+Отпечаток поворачивается по направлению мазка = The tip turns along the stroke direction
+по мазку = along stroke

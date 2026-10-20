@@ -1124,6 +1124,9 @@ struct GrainSettings {
     /// Отпечаток-картинка из `tips` (вместо круга) и его поворот в градусах.
     tip: Option<String>,
     tip_angle: f32,
+    /// Толщина отпечатка (1 — круглый или как картинка; меньше — сплюснут) и поворот по мазку.
+    tip_ratio: f32,
+    tip_follow: bool,
 }
 
 impl Default for GrainSettings {
@@ -1143,6 +1146,8 @@ impl Default for GrainSettings {
             direction: 1,
             tip: None,
             tip_angle: 0.0,
+            tip_ratio: 1.0,
+            tip_follow: false,
         }
     }
 }
@@ -1829,6 +1834,9 @@ app.open_canvas_dialog(d == "resolution")
                 g.tip = (!v.is_empty()).then(|| v.to_string());
             }
             s.read_f32(&k("tip_angle"), &mut g.tip_angle);
+            s.read_f32(&k("tip_ratio"), &mut g.tip_ratio);
+            g.tip_ratio = g.tip_ratio.clamp(0.01, 1.0);
+            s.read_bool(&k("tip_follow"), &mut g.tip_follow);
             if let Some(v) = s.str(&k("form")) {
                 g.form = (!v.is_empty()).then(|| v.to_string());
             }
@@ -2045,6 +2053,8 @@ app.open_canvas_dialog(d == "resolution")
             s.set(&k("direction"), g.direction);
             s.set(&k("tip"), g.tip.as_deref().unwrap_or(""));
             s.set(&k("tip_angle"), g.tip_angle);
+            s.set(&k("tip_ratio"), g.tip_ratio);
+            s.set(&k("tip_follow"), g.tip_follow as u8);
             s.set(&k("form_strength"), g.form_strength);
             s.set(&k("form_scale"), g.form_scale);
             let tex = match &g.tex {
@@ -2298,7 +2308,11 @@ app.open_canvas_dialog(d == "resolution")
             direction: g.direction,
         });
         let blot = if bristle.is_some() { None } else { blot };
-        let tip = g.tip.as_deref().and_then(paint_core::paper::stamp_of).map(|s| (s, g.tip_angle.to_radians()));
+        // картинка или (у сплюснутой круглой кисти) круг с краем по жёсткости
+        let stamp = g.tip.as_deref().and_then(paint_core::paper::stamp_of).or_else(|| {
+            (g.tip_ratio < 0.999 || g.tip_follow).then(|| std::sync::Arc::new(paint_core::Stamp::disc(self.brushes[tool].params.hardness)))
+        });
+        let tip = stamp.map(|stamp| paint_core::Tip { stamp, angle: g.tip_angle.to_radians(), ratio: g.tip_ratio.clamp(0.01, 1.0), follow: g.tip_follow });
         (blot.is_some() || texture.is_some() || bristle.is_some() || tip.is_some()).then(|| paint_core::stroke::Grain {
             blot,
             texture,
@@ -2899,9 +2913,11 @@ app.open_canvas_dialog(d == "resolution")
             if let Some(tip) = &b.tip {
                 if let Ok(name) = paint_core::paper::save_tip(&format!("{from} {}", b.name), tip) {
                     t.grain.tip = Some(name);
-                    t.grain.tip_angle = b.tip_angle;
                 }
             }
+            t.grain.tip_angle = b.tip_angle;
+            t.grain.tip_ratio = b.tip_ratio;
+            t.grain.tip_follow = b.tip_follow;
             for s in &b.skipped {
                 if !skipped.contains(s) {
                     skipped.push(s);
@@ -6646,11 +6662,12 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 });
             });
-            if grain.tip.is_some() {
-                sai_ui::row(ui, tr("   Поворот"), lw, true, |ui| {
-                    ui.add(egui::DragValue::new(&mut grain.tip_angle).range(-180.0..=180.0).suffix("°").speed(1.0));
-                });
-            }
+            pct_bar(ui, tr("   Толщина"), &mut grain.tip_ratio, true);
+            grain.tip_ratio = grain.tip_ratio.max(0.01);
+            sai_ui::row(ui, tr("   Поворот"), lw, true, |ui| {
+                ui.add(egui::DragValue::new(&mut grain.tip_angle).range(-180.0..=180.0).suffix("°").speed(1.0));
+                ui.checkbox(&mut grain.tip_follow, tr("по мазку")).on_hover_text(tr("Отпечаток поворачивается по направлению мазка"));
+            });
             if grain.bristle.is_some() {
                 pct_bar(ui, tr("   Размер волоска"), &mut grain.hair_size, true);
                 pct_bar(ui, tr("   Мин. волоска"), &mut grain.hair_min, true);
@@ -8359,7 +8376,7 @@ app.open_canvas_dialog(d == "resolution")
             if self.tool == Tool::Brush {
                 let size = self.brushes[self.brush].params.size;
                 let g = &self.brushes[self.brush].grain;
-                let tip = g.tip.as_deref().and_then(paint_core::paper::stamp_of);
+                let tip = g.tip.as_deref().and_then(paint_core::paper::stamp_of).or_else(|| (g.tip_ratio < 0.999).then(|| std::sync::Arc::new(paint_core::Stamp { width: 1, height: 1, alpha: vec![255] })));
                 if self.win.brush_circle {
                     match tip {
                         // отпечаток-картинка — её рамка с поворотом (большая сторона — размер кисти)
@@ -8367,12 +8384,15 @@ app.open_canvas_dialog(d == "resolution")
                             let vx = ViewXf::new(rect, self.zoom, self.offset, vang, vflip);
                             let c = vx.to_canvas(pos);
                             let k = size / st.width.max(st.height).max(1) as f32;
-                            let (hw, hh) = (st.width as f32 * k / 2.0, st.height as f32 * k / 2.0);
+                            let (hw, hh) = (st.width as f32 * k / 2.0, st.height as f32 * k * g.tip_ratio / 2.0);
                             let (sin, cos) = g.tip_angle.to_radians().sin_cos();
-                            let pts: Vec<Pos2> = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh), (-hw, -hh)]
-                                .iter()
-                                .map(|&(x, y)| vx.to_screen(c + Vec2::new(x * cos - y * sin, x * sin + y * cos)))
-                                .collect();
+                            // у картинки — её рамка, у сплюснутого круга — эллипс
+                            let outline: Vec<(f32, f32)> = if g.tip.is_some() {
+                                vec![(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh), (-hw, -hh)]
+                            } else {
+                                (0..=48).map(|i| (i as f32 / 48.0 * std::f32::consts::TAU).sin_cos()).map(|(sn, cs)| (cs * hw, sn * hh)).collect()
+                            };
+                            let pts: Vec<Pos2> = outline.iter().map(|&(x, y)| vx.to_screen(c + Vec2::new(x * cos - y * sin, x * sin + y * cos))).collect();
                             painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0_f32, Color32::from_gray(90))));
                         }
                         None => {
