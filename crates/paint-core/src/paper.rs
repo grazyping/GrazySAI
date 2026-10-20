@@ -464,13 +464,18 @@ pub fn save_tip(name: &str, s: &crate::stroke::Stamp) -> Result<String, Box<dyn 
     std::fs::create_dir_all(&dir)?;
     let clean: String = name.chars().map(|c| if c.is_alphanumeric() || " -_().".contains(c) { c } else { '_' }).collect();
     let clean = if clean.trim().is_empty() { "tip".to_string() } else { clean.trim().to_string() };
+    let rgba: Vec<u8> = s.alpha.iter().flat_map(|&a| [0, 0, 0, a]).collect();
     let mut n = clean.clone();
     let mut i = 2;
     while dir.join(format!("{n}.png")).exists() {
+        // тот же отпечаток уже есть (повторный импорт) — он и берётся
+        let same = std::fs::read(dir.join(format!("{n}.png"))).ok().and_then(|d| crate::io::decode_png(&d).ok()).is_some_and(|(w, h, px)| (w as usize, h as usize) == (s.width, s.height) && px == rgba);
+        if same {
+            return Ok(n);
+        }
         n = format!("{clean} {i}");
         i += 1;
     }
-    let rgba: Vec<u8> = s.alpha.iter().flat_map(|&a| [0, 0, 0, a]).collect();
     crate::io::save_image(&dir.join(format!("{n}.png")), s.width as u32, s.height as u32, &rgba)?;
     Ok(n)
 }

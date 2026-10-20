@@ -2844,16 +2844,33 @@ app.open_canvas_dialog(d == "resolution")
     /// Кисти Clip Studio Paint — новыми инструментами в конец сетки (docs/33-csp-brushes.md).
     /// Текстура кисти пишется в свою папку программы `brushtex` как BMP.
     fn import_csp(&mut self, path: &std::path::Path) {
-        let brushes = match paint_formats::csp::load(path) {
-            Ok(b) => b,
-            Err(e) => {
-                self.status = trf("Кисть CSP не открылась: {0}", &[&e]);
-                return;
-            }
-        };
+        match paint_formats::csp::load(path) {
+            Ok(b) => self.add_imported(&b, "CSP"),
+            Err(e) => self.status = trf("Кисть CSP не открылась: {0}", &[&e]),
+        }
+    }
+
+    /// Пресет Krita `.kpp` или набор `.bundle` — новыми инструментами в конец сетки.
+    fn import_krita(&mut self, path: &std::path::Path) {
+        let bundle = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("bundle"));
+        let r = if bundle { paint_formats::krita::load_bundle(path) } else { paint_formats::krita::load_kpp(path).map(|b| vec![b]) };
+        match r {
+            Ok(b) => self.add_imported(&b, "Krita"),
+            Err(e) => self.status = trf("Кисть Krita не открылась: {0}", &[&e]),
+        }
+    }
+
+    /// Чужие кисти (CSP, Krita) — инструментами сетки; `from` — подпись во второй строке ячейки.
+    fn add_imported(&mut self, brushes: &[paint_formats::brush_tip::ImportedBrush], from: &str) {
         let mut skipped: Vec<&str> = Vec::new();
-        for b in &brushes {
-            let kind = if b.mix.is_some() { ToolKind::Brush } else { ToolKind::Pencil };
+        for b in brushes {
+            let kind = if b.erase {
+                ToolKind::Eraser
+            } else if b.mix.is_some() {
+                ToolKind::Brush
+            } else {
+                ToolKind::Pencil
+            };
             let mut t = kind.new_tool();
             let step = paint_core::brush::HARDNESS_STEPS.iter().copied().min_by(|x, y| (x - b.hardness).abs().total_cmp(&(y - b.hardness).abs())).unwrap_or(1.0);
             t.params = BrushParams {
@@ -2869,9 +2886,9 @@ app.open_canvas_dialog(d == "resolution")
                 ..t.params
             };
             t.custom = Some(b.name.clone());
-            t.extra = "CSP".to_string();
+            t.extra = from.to_string();
             if let (Some(tex), Some(dir)) = (&b.texture, paint_core::paper::user_dir("brushtex")) {
-                let name: String = format!("CSP {}", b.name).chars().map(|c| if c.is_alphanumeric() || " -_().".contains(c) { c } else { '_' }).collect();
+                let name: String = format!("{from} {}", b.name).chars().map(|c| if c.is_alphanumeric() || " -_().".contains(c) { c } else { '_' }).collect();
                 if std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(format!("{name}.bmp")), tex.to_bmp())).is_ok() {
                     t.grain.tex = TexChoice::File(name);
                     t.grain.tex_strength = b.texture_density;
@@ -2879,7 +2896,7 @@ app.open_canvas_dialog(d == "resolution")
                 }
             }
             if let Some(tip) = &b.tip {
-                if let Ok(name) = paint_core::paper::save_tip(&format!("CSP {}", b.name), tip) {
+                if let Ok(name) = paint_core::paper::save_tip(&format!("{from} {}", b.name), tip) {
                     t.grain.tip = Some(name);
                     t.grain.tip_angle = b.tip_angle;
                 }
@@ -2894,9 +2911,9 @@ app.open_canvas_dialog(d == "resolution")
         self.brush = self.brushes.len() - 1;
         self.tool = Tool::Brush;
         self.grain_names = None;
-        let added = match brushes.as_slice() {
-            [one] => trf("Кисть CSP «{0}» добавлена в сетку", &[&one.name]),
-            many => trf("Кистей CSP добавлено в сетку: {0}", &[&many.len()]),
+        let added = match brushes {
+            [one] => trf("Кисть {0} «{1}» добавлена в сетку", &[&from, &one.name]),
+            many => trf("Кистей {0} добавлено в сетку: {1}", &[&from, &many.len()]),
         };
         let label = |s: &str| match s {
             "распыление" => tr("распыление"),
@@ -2906,6 +2923,11 @@ app.open_canvas_dialog(d == "resolution")
             "кайма акварели" => tr("кайма акварели"),
             "толщина кончика" => tr("толщина кончика"),
             "текстура (картинки нет в файле)" => tr("текстура (картинки нет в файле)"),
+            "движок кисти (взяты только общие настройки)" => tr("движок кисти (взяты только общие настройки)"),
+            "сплюснутый кончик" => tr("сплюснутый кончик"),
+            "кончик (файла нет рядом с пресетом и в папках Krita)" => tr("кончик (файла нет рядом с пресетом и в папках Krita)"),
+            "вид кончика (векторный или текстовый)" => tr("вид кончика (векторный или текстовый)"),
+            "текстура" => tr("текстура"),
             _ => s,
         }
         .to_string();
@@ -2951,8 +2973,12 @@ app.open_canvas_dialog(d == "resolution")
             self.load_palette(&path);
             return;
         }
-        if ext == "gbr" {
+        if ext == "gbr" || ext == "gih" {
             self.add_tip(&path);
+            return;
+        }
+        if ext == "kpp" || ext == "bundle" {
+            self.import_krita(&path);
             return;
         }
         if ext == "sut" || ext == "bfps" {

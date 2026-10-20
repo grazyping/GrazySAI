@@ -5,35 +5,8 @@ use paint_core::paper::PaperTexture;
 use rusqlite::{Connection, OpenFlags};
 use std::path::Path;
 
-/// Кисть CSP в величинах GrazySAI. Где движок другой — приближение, пропущенное в `skipped`.
-#[derive(Clone, Debug)]
-pub struct CspBrush {
-    pub name: String,
-    /// Диаметр в пикселях (миллиметры пересчитаны при 350 dpi — разрешении нового холста CSP).
-    pub size: f32,
-    /// Непрозрачность × поток, 0..=1.
-    pub density: f32,
-    /// Жёсткость 0..=1.
-    pub hardness: f32,
-    /// Постоянный шаг в долях диаметра; `None` — автоматический.
-    pub spacing: Option<f32>,
-    /// Нажим на размер: доля размера при нулевом нажиме.
-    pub size_pressure: Option<f32>,
-    /// Нажим на непрозрачность: доля при нулевом нажиме.
-    pub density_pressure: Option<f32>,
-    /// Смешивание с холстом: (смешивание, разбавление) 0..=1.
-    pub mix: Option<(f32, f32)>,
-    /// Текстура бумаги из кисти: серая, светлое — краска ложится.
-    pub texture: Option<PaperTexture>,
-    /// Отпечаток-картинка (миниатюра материала-отпечатка; приближение) и его поворот в градусах.
-    pub tip: Option<paint_core::Stamp>,
-    pub tip_angle: f32,
-    /// Сила текстуры 0..=1 и масштаб, %.
-    pub texture_density: f32,
-    pub texture_scale: u16,
-    /// Настройки CSP, которых у GrazySAI нет (имена — для сообщения).
-    pub skipped: Vec<&'static str>,
-}
+/// Кисть CSP в величинах GrazySAI (общая для всех чужих кистей).
+pub type CspBrush = crate::brush_tip::ImportedBrush;
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -158,6 +131,8 @@ impl Variant {
             tip_angle: self.num("BrushRotation").unwrap_or(0.0) as f32,
             texture_density: pct("TextureDensity", 100.0),
             texture_scale: self.num("TextureScale").unwrap_or(100.0).clamp(1.0, 1000.0) as u16,
+            erase: false,
+            smudge: false,
             skipped,
         }
     }

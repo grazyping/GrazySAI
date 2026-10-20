@@ -4,6 +4,7 @@
 pub mod brush_tip;
 pub mod csp;
 pub mod jssf;
+pub mod krita;
 pub mod linework;
 pub mod ora;
 pub mod palette;

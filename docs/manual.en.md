@@ -386,6 +386,14 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 | `.ora` (OpenRaster — Krita, GIMP, MyPaint) | Yes, with layers and folders | “Save As” or “Export → OpenRaster”: layers, folders, modes, opacity |
 | `.png`, `.jpg`, `.bmp`, `.tga`, `.tiff`, `.webp`, `.qoi` | Yes, as one layer | “File → Export” (flattened image; JPEG at quality 92, WebP lossless) |
 | `.sut`, `.bfps` (Clip Studio Paint brushes) | Yes: the brushes are added at the end of the grid | — |
+| `.kpp`, `.bundle` (Krita brushes), `.gbr`, `.gih` (GIMP brushes) | Yes: Krita brushes go to the end of the grid, GIMP brushes become the current brush’s tip | — |
+
+Krita brushes: a `.kpp` preset or a `.bundle` pack open the same way — “File → Open” or drag and drop;
+the brushes go to the end of the grid (all of them from a pack). Carried over: size, opacity and flow,
+round-brush hardness (“Fade”), spacing, pressure on size and opacity (the low end from the curve), eraser,
+smudging, and an image tip (`.png`, `.gbr`, `.gih`) with its rotation. The tip is looked up in the pack,
+next to the preset, in a `brushes` folder and in the Krita packs on this computer. Masked brush, texture,
+scatter and other Krita sensors are skipped; the status bar lists what was skipped.
 
 Clip Studio Paint brushes: an exported brush `.sut` (in CSP: Sub tool palette → menu → “Export sub tool”)
 or the `BrushPreset.bfps` palette open with “File → Open” or by drag and drop. Carried over: size

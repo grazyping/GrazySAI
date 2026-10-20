@@ -193,7 +193,8 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 - [ ] Third-party SAI 2 brushes: the `settings2.ssd` tool set (encrypted differently from SAI 1 — decode from SAI 2's code). Blot, brush, bristle and paper textures (`blotmap`, `brushtex`, `bristle`, `papertex`) are already picked up from the SAI folder
 - [x] Clip Studio Paint brushes (`.sut`, `.bfps`): main settings and texture (1.0.14)
 - [x] Image tip for any brush (PNG etc., GIMP brushes `.gbr`); for Clip Studio Paint brushes — from the material thumbnail (1.0.20)
-- [ ] Krita brushes: `.kpp` presets and `.bundle` packs (pixel and colour-smudge engines — 97 of the 117 defaults), `.gbr`, `.gih`, `.png`, `.svg` tips and Photoshop `.abr` brushes — a new brush with an image tip
+- [x] Krita brushes: `.kpp` presets and `.bundle` packs, `.png`, `.gbr`, `.gih` tips (1.0.21)
+- [ ] Photoshop `.abr` brushes and `.svg` tips
 - [x] Mirror painting (symmetry) (1.0.9)
 - [x] Fill: closing gaps in line art and growing the edge under the line (1.0.10)
 - [x] Recent colours; GIMP (`.gpl`) and Krita (`.kpl`) palettes (1.0.6)
