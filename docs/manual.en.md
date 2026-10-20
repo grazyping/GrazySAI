@@ -119,14 +119,15 @@ Water also blurs the layer under the stroke.
   hardness changes how sharp the blot is. After the blots the list has the bristles from the
   `bristle` folder: each hair draws its own line along the stroke; “Hair Size”, “Hair Min”,
   “Randomize”, “Direction” (None, Auto, Pen Direction).
-- “Texture” — a pattern from the `brushtex` folder or the current layer's paper: light parts of
-  the pattern let less paint through. “Strength”, “Zoom”, “Affect by MinDens” (the pattern is
+- “Texture” — a pattern from the `brushtex` folder or the current layer's paper: in a pattern the
+  dark parts hold paint back, in layer paper the light parts do (as in SAI). “Strength”, “Zoom”, “Affect by MinDens” (the pattern is
   weaker on thin brushes and at light pressure).
 - “Tip” (in the “Form” section) — a circle or a picture: every dab of the stroke is drawn with that
   picture (its longer side is the brush size), “Rotate” sets its angle. “Add picture…” in the list,
   dragging a picture onto the window with Shift, or opening a GIMP brush `.gbr` turns a picture into the
   current tool's tip: dark on white or opaque on transparent is paint. Tips are kept in the settings
-  folder under `tips`. The default dab spacing is 10 % of the size.
+  folder under `tips`. The default dab spacing is 10 % of the size. With a tip, the brush cursor is the
+  picture's frame with its rotation.
 - Patterns are fixed to the canvas, not to the stroke. The pattern files come from SAI: if the
   lists are empty, enter the SAI folder (with `blotmap` and `brushtex`) right in the section;
   the paper folder works too.

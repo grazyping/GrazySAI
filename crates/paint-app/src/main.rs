@@ -8357,8 +8357,27 @@ app.open_canvas_dialog(d == "resolution")
         if let Some(pos) = pointer.filter(|p| rect.contains(*p)) {
             if self.tool == Tool::Brush {
                 let size = self.brushes[self.brush].params.size;
+                let g = &self.brushes[self.brush].grain;
+                let tip = g.tip.as_deref().and_then(paint_core::paper::stamp_of);
                 if self.win.brush_circle {
-                    painter.circle_stroke(pos, (size * self.zoom / 2.0).max(1.0), egui::Stroke::new(1.0_f32, Color32::from_gray(90)));
+                    match tip {
+                        // отпечаток-картинка — её рамка с поворотом (большая сторона — размер кисти)
+                        Some(st) => {
+                            let vx = ViewXf::new(rect, self.zoom, self.offset, vang, vflip);
+                            let c = vx.to_canvas(pos);
+                            let k = size / st.width.max(st.height).max(1) as f32;
+                            let (hw, hh) = (st.width as f32 * k / 2.0, st.height as f32 * k / 2.0);
+                            let (sin, cos) = g.tip_angle.to_radians().sin_cos();
+                            let pts: Vec<Pos2> = [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh), (-hw, -hh)]
+                                .iter()
+                                .map(|&(x, y)| vx.to_screen(c + Vec2::new(x * cos - y * sin, x * sin + y * cos)))
+                                .collect();
+                            painter.add(egui::Shape::line(pts, egui::Stroke::new(1.0_f32, Color32::from_gray(90))));
+                        }
+                        None => {
+                            painter.circle_stroke(pos, (size * self.zoom / 2.0).max(1.0), egui::Stroke::new(1.0_f32, Color32::from_gray(90)));
+                        }
+                    }
                 }
                 if self.win.dot_cursor {
                     painter.circle_filled(pos, 1.5, Color32::from_gray(40));
