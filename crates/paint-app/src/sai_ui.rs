@@ -1309,3 +1309,42 @@ mod slider_tests {
         assert_eq!((sliders_from_hsv(1, s, v).1 * 100.0).round() as i32, 49);
     }
 }
+
+/// Редактор кривой нажима: квадрат `size`, по горизонтали — нажим пера, по вертикали — отклик;
+/// две точки тянутся мышью. `true` — кривая изменилась.
+pub fn curve_editor(ui: &mut Ui, curve: &mut paint_core::curve::PressureCurve, size: f32) -> bool {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
+    let p = ui.painter_at(rect.expand(6.0));
+    p.rect_filled(rect, 0.0, gray(255));
+    for i in 1..4 {
+        let t = i as f32 / 4.0;
+        let x = rect.left() + rect.width() * t;
+        let y = rect.bottom() - rect.height() * t;
+        p.line_segment([Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())], Stroke::new(1.0_f32, gray(232)));
+        p.line_segment([Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)], Stroke::new(1.0_f32, gray(232)));
+    }
+    let to_screen = |q: [f32; 2]| Pos2::new(rect.left() + q[0] * rect.width(), rect.bottom() - q[1] * rect.height());
+    p.extend(egui::Shape::dashed_line(&[rect.left_bottom(), rect.right_top()], Stroke::new(1.0_f32, gray(190)), 4.0, 4.0));
+    let pts: Vec<Pos2> = (0..=64).map(|i| {
+        let x = i as f32 / 64.0;
+        to_screen([x, curve.apply(x)])
+    }).collect();
+    p.add(egui::Shape::line(pts, Stroke::new(1.5_f32, select_edge())));
+    p.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, border()));
+    let mut changed = false;
+    for k in 0..2 {
+        let at = to_screen(curve.points[k]);
+        let hit = Rect::from_center_size(at, Vec2::splat(12.0));
+        let resp = ui.interact(hit, ui.id().with(("curve_pt", k)), Sense::drag());
+        if let Some(pos) = resp.interact_pointer_pos().filter(|_| resp.dragged()) {
+            let x = ((pos.x - rect.left()) / rect.width()).clamp(0.02, 0.98);
+            let y = ((rect.bottom() - pos.y) / rect.height()).clamp(0.0, 1.0);
+            curve.points[k] = [x, y];
+            changed = true;
+        }
+        let fill = if resp.hovered() || resp.dragged() { select_bg() } else { gray(255) };
+        p.circle_filled(at, 4.5, fill);
+        p.circle_stroke(at, 4.5, Stroke::new(1.0_f32, ink()));
+    }
+    changed
+}

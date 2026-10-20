@@ -500,11 +500,13 @@ struct Options {
     /// Память истории до переноса шагов на диск, МБ; копия для восстановления — раз в N минут.
     history_mb: u32,
     recovery_min: u32,
+    /// Кривая нажима пера (прямая — нажим как есть).
+    pressure_curve: paint_core::curve::PressureCurve,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3 }
+        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default() }
     }
 }
 
@@ -1790,6 +1792,12 @@ app.open_canvas_dialog(d == "resolution")
                 *v = n;
             }
         }
+        if let Some(v) = s.str("opt.pressure_curve") {
+            let n: Vec<f32> = v.split(',').filter_map(|t| t.trim().parse().ok()).collect();
+            if let [x1, y1, x2, y2] = n[..] {
+                o.pressure_curve.points = [[x1, y1], [x2, y2]];
+            }
+        }
         paint_core::history_disk::set_ram_budget(self.opts.history_mb as usize * (1 << 20));
         s.read_bool("layers_right", &mut self.win.layers_right);
         s.read_bool("dot_cursor", &mut self.win.dot_cursor);
@@ -1956,6 +1964,8 @@ app.open_canvas_dialog(d == "resolution")
         for (k, v) in [("opt.spring_ms", o.spring_ms), ("opt.move_guard_ms", o.move_guard_ms), ("opt.history_mb", o.history_mb), ("opt.recovery_min", o.recovery_min)] {
             s.set(k, v);
         }
+        let [[x1, y1], [x2, y2]] = o.pressure_curve.points;
+        s.set("opt.pressure_curve", format!("{x1:.3},{y1:.3},{x2:.3},{y2:.3}"));
         s.set("layers_right", w.layers_right as u8);
         s.set("dot_cursor", w.dot_cursor as u8);
         s.set("brush_circle", w.brush_circle as u8);
@@ -3320,8 +3330,8 @@ app.open_canvas_dialog(d == "resolution")
                 .map(|_| (s.pressure, s.eraser))
         });
         let (pressure, eraser, source) = match (fresh, self.touch_force) {
-            (Some((p, e)), _) => (p, e, tr("перо (XInput 2)")),
-            (None, Some(f)) if self.touch_down || (self.stroke_by_touch && (self.live.is_some() || self.line_stroke.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some())) => (f, false, tr("перо (Windows Ink)")),
+            (Some((p, e)), _) => (self.opts.pressure_curve.apply(p), e, tr("перо (XInput 2)")),
+            (None, Some(f)) if self.touch_down || (self.stroke_by_touch && (self.live.is_some() || self.line_stroke.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some())) => (self.opts.pressure_curve.apply(f), false, tr("перо (Windows Ink)")),
             _ => (1.0, false, tr("мышь")),
         };
         self.last_pressure = pressure;
@@ -9031,6 +9041,16 @@ impl PaintApp {
             ui.horizontal(|ui| {
                 ui.label(tr("Копия для восстановления после сбоя — раз в, мин:"));
                 ui.add(egui::DragValue::new(&mut o.recovery_min).range(1..=60));
+            });
+            head(ui, tr("Кривая нажима пера"));
+            ui.horizontal(|ui| {
+                sai_ui::curve_editor(ui, &mut o.pressure_curve, 140.0);
+                ui.vertical(|ui| {
+                    ui.weak(tr("По горизонтали — нажим пера, по вертикали — нажим для кисти. Тяните точки; выше прямой — мягче, ниже — жёстче."));
+                    if ui.button(tr("Прямая")).clicked() {
+                        o.pressure_curve = paint_core::curve::PressureCurve::default();
+                    }
+                });
             });
             ui.add_space(6.0);
             ui.horizontal(|ui| {

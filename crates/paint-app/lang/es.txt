@@ -825,3 +825,5 @@ PSB (большой PSD, со слоями) = PSB (PSD grande, con capas)
 Палитры (GIMP, Krita) = Paletas (GIMP, Krita)
 Палитра «{0}»: {1} цветов в образцах = Paleta «{0}»: {1} colores en las muestras
 Палитра не открылась: {0} = No se pudo abrir la paleta: {0}
+Кривая нажима пера = Curva de presión del lápiz
+По горизонтали — нажим пера, по вертикали — нажим для кисти. Тяните точки; выше прямой — мягче, ниже — жёстче. = Horizontal: presión del lápiz; vertical: presión para el pincel. Arrastra los puntos; por encima de la recta es más suave, por debajo más duro.

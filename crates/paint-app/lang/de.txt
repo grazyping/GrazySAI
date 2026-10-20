@@ -825,3 +825,5 @@ PSB (большой PSD, со слоями) = PSB (großes PSD, mit Ebenen)
 Палитры (GIMP, Krita) = Paletten (GIMP, Krita)
 Палитра «{0}»: {1} цветов в образцах = Palette „{0}“: {1} Farben in den Farbfeldern
 Палитра не открылась: {0} = Palette konnte nicht geöffnet werden: {0}
+Кривая нажима пера = Druckkurve des Stifts
+По горизонтали — нажим пера, по вертикали — нажим для кисти. Тяните точки; выше прямой — мягче, ниже — жёстче. = Waagerecht: Stiftdruck, senkrecht: Druck für den Pinsel. Punkte ziehen; über der Geraden weicher, darunter härter.
