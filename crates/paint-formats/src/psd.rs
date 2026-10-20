@@ -123,25 +123,25 @@ fn unpackbits(data: &[u8], len: usize) -> Res<Vec<u8>> {
 /// Каналы прямоугольника (RGBA по 8 бит) в виде плоскостей, сжатые PackBits: [A, R, G, B].
 /// `big` — PSB: длины строк по 4 байта (у PSD — по 2).
 fn encode_planes(rgba: &[u8], w: usize, h: usize, order: &[usize], big: bool) -> Vec<Vec<u8>> {
-    order
-        .iter()
-        .map(|&c| {
-            let rows: Vec<Vec<u8>> = (0..h).map(|y| packbits(&(0..w).map(|x| rgba[(y * w + x) * 4 + c]).collect::<Vec<_>>())).collect();
-            let mut out = Vec::new();
-            out.extend(1u16.to_be_bytes());
-            for r in &rows {
-                if big {
-                    out.extend((r.len() as u32).to_be_bytes());
-                } else {
-                    out.extend((r.len() as u16).to_be_bytes());
-                }
-            }
-            for r in rows {
-                out.extend(r);
-            }
-            out
-        })
-        .collect()
+    order.iter().map(|&c| encode_plane(w, h, |x, y| rgba[(y * w + x) * 4 + c], big)).collect()
+}
+
+/// Один канал `w`×`h`, сжатый PackBits построчно: сжатие, длины строк, строки.
+fn encode_plane(w: usize, h: usize, at: impl Fn(usize, usize) -> u8, big: bool) -> Vec<u8> {
+    let rows: Vec<Vec<u8>> = (0..h).map(|y| packbits(&(0..w).map(|x| at(x, y)).collect::<Vec<_>>())).collect();
+    let mut out = Vec::new();
+    out.extend(1u16.to_be_bytes());
+    for r in &rows {
+        if big {
+            out.extend((r.len() as u32).to_be_bytes());
+        } else {
+            out.extend((r.len() as u16).to_be_bytes());
+        }
+    }
+    for r in rows {
+        out.extend(r);
+    }
+    out
 }
 
 /// Пиксели слоя в рамке содержимого: (лево, верх, ширина, высота, RGBA прямой).
@@ -167,9 +167,11 @@ struct Record {
     name: String,
     /// `lsct`: 0 — обычный слой, 1 — открытая папка, 2 — закрытая, 3 — граница папки.
     section: u32,
+    /// Маска слоя на весь холст (её канал — −2 в `channels`).
+    mask: Option<[i32; 4]>,
 }
 
-fn records(layers: &[Layer], out: &mut Vec<Record>, big: bool) {
+fn records(layers: &[Layer], out: &mut Vec<Record>, big: bool, canvas: (usize, usize)) {
     for l in layers {
         let base = |rect, channels, section| Record {
             rect,
@@ -180,12 +182,13 @@ fn records(layers: &[Layer], out: &mut Vec<Record>, big: bool) {
             visible: l.visible,
             name: l.name.clone(),
             section,
+            mask: None,
         };
         let empty = || [-1i16, 0, 1, 2].iter().map(|&id| (id, 0u16.to_be_bytes().to_vec())).collect::<Vec<_>>();
         match &l.children {
             Some(ch) => {
                 out.push(Record { name: "</Layer group>".into(), key: *b"norm", opacity: 255, clipping: false, visible: true, ..base([0; 4], empty(), 3) });
-                records(ch, out, big);
+                records(ch, out, big, canvas);
                 let mut folder = base([0; 4], empty(), 1);
                 if l.pass_through {
                     folder.key = *b"pass";
@@ -195,8 +198,16 @@ fn records(layers: &[Layer], out: &mut Vec<Record>, big: bool) {
             None => {
                 let (x, y, w, h, rgba) = layer_rgba(&l.pixels);
                 let planes = encode_planes(&rgba, w, h, &[3, 0, 1, 2], big);
-                let channels = [-1i16, 0, 1, 2].into_iter().zip(planes).collect();
-                out.push(base([y, x, y + h as i32, x + w as i32], channels, 0));
+                let mut channels: Vec<(i16, Vec<u8>)> = [-1i16, 0, 1, 2].into_iter().zip(planes).collect();
+                let mut rec = base([y, x, y + h as i32, x + w as i32], Vec::new(), 0);
+                if let Some(m) = &l.mask {
+                    // маска GrazySAI: 0x4000 — скрыто; в PSD 255 — видно
+                    let (cw, ch) = canvas;
+                    channels.push((-2, encode_plane(cw, ch, |x, y| (255 - (m.hide.get(x as i32, y as i32).min(0x4000) as u32 * 255 / 0x4000)) as u8, big)));
+                    rec.mask = Some([0, 0, ch as i32, cw as i32]);
+                }
+                rec.channels = channels;
+                out.push(rec);
             }
         }
     }
@@ -247,7 +258,7 @@ fn put_len(out: &mut Vec<u8>, n: usize, big: bool) {
 fn save_as(doc: &Document, path: &Path, big: bool) -> Res<()> {
     let (w, h) = (doc.width as usize, doc.height as usize);
     let mut recs = Vec::new();
-    records(&doc.layers, &mut recs, big);
+    records(&doc.layers, &mut recs, big, (w, h));
     // запись слоёв
     let mut info = Vec::new();
     info.extend((recs.len() as i16).to_be_bytes());
@@ -267,7 +278,17 @@ fn save_as(doc: &Document, path: &Path, big: bool) -> Res<()> {
         info.push(if r.visible { 0 } else { 2 });
         info.push(0);
         let mut extra = Vec::new();
-        extra.extend(0u32.to_be_bytes()); // маска
+        match r.mask {
+            // прямоугольник, цвет за ним (видно), признаки, два байта выравнивания
+            Some(rect) => {
+                extra.extend(20u32.to_be_bytes());
+                for v in rect {
+                    extra.extend(v.to_be_bytes());
+                }
+                extra.extend([255, 0, 0, 0]);
+            }
+            None => extra.extend(0u32.to_be_bytes()),
+        }
         extra.extend(0u32.to_be_bytes()); // диапазоны наложения
         extra.extend(pascal(&r.name));
         let units: Vec<u16> = r.name.encode_utf16().collect();

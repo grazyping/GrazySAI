@@ -359,8 +359,9 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 
 “File → Save with number” saves next to the file under the next free number: `picture.sai2` → `picture_001.sai2`, `picture_009.sai2` → `picture_010.sai2`.
 
-Masks, paper, layer effects and curves do not go into `.psd` and `.ora` (the layer is written as
-pixels); other programs show a clipped layer in `.ora` as a normal one.
+Layer masks are written to `.psd`/`.psb` (not to `.ora`). Paper, layer effects and curves do not go
+into `.psd` and `.ora` (the layer is written as pixels); other programs show a clipped layer in `.ora`
+as a normal one.
 
 Every canvas has its own tab at the bottom of the window, as in SAI: “New”, “Open” and “Create
 Canvas from Clipboard” open a new tab (an untouched empty canvas is replaced). Click a tab to

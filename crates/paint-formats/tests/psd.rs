@@ -79,6 +79,39 @@ fn psb_round_trip_matches_psd() {
     std::fs::remove_dir_all(dir).ok();
 }
 
+/// Маска слоя уходит в PSD (канал −2 на весь холст) и читается обратно; сведение то же.
+#[test]
+fn psd_keeps_layer_mask() {
+    let mut doc = Document::new(48, 32);
+    for y in 0..32 {
+        for x in 0..48 {
+            doc.layers[0].pixels.set(x, y, from_rgba8([40, 90, 200, 255]));
+        }
+    }
+    let mut hide = paint_core::tile::MaskMap::new();
+    for y in 0..32 {
+        for x in 0..24 {
+            hide.set(x, y, 0x4000);
+        }
+        hide.set(30, y, 0x2000);
+    }
+    doc.layers[0].mask = Some(paint_core::layer::LayerMask { hide, flags: [1, 1, 1, 0] });
+    let dir = std::env::temp_dir().join(format!("grazysai-psdmask-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("маска.psd");
+    paint_formats::psd::save(&doc, &path).unwrap();
+    let back = paint_formats::psd::load(&path).unwrap();
+    let m = &back.layers[0].mask.as_ref().expect("маска прочитана").hide;
+    assert_eq!((m.get(5, 5), m.get(40, 5)), (0x4000, 0));
+    assert!((m.get(30, 7) as i32 - 0x2000).abs() <= 0x4000 / 255 + 1, "{}", m.get(30, 7));
+    let worst = back.flatten().iter().zip(doc.flatten()).map(|(a, b)| (*a as i32 - b as i32).abs()).max().unwrap();
+    assert!(worst <= 2, "наибольшая разница {worst}");
+    if let Ok(keep) = std::env::var("PSD_MASK_KEEP") {
+        std::fs::copy(&path, keep).unwrap();
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// PSD, записанный другой программой (photocraft-cli): слои и папка читаются.
 #[test]
 fn reads_psd_written_by_another_program() {
