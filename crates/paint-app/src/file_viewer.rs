@@ -344,7 +344,7 @@ impl FileViewer {
                         ui.selectable_value(&mut self.left_tab, 0, tr("Проводник"));
                         ui.selectable_value(&mut self.left_tab, 1, tr("Закладки"));
                     });
-                    egui::Frame::none().fill(Color32::WHITE).stroke(egui::Stroke::new(1.0_f32, sai_ui::BORDER)).show(ui, |ui| {
+                    egui::Frame::none().fill(sai_ui::gray(255)).stroke(egui::Stroke::new(1.0_f32, sai_ui::border())).show(ui, |ui| {
                         egui::ScrollArea::both().id_salt("fv_tree").auto_shrink([false, false]).max_height(h - 30.0).show(ui, |ui| {
                             ui.set_min_width(240.0);
                             if self.left_tab == 0 {
@@ -446,8 +446,8 @@ impl FileViewer {
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width().max(200.0), 20.0), egui::Sense::click());
         let painter = ui.painter();
         if current {
-            painter.rect_filled(rect, 0.0, sai_ui::SELECT_BG);
-            painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::SELECT_EDGE));
+            painter.rect_filled(rect, 0.0, sai_ui::select_bg());
+            painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::select_edge()));
             if self.scroll_tree {
                 ui.scroll_to_rect(rect, Some(egui::Align::Center));
             }
@@ -461,10 +461,10 @@ impl FileViewer {
         } else {
             vec![c + Vec2::new(-k * 0.5, -k), c + Vec2::new(k * 0.7, 0.0), c + Vec2::new(-k * 0.5, k)]
         };
-        painter.add(egui::Shape::convex_polygon(tri, if open { sai_ui::INK } else { sai_ui::DIM }, egui::Stroke::NONE));
+        painter.add(egui::Shape::convex_polygon(tri, if open { sai_ui::ink() } else { sai_ui::dim() }, egui::Stroke::NONE));
         let icon = Rect::from_min_size(Pos2::new(x0 + 13.0, rect.top() + 3.0), Vec2::new(16.0, 14.0));
         sai_ui::glyph(painter, icon, Color32::from_rgb(70, 110, 180), "new_folder");
-        painter.text(Pos2::new(icon.right() + 5.0, rect.center().y), egui::Align2::LEFT_CENTER, &name, egui::FontId::proportional(13.0), sai_ui::INK);
+        painter.text(Pos2::new(icon.right() + 5.0, rect.center().y), egui::Align2::LEFT_CENTER, &name, egui::FontId::proportional(13.0), sai_ui::ink());
         if resp.clicked() {
             let on_arrow = resp.interact_pointer_pos().is_some_and(|q| q.x < arrow.right() + 2.0);
             if on_arrow {
@@ -588,7 +588,7 @@ impl FileViewer {
                 self.sort_items();
             }
         });
-        egui::Frame::none().fill(Color32::WHITE).stroke(egui::Stroke::new(1.0_f32, sai_ui::BORDER)).show(ui, |ui| {
+        egui::Frame::none().fill(sai_ui::gray(255)).stroke(egui::Stroke::new(1.0_f32, sai_ui::border())).show(ui, |ui| {
             egui::ScrollArea::vertical().id_salt("fv_grid").auto_shrink([false, false]).max_height(h - 34.0).show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 if self.view == 0 {
@@ -667,10 +667,10 @@ impl FileViewer {
         let it = &self.items[i];
         let p = ui.painter();
         if sel {
-            p.rect_filled(rect, 0.0, sai_ui::SELECT_BG);
-            p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::SELECT_EDGE));
+            p.rect_filled(rect, 0.0, sai_ui::select_bg());
+            p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::select_edge()));
         } else if resp.hovered() {
-            p.rect_filled(rect, 0.0, Color32::from_gray(242));
+            p.rect_filled(rect, 0.0, sai_ui::gray(242));
         }
         let area = Rect::from_center_size(Pos2::new(rect.center().x, rect.top() + 8.0 + THUMB as f32 / 2.0), Vec2::splat(THUMB as f32));
         if it.dir {
@@ -680,9 +680,9 @@ impl FileViewer {
             // листок с загнутым углом
             let o = rect.min + Vec2::new(4.0, 4.0);
             let sheet = vec![o, o + Vec2::new(6.0, 0.0), o + Vec2::new(9.0, 3.0), o + Vec2::new(9.0, 12.0), o + Vec2::new(0.0, 12.0)];
-            p.add(egui::Shape::closed_line(sheet, egui::Stroke::new(1.0_f32, sai_ui::DIM)));
-            p.line_segment([o + Vec2::new(6.0, 0.0), o + Vec2::new(6.0, 3.0)], egui::Stroke::new(1.0_f32, sai_ui::DIM));
-            p.line_segment([o + Vec2::new(6.0, 3.0), o + Vec2::new(9.0, 3.0)], egui::Stroke::new(1.0_f32, sai_ui::DIM));
+            p.add(egui::Shape::closed_line(sheet, egui::Stroke::new(1.0_f32, sai_ui::dim())));
+            p.line_segment([o + Vec2::new(6.0, 0.0), o + Vec2::new(6.0, 3.0)], egui::Stroke::new(1.0_f32, sai_ui::dim()));
+            p.line_segment([o + Vec2::new(6.0, 3.0), o + Vec2::new(9.0, 3.0)], egui::Stroke::new(1.0_f32, sai_ui::dim()));
             match (&tex, self.thumbs.get(&it.path)) {
                 (Some(t), _) => {
                     let size = ui.ctx().tex_manager().read().meta(*t).map(|m| m.size).unwrap_or([THUMB as usize; 2]);
@@ -690,19 +690,19 @@ impl FileViewer {
                     let r = Rect::from_center_size(area.center(), Vec2::new(size[0] as f32 * k, size[1] as f32 * k));
                     sai_ui::checker(p, r, 6.0);
                     p.image(*t, r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
-                    p.rect_stroke(r, 0.0, egui::Stroke::new(1.0_f32, Color32::from_gray(200)));
+                    p.rect_stroke(r, 0.0, egui::Stroke::new(1.0_f32, sai_ui::gray(200)));
                 }
                 (None, Some(Thumb::Failed)) => {
                     p.text(area.center(), egui::Align2::CENTER_CENTER, "ERROR", egui::FontId::proportional(12.0), Color32::from_rgb(220, 30, 60));
                 }
                 _ => {
-                    p.text(area.center(), egui::Align2::CENTER_CENTER, "…", egui::FontId::proportional(16.0), sai_ui::DIM);
+                    p.text(area.center(), egui::Align2::CENTER_CENTER, "…", egui::FontId::proportional(16.0), sai_ui::dim());
                 }
             }
         }
-        let galley = ui.painter().layout(it.name.clone(), egui::FontId::proportional(12.0), sai_ui::INK, CELL.x - 8.0);
+        let galley = ui.painter().layout(it.name.clone(), egui::FontId::proportional(12.0), sai_ui::ink(), CELL.x - 8.0);
         let text_pos = Pos2::new(rect.center().x - galley.size().x / 2.0, area.bottom() + 6.0);
-        ui.painter().with_clip_rect(rect).galley(text_pos, galley, sai_ui::INK);
+        ui.painter().with_clip_rect(rect).galley(text_pos, galley, sai_ui::ink());
         let resp = resp.on_hover_text(it.name.clone());
         self.item_input(&resp, i)
     }

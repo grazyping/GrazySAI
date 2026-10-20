@@ -820,3 +820,4 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, with layers)
 Нет выделения = No selection
 Отдельные панели = Separate User Interface Panel
 файл повреждён = the file is damaged
+Тёмная тема = Dark theme

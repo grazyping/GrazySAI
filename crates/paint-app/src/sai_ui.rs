@@ -5,37 +5,62 @@
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 use std::f32::consts::{PI, TAU};
 
-pub const PANEL: Color32 = Color32::from_gray(240);
-pub const FIELD: Color32 = Color32::from_gray(176);
-pub const BORDER: Color32 = Color32::from_gray(160);
-pub const SELECT_BG: Color32 = Color32::from_rgb(220, 220, 250);
-pub const SELECT_EDGE: Color32 = Color32::from_rgb(140, 140, 220);
-pub const HEADER: Color32 = Color32::from_rgb(160, 70, 30);
-pub const INK: Color32 = Color32::from_gray(20);
-pub const DIM: Color32 = Color32::from_gray(160);
+static DARK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Тёмная тема интерфейса (холст и цвета рисунка не меняются).
+pub fn set_dark(on: bool) {
+    DARK.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn is_dark() -> bool {
+    DARK.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Серый интерфейса в текущей теме: в светлой — как есть, в тёмной — зеркально в тёмный
+/// диапазон (белое поле 32, панель 43, рамка 102, текст 206), разница оттенков сохраняется.
+pub fn gray(g: u8) -> Color32 {
+    if is_dark() {
+        Color32::from_gray((32.0 + f32::from(255 - g) * 0.74).round() as u8)
+    } else {
+        Color32::from_gray(g)
+    }
+}
+
+fn pick(light: Color32, dark: Color32) -> Color32 {
+    if is_dark() { dark } else { light }
+}
+
+pub fn panel() -> Color32 { gray(240) }
+pub fn field() -> Color32 { gray(176) }
+pub fn border() -> Color32 { gray(160) }
+pub fn select_bg() -> Color32 { pick(Color32::from_rgb(220, 220, 250), Color32::from_rgb(58, 62, 108)) }
+pub fn select_edge() -> Color32 { pick(Color32::from_rgb(140, 140, 220), Color32::from_rgb(120, 128, 220)) }
+pub fn header() -> Color32 { pick(Color32::from_rgb(160, 70, 30), Color32::from_rgb(232, 150, 100)) }
+pub fn ink() -> Color32 { gray(20) }
+pub fn dim() -> Color32 { pick(Color32::from_gray(160), Color32::from_gray(128)) }
 
 /// Оформление: светлая тема, мелкий шрифт, плотные отступы.
 pub fn apply_style(ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
-    style.visuals = egui::Visuals::light();
+    style.visuals = if is_dark() { egui::Visuals::dark() } else { egui::Visuals::light() };
     let v = &mut style.visuals;
-    v.panel_fill = PANEL;
-    v.window_fill = PANEL;
-    v.extreme_bg_color = Color32::WHITE;
-    v.faint_bg_color = Color32::from_gray(232);
-    v.selection.bg_fill = SELECT_BG;
-    v.selection.stroke = Stroke::new(1.0_f32, SELECT_EDGE);
-    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, Color32::from_gray(200));
-    v.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, INK);
-    v.widgets.inactive.bg_fill = Color32::from_gray(232);
-    v.widgets.inactive.weak_bg_fill = Color32::from_gray(232);
-    v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, BORDER);
-    v.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, INK);
-    v.widgets.hovered.bg_fill = Color32::from_gray(222);
-    v.widgets.hovered.weak_bg_fill = Color32::from_gray(222);
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, SELECT_EDGE);
-    v.widgets.active.bg_fill = SELECT_BG;
-    v.widgets.active.weak_bg_fill = SELECT_BG;
+    v.panel_fill = panel();
+    v.window_fill = panel();
+    v.extreme_bg_color = gray(255);
+    v.faint_bg_color = gray(232);
+    v.selection.bg_fill = select_bg();
+    v.selection.stroke = Stroke::new(1.0_f32, select_edge());
+    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, gray(200));
+    v.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, ink());
+    v.widgets.inactive.bg_fill = gray(232);
+    v.widgets.inactive.weak_bg_fill = gray(232);
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, border());
+    v.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, ink());
+    v.widgets.hovered.bg_fill = gray(222);
+    v.widgets.hovered.weak_bg_fill = gray(222);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, select_edge());
+    v.widgets.active.bg_fill = select_bg();
+    v.widgets.active.weak_bg_fill = select_bg();
     for w in [
         &mut v.widgets.noninteractive,
         &mut v.widgets.inactive,
@@ -100,25 +125,25 @@ pub fn bar(
         }
     }
     let p = ui.painter();
-    p.rect_filled(rect, 0.0, Color32::WHITE);
+    p.rect_filled(rect, 0.0, gray(255));
     let t = ((*value - min) / (max - min)).clamp(0.0, 1.0);
     let fill = Rect::from_min_size(rect.min, Vec2::new(rect.width() * t, rect.height()));
     p.rect_filled(
         fill,
         0.0,
         if enabled {
-            Color32::from_gray(205)
+            gray(205)
         } else {
-            Color32::from_gray(235)
+            gray(235)
         },
     );
-    p.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, BORDER));
+    p.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, border()));
     p.text(
         rect.right_center() - Vec2::new(4.0, 0.0),
         egui::Align2::RIGHT_CENTER,
         text,
         egui::FontId::proportional(12.0),
-        if enabled { INK } else { DIM },
+        if enabled { ink() } else { dim() },
     );
     response
 }
@@ -144,18 +169,18 @@ pub fn nav_slider(ui: &mut Ui, label: &str, value: &mut f32, min: f32, max: f32,
         }
     }
     let p = ui.painter();
-    let ink = if ui.is_enabled() { INK } else { DIM };
+    let ink = if ui.is_enabled() { ink() } else { dim() };
     let top = rect.top() + 7.0;
     let value_w = text_w(p, &text, 12.0) + 4.0;
     p.text(Pos2::new(rect.right() - 2.0, top), egui::Align2::RIGHT_CENTER, &text, egui::FontId::proportional(12.0), ink);
     fit_text(p, Pos2::new(rect.left() + 2.0, top), egui::Align2::LEFT_CENTER, label, rect.width() - value_w - 6.0, 12.0, ink);
     let y = rect.top() + 18.0;
-    p.line_segment([Pos2::new(track.min, y), Pos2::new(track.max, y)], Stroke::new(1.0_f32, Color32::from_gray(150)));
-    p.line_segment([Pos2::new(track.min, y + 1.0), Pos2::new(track.max, y + 1.0)], Stroke::new(1.0_f32, Color32::WHITE));
+    p.line_segment([Pos2::new(track.min, y), Pos2::new(track.max, y)], Stroke::new(1.0_f32, gray(150)));
+    p.line_segment([Pos2::new(track.min, y + 1.0), Pos2::new(track.max, y + 1.0)], Stroke::new(1.0_f32, gray(255)));
     let t = ((*value - min) / (max - min)).clamp(0.0, 1.0);
     let x = (track.min + t * track.span()).round() + 0.5;
     let tri = vec![Pos2::new(x, y - 1.0), Pos2::new(x + 4.5, y + 6.0), Pos2::new(x - 4.5, y + 6.0)];
-    let fill = if response.dragged() || response.hovered() { Color32::from_gray(225) } else { Color32::WHITE };
+    let fill = if response.dragged() || response.hovered() { gray(225) } else { gray(255) };
     p.add(egui::Shape::convex_polygon(tri, fill, Stroke::new(1.0_f32, ink)));
     response
 }
@@ -165,7 +190,7 @@ pub fn nav_slider(ui: &mut Ui, label: &str, value: &mut f32, min: f32, max: f32,
 pub fn row(ui: &mut Ui, label: &str, label_w: f32, enabled: bool, add: impl FnOnce(&mut Ui)) {
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(Vec2::new(label_w, 16.0), Sense::hover());
-        fit_text(ui.painter(), r.left_center(), egui::Align2::LEFT_CENTER, label, label_w - 3.0, 12.0, if enabled { INK } else { DIM });
+        fit_text(ui.painter(), r.left_center(), egui::Align2::LEFT_CENTER, label, label_w - 3.0, 12.0, if enabled { ink() } else { dim() });
         ui.add_enabled_ui(enabled, add);
     });
 }
@@ -178,7 +203,7 @@ pub fn label_w(ui: &Ui, min: f32, labels: &[&str]) -> f32 {
 }
 
 fn text_w(p: &Painter, text: &str, size: f32) -> f32 {
-    p.layout_no_wrap(text.to_string(), egui::FontId::proportional(size), INK).size().x
+    p.layout_no_wrap(text.to_string(), egui::FontId::proportional(size), ink()).size().x
 }
 
 /// Текст не шире `max_w`: сначала мельче (до 3/4 размера), потом с многоточием.
@@ -223,17 +248,17 @@ pub fn section(ui: &mut Ui, id: &str, title: &str) -> bool {
             c + Vec2::new(-2.5, 4.0),
         ]
     };
-    p.add(Shape::convex_polygon(tri, HEADER, Stroke::NONE));
+    p.add(Shape::convex_polygon(tri, header(), Stroke::NONE));
     p.text(
         rect.left_center() + Vec2::new(14.0, 0.0),
         egui::Align2::LEFT_CENTER,
         title,
         egui::FontId::proportional(12.0),
-        HEADER,
+        header(),
     );
     p.line_segment(
         [rect.left_bottom(), rect.right_bottom()],
-        Stroke::new(1.0_f32, Color32::from_gray(215)),
+        Stroke::new(1.0_f32, gray(215)),
     );
     open
 }
@@ -257,12 +282,12 @@ pub fn icon_button(
     );
     let p = ui.painter();
     if selected {
-        p.rect_filled(rect, 0.0, SELECT_BG);
-        p.rect_stroke(rect.shrink(0.5), 0.0, Stroke::new(1.0_f32, SELECT_EDGE));
+        p.rect_filled(rect, 0.0, select_bg());
+        p.rect_stroke(rect.shrink(0.5), 0.0, Stroke::new(1.0_f32, select_edge()));
     } else if enabled && response.hovered() {
-        p.rect_filled(rect, 0.0, Color32::from_gray(225));
+        p.rect_filled(rect, 0.0, gray(225));
     }
-    draw(p, rect.shrink(3.0), if enabled { INK } else { DIM });
+    draw(p, rect.shrink(3.0), if enabled { ink() } else { dim() });
     response.on_hover_text(tip)
 }
 
@@ -640,7 +665,7 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
                                 Vec2::splat(h),
                             ),
                             0.0,
-                            Color32::from_gray(190),
+                            gray(190),
                         );
                     }
                 }
@@ -735,7 +760,7 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
                     ctr + Vec2::new(k * 0.6, k * 0.0),
                     ctr + Vec2::new(-k * 0.2, k * 0.9),
                 ],
-                Color32::from_gray(150),
+                gray(150),
                 Stroke::new(1.0_f32, c),
             ));
         }
@@ -843,7 +868,7 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
                 }
                 "sel_sub" => {
                     p.rect_filled(a, 0.0, fill);
-                    p.rect_filled(a.intersect(b), 0.0, Color32::WHITE);
+                    p.rect_filled(a.intersect(b), 0.0, gray(255));
                 }
                 _ => {
                     p.rect_filled(a.intersect(b), 0.0, fill);
@@ -1069,7 +1094,7 @@ pub fn channel_slider(ui: &mut Ui, label: &str, value: &mut f32, max: f32, color
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         let (lr, _) = ui.allocate_exact_size(Vec2::new(12.0, 14.0), Sense::hover());
-        ui.painter().text(lr.left_center(), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(11.0), INK);
+        ui.painter().text(lr.left_center(), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(11.0), ink());
         let w = (ui.available_width() - 34.0).max(40.0);
         let (rect, response) = ui.allocate_exact_size(Vec2::new(w, 12.0), Sense::click_and_drag());
         if let Some(pos) = response.interact_pointer_pos() {
@@ -1103,12 +1128,12 @@ pub fn channel_slider(ui: &mut Ui, label: &str, value: &mut f32, max: f32, color
             }
         }
         p.add(Shape::mesh(mesh));
-        p.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, BORDER));
+        p.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, border()));
         let x = rect.left() + (*value / max).clamp(0.0, 1.0) * rect.width();
         p.line_segment([Pos2::new(x, rect.top() - 2.0), Pos2::new(x, rect.bottom() + 2.0)], Stroke::new(3.0_f32, Color32::WHITE));
-        p.line_segment([Pos2::new(x, rect.top() - 2.0), Pos2::new(x, rect.bottom() + 2.0)], Stroke::new(1.0_f32, INK));
+        p.line_segment([Pos2::new(x, rect.top() - 2.0), Pos2::new(x, rect.bottom() + 2.0)], Stroke::new(1.0_f32, ink()));
         let (nr, _) = ui.allocate_exact_size(Vec2::new(26.0, 14.0), Sense::hover());
-        ui.painter().text(nr.right_center(), egui::Align2::RIGHT_CENTER, format!("{}", value.round() as i32), egui::FontId::proportional(11.0), INK);
+        ui.painter().text(nr.right_center(), egui::Align2::RIGHT_CENTER, format!("{}", value.round() as i32), egui::FontId::proportional(11.0), ink());
     });
     changed
 }
@@ -1178,9 +1203,9 @@ pub fn mixer_row(ui: &mut Ui, ends: &mut [Color32; 2], pos: &mut Option<f32>, cu
         }
     }
     p.add(Shape::mesh(mesh));
-    p.line_segment([mid.left_top(), mid.left_bottom()], Stroke::new(1.0_f32, BORDER));
-    p.line_segment([mid.right_top(), mid.right_bottom()], Stroke::new(1.0_f32, BORDER));
-    p.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, BORDER));
+    p.line_segment([mid.left_top(), mid.left_bottom()], Stroke::new(1.0_f32, border()));
+    p.line_segment([mid.right_top(), mid.right_bottom()], Stroke::new(1.0_f32, border()));
+    p.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, border()));
     if let Some(t) = *pos {
         let c = Pos2::new(mid.left() + t * mid.width(), mid.center().y);
         p.circle_stroke(c, 4.0, Stroke::new(2.0_f32, Color32::WHITE));
@@ -1204,7 +1229,7 @@ pub fn swatches(ui: &mut Ui, cells: &[Option<Color32>], selected: &mut usize, la
     let cols = ((ui.available_width() - 2.0) / cell).floor().max(1.0) as usize;
     let rows = cells.len().div_ceil(cols);
     let mut action = None;
-    egui::Frame::none().stroke(Stroke::new(1.0_f32, BORDER)).inner_margin(1.0).show(ui, |ui| {
+    egui::Frame::none().stroke(Stroke::new(1.0_f32, border())).inner_margin(1.0).show(ui, |ui| {
         egui::ScrollArea::vertical().id_salt("swatches").max_height(cell * 2.0).min_scrolled_height(cell * 2.0).show(ui, |ui| {
             let (rect, _) = ui.allocate_exact_size(Vec2::new(cols as f32 * cell, rows as f32 * cell), Sense::hover());
             for (i, c) in cells.iter().enumerate() {
@@ -1221,7 +1246,7 @@ pub fn swatches(ui: &mut Ui, cells: &[Option<Color32>], selected: &mut usize, la
                     None => checker(p, r, cell / 2.0),
                 }
                 if i == *selected {
-                    p.rect_stroke(r.shrink(0.5), 0.0, Stroke::new(1.0_f32, INK));
+                    p.rect_stroke(r.shrink(0.5), 0.0, Stroke::new(1.0_f32, ink()));
                 }
                 if resp.clicked() {
                     *selected = i;

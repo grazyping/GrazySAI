@@ -1346,6 +1346,8 @@ struct PaintApp {
     update: update::Shared,
     show_update: bool,
     check_updates: bool,
+    /// Тёмная тема интерфейса.
+    dark_theme: bool,
 }
 
 impl PaintApp {
@@ -1514,6 +1516,7 @@ impl PaintApp {
             update: std::sync::Arc::new(std::sync::Mutex::new(update::State::Idle)),
             show_update: false,
             check_updates: true,
+            dark_theme: false,
         };
         app.load_settings();
         app.recovery_found = recovery_files().filter(|(f, _)| f.exists()).map(|(f, info)| {
@@ -1727,6 +1730,8 @@ app.open_canvas_dialog(d == "resolution")
             }
         }
         s.read_bool("check_updates", &mut self.check_updates);
+        s.read_bool("dark_theme", &mut self.dark_theme);
+        sai_ui::set_dark(self.dark_theme);
         if let Some(v) = s.bool("key_hints") {
             keys::set_hints(v);
         }
@@ -1936,6 +1941,7 @@ app.open_canvas_dialog(d == "resolution")
         s.set("gradient_reverse", self.grad_opts.reverse);
         s.set("gradient_s_curve", self.grad_opts.s_curve);
         s.set("check_updates", self.check_updates as u8);
+        s.set("dark_theme", self.dark_theme as u8);
         for (a, id, _, _) in keys::ALL {
             let v = self.keymap.get(&a).copied().flatten().map_or_else(|| "none".to_string(), |b| b.text());
             s.set(&format!("key.{id}"), v);
@@ -2498,7 +2504,7 @@ app.open_canvas_dialog(d == "resolution")
         sai_ui::row(ui, tr("Цвет"), lw, true, |ui| {
             let (r, _) = ui.allocate_exact_size(Vec2::new(32.0, 18.0), egui::Sense::hover());
             ui.painter().rect_filled(r, 0.0, c);
-            ui.painter().rect_stroke(r, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
+            ui.painter().rect_stroke(r, 0.0, egui::Stroke::new(1.0_f32, sai_ui::border()));
         });
         sai_ui::row(ui, tr("Размер"), lw, true, |ui| {
             ch |= ui.add(egui::DragValue::new(&mut self.text_size).range(1.0..=999.0).speed(0.5).suffix(" px")).changed();
@@ -2513,7 +2519,7 @@ app.open_canvas_dialog(d == "resolution")
         let fonts = sai2_text::system_fonts();
         let f = self.font_filter.to_lowercase();
         // список, как у SAI: белый, имена в строку (длинные обрезаются)
-        egui::Frame::none().stroke(egui::Stroke::new(1.0_f32, sai_ui::BORDER)).fill(Color32::WHITE).show(ui, |ui| {
+        egui::Frame::none().stroke(egui::Stroke::new(1.0_f32, sai_ui::border())).fill(sai_ui::gray(255)).show(ui, |ui| {
             egui::ScrollArea::vertical().id_salt("font_list").max_height(240.0).auto_shrink([false, true]).show(ui, |ui| {
                 ui.set_width(w - 4.0);
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
@@ -2571,7 +2577,7 @@ app.open_canvas_dialog(d == "resolution")
                         ui.label(tr("Это последняя версия."));
                     }
                     State::Failed(err, _) => {
-                        ui.colored_label(sai_ui::HEADER, tr("Не получилось:"));
+                        ui.colored_label(sai_ui::header(), tr("Не получилось:"));
                         ui.add(egui::Label::new(egui::RichText::new(err).weak()).wrap());
                     }
                     _ => {}
@@ -5305,6 +5311,13 @@ app.open_canvas_dialog(d == "resolution")
                     s.save();
                 }
                 ui.separator();
+                if ui.checkbox(&mut self.dark_theme, tr("Тёмная тема")).changed() {
+                    sai_ui::set_dark(self.dark_theme);
+                    sai_ui::apply_style(ui.ctx());
+                    let mut st = settings::Settings::load();
+                    st.set("dark_theme", self.dark_theme as u8);
+                    st.save();
+                }
                 // как меню Window в SAI 2017
                 let w = &mut self.win;
                 ui.menu_button(tr("Масштаб интерфейса"), |ui| {
@@ -5395,7 +5408,7 @@ app.open_canvas_dialog(d == "resolution")
                 };
                 if let Some(text) = notice {
                     ui.separator();
-                    let text = egui::RichText::new(format!("⬆ {text}")).color(sai_ui::HEADER);
+                    let text = egui::RichText::new(format!("⬆ {text}")).color(sai_ui::header());
                     if ui.add(egui::Button::new(text).frame(false)).clicked() {
                         self.show_update = true;
                     }
@@ -5796,20 +5809,20 @@ app.open_canvas_dialog(d == "resolution")
             let p = ui.painter();
             let back = Rect::from_min_size(rect.min + Vec2::new(18.0, 20.0), Vec2::splat(26.0));
             p.rect_filled(back, 0.0, self.back);
-            p.rect_stroke(back, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
+            p.rect_stroke(back, 0.0, egui::Stroke::new(1.0_f32, sai_ui::border()));
             let fore = Rect::from_min_size(rect.min + Vec2::new(2.0, 2.0), Vec2::splat(26.0));
             if self.transparent {
                 sai_ui::checker(p, fore, 6.5);
             } else {
                 p.rect_filled(fore, 0.0, self.color());
             }
-            p.rect_stroke(fore, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
+            p.rect_stroke(fore, 0.0, egui::Stroke::new(1.0_f32, sai_ui::border()));
             let swap = Rect::from_min_size(rect.min + Vec2::new(34.0, 2.0), Vec2::splat(14.0));
-            sai_ui::glyph(p, swap, sai_ui::INK, "cw");
+            sai_ui::glyph(p, swap, sai_ui::ink(), "cw");
             let clear = Rect::from_min_size(rect.min + Vec2::new(2.0, 34.0), Vec2::splat(12.0));
             sai_ui::checker(p, clear, 3.0);
             if self.transparent {
-                p.rect_stroke(clear.expand(1.0), 0.0, egui::Stroke::new(1.0_f32, sai_ui::SELECT_EDGE));
+                p.rect_stroke(clear.expand(1.0), 0.0, egui::Stroke::new(1.0_f32, sai_ui::select_edge()));
             }
             let at = response.interact_pointer_pos();
             if response.clicked() && at.is_some_and(|q| swap.expand(2.0).contains(q)) {
@@ -5826,8 +5839,8 @@ app.open_canvas_dialog(d == "resolution")
         // ячейке — новый инструмент выбранного вида, по инструменту — копия, удаление, свойства.
         let mut grid_action: Option<(usize, GridAction)> = None;
         egui::Frame::none()
-            .stroke(egui::Stroke::new(1.0_f32, sai_ui::BORDER))
-            .fill(Color32::WHITE)
+            .stroke(egui::Stroke::new(1.0_f32, sai_ui::border()))
+            .fill(sai_ui::gray(255))
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 let w = (ui.available_width() / 4.0).floor();
@@ -6258,16 +6271,16 @@ app.open_canvas_dialog(d == "resolution")
         let mut pick = None;
         let current = brush.size;
         egui::Frame::none()
-            .stroke(egui::Stroke::new(1.0_f32, sai_ui::BORDER))
-            .fill(Color32::WHITE)
+            .stroke(egui::Stroke::new(1.0_f32, sai_ui::border()))
+            .fill(sai_ui::gray(255))
             .show(ui, |ui| {
                 // как у SAI: своя полоса прокрутки сбоку, ячейки её не перекрывают; не меньше 3 рядов
                 ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
                 let v = ui.visuals_mut();
-                v.extreme_bg_color = Color32::from_gray(240);
-                v.widgets.inactive.bg_fill = Color32::from_gray(185);
-                v.widgets.hovered.bg_fill = Color32::from_gray(160);
-                v.widgets.active.bg_fill = Color32::from_gray(140);
+                v.extreme_bg_color = sai_ui::gray(240);
+                v.widgets.inactive.bg_fill = sai_ui::gray(185);
+                v.widgets.hovered.bg_fill = sai_ui::gray(160);
+                v.widgets.active.bg_fill = sai_ui::gray(140);
                 egui::ScrollArea::vertical()
                     .id_salt("size_grid")
                     .auto_shrink([false, false])
@@ -6396,9 +6409,9 @@ app.open_canvas_dialog(d == "resolution")
                 rect,
                 0.0,
                 if selected {
-                    sai_ui::SELECT_BG
+                    sai_ui::select_bg()
                 } else {
-                    Color32::WHITE
+                    sai_ui::gray(255)
                 },
             );
             p.rect_stroke(
@@ -6407,39 +6420,39 @@ app.open_canvas_dialog(d == "resolution")
                 egui::Stroke::new(
                     1.0_f32,
                     if selected {
-                        sai_ui::SELECT_EDGE
+                        sai_ui::select_edge()
                     } else {
-                        Color32::from_gray(200)
+                        sai_ui::gray(200)
                     },
                 ),
             );
             let x0 = rect.left() + 3.0 + depth as f32 * 10.0;
             let eye = Rect::from_min_size(Pos2::new(x0, rect.top() + 3.0), Vec2::new(18.0, 17.0));
-            p.rect_stroke(eye, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
+            p.rect_stroke(eye, 0.0, egui::Stroke::new(1.0_f32, sai_ui::border()));
             if visible {
-                sai_ui::glyph(p, eye.shrink(2.0), sai_ui::INK, "eye");
+                sai_ui::glyph(p, eye.shrink(2.0), sai_ui::ink(), "eye");
             }
             if is_folder && self.doc.layer(path).is_some_and(|l| l.marked) {
                 // отметка папки — уголок в окошке глаза
                 let c = eye.right_top();
-                p.add(egui::Shape::convex_polygon(vec![c, c + Vec2::new(0.0, 7.0), c + Vec2::new(-7.0, 0.0)], sai_ui::SELECT_EDGE, egui::Stroke::NONE));
+                p.add(egui::Shape::convex_polygon(vec![c, c + Vec2::new(0.0, 7.0), c + Vec2::new(-7.0, 0.0)], sai_ui::select_edge(), egui::Stroke::NONE));
             }
             let mark = Rect::from_min_size(Pos2::new(x0, rect.top() + 22.0), Vec2::new(18.0, 17.0));
-            p.rect_stroke(mark, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
+            p.rect_stroke(mark, 0.0, egui::Stroke::new(1.0_f32, sai_ui::border()));
             if selected && !is_folder {
-                sai_ui::glyph(p, mark.shrink(3.0), sai_ui::INK, "pen");
+                sai_ui::glyph(p, mark.shrink(3.0), sai_ui::ink(), "pen");
             }
             let thumb =
                 Rect::from_min_size(Pos2::new(x0 + 22.0, rect.top() + 3.0), Vec2::splat(36.0));
             if is_folder {
-                sai_ui::glyph(p, thumb.shrink(6.0), Color32::from_gray(90), "new_folder");
+                sai_ui::glyph(p, thumb.shrink(6.0), sai_ui::gray(90), "new_folder");
                 let arrow = if open { "▾" } else { "▸" };
                 p.text(
                     thumb.left_bottom() + Vec2::new(2.0, -2.0),
                     egui::Align2::LEFT_BOTTOM,
                     arrow,
                     egui::FontId::proportional(12.0),
-                    sai_ui::INK,
+                    sai_ui::ink(),
                 );
             } else {
                 p.rect_filled(thumb, 0.0, Color32::WHITE);
@@ -6457,7 +6470,7 @@ app.open_canvas_dialog(d == "resolution")
                 p.rect_stroke(
                     thumb,
                     0.0,
-                    egui::Stroke::new(1.0_f32, Color32::from_gray(190)),
+                    egui::Stroke::new(1.0_f32, sai_ui::gray(190)),
                 );
             }
             // маска — вторая миниатюра справа от первой
@@ -6475,7 +6488,7 @@ app.open_canvas_dialog(d == "resolution")
                 if let Some(t) = self.thumbs.get(&key) {
                     ui.painter().image(t.id(), mt, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
                 }
-                ui.painter().rect_stroke(mt, 0.0, egui::Stroke::new(1.0_f32, Color32::from_gray(190)));
+                ui.painter().rect_stroke(mt, 0.0, egui::Stroke::new(1.0_f32, sai_ui::gray(190)));
                 mt
             } else {
                 thumb
@@ -6496,21 +6509,21 @@ app.open_canvas_dialog(d == "resolution")
                 egui::Align2::LEFT_TOP,
                 &name,
                 egui::FontId::proportional(12.0),
-                sai_ui::INK,
+                sai_ui::ink(),
             );
             p.text(
                 Pos2::new(tx, rect.top() + 18.0),
                 egui::Align2::LEFT_TOP,
                 mode,
                 egui::FontId::proportional(10.0),
-                sai_ui::INK,
+                sai_ui::ink(),
             );
             p.text(
                 Pos2::new(tx, rect.top() + 29.0),
                 egui::Align2::LEFT_TOP,
                 &opacity,
                 egui::FontId::proportional(10.0),
-                sai_ui::INK,
+                sai_ui::ink(),
             );
             if response.clicked() {
                 let at = response.interact_pointer_pos().unwrap_or_default();
@@ -6544,7 +6557,7 @@ app.open_canvas_dialog(d == "resolution")
             }
             if selected && has_mask {
                 let active = if self.mask_edit { thumb } else { layer_thumb };
-                ui.painter().rect_stroke(active.expand(1.0), 0.0, egui::Stroke::new(2.0_f32, sai_ui::SELECT_EDGE));
+                ui.painter().rect_stroke(active.expand(1.0), 0.0, egui::Stroke::new(2.0_f32, sai_ui::select_edge()));
             }
             if response.drag_started() {
                 let at = response.interact_pointer_pos().unwrap_or_default();
@@ -6557,7 +6570,7 @@ app.open_canvas_dialog(d == "resolution")
                 let p = ui.painter();
                 p.rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(236, 236, 240, 190));
                 if self.layer_drag.as_ref().is_some_and(|d| d.path == *path) {
-                    sai_ui::dashed_rect(p, rect.shrink(1.0), egui::Stroke::new(1.0_f32, sai_ui::SELECT_EDGE));
+                    sai_ui::dashed_rect(p, rect.shrink(1.0), egui::Stroke::new(1.0_f32, sai_ui::select_edge()));
                 }
             }
             if response.double_clicked() && is_folder {
@@ -6581,7 +6594,7 @@ app.open_canvas_dialog(d == "resolution")
             egui::Sense::click_and_drag(),
         );
         let p = ui.painter_at(rect);
-        p.rect_filled(rect, 0.0, Color32::WHITE);
+        p.rect_filled(rect, 0.0, sai_ui::gray(255));
         let (w, h) = (self.doc.width as f32, self.doc.height as f32);
         let k = ((rect.width() - 6.0) / w).min((rect.height() - 6.0) / h);
         let origin = rect.center() - Vec2::new(w, h) * k / 2.0;
@@ -6607,7 +6620,7 @@ app.open_canvas_dialog(d == "resolution")
         p.rect_stroke(
             Rect::from_min_size(origin, Vec2::new(w, h) * k),
             0.0,
-            egui::Stroke::new(1.0_f32, Color32::from_gray(150)),
+            egui::Stroke::new(1.0_f32, sai_ui::gray(150)),
         );
         if self.view.is_positive() {
             let seen =
@@ -6624,7 +6637,7 @@ app.open_canvas_dialog(d == "resolution")
                 self.offset = c - self.view.size() / self.zoom / 2.0;
             }
         }
-        p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
+        p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::border()));
     }
 
     fn right_panel(&mut self, ui: &mut egui::Ui) {
@@ -6831,8 +6844,8 @@ app.open_canvas_dialog(d == "resolution")
             }
         });
         egui::Frame::none()
-            .fill(sai_ui::FIELD)
-            .stroke(egui::Stroke::new(1.0_f32, sai_ui::BORDER))
+            .fill(sai_ui::field())
+            .stroke(egui::Stroke::new(1.0_f32, sai_ui::border()))
             .inner_margin(2.0)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical()
@@ -6928,7 +6941,7 @@ app.open_canvas_dialog(d == "resolution")
                 }
                 Some((_, _, DropMark::Into(r))) => {
                     let p = ui.painter();
-                    p.rect_filled(*r, 0.0, sai_ui::SELECT_BG.gamma_multiply(0.35));
+                    p.rect_filled(*r, 0.0, sai_ui::select_bg().gamma_multiply(0.35));
                     p.rect_stroke(r.shrink(1.0), 2.0, egui::Stroke::new(2.0_f32, DROP_INK));
                 }
                 None => {}
@@ -6969,7 +6982,7 @@ app.open_canvas_dialog(d == "resolution")
         let Some(d) = &self.layer_drag else { return };
         let Some(layer) = self.doc.layer(&d.path) else { return };
         let font = egui::FontId::proportional(12.0);
-        let name_w = ui.fonts(|f| f.layout_no_wrap(layer.name.clone(), font.clone(), sai_ui::INK).size().x);
+        let name_w = ui.fonts(|f| f.layout_no_wrap(layer.name.clone(), font.clone(), sai_ui::ink()).size().x);
         let w = (24.0 + 6.0 + name_w + 8.0).min(d.width);
         let rect = Rect::from_min_size(at + Vec2::new(14.0, 12.0), Vec2::new(w, 28.0));
         let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("layer_ghost")));
@@ -6978,16 +6991,16 @@ app.open_canvas_dialog(d == "resolution")
         p.rect_stroke(rect.shrink(0.5), 3.0, egui::Stroke::new(1.5_f32, DROP_INK));
         let thumb = Rect::from_min_size(rect.min + Vec2::new(3.0, 2.0), Vec2::splat(24.0));
         if layer.children.is_some() {
-            sai_ui::glyph(&p, thumb.shrink(3.0), Color32::from_gray(90), "new_folder");
+            sai_ui::glyph(&p, thumb.shrink(3.0), sai_ui::gray(90), "new_folder");
         } else {
             p.rect_filled(thumb, 0.0, Color32::WHITE);
             if let Some(t) = self.thumbs.get(d.path.as_slice()) {
                 p.image(t.id(), thumb, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
             }
-            p.rect_stroke(thumb, 0.0, egui::Stroke::new(1.0_f32, Color32::from_gray(170)));
+            p.rect_stroke(thumb, 0.0, egui::Stroke::new(1.0_f32, sai_ui::gray(170)));
         }
         let clip = Rect::from_min_max(Pos2::new(thumb.right() + 6.0, rect.top()), rect.max - Vec2::new(4.0, 0.0));
-        p.with_clip_rect(clip).text(Pos2::new(clip.left(), rect.center().y), egui::Align2::LEFT_CENTER, &layer.name, font, sai_ui::INK);
+        p.with_clip_rect(clip).text(Pos2::new(clip.left(), rect.center().y), egui::Align2::LEFT_CENTER, &layer.name, font, sai_ui::ink());
     }
 
     /// Эффект выбранного слоя: кайма (ширина, сила) или двухцветный (порог). Как в SAI — только у
@@ -7244,7 +7257,7 @@ app.open_canvas_dialog(d == "resolution")
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         self.view = rect;
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, sai_ui::FIELD);
+        painter.rect_filled(rect, 0.0, sai_ui::field());
         let (w, h) = (self.doc.width as f32, self.doc.height as f32);
         if self.fit_pending && rect.width() > 10.0 {
             self.zoom = (rect.width() / w).min(rect.height() / h).min(1.0) * 0.95;
@@ -8873,14 +8886,14 @@ impl PaintApp {
         if let Some(t) = &self.scratch.tex {
             ui.painter().image(t.id(), rect, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
         }
-        ui.painter().rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
+        ui.painter().rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::border()));
         resp.on_hover_text(tr("Черновик: рисуйте текущей кистью; Alt + щелчок или правая кнопка — взять цвет"));
         // «×» в углу — очистить (рисуется сам: `ui.put` сдвинул бы следующие панели)
         let clear = Rect::from_min_size(rect.right_top() + Vec2::new(-16.0, 2.0), Vec2::splat(14.0));
         let cr = ui.interact(clear, ui.id().with("scratch_clear"), egui::Sense::click()).on_hover_text(tr("Очистить черновик"));
-        ui.painter().rect_filled(clear, 2.0, if cr.hovered() { Color32::from_gray(225) } else { Color32::from_gray(245) });
-        ui.painter().rect_stroke(clear, 2.0, egui::Stroke::new(1.0_f32, sai_ui::BORDER));
-        ui.painter().text(clear.center(), egui::Align2::CENTER_CENTER, "×", egui::FontId::proportional(12.0), sai_ui::INK);
+        ui.painter().rect_filled(clear, 2.0, if cr.hovered() { sai_ui::gray(225) } else { sai_ui::gray(245) });
+        ui.painter().rect_stroke(clear, 2.0, egui::Stroke::new(1.0_f32, sai_ui::border()));
+        ui.painter().text(clear.center(), egui::Align2::CENTER_CENTER, "×", egui::FontId::proportional(12.0), sai_ui::ink());
         if cr.clicked() {
             self.scratch = ScratchPad::new(ppp);
         }
@@ -9820,15 +9833,15 @@ impl eframe::App for PaintApp {
                     let name = if same > 1 { format!("{name} ({})", self.views[..=i].iter().filter(|o| o.canvas == v.canvas).count()) } else { name };
                     let (rect, resp) = ui.allocate_exact_size(Vec2::new(180.0, 18.0), egui::Sense::click());
                     let p = ui.painter();
-                    p.rect_filled(rect, 0.0, if active { sai_ui::SELECT_BG } else { Color32::from_gray(236) });
-                    p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, if active { sai_ui::SELECT_EDGE } else { sai_ui::BORDER }));
+                    p.rect_filled(rect, 0.0, if active { sai_ui::select_bg() } else { sai_ui::gray(236) });
+                    p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, if active { sai_ui::select_edge() } else { sai_ui::border() }));
                     let label = if dirty { format!("{name} *") } else { name };
-                    p.text(rect.left_center() + Vec2::new(6.0, 0.0), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), sai_ui::INK);
-                    p.text(rect.right_center() - Vec2::new(18.0, 0.0), egui::Align2::RIGHT_CENTER, format!("{:.0}%", zoom * self.ppp * 100.0), egui::FontId::proportional(10.0), sai_ui::INK);
+                    p.text(rect.left_center() + Vec2::new(6.0, 0.0), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), sai_ui::ink());
+                    p.text(rect.right_center() - Vec2::new(18.0, 0.0), egui::Align2::RIGHT_CENTER, format!("{:.0}%", zoom * self.ppp * 100.0), egui::FontId::proportional(10.0), sai_ui::ink());
                     // крестик закрытия
                     let x = Rect::from_center_size(rect.right_center() - Vec2::new(8.0, 0.0), Vec2::splat(12.0));
                     let over_x = ui.input(|i| i.pointer.hover_pos()).is_some_and(|h| x.contains(h));
-                    p.text(x.center(), egui::Align2::CENTER_CENTER, "×", egui::FontId::proportional(12.0), if over_x { Color32::from_rgb(200, 40, 40) } else { sai_ui::INK });
+                    p.text(x.center(), egui::Align2::CENTER_CENTER, "×", egui::FontId::proportional(12.0), if over_x { Color32::from_rgb(200, 40, 40) } else { sai_ui::ink() });
                     if resp.clicked() {
                         if over_x {
                             tab_close = Some(i);
@@ -9944,11 +9957,12 @@ fn main() -> eframe::Result {
         "GrazySAI",
         options,
         Box::new(move |cc| {
-            sai_ui::apply_style(&cc.egui_ctx);
             i18n::install_fonts(&cc.egui_ctx);
             let feed = pen::new_feed();
             pen::spawn(feed.clone(), cc.egui_ctx.clone());
             let app = PaintApp::new(path, feed);
+            // после настроек: тема берётся из них
+            sai_ui::apply_style(&cc.egui_ctx);
             update::cleanup();
             // проверка при запуске — только с настройками (не в прогонах проверок) и если не выключена
             let auto = std::env::var("PAINT_UPDATE_CHECK").map_or(settings::dir().is_some(), |v| v != "off");

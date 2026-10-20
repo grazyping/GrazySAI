@@ -819,3 +819,4 @@ OpenRaster (.ora, со слоями) = OpenRaster (.ora, con capas)
 Нет выделения = No hay selección
 Отдельные панели = Paneles separados
 файл повреждён = el archivo está dañado
+Тёмная тема = Tema oscuro

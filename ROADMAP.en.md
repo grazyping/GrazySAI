@@ -151,6 +151,7 @@ Everything people use in PaintTool SAI 2017 for everyday work is there and check
 - [x] Own file viewer with thumbnails, as in SAI (0.9.4)
 
 ### Beyond the plan
+- [x] Dark interface theme: “Window → Dark theme” (the canvas and drawing colors stay as they are)
 - [x] Filters: hue and saturation, brightness and contrast, Gaussian blur — by SAI's rules, compared with live SAI; the other filters do not work in SAI itself
 - [x] Brush, color and stabilizer settings kept between runs
 - [x] Custom shortcuts: “Help → Shortcut Keys…”, 34 actions, SAI's defaults
