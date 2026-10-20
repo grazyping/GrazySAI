@@ -1278,3 +1278,29 @@ fn history_steps_describe_actions() {
     assert_eq!((undo.len(), redo.len()), (1, 1));
     assert_eq!(redo[0].kind, StepKind::NewLayer);
 }
+
+/// Симметрия: штрих с осью посередине холста — сам себе зеркало, и левая половина та же, что у
+/// обычного штриха; у оси покрытие не удваивается.
+#[test]
+fn mirror_stroke_is_symmetric() {
+    use paint_core::Mirror;
+    let (w, h) = (96u32, 64u32);
+    let draw = |mirror: Mirror| {
+        let mut doc = Document::new(w, h);
+        let mut s = Stroke::new(BrushParams { size: 9.0, size_by_pressure: false, ..Default::default() });
+        s.mirror = mirror;
+        line(&mut s, (10.0, 12.0), (40.0, 50.0), 1.0);
+        doc.commit_stroke(0, &s, [0, 0, 0]);
+        doc.flatten()
+    };
+    let plain = draw(Mirror::default());
+    let mirrored = draw(Mirror { x: Some(w as f32 / 2.0), y: None });
+    let px = |img: &[u8], x: u32, y: u32| img[((y * w + x) * 4) as usize];
+    for y in 0..h {
+        for x in 0..w / 2 {
+            assert_eq!(px(&mirrored, x, y), px(&mirrored, w - 1 - x, y), "не зеркально в ({x}, {y})");
+            assert_eq!(px(&mirrored, x, y), px(&plain, x, y), "левая половина изменилась в ({x}, {y})");
+        }
+    }
+    assert!((0..w * h).any(|i| px(&mirrored, i % w, i / w) < 250 && i % w > w / 2));
+}

@@ -1422,6 +1422,8 @@ struct PaintApp {
     show_history: bool,
     /// Пиксельная сетка при увеличении от 800 %.
     pixel_grid: bool,
+    /// Симметрия: 0 — нет, 1 — ось по вертикали (лево ↔ право), 2 — по горизонтали, 3 — обе.
+    symmetry: u8,
 }
 
 impl PaintApp {
@@ -1594,6 +1596,7 @@ impl PaintApp {
             dark_theme: false,
             show_history: false,
             pixel_grid: false,
+            symmetry: 0,
         };
         app.load_settings();
         app.recovery_found = recovery_files().filter(|(f, _)| f.exists()).map(|(f, info)| {
@@ -1814,6 +1817,9 @@ app.open_canvas_dialog(d == "resolution")
         s.read_bool("check_updates", &mut self.check_updates);
         s.read_bool("dark_theme", &mut self.dark_theme);
         s.read_bool("pixel_grid", &mut self.pixel_grid);
+        if let Some(v) = s.f32("symmetry") {
+            self.symmetry = (v as u8).min(3);
+        }
         sai_ui::set_dark(self.dark_theme);
         if let Some(v) = s.bool("key_hints") {
             keys::set_hints(v);
@@ -2035,6 +2041,7 @@ app.open_canvas_dialog(d == "resolution")
         s.set("check_updates", self.check_updates as u8);
         s.set("dark_theme", self.dark_theme as u8);
         s.set("pixel_grid", self.pixel_grid as u8);
+        s.set("symmetry", self.symmetry);
         for (a, id, _, _) in keys::ALL {
             let v = self.keymap.get(&a).copied().flatten().map_or_else(|| "none".to_string(), |b| b.text());
             s.set(&format!("key.{id}"), v);
@@ -2740,6 +2747,12 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     /// Основной цвет из RGB; у серого тон не определён — прежний остаётся.
+    /// Оси симметрии — по середине холста.
+    fn mirror(&self) -> paint_core::Mirror {
+        let (cx, cy) = (self.doc.width as f32 / 2.0, self.doc.height as f32 / 2.0);
+        paint_core::Mirror { x: (self.symmetry & 1 != 0).then_some(cx), y: (self.symmetry & 2 != 0).then_some(cy) }
+    }
+
     /// Цвет мазка — в начало недавних (без повторов).
     fn push_recent(&mut self, c: Color32) {
         self.recent_colors.retain(|&x| x != c);
@@ -3526,6 +3539,7 @@ app.open_canvas_dialog(d == "resolution")
             self.smoother = Stabilizer::with_level(self.stabilizer);
             self.stroke_by_touch = self.touch_down;
             let mut st = Stroke::new(params);
+            st.mirror = self.mirror();
             st.set_grain(self.grain_for(if eraser_end { self.eraser_index() } else { self.brush }));
             st.add_point(self.smoother.push(p));
             let keys = self.doc.mask_stroke_preview(&self.selected.clone(), &orig.hide, &st.mask, target);
@@ -3537,6 +3551,7 @@ app.open_canvas_dialog(d == "resolution")
             // перо и ластик выделения рисуют не в слой, а в выделение
             self.smoother = Stabilizer::with_level(self.stabilizer);
             let mut s = Stroke::new(self.brushes[self.brush].params);
+            s.mirror = self.mirror();
             let q = self.smoother.push(p);
             s.add_point(q);
             self.sel_stroke = Some((s, vec![Vec2::new(q.x, q.y)]));
@@ -3572,6 +3587,7 @@ app.open_canvas_dialog(d == "resolution")
             self.push_recent(c);
         }
         let mut stroke = Stroke::new(params);
+        stroke.mirror = self.mirror();
         stroke.set_grain(self.grain_for(if eraser_end { self.eraser_index() } else { self.brush }));
         // прямая, как в SAI: кнопка «Прямая линия» — весь штрих прямой от точки нажатия;
         // Shift + нажатие — прямая от конца прошлого штриха
@@ -5245,6 +5261,14 @@ app.open_canvas_dialog(d == "resolution")
                     self.toggle_ruler();
                     ui.close_menu();
                 }
+                ui.menu_button(tr("Симметрия"), |ui| {
+                    for (v, name) in [(0u8, tr("Выключена")), (1, tr("Лево ↔ право")), (2, tr("Верх ↔ низ")), (3, tr("Обе оси"))] {
+                        if ui.radio(self.symmetry == v, name).clicked() {
+                            self.symmetry = v;
+                            ui.close_menu();
+                        }
+                    }
+                });
                 ui.separator();
                 for (kind, label) in [
                     (ruler::Kind::Straight, tr("Прямая")),
@@ -7885,6 +7909,14 @@ app.open_canvas_dialog(d == "resolution")
         }
         if self.pixel_grid && shown >= 8.0 {
             draw_pixel_grid(&painter, xf, rect, w, h);
+        }
+        // оси симметрии — пунктиром
+        let axis = egui::Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(60, 140, 230, 200));
+        if self.symmetry & 1 != 0 {
+            painter.extend(egui::Shape::dashed_line(&[xf.to_screen(Vec2::new(w / 2.0, 0.0)), xf.to_screen(Vec2::new(w / 2.0, h))], axis, 6.0, 4.0));
+        }
+        if self.symmetry & 2 != 0 {
+            painter.extend(egui::Shape::dashed_line(&[xf.to_screen(Vec2::new(0.0, h / 2.0)), xf.to_screen(Vec2::new(w, h / 2.0))], axis, 6.0, 4.0));
         }
         self.draw_ruler(&painter, xf, ctrl);
         self.draw_text_box(&painter, xf);

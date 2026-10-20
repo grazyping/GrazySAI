@@ -9,6 +9,30 @@
 use crate::brush::BrushParams;
 use crate::dab::{step_factor, Dab, DabInput};
 
+/// Симметрия штриха: оси x = `x` (отражение слева направо) и/или y = `y` (сверху вниз).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Mirror {
+    pub x: Option<f32>,
+    pub y: Option<f32>,
+}
+
+impl Mirror {
+    /// Точка и её отражения (сама точка — первой).
+    fn images(&self, p: InputPoint) -> Vec<InputPoint> {
+        let mut out = vec![p];
+        if let Some(ax) = self.x {
+            out.push(InputPoint { x: 2.0 * ax - p.x, ..p });
+        }
+        if let Some(ay) = self.y {
+            let n = out.len();
+            for i in 0..n {
+                out.push(InputPoint { y: 2.0 * ay - out[i].y, ..out[i] });
+            }
+        }
+        out
+    }
+}
+
 /// Отпечаток по модели образца.
 #[derive(Clone)]
 enum Shape {
@@ -308,6 +332,8 @@ pub struct InputPoint {
 pub struct Stroke {
     pub params: BrushParams,
     pub mask: MaskMap,
+    /// Симметрия: отпечатки повторяются отражёнными (по умолчанию выключена).
+    pub mirror: Mirror,
     last: Option<InputPoint>,
     /// Двоичное перо: последняя поставленная точка (в координатах «−0,5»), как поле +0x1c0 SAI.
     bin_prev: Option<(f64, f64)>,
@@ -352,6 +378,7 @@ impl Stroke {
             grain_cache: Default::default(),
             level_cache: HashMap::new(),
             hard_mask: MaskMap::new(),
+            mirror: Mirror::default(),
         }
     }
 
@@ -631,13 +658,22 @@ impl Stroke {
             let (ox, oy) = (u * radius, v * radius);
             let hp = InputPoint { x: p.x + ox * cs - oy * sn, y: p.y + ox * sn + oy * cs, ..p };
             let shape = Shape::Sai(hard(self), o);
-            add_to_hard_mask(&mut self.hard_mask, hp.x, hp.y, &shape);
+            let with_grain = self.grain.as_ref().is_some_and(|g| g.texture.is_some());
+            self.emit(hp, shape, density, hair_d, with_grain);
+        }
+    }
+
+    /// Отпечаток — в маску штриха и в очередь; при симметрии — и его отражения (как один штрих,
+    /// пересекающий сам себя: у оси покрытие не удваивается).
+    fn emit(&mut self, p: InputPoint, shape: Shape, density: f32, diameter: f32, with_grain: bool) {
+        for q in self.mirror.images(p) {
+            add_to_hard_mask(&mut self.hard_mask, q.x, q.y, &shape);
             self.dab_count += 1;
-            let grain = if self.grain.as_ref().is_some_and(|g| g.texture.is_some()) { self.dab_grain(hp, hair_d, shape.outer() + 1.0) } else { None };
+            let grain = if with_grain { self.dab_grain(q, diameter, shape.outer() + 1.0) } else { None };
             if self.is_mixing() {
-                self.pending.push(Pending { x: hp.x, y: hp.y, pressure: hp.pressure, shape, grain });
+                self.pending.push(Pending { x: q.x, y: q.y, pressure: q.pressure, shape: shape.clone(), grain });
             } else {
-                self.queued.push(Placed::new(hp, shape, density, grain));
+                self.queued.push(Placed::new(q, shape.clone(), density, grain));
             }
         }
     }
@@ -663,14 +699,8 @@ impl Stroke {
         };
         // маска штриха — сразу: у образца её строят по окну отпечатков вокруг пачки, включая
         // следующие, так что все известные отпечатки уже в ней
-        add_to_hard_mask(&mut self.hard_mask, p.x, p.y, &shape);
-        self.dab_count += 1;
-        let grain = if self.grain.is_some() { self.dab_grain(p, diameter, shape.outer() + 1.0) } else { None };
-        if self.is_mixing() {
-            self.pending.push(Pending { x: p.x, y: p.y, pressure: p.pressure, shape, grain });
-            return;
-        }
-        self.queued.push(Placed::new(p, shape, density, grain));
+        let with_grain = self.grain.is_some();
+        self.emit(p, shape, density, diameter, with_grain);
     }
 
     /// Кладёт отложенные отпечатки в покрытие штриха. Каждая плитка получает свои отпечатки в
