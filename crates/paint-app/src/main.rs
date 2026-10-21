@@ -1001,6 +1001,12 @@ impl BrushTool {
     }
 }
 
+/// Окно параметров команды плагина: плагин, команда, значения полей.
+type PluginAsk = (usize, usize, Vec<(String, f64)>);
+
+/// Пункт меню «Плагины»: подпись, подсказка (имя плагина), плагин, команда.
+type MenuItem = (String, String, usize, usize);
+
 /// Имена файлов форм (`blotmap`), текстур (`brushtex`), щетин (`bristle`) и отпечатков (`tips`).
 type GrainNames = (Vec<String>, Vec<String>, Vec<String>, Vec<String>);
 
@@ -1074,7 +1080,7 @@ struct PaintApp {
     plugin_errors: Vec<String>,
     plugins_stamp: Option<std::time::SystemTime>,
     /// Окно параметров команды: плагин, команда, значения.
-    plugin_ask: Option<(usize, usize, Vec<(String, f64)>)>,
+    plugin_ask: Option<PluginAsk>,
     /// Окно установки: проверенный пакет и путь к нему.
     plugin_install: Option<(paint_plugin::Plugin, PathBuf)>,
     show_plugins: bool,
@@ -2643,7 +2649,7 @@ app.open_canvas_dialog(d == "resolution")
     fn plugins_menu(&mut self, ui: &mut egui::Ui) {
         let mut run: Option<(usize, usize)> = None;
         // команды разных плагинов с одним подменю — вместе: «Подменю» → [(подпись, плагин, команда)]
-        let mut groups: Vec<(String, Vec<(String, String, usize, usize)>)> = Vec::new();
+        let mut groups: Vec<(String, Vec<MenuItem>)> = Vec::new();
         for (pi, inst) in self.plugins.iter().enumerate() {
             for (ci, c) in inst.plugin.commands.iter().enumerate() {
                 let parts: Vec<&str> = c.menu.split('/').map(str::trim).filter(|p| !p.is_empty()).collect();
@@ -2660,7 +2666,7 @@ app.open_canvas_dialog(d == "resolution")
                 }
             }
         }
-        let item = |ui: &mut egui::Ui, (label, hint, pi, ci): &(String, String, usize, usize), run: &mut Option<(usize, usize)>| {
+        let item = |ui: &mut egui::Ui, (label, hint, pi, ci): &MenuItem, run: &mut Option<(usize, usize)>| {
             if ui.button(label).on_hover_text(hint).clicked() {
                 *run = Some((*pi, *ci));
                 ui.close_menu();
@@ -2746,7 +2752,7 @@ app.open_canvas_dialog(d == "resolution")
 
     /// Окна плагинов: параметры команды, установка, управление.
     fn plugin_windows(&mut self, ctx: &egui::Context) {
-        let mut go: Option<(usize, usize, Vec<(String, f64)>)> = None;
+        let mut go: Option<PluginAsk> = None;
         let mut close_ask = false;
         if let Some((pi, ci, values)) = self.plugin_ask.as_mut() {
             let c = self.plugins.get(*pi).and_then(|p| p.plugin.commands.get(*ci)).cloned();
