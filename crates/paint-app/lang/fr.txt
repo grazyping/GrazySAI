@@ -907,3 +907,15 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Картинки набора сменяются вразнобой, а не по порядку = Les images du jeu changent au hasard et non dans l’ordre
 Кисть Photoshop не открылась: {0} = Impossible d’ouvrir le pinceau Photoshop : {0}
 Отпечатков из кистей Photoshop: {0}; выбрать — «Форма → Отпечаток» = Pointes issues des pinceaux Photoshop : {0} ; choisissez-en une dans « Forme → Pointe »
+Все инструменты сетки — одним файлом .gsbrushes = Tous les outils de la grille dans un fichier .gsbrushes
+В файле нет кистей GrazySAI = Le fichier ne contient aucun pinceau GrazySAI
+Кистей добавлено в сетку: {0} = Pinceaux ajoutés à la grille : {0}
+Кисти GrazySAI = Pinceaux GrazySAI
+Кисть GrazySAI = Pinceau GrazySAI
+Кисть не открылась: {0} = Impossible d’ouvrir le pinceau : {0}
+Мои кисти = Mes pinceaux
+Набор кистей GrazySAI = Jeu de pinceaux GrazySAI
+Сохранить кисть = Enregistrer le pinceau
+Сохранить кисть… = Enregistrer le pinceau…
+Сохранить набор кистей = Enregistrer le jeu de pinceaux
+Сохранить набор кистей… = Enregistrer le jeu de pinceaux…

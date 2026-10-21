@@ -908,3 +908,15 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Картинки набора сменяются вразнобой, а не по порядку = The set's pictures change in random order, not in sequence
 Кисть Photoshop не открылась: {0} = Photoshop brush could not be opened: {0}
 Отпечатков из кистей Photoshop: {0}; выбрать — «Форма → Отпечаток» = Tips from Photoshop brushes: {0}; pick one in “Form → Tip”
+Все инструменты сетки — одним файлом .gsbrushes = All grid tools in one .gsbrushes file
+В файле нет кистей GrazySAI = The file has no GrazySAI brushes
+Кистей добавлено в сетку: {0} = Brushes added to the grid: {0}
+Кисти GrazySAI = GrazySAI brushes
+Кисть GrazySAI = GrazySAI brush
+Кисть не открылась: {0} = Brush could not be opened: {0}
+Мои кисти = My brushes
+Набор кистей GrazySAI = GrazySAI brush set
+Сохранить кисть = Save brush
+Сохранить кисть… = Save brush…
+Сохранить набор кистей = Save brush set
+Сохранить набор кистей… = Save brush set…

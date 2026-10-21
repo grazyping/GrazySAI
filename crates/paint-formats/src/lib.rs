@@ -7,6 +7,7 @@ pub mod jssf;
 pub mod krita;
 pub mod linework;
 pub mod ora;
+pub mod pack;
 pub mod palette;
 pub mod preview;
 pub mod psd;

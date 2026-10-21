@@ -22,6 +22,10 @@ pub enum Ask {
     Reference,
     /// Картинка — отпечаток кисти.
     Tip,
+    /// Сохранить инструмент сетки `n` в файл кисти `.gsbrush`.
+    SaveBrush(usize),
+    /// Сохранить все инструменты сетки набором `.gsbrushes`.
+    SaveBrushSet,
 }
 
 pub struct Pending {
@@ -53,6 +57,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
             vec![
                 (tr("Рисунки").to_string(), vec!["sai2", "psd", "psb", "ora", "png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi"]),
                 (tr("Палитры (GIMP, Krita)").to_string(), vec!["gpl", "kpl"]),
+                (tr("Кисти GrazySAI").to_string(), vec!["gsbrush", "gsbrushes"]),
                 (tr("Кисти Clip Studio Paint").to_string(), vec!["sut", "bfps"]),
                 (tr("Кисти Krita и GIMP").to_string(), vec!["kpp", "bundle", "gbr", "gih", "abr"]),
                 (tr("Все файлы").to_string(), vec!["*"]),
@@ -66,6 +71,8 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
             tr("Опорная картинка"),
             vec![(tr("Картинки").to_string(), vec!["png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi"])],
         ),
+        Ask::SaveBrush(_) => (tr("Сохранить кисть"), vec![(tr("Кисть GrazySAI").to_string(), vec!["gsbrush"])]),
+        Ask::SaveBrushSet => (tr("Сохранить набор кистей"), vec![(tr("Набор кистей GrazySAI").to_string(), vec!["gsbrushes"])]),
         Ask::SaveAs => (
             tr("Сохранить как"),
             vec![("SAI 2 (.sai2)".to_string(), vec!["sai2"]), ("OpenRaster (.ora)".to_string(), vec!["ora"]), ("Photoshop (.psd)".to_string(), vec!["psd"]), ("Photoshop PSB (.psb)".to_string(), vec!["psb"])],

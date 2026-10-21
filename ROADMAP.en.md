@@ -219,7 +219,7 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 Anyone may write them, so plugin code runs in a sandbox. Details and measurements:
 `docs/34-brushes-and-plugins.md`.
 
-- [ ] Own brush file `.gsbrush` and set `.gsbrushes`: save and open a grid tool
+- [x] Own brush file `.gsbrush` and set `.gsbrushes`: save and open a grid tool (1.0.29)
 - [ ] Brush dynamics: inputs (pressure, speed, tilt, direction, stroke progress, random) → curve → parameters
 - [ ] GrazySAI Studio workshop: brush editor with a test strip, tip generator, “Export to GrazySAI” with live reload
 - [ ] Luau plugins (sandboxed): menu commands, parameter windows, custom brush dynamics

@@ -394,8 +394,14 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
 | `.psb` | Yes (same as `.psd`) | “Save As” or “Export → PSB”: Photoshop large document, sides up to 300,000 px |
 | `.ora` (OpenRaster — Krita, GIMP, MyPaint) | Yes, with layers and folders | “Save As” or “Export → OpenRaster”: layers, folders, modes, opacity |
 | `.png`, `.jpg`, `.bmp`, `.tga`, `.tiff`, `.webp`, `.qoi` | Yes, as one layer | “File → Export” (flattened image; JPEG at quality 92, WebP lossless) |
+| `.gsbrush`, `.gsbrushes` (own brushes) | Yes: the brushes go to the end of the grid | Right-click a cell → “Save brush…”, “File → Save brush set…” |
 | `.sut`, `.bfps` (Clip Studio Paint brushes) | Yes: the brushes are added at the end of the grid | — |
 | `.kpp`, `.bundle` (Krita brushes), `.gbr`, `.gih` (GIMP brushes), `.abr` (Photoshop brushes) | Yes: Krita brushes go to the end of the grid, GIMP and Photoshop brushes become tips | — |
+
+Own brushes: right-click a grid cell → “Save brush…” (a `.gsbrush` file) or “File → Save brush set…”
+(all grid tools — `.gsbrushes`). The file holds all settings, the image tip, the texture and a sample
+stroke; open it with “File → Open” or by drag and drop — the brushes go to the end of the grid. Blots
+and bristles from the SAI folder travel by name only. File layout: `docs/35-gsbrush-format.md`.
 
 Krita brushes: a `.kpp` preset or a `.bundle` pack open the same way — “File → Open” or drag and drop;
 the brushes go to the end of the grid (all of them from a pack). Carried over: size, opacity and flow,

@@ -907,3 +907,15 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Картинки набора сменяются вразнобой, а не по порядку = Die Bilder des Satzes wechseln zufällig statt der Reihe nach
 Кисть Photoshop не открылась: {0} = Photoshop-Pinsel konnte nicht geöffnet werden: {0}
 Отпечатков из кистей Photoshop: {0}; выбрать — «Форма → Отпечаток» = Spitzen aus Photoshop-Pinseln: {0}; Auswahl unter „Form → Spitze“
+Все инструменты сетки — одним файлом .gsbrushes = Alle Werkzeuge des Rasters in einer .gsbrushes-Datei
+В файле нет кистей GrazySAI = Die Datei enthält keine GrazySAI-Pinsel
+Кистей добавлено в сетку: {0} = Pinsel zum Raster hinzugefügt: {0}
+Кисти GrazySAI = GrazySAI-Pinsel
+Кисть GrazySAI = GrazySAI-Pinsel
+Кисть не открылась: {0} = Pinsel konnte nicht geöffnet werden: {0}
+Мои кисти = Meine Pinsel
+Набор кистей GrazySAI = GrazySAI-Pinselsatz
+Сохранить кисть = Pinsel speichern
+Сохранить кисть… = Pinsel speichern…
+Сохранить набор кистей = Pinselsatz speichern
+Сохранить набор кистей… = Pinselsatz speichern…

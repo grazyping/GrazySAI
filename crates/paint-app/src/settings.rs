@@ -52,15 +52,26 @@ fn file() -> Option<PathBuf> {
 
 impl Settings {
     pub fn load() -> Self {
+        file().and_then(|p| std::fs::read_to_string(p).ok()).map_or_else(Self::default, |t| Self::from_text(&t))
+    }
+
+    /// Из текста `ключ=значение` по строке (строки с `#` в начале — пояснения).
+    pub fn from_text(text: &str) -> Self {
         let mut map = BTreeMap::new();
-        if let Some(text) = file().and_then(|p| std::fs::read_to_string(p).ok()) {
-            for line in text.lines() {
-                if let Some((k, v)) = line.split_once('=') {
-                    map.insert(k.trim().to_string(), v.trim().to_string());
-                }
+        for line in text.lines() {
+            if line.trim_start().starts_with('#') {
+                continue;
+            }
+            if let Some((k, v)) = line.split_once('=') {
+                map.insert(k.trim().to_string(), v.trim().to_string());
             }
         }
         Self { map }
+    }
+
+    /// Текстом `ключ=значение`, по ключам по алфавиту.
+    pub fn to_text(&self) -> String {
+        self.map.iter().map(|(k, v)| format!("{k}={v}\n")).collect()
     }
 
     pub fn save(&self) {
@@ -68,8 +79,7 @@ impl Settings {
         if let Some(d) = path.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        let text: String = self.map.iter().map(|(k, v)| format!("{k}={v}\n")).collect();
-        let _ = paint_core::io::write_atomic(&path, text.as_bytes());
+        let _ = paint_core::io::write_atomic(&path, self.to_text().as_bytes());
     }
 
     pub fn set(&mut self, key: &str, value: impl ToString) {

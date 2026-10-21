@@ -907,3 +907,15 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Картинки набора сменяются вразнобой, а не по порядку = Las imágenes del conjunto cambian al azar, no en orden
 Кисть Photoshop не открылась: {0} = No se pudo abrir el pincel de Photoshop: {0}
 Отпечатков из кистей Photoshop: {0}; выбрать — «Форма → Отпечаток» = Puntas de pinceles de Photoshop: {0}; elija una en «Forma → Punta»
+Все инструменты сетки — одним файлом .gsbrushes = Todas las herramientas de la cuadrícula en un archivo .gsbrushes
+В файле нет кистей GrazySAI = El archivo no tiene pinceles de GrazySAI
+Кистей добавлено в сетку: {0} = Pinceles añadidos a la cuadrícula: {0}
+Кисти GrazySAI = Pinceles de GrazySAI
+Кисть GrazySAI = Pincel de GrazySAI
+Кисть не открылась: {0} = No se pudo abrir el pincel: {0}
+Мои кисти = Mis pinceles
+Набор кистей GrazySAI = Conjunto de pinceles de GrazySAI
+Сохранить кисть = Guardar pincel
+Сохранить кисть… = Guardar pincel…
+Сохранить набор кистей = Guardar conjunto de pinceles
+Сохранить набор кистей… = Guardar conjunto de pinceles…

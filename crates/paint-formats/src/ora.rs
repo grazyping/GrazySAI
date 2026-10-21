@@ -65,7 +65,7 @@ fn crc32(data: &[u8]) -> u32 {
     !data.iter().fold(!0u32, |c, &b| table[((c ^ b as u32) & 0xff) as usize] ^ (c >> 8))
 }
 
-fn zip(entries: &[(String, Vec<u8>)]) -> Vec<u8> {
+pub(crate) fn zip(entries: &[(String, Vec<u8>)]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut central = Vec::new();
     for (name, data) in entries {

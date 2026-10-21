@@ -1091,6 +1091,11 @@ impl BrushTool {
     fn title(&self) -> String {
         self.custom.clone().unwrap_or_else(|| tr(self.name).to_string())
     }
+
+    /// Полное имя: своё или вида («Карандаш», а не «Каранд.» из ячейки).
+    fn full_name(&self) -> String {
+        self.custom.clone().unwrap_or_else(|| tr(self.kind.label()).to_string())
+    }
 }
 
 /// Имена файлов форм (`blotmap`), текстур (`brushtex`), щетин (`bristle`) и отпечатков (`tips`).
@@ -1155,6 +1160,124 @@ impl Default for GrainSettings {
     }
 }
 
+/// Параметры инструмента сетки из настроек (ключи с приставкой `prefix`, например `brush.3.`);
+/// то же пишет файл кисти `.gsbrush`.
+fn read_tool(b: &mut BrushTool, s: &settings::Settings, prefix: &str) {
+    let k = |name: &str| format!("{prefix}{name}");
+    let p = &mut b.params;
+    s.read_f32(&k("size"), &mut p.size);
+    s.read_f32(&k("min_size"), &mut p.min_size);
+    s.read_f32(&k("density"), &mut p.density);
+    s.read_f32(&k("min_density"), &mut p.min_density);
+    s.read_f32(&k("hardness"), &mut p.hardness);
+    s.read_f32(&k("spacing"), &mut p.spacing);
+    s.read_f32(&k("sharpness"), &mut p.sharpness);
+    s.read_f32(&k("amplify"), &mut p.amplify);
+    s.read_bool(&k("size_by_pressure"), &mut p.size_by_pressure);
+    s.read_bool(&k("density_by_pressure"), &mut p.density_by_pressure);
+    s.read_bool(&k("ver1_density"), &mut p.ver1_density);
+    if let Some(m) = p.mix.as_mut() {
+        s.read_f32(&k("blending"), &mut m.blending);
+        s.read_f32(&k("dilution"), &mut m.dilution);
+        s.read_f32(&k("persistence"), &mut m.persistence);
+        s.read_f32(&k("blur_pressure"), &mut m.blur_pressure);
+        s.read_bool(&k("blend_by_pressure"), &mut m.blend_by_pressure);
+    }
+    p.size = p.size.clamp(0.1, 5000.0);
+    let g = &mut b.grain;
+    if let Some(v) = s.str(&k("bristle")) {
+        g.bristle = (!v.is_empty()).then(|| v.to_string());
+    }
+    s.read_f32(&k("hair_size"), &mut g.hair_size);
+    s.read_f32(&k("hair_min"), &mut g.hair_min);
+    s.read_f32(&k("randomize"), &mut g.randomize);
+    if let Some(v) = s.f32(&k("direction")) {
+        g.direction = (v as u8).min(2);
+    }
+    if let Some(v) = s.str(&k("tip")) {
+        g.tip = (!v.is_empty()).then(|| v.to_string());
+    }
+    s.read_f32(&k("tip_angle"), &mut g.tip_angle);
+    s.read_f32(&k("tip_ratio"), &mut g.tip_ratio);
+    g.tip_ratio = g.tip_ratio.clamp(0.01, 1.0);
+    s.read_bool(&k("tip_follow"), &mut g.tip_follow);
+    s.read_bool(&k("tip_random"), &mut g.tip_random);
+    if let Some(v) = s.str(&k("form")) {
+        g.form = (!v.is_empty()).then(|| v.to_string());
+    }
+    s.read_f32(&k("form_strength"), &mut g.form_strength);
+    if let Some(v) = s.f32(&k("form_scale")) {
+        g.form_scale = v.clamp(10.0, 500.0) as u16;
+    }
+    if let Some(v) = s.str(&k("texture")) {
+        g.tex = match v {
+            "" => TexChoice::None,
+            "paper" => TexChoice::Paper,
+            v => TexChoice::File(v.trim_start_matches("file:").to_string()),
+        };
+    }
+    s.read_f32(&k("tex_strength"), &mut g.tex_strength);
+    if let Some(v) = s.f32(&k("tex_scale")) {
+        g.tex_scale = v.clamp(10.0, 500.0) as u16;
+    }
+    s.read_bool(&k("tex_min_density"), &mut g.by_min_density);
+}
+
+/// Параметры инструмента сетки в настройки (обратное к [`read_tool`]).
+fn write_tool(b: &BrushTool, s: &mut settings::Settings, prefix: &str) {
+    let k = |name: &str| format!("{prefix}{name}");
+    let p = &b.params;
+    s.set(&k("size"), p.size);
+    s.set(&k("min_size"), p.min_size);
+    s.set(&k("density"), p.density);
+    s.set(&k("min_density"), p.min_density);
+    s.set(&k("hardness"), p.hardness);
+    s.set(&k("spacing"), p.spacing);
+    s.set(&k("sharpness"), p.sharpness);
+    s.set(&k("amplify"), p.amplify);
+    s.set(&k("size_by_pressure"), p.size_by_pressure as u8);
+    s.set(&k("density_by_pressure"), p.density_by_pressure as u8);
+    s.set(&k("ver1_density"), p.ver1_density as u8);
+    if let Some(m) = &p.mix {
+        s.set(&k("blending"), m.blending);
+        s.set(&k("dilution"), m.dilution);
+        s.set(&k("persistence"), m.persistence);
+        s.set(&k("blur_pressure"), m.blur_pressure);
+        s.set(&k("blend_by_pressure"), m.blend_by_pressure as u8);
+    }
+    let g = &b.grain;
+    s.set(&k("form"), g.form.as_deref().unwrap_or(""));
+    s.set(&k("bristle"), g.bristle.as_deref().unwrap_or(""));
+    s.set(&k("hair_size"), g.hair_size);
+    s.set(&k("hair_min"), g.hair_min);
+    s.set(&k("randomize"), g.randomize);
+    s.set(&k("direction"), g.direction);
+    s.set(&k("tip"), g.tip.as_deref().unwrap_or(""));
+    s.set(&k("tip_angle"), g.tip_angle);
+    s.set(&k("tip_ratio"), g.tip_ratio);
+    s.set(&k("tip_follow"), g.tip_follow as u8);
+    s.set(&k("tip_random"), g.tip_random as u8);
+    s.set(&k("form_strength"), g.form_strength);
+    s.set(&k("form_scale"), g.form_scale);
+    let tex = match &g.tex {
+        TexChoice::None => String::new(),
+        TexChoice::Paper => "paper".to_string(),
+        TexChoice::File(n) => format!("file:{n}"),
+    };
+    s.set(&k("texture"), tex);
+    s.set(&k("tex_strength"), g.tex_strength);
+    s.set(&k("tex_scale"), g.tex_scale);
+    s.set(&k("tex_min_density"), g.by_min_density as u8);
+}
+
+/// Имя файла из названия: буквы, цифры, пробел и `-_().`, остальное — `_`.
+fn safe_name(s: &str) -> String {
+    let n: String = s.chars().take(64).map(|c| if c.is_alphanumeric() || " -_().".contains(c) { c } else { '_' }).collect();
+    // точки и пробелы в конце имени Windows отбрасывает — и «имя..gsbrush» выглядит странно
+    let n = n.trim().trim_end_matches(['.', ' ']);
+    if n.is_empty() { "brush".to_string() } else { n.to_string() }
+}
+
 /// Сетка по умолчанию — как у нового SAI 2017, плюс градиент.
 fn brush_tools() -> Vec<BrushTool> {
     use ToolKind::*;
@@ -1168,6 +1291,8 @@ enum GridAction {
     Duplicate,
     Delete,
     Property,
+    /// Сохранить в файл кисти `.gsbrush`.
+    Save,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1802,64 +1927,7 @@ app.open_canvas_dialog(d == "resolution")
             }
         }
         for (i, b) in self.brushes.iter_mut().enumerate() {
-            let p = &mut b.params;
-            let k = |name: &str| format!("brush.{i}.{name}");
-            s.read_f32(&k("size"), &mut p.size);
-            s.read_f32(&k("min_size"), &mut p.min_size);
-            s.read_f32(&k("density"), &mut p.density);
-            s.read_f32(&k("min_density"), &mut p.min_density);
-            s.read_f32(&k("hardness"), &mut p.hardness);
-            s.read_f32(&k("spacing"), &mut p.spacing);
-            s.read_f32(&k("sharpness"), &mut p.sharpness);
-            s.read_f32(&k("amplify"), &mut p.amplify);
-            s.read_bool(&k("size_by_pressure"), &mut p.size_by_pressure);
-            s.read_bool(&k("density_by_pressure"), &mut p.density_by_pressure);
-            s.read_bool(&k("ver1_density"), &mut p.ver1_density);
-            if let Some(m) = p.mix.as_mut() {
-                s.read_f32(&k("blending"), &mut m.blending);
-                s.read_f32(&k("dilution"), &mut m.dilution);
-                s.read_f32(&k("persistence"), &mut m.persistence);
-                s.read_f32(&k("blur_pressure"), &mut m.blur_pressure);
-                s.read_bool(&k("blend_by_pressure"), &mut m.blend_by_pressure);
-            }
-            p.size = p.size.clamp(0.1, 5000.0);
-            let g = &mut b.grain;
-            if let Some(v) = s.str(&k("bristle")) {
-                g.bristle = (!v.is_empty()).then(|| v.to_string());
-            }
-            s.read_f32(&k("hair_size"), &mut g.hair_size);
-            s.read_f32(&k("hair_min"), &mut g.hair_min);
-            s.read_f32(&k("randomize"), &mut g.randomize);
-            if let Some(v) = s.f32(&k("direction")) {
-                g.direction = (v as u8).min(2);
-            }
-            if let Some(v) = s.str(&k("tip")) {
-                g.tip = (!v.is_empty()).then(|| v.to_string());
-            }
-            s.read_f32(&k("tip_angle"), &mut g.tip_angle);
-            s.read_f32(&k("tip_ratio"), &mut g.tip_ratio);
-            g.tip_ratio = g.tip_ratio.clamp(0.01, 1.0);
-            s.read_bool(&k("tip_follow"), &mut g.tip_follow);
-            s.read_bool(&k("tip_random"), &mut g.tip_random);
-            if let Some(v) = s.str(&k("form")) {
-                g.form = (!v.is_empty()).then(|| v.to_string());
-            }
-            s.read_f32(&k("form_strength"), &mut g.form_strength);
-            if let Some(v) = s.f32(&k("form_scale")) {
-                g.form_scale = v.clamp(10.0, 500.0) as u16;
-            }
-            if let Some(v) = s.str(&k("texture")) {
-                g.tex = match v {
-                    "" => TexChoice::None,
-                    "paper" => TexChoice::Paper,
-                    v => TexChoice::File(v.trim_start_matches("file:").to_string()),
-                };
-            }
-            s.read_f32(&k("tex_strength"), &mut g.tex_strength);
-            if let Some(v) = s.f32(&k("tex_scale")) {
-                g.tex_scale = v.clamp(10.0, 500.0) as u16;
-            }
-            s.read_bool(&k("tex_min_density"), &mut g.by_min_density);
+            read_tool(b, &s, &format!("brush.{i}."));
         }
         if let Some(i) = s.f32("brush").map(|v| v as usize).filter(|&i| i < self.brushes.len()) {
             if std::env::var_os("PAINT_BRUSH").is_none() {
@@ -2028,49 +2096,7 @@ app.open_canvas_dialog(d == "resolution")
             s.set(&format!("tool.{i}.key"), b.key.map_or(String::new(), |k| k.text()));
         }
         for (i, b) in self.brushes.iter().enumerate() {
-            let p = &b.params;
-            let k = |name: &str| format!("brush.{i}.{name}");
-            s.set(&k("size"), p.size);
-            s.set(&k("min_size"), p.min_size);
-            s.set(&k("density"), p.density);
-            s.set(&k("min_density"), p.min_density);
-            s.set(&k("hardness"), p.hardness);
-            s.set(&k("spacing"), p.spacing);
-            s.set(&k("sharpness"), p.sharpness);
-            s.set(&k("amplify"), p.amplify);
-            s.set(&k("size_by_pressure"), p.size_by_pressure as u8);
-            s.set(&k("density_by_pressure"), p.density_by_pressure as u8);
-            s.set(&k("ver1_density"), p.ver1_density as u8);
-            if let Some(m) = &p.mix {
-                s.set(&k("blending"), m.blending);
-                s.set(&k("dilution"), m.dilution);
-                s.set(&k("persistence"), m.persistence);
-                s.set(&k("blur_pressure"), m.blur_pressure);
-                s.set(&k("blend_by_pressure"), m.blend_by_pressure as u8);
-            }
-            let g = &b.grain;
-            s.set(&k("form"), g.form.as_deref().unwrap_or(""));
-            s.set(&k("bristle"), g.bristle.as_deref().unwrap_or(""));
-            s.set(&k("hair_size"), g.hair_size);
-            s.set(&k("hair_min"), g.hair_min);
-            s.set(&k("randomize"), g.randomize);
-            s.set(&k("direction"), g.direction);
-            s.set(&k("tip"), g.tip.as_deref().unwrap_or(""));
-            s.set(&k("tip_angle"), g.tip_angle);
-            s.set(&k("tip_ratio"), g.tip_ratio);
-            s.set(&k("tip_follow"), g.tip_follow as u8);
-            s.set(&k("tip_random"), g.tip_random as u8);
-            s.set(&k("form_strength"), g.form_strength);
-            s.set(&k("form_scale"), g.form_scale);
-            let tex = match &g.tex {
-                TexChoice::None => String::new(),
-                TexChoice::Paper => "paper".to_string(),
-                TexChoice::File(n) => format!("file:{n}"),
-            };
-            s.set(&k("texture"), tex);
-            s.set(&k("tex_strength"), g.tex_strength);
-            s.set(&k("tex_scale"), g.tex_scale);
-            s.set(&k("tex_min_density"), g.by_min_density as u8);
+            write_tool(b, &mut s, &format!("brush.{i}."));
         }
         s.set("brush", self.brush);
         for c in 0..3 {
@@ -2267,6 +2293,7 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 }
             }
+            GridAction::Save => self.ask_save_brush(Some(i)),
             GridAction::Property => {
                 let t = &self.brushes[i];
                 self.tool_props = Some((i, t.title(), t.extra.clone(), t.key));
@@ -2874,6 +2901,160 @@ app.open_canvas_dialog(d == "resolution")
         }
     }
 
+    /// Спросить, куда сохранить кисть `i` (или весь набор при `None`).
+    fn ask_save_brush(&mut self, i: Option<usize>) {
+        let p = self.brush_default_path(i);
+        let ask = i.map_or(files::Ask::SaveBrushSet, files::Ask::SaveBrush);
+        if !self.native_dialog(ask, &p) {
+            self.save_brush_file(p, i);
+        }
+    }
+
+    /// Куда сохранять кисти без окна выбора: папка настроек, `brushes/`.
+    fn brush_default_path(&self, i: Option<usize>) -> PathBuf {
+        let dir = settings::dir().unwrap_or_else(|| std::env::current_dir().unwrap_or_default()).join("brushes");
+        let _ = std::fs::create_dir_all(&dir);
+        match i {
+            Some(i) => dir.join(format!("{}.gsbrush", safe_name(&self.brushes[i].full_name()))),
+            None => dir.join(format!("{}.gsbrushes", tr("Мои кисти"))),
+        }
+    }
+
+    /// Файлы одной кисти в архиве (с приставкой папки `prefix` у набора): `brush.txt`, картинки
+    /// отпечатка, текстура из своей папки программы, образец мазка `preview.png`.
+    fn brush_entries(&self, i: usize, prefix: &str) -> Vec<(String, Vec<u8>)> {
+        let b = &self.brushes[i];
+        let mut s = settings::Settings::default();
+        s.set("format", 1);
+        s.set("kind", b.kind.key());
+        s.set("name", b.full_name());
+        s.set("extra", &b.extra);
+        write_tool(b, &mut s, "");
+        let mut out = Vec::new();
+        if let Some(n) = &b.grain.tip {
+            for (k, st) in paint_core::paper::stamps_of(n).iter().enumerate() {
+                let rgba: Vec<u8> = st.alpha.iter().flat_map(|&a| [0, 0, 0, a]).collect();
+                if let Ok(png) = paint_core::io::encode_png(st.width as u32, st.height as u32, &rgba) {
+                    out.push((format!("{prefix}{}", if k == 0 { "tip.png".to_string() } else { format!("tip.{}.png", k + 1) }), png));
+                }
+            }
+        }
+        // текстура из своей папки (взятая из чужой кисти) — внутрь файла; узоры SAI — только по имени
+        if let TexChoice::File(n) = &b.grain.tex {
+            if let Some(bmp) = paint_core::paper::user_dir("brushtex").and_then(|d| std::fs::read(d.join(format!("{n}.bmp"))).ok()) {
+                out.push((format!("{prefix}texture.bmp"), bmp));
+            }
+        }
+        if let Some(png) = self.brush_preview(i) {
+            out.push((format!("{prefix}preview.png"), png));
+        }
+        let text = format!("# GrazySAI {} — кисть / brush\n{}", env!("CARGO_PKG_VERSION"), s.to_text()); // не перевод
+        out.insert(0, (format!("{prefix}brush.txt"), text.into_bytes()));
+        out
+    }
+
+    /// Образец мазка 256×64: волна с нажимом от слабого к сильному и обратно.
+    fn brush_preview(&self, i: usize) -> Option<Vec<u8>> {
+        let (w, h) = (256u32, 64u32);
+        let mut doc = paint_core::Document::new(w, h);
+        let mut params = self.brushes[i].params;
+        params.size = params.size.min(36.0);
+        params.erase = false;
+        params.mix = None;
+        let mut st = Stroke::new(params);
+        st.set_grain(self.grain_for(i));
+        for k in 0..=60 {
+            let t = k as f32 / 60.0;
+            let pressure = (t * std::f32::consts::PI).sin().max(0.05);
+            st.add_point(InputPoint { x: 24.0 + t * 208.0, y: 32.0 + (t * std::f32::consts::TAU).sin() * 14.0, pressure });
+        }
+        doc.commit_stroke(0, &st, [20, 20, 30]);
+        paint_core::io::encode_png(w, h, &doc.flatten()).ok()
+    }
+
+    /// Сохранить кисть `i` или все инструменты сетки (`None`) в файл.
+    fn save_brush_file(&mut self, path: PathBuf, i: Option<usize>) {
+        let entries: Vec<(String, Vec<u8>)> = match i {
+            Some(i) => self.brush_entries(i, ""),
+            None => (0..self.brushes.len()).flat_map(|k| self.brush_entries(k, &format!("{:03}/", k + 1))).collect(),
+        };
+        self.status = match paint_formats::pack::write(&path, &entries) {
+            Ok(()) => trf("Сохранено: {0}", &[&path.display()]),
+            Err(e) => trf("Не удалось сохранить {0}: {1}", &[&path.display(), &e]),
+        };
+    }
+
+    /// Открыть файл кисти или набора: кисти встают в конец сетки, их картинки — в свою папку.
+    fn open_brush_file(&mut self, path: &std::path::Path) {
+        let files = match paint_formats::pack::read(path) {
+            Ok(f) => f,
+            Err(e) => {
+                self.status = trf("Кисть не открылась: {0}", &[&e]);
+                return;
+            }
+        };
+        // папки набора: «001/brush.txt» …; у одной кисти — «brush.txt» в корне
+        let mut prefixes: Vec<String> = files.iter().filter_map(|(n, _)| n.strip_suffix("brush.txt").map(str::to_string)).filter(|p| p.is_empty() || (p.ends_with('/') && !p[..p.len() - 1].contains('/'))).collect();
+        prefixes.sort();
+        prefixes.truncate(256);
+        let get = |name: &str| files.iter().find(|(n, _)| n == name).map(|(_, d)| d.as_slice());
+        let mut added = 0;
+        for pre in &prefixes {
+            let Some(text) = get(&format!("{pre}brush.txt")).map(String::from_utf8_lossy) else { continue };
+            let s = settings::Settings::from_text(&text);
+            let kind = s.str("kind").and_then(ToolKind::from_key).unwrap_or(ToolKind::Pencil);
+            let mut t = kind.new_tool();
+            read_tool(&mut t, &s, "");
+            let name: String = s.str("name").unwrap_or("").chars().take(64).collect();
+            t.custom = (!name.trim().is_empty()).then(|| name.clone());
+            t.extra = s.str("extra").unwrap_or("").chars().take(32).collect();
+            // имена файлов ресурсов из чужого файла — без путей
+            let g = &mut t.grain;
+            for field in [&mut g.form, &mut g.bristle, &mut g.tip] {
+                if field.as_deref().is_some_and(|n| n.contains(['/', '\\']) || n.contains("..")) {
+                    *field = None;
+                }
+            }
+            if matches!(&g.tex, TexChoice::File(n) if n.contains(['/', '\\']) || n.contains("..")) {
+                g.tex = TexChoice::None;
+            }
+            // картинки отпечатка из файла
+            let mut cells = Vec::new();
+            for k in 1..=64 {
+                let file = if k == 1 { format!("{pre}tip.png") } else { format!("{pre}tip.{k}.png") };
+                let Some(png) = get(&file) else { break };
+                match paint_core::io::decode_png(png) {
+                    Ok((w, h, rgba)) => cells.push(paint_core::Stamp::from_rgba(w as usize, h as usize, &rgba)),
+                    Err(_) => break,
+                }
+            }
+            if !cells.is_empty() {
+                let base = if name.trim().is_empty() { "brush".to_string() } else { name.clone() };
+                if let Ok(saved) = paint_core::paper::save_tips(&base, &cells) {
+                    t.grain.tip = Some(saved);
+                }
+            }
+            if let (Some(bmp), Some(dir)) = (get(&format!("{pre}texture.bmp")), paint_core::paper::user_dir("brushtex")) {
+                if paint_core::paper::PaperTexture::from_bmp(bmp).is_some() {
+                    let n = safe_name(&format!("{} {}", tr("Кисть"), if name.trim().is_empty() { "brush" } else { &name }));
+                    if std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(format!("{n}.bmp")), bmp)).is_ok() {
+                        t.grain.tex = TexChoice::File(n);
+                    }
+                }
+            }
+            self.brushes.push(t);
+            added += 1;
+        }
+        if added == 0 {
+            self.status = tr("В файле нет кистей GrazySAI").to_string();
+            return;
+        }
+        self.brush = self.brushes.len() - 1;
+        self.tool = Tool::Brush;
+        self.grain_names = None;
+        self.status = trf("Кистей добавлено в сетку: {0}", &[&added]);
+    }
+
     /// Пресет Krita `.kpp` или набор `.bundle` — новыми инструментами в конец сетки.
     fn import_krita(&mut self, path: &std::path::Path) {
         let bundle = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("bundle"));
@@ -3003,6 +3184,10 @@ app.open_canvas_dialog(d == "resolution")
         }
         if ext == "gbr" || ext == "gih" || ext == "abr" {
             self.add_tip(&path);
+            return;
+        }
+        if ext == "gsbrush" || ext == "gsbrushes" {
+            self.open_brush_file(&path);
             return;
         }
         if ext == "kpp" || ext == "bundle" {
@@ -3429,6 +3614,8 @@ app.open_canvas_dialog(d == "resolution")
             (files::Answer::Path(p), files::Ask::Export(ext)) => self.export_to(files::with_ext(p, ext), ext),
             (files::Answer::Path(p), files::Ask::Reference) => self.add_reference(&p),
             (files::Answer::Path(p), files::Ask::Tip) => self.add_tip(&p),
+            (files::Answer::Path(p), files::Ask::SaveBrush(i)) => self.save_brush_file(files::with_ext(p, "gsbrush"), Some(i)),
+            (files::Answer::Path(p), files::Ask::SaveBrushSet) => self.save_brush_file(files::with_ext(p, "gsbrushes"), None),
             (files::Answer::Unavailable, files::Ask::Open) => self.show_open = true,
             (files::Answer::Unavailable, files::Ask::SaveAs) => self.show_save_as = true,
             (files::Answer::Unavailable, files::Ask::Export(ext)) => {
@@ -3436,6 +3623,14 @@ app.open_canvas_dialog(d == "resolution")
                 self.export_to(path, ext);
             }
             (files::Answer::Unavailable, files::Ask::Reference) => self.status = String::from(tr("Перетащите картинку в окно с Ctrl")),
+            (files::Answer::Unavailable, files::Ask::SaveBrush(i)) => {
+                let p = self.brush_default_path(Some(i));
+                self.save_brush_file(p, Some(i));
+            }
+            (files::Answer::Unavailable, files::Ask::SaveBrushSet) => {
+                let p = self.brush_default_path(None);
+                self.save_brush_file(p, None);
+            }
             (files::Answer::Unavailable, files::Ask::Tip) => self.status = String::from(tr("Перетащите картинку в окно с Shift — она станет отпечатком кисти")),
             (files::Answer::Cancelled, _) => {}
         }
@@ -5179,6 +5374,10 @@ app.open_canvas_dialog(d == "resolution")
                     self.save_numbered();
                     ui.close_menu();
                 }
+                if ui.button(tr("Сохранить набор кистей…")).on_hover_text(tr("Все инструменты сетки — одним файлом .gsbrushes")).clicked() {
+                    self.ask_save_brush(None);
+                    ui.close_menu();
+                }
                 ui.separator();
                 if ui.checkbox(&mut self.always_viewer, tr("Всегда использовать обозреватель файлов")).changed() {
                     self.save_settings();
@@ -6348,7 +6547,7 @@ app.open_canvas_dialog(d == "resolution")
                                     self.brush = i;
                                 }
                                 r.context_menu(|ui| {
-                                    for (act, name) in [(GridAction::Duplicate, tr("Копия")), (GridAction::Delete, tr("Удалить")), (GridAction::Property, tr("Свойства…"))] {
+                                    for (act, name) in [(GridAction::Duplicate, tr("Копия")), (GridAction::Delete, tr("Удалить")), (GridAction::Property, tr("Свойства…")), (GridAction::Save, tr("Сохранить кисть…"))] {
                                         if ui.button(name).clicked() {
                                             grid_action = Some((i, act));
                                             ui.close_menu();
@@ -10868,5 +11067,48 @@ mod input_tests {
         let raw = run(&slow, &[0.05; 20], false);
         let lag = |out: &[Pos2], k: usize| out[k].distance(at(k as f32 / (out.len() - 1) as f32));
         assert!(lag(&raw, 10) > 50.0, "без дополнения сглаживание сильнее: {}", lag(&raw, 10));
+    }
+}
+
+#[cfg(test)]
+mod brush_file_tests {
+    use super::*;
+
+    /// Параметры инструмента → текст `brush.txt` → обратно: всё на месте.
+    #[test]
+    fn tool_settings_round_trip() {
+        let mut t = ToolKind::Brush.new_tool();
+        t.params.size = 37.5;
+        t.params.min_size = 0.25;
+        t.params.spacing = 1.5;
+        t.params.hardness = 0.75;
+        if let Some(m) = t.params.mix.as_mut() {
+            m.blending = 0.3;
+            m.persistence = 0.7;
+        }
+        t.grain.tip = Some("Звезда".into());
+        t.grain.tip_angle = 20.0;
+        t.grain.tip_ratio = 0.4;
+        t.grain.tip_follow = true;
+        t.grain.tex = TexChoice::File("Бумага".into());
+        t.grain.tex_scale = 150;
+        let mut s = settings::Settings::default();
+        write_tool(&t, &mut s, "");
+        let s = settings::Settings::from_text(&s.to_text());
+        let mut back = ToolKind::Brush.new_tool();
+        read_tool(&mut back, &s, "");
+        assert_eq!((back.params.size, back.params.min_size, back.params.spacing, back.params.hardness), (37.5, 0.25, 1.5, 0.75));
+        let m = back.params.mix.unwrap();
+        assert_eq!((m.blending, m.persistence), (0.3, 0.7));
+        let g = &back.grain;
+        assert_eq!((g.tip.as_deref(), g.tip_angle, g.tip_ratio, g.tip_follow, g.tex_scale), (Some("Звезда"), 20.0, 0.4, true, 150));
+        assert!(g.tex == TexChoice::File("Бумага".into()));
+    }
+
+    #[test]
+    fn file_names_are_safe() {
+        assert_eq!(safe_name("Каранд."), "Каранд");
+        assert_eq!(safe_name("../../etc/passwd"), ".._.._etc_passwd");
+        assert_eq!(safe_name("  "), "brush");
     }
 }
