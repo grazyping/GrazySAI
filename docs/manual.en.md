@@ -112,6 +112,14 @@ it lags behind the pen.
 
 Water also blurs the layer under the stroke.
 
+**Dynamics** (the “Dynamics” section): “input → curve → parameter” links on top of SAI pressure. Inputs:
+pressure, speed, stroke direction, distance from the stroke start, random (speed and distance have a
+“Scale” — how many pixels count as the full range). Parameters: size, density (multipliers), tip rotation
+and thickness, scatter across the stroke. The curve has 4 points: the end ones move up and down, the
+middle ones anywhere; the curve may also fall. Examples: “Distance → Size” with a falling curve tapers the
+stroke; “Random → Scatter” gives splatter; “Speed → Density” falling makes fast strokes lighter. Several
+links to one parameter multiply (rotation and scatter add up). Dynamics are saved in the brush file.
+
 **Form and texture** (the “Form” and “Texture” sections, as in SAI 2):
 
 - “Form” — a simple circle or a blot from the `blotmap` folder: the stroke edge becomes ragged

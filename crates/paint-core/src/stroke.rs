@@ -503,6 +503,12 @@ pub struct Stroke {
     hard_mask: MaskMap,
     /// Направление последнего отрезка штриха, радианы (для отпечатка «по направлению»).
     heading: Option<f32>,
+    /// Динамика кисти (`dynamics.rs`): связи «вход → кривая → выход».
+    pub dynamics: Vec<crate::dynamics::Dynamic>,
+    /// Путь от начала штриха до текущего отпечатка, px; скорость — путь за событие ввода.
+    travel: f32,
+    at: f32,
+    speed: f32,
 }
 
 impl Stroke {
@@ -524,6 +530,10 @@ impl Stroke {
             level_cache: HashMap::new(),
             hard_mask: MaskMap::new(),
             heading: None,
+            dynamics: Vec::new(),
+            travel: 0.0,
+            at: 0.0,
+            speed: 0.0,
             mirror: Mirror::default(),
         }
     }
@@ -675,7 +685,11 @@ impl Stroke {
         let len = (dx * dx + dy * dy).sqrt();
         if len > 0.0 {
             self.heading = Some(dy.atan2(dx));
+            // скорость сглаживается: события ввода приходят неровно
+            self.speed = if self.speed == 0.0 { len } else { self.speed * 0.6 + len * 0.4 };
         }
+        let base = self.travel;
+        self.travel += len;
         if len <= 0.0 {
             // перо стоит на месте: отпечатков нет, но нажим новой точки запоминается
             self.last = Some(p);
@@ -698,6 +712,7 @@ impl Stroke {
                 break;
             }
             pos += need;
+            self.at = base + pos;
             let t = pos / len;
             pressure = prev.pressure + (p.pressure - prev.pressure) * t;
             self.dab(InputPoint { x: prev.x + dx * t, y: prev.y + dy * t, pressure });
@@ -832,11 +847,32 @@ impl Stroke {
     }
 
     fn dab(&mut self, p: InputPoint) {
-        let diameter = self.params.diameter_at(p.pressure);
-        let density = self.params.density_at(p.pressure);
-        if density <= 0.0 {
+        let fx = if self.dynamics.is_empty() {
+            crate::dynamics::DynEffect::default()
+        } else {
+            let n = self.dab_count as u64;
+            let inputs = crate::dynamics::DynInputs {
+                pressure: p.pressure,
+                speed: self.speed,
+                heading: self.heading.unwrap_or(0.0),
+                distance: self.at,
+                random: [crate::dynamics::hash01(n * 2), crate::dynamics::hash01(n * 2 + 1)],
+            };
+            crate::dynamics::apply(&self.dynamics, &inputs)
+        };
+        let diameter = self.params.diameter_at(p.pressure) * fx.size;
+        let density = (self.params.density_at(p.pressure) * fx.density).min(1.0);
+        if density <= 0.0 || diameter <= 0.05 {
             return;
         }
+        // разброс — поперёк мазка
+        let p = if fx.scatter != 0.0 {
+            let h = self.heading.unwrap_or(0.0);
+            let off = fx.scatter * diameter;
+            InputPoint { x: p.x - h.sin() * off, y: p.y + h.cos() * off, ..p }
+        } else {
+            p
+        };
         if !self.params.binary {
             if let Some(b) = self.grain.as_ref().and_then(|g| g.bristle.clone()) {
                 return self.bristle_dab(p, &b, diameter, density);
@@ -847,10 +883,10 @@ impl Stroke {
             let Some((cx, cy, r)) = self.binary_point(p.x as f64, p.y as f64, diameter) else { return };
             (InputPoint { x: cx, y: cy, ..p }, Shape::Binary(r, 1.0))
         } else if let Some(t) = tip {
-            let angle = t.angle + if t.follow { self.heading.unwrap_or(0.0) } else { 0.0 };
-            (p, Shape::Stamp(t.pick(self.dab_count as u64), (diameter / 2.0).max(0.5), angle.cos(), angle.sin(), t.ratio.clamp(0.01, 1.0)))
+            let angle = t.angle + fx.angle + if t.follow { self.heading.unwrap_or(0.0) } else { 0.0 };
+            (p, Shape::Stamp(t.pick(self.dab_count as u64), (diameter / 2.0).max(0.5), angle.cos(), angle.sin(), (t.ratio * fx.ratio).clamp(0.01, 1.0)))
         } else {
-            let d = self.sai_dab(p.pressure);
+            let d = self.sai_dab_sized(p.pressure, diameter);
             let o = d.opacity(self.step_at(p.pressure));
             (p, Shape::Sai(d, o))
         };

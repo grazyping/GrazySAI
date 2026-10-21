@@ -1332,6 +1332,44 @@ pub fn curve_editor(ui: &mut Ui, curve: &mut paint_core::curve::PressureCurve, s
     changed
 }
 
+/// Кривая из 4 точек для динамики кисти: крайние двигаются только вверх-вниз, средние — и вбок
+/// (между соседями). Кривая может и убывать.
+pub fn points_editor(ui: &mut Ui, pts: &mut [[f32; 2]; 4], width: f32, height: f32) -> bool {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+    let p = ui.painter_at(rect.expand(6.0));
+    p.rect_filled(rect, 0.0, gray(255));
+    for i in 1..4 {
+        let t = i as f32 / 4.0;
+        let x = rect.left() + rect.width() * t;
+        let y = rect.bottom() - rect.height() * t;
+        p.line_segment([Pos2::new(x, rect.top()), Pos2::new(x, rect.bottom())], Stroke::new(1.0_f32, gray(232)));
+        p.line_segment([Pos2::new(rect.left(), y), Pos2::new(rect.right(), y)], Stroke::new(1.0_f32, gray(232)));
+    }
+    let to_screen = |q: [f32; 2]| Pos2::new(rect.left() + q[0] * rect.width(), rect.bottom() - q[1] * rect.height());
+    p.add(egui::Shape::line(pts.iter().map(|&q| to_screen(q)).collect(), Stroke::new(1.5_f32, select_edge())));
+    p.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, border()));
+    let mut changed = false;
+    for k in 0..4 {
+        let at = to_screen(pts[k]);
+        let hit = Rect::from_center_size(at, Vec2::splat(12.0));
+        let resp = ui.interact(hit, ui.id().with(("dyn_pt", k)), Sense::drag());
+        if let Some(pos) = resp.interact_pointer_pos().filter(|_| resp.dragged()) {
+            let y = ((rect.bottom() - pos.y) / rect.height()).clamp(0.0, 1.0);
+            let x = match k {
+                0 => 0.0,
+                3 => 1.0,
+                _ => ((pos.x - rect.left()) / rect.width()).clamp(pts[k - 1][0] + 0.02, pts[k + 1][0] - 0.02),
+            };
+            pts[k] = [x, y];
+            changed = true;
+        }
+        let fill = if resp.hovered() || resp.dragged() { select_bg() } else { gray(255) };
+        p.circle_filled(at, 4.0, fill);
+        p.circle_stroke(at, 4.0, Stroke::new(1.0_f32, ink()));
+    }
+    changed
+}
+
 #[cfg(test)]
 mod slider_tests {
     use super::*;

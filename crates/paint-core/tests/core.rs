@@ -1402,3 +1402,22 @@ fn tip_set_changes_along_the_stroke() {
     assert!(pixel(&doc, 15, 20)[0] < 128 && pixel(&doc, 25, 20)[0] > 200, "первый: {:?} {:?}", pixel(&doc, 15, 20), pixel(&doc, 25, 20));
     assert!(pixel(&doc, 75, 20)[0] > 200 && pixel(&doc, 85, 20)[0] < 128, "второй: {:?} {:?}", pixel(&doc, 75, 20), pixel(&doc, 85, 20));
 }
+
+/// Динамика «путь → размер» с убывающей кривой: мазок сужается к концу.
+#[test]
+fn dynamics_distance_tapers_the_stroke() {
+    use paint_core::dynamics::{DynInput, DynOutput, Dynamic};
+    let mut doc = Document::new(240, 60);
+    let mut s = Stroke::new(BrushParams { size: 30.0, size_by_pressure: false, ..Default::default() });
+    let mut taper = Dynamic::new(DynInput::Distance, DynOutput::Size);
+    taper.scale = 200.0;
+    taper.curve = [[0.0, 1.0], [0.33, 0.67], [0.67, 0.33], [1.0, 0.1]];
+    s.dynamics = vec![taper];
+    for i in 0..=40 {
+        s.add_point(InputPoint { x: 20.0 + i as f32 * 5.0, y: 30.0, pressure: 1.0 });
+    }
+    doc.commit_stroke(0, &s, [0, 0, 0]);
+    let height = |x: u32| (0..60).filter(|&y| pixel(&doc, x, y)[0] < 128).count();
+    let (start, end) = (height(40), height(200));
+    assert!(start >= 24 && end <= 8, "начало {start}, конец {end}");
+}

@@ -920,3 +920,10 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Сохранить кисть… = Save brush…
 Сохранить набор кистей = Save brush set
 Сохранить набор кистей… = Save brush set…
+Динамика = Dynamics
+Плотность = Density
+Путь = Distance
++ Связь «вход → кривая → параметр» = + Link “input → curve → parameter”
+Скорость = Speed
+Случайно = Random
+Удалить связь = Remove link

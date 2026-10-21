@@ -3,6 +3,7 @@
 
 pub mod colorize;
 pub mod curve;
+pub mod dynamics;
 pub mod blend;
 pub mod brush;
 pub mod canvas_ops;

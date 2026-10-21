@@ -919,3 +919,10 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Сохранить кисть… = Pinsel speichern…
 Сохранить набор кистей = Pinselsatz speichern
 Сохранить набор кистей… = Pinselsatz speichern…
+Динамика = Dynamik
+Плотность = Dichte
+Путь = Weg
++ Связь «вход → кривая → параметр» = + Verknüpfung „Eingabe → Kurve → Parameter“
+Скорость = Geschwindigkeit
+Случайно = Zufall
+Удалить связь = Verknüpfung entfernen

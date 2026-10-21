@@ -958,6 +958,8 @@ struct BrushTool {
     extra: String,
     /// Своя клавиша инструмента («Shortcut Key» в SAI).
     key: Option<keys::Binding>,
+    /// Динамика кисти: «вход → кривая → выход» поверх нажима.
+    dynamics: Vec<paint_core::dynamics::Dynamic>,
 }
 
 /// Вид инструмента сетки — как в меню SAI 2017 по правому щелчку на пустой ячейке.
@@ -1082,7 +1084,7 @@ impl ToolKind {
             ToolKind::SelPen => ("Выд.К.", "selpen", BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
             ToolKind::SelErs => ("Выд.Л.", "selers", BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
         };
-        BrushTool { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), key: None }
+        BrushTool { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), key: None, dynamics: Vec::new() }
     }
 }
 
@@ -1164,6 +1166,9 @@ impl Default for GrainSettings {
 /// то же пишет файл кисти `.gsbrush`.
 fn read_tool(b: &mut BrushTool, s: &settings::Settings, prefix: &str) {
     let k = |name: &str| format!("{prefix}{name}");
+    if let Some(n) = s.f32(&k("dyn.count")) {
+        b.dynamics = (0..(n as usize).min(32)).filter_map(|i| s.str(&k(&format!("dyn.{i}"))).and_then(paint_core::dynamics::Dynamic::from_text)).collect();
+    }
     let p = &mut b.params;
     s.read_f32(&k("size"), &mut p.size);
     s.read_f32(&k("min_size"), &mut p.min_size);
@@ -1226,6 +1231,10 @@ fn read_tool(b: &mut BrushTool, s: &settings::Settings, prefix: &str) {
 /// Параметры инструмента сетки в настройки (обратное к [`read_tool`]).
 fn write_tool(b: &BrushTool, s: &mut settings::Settings, prefix: &str) {
     let k = |name: &str| format!("{prefix}{name}");
+    s.set(&k("dyn.count"), b.dynamics.len());
+    for (n, d) in b.dynamics.iter().enumerate() {
+        s.set(&k(&format!("dyn.{n}")), d.to_text());
+    }
     let p = &b.params;
     s.set(&k("size"), p.size);
     s.set(&k("min_size"), p.min_size);
@@ -2279,7 +2288,7 @@ app.open_canvas_dialog(d == "resolution")
             }
             GridAction::Duplicate => {
                 let src = &self.brushes[i];
-                let copy = BrushTool { params: src.params, grain: src.grain.clone(), custom: src.custom.clone(), extra: src.extra.clone(), ..src.kind.new_tool() };
+                let copy = BrushTool { params: src.params, grain: src.grain.clone(), custom: src.custom.clone(), extra: src.extra.clone(), dynamics: src.dynamics.clone(), ..src.kind.new_tool() };
                 self.brushes.insert(i + 1, copy);
                 if self.brush > i {
                     self.brush += 1;
@@ -2342,7 +2351,8 @@ app.open_canvas_dialog(d == "resolution")
         let blot = if bristle.is_some() { None } else { blot };
         // картинка или (у сплюснутой круглой кисти) круг с краем по жёсткости
         let mut cells = g.tip.as_deref().map(paint_core::paper::stamps_of).unwrap_or_default();
-        if cells.is_empty() && (g.tip_ratio < 0.999 || g.tip_follow) {
+        let dyn_tip = self.brushes[tool].dynamics.iter().any(|d| d.output.needs_tip());
+        if cells.is_empty() && (g.tip_ratio < 0.999 || g.tip_follow || dyn_tip) {
             cells.push(std::sync::Arc::new(paint_core::Stamp::disc(self.brushes[tool].params.hardness)));
         }
         let tip = (!cells.is_empty()).then(|| {
@@ -2963,6 +2973,7 @@ app.open_canvas_dialog(d == "resolution")
         params.mix = None;
         let mut st = Stroke::new(params);
         st.set_grain(self.grain_for(i));
+        st.dynamics = self.brushes[i].dynamics.clone();
         for k in 0..=60 {
             let t = k as f32 / 60.0;
             let pressure = (t * std::f32::consts::PI).sin().max(0.05);
@@ -3955,6 +3966,7 @@ app.open_canvas_dialog(d == "resolution")
             let mut st = Stroke::new(params);
             st.mirror = self.mirror();
             st.set_grain(self.grain_for(if eraser_end { self.eraser_index() } else { self.brush }));
+            st.dynamics = self.brushes[if eraser_end { self.eraser_index() } else { self.brush }].dynamics.clone();
             st.add_point(self.smoother.push(p));
             let keys = self.doc.mask_stroke_preview(&self.selected.clone(), &orig.hide, &st.mask, target);
             self.invalidate(keys);
@@ -4003,6 +4015,7 @@ app.open_canvas_dialog(d == "resolution")
         let mut stroke = Stroke::new(params);
         stroke.mirror = self.mirror();
         stroke.set_grain(self.grain_for(if eraser_end { self.eraser_index() } else { self.brush }));
+        stroke.dynamics = self.brushes[if eraser_end { self.eraser_index() } else { self.brush }].dynamics.clone();
         // прямая, как в SAI: кнопка «Прямая линия» — весь штрих прямой от точки нажатия;
         // Shift + нажатие — прямая от конца прошлого штриха
         let shift = self.ctx.as_ref().is_some_and(|c| c.input(|i| i.modifiers.shift));
@@ -4037,6 +4050,7 @@ app.open_canvas_dialog(d == "resolution")
         }
         let mut stroke = Stroke::new(params);
         stroke.set_grain(self.grain_for(if eraser { self.eraser_index() } else { self.brush }));
+        stroke.dynamics = self.brushes[if eraser { self.eraser_index() } else { self.brush }].dynamics.clone();
         let c = self.color();
         let mut live = LiveStroke::new(self.selected.clone(), stroke, [c.r(), c.g(), c.b()]);
         live.stroke.add_point(a);
@@ -6711,7 +6725,7 @@ app.open_canvas_dialog(d == "resolution")
         let mut set_dir = false;
         let mut add_tip = false;
         let tool = &mut self.brushes[self.brush];
-        let (brush, grain) = (&mut tool.params, &mut tool.grain);
+        let (brush, grain, dyns) = (&mut tool.params, &mut tool.grain, &mut tool.dynamics);
         sai_ui::row(ui, tr("Режим"), lw, false, |ui| {
             egui::ComboBox::from_id_salt("paintmode")
                 .selected_text(tr("Обычный"))
@@ -6904,6 +6918,60 @@ app.open_canvas_dialog(d == "resolution")
             }
             if blot_names.is_empty() {
                 no_files(ui, &mut self.paper_dir, &mut set_dir);
+            }
+        }
+        if sai_ui::section(ui, "sec_dyn", tr("Динамика")) {
+            use paint_core::dynamics::{DynInput, DynOutput, Dynamic};
+            let input_name = |i: DynInput| match i {
+                DynInput::Pressure => tr("Нажим"),
+                DynInput::Speed => tr("Скорость"),
+                DynInput::Direction => tr("Направление"),
+                DynInput::Distance => tr("Путь"),
+                DynInput::Random => tr("Случайно"),
+            };
+            let output_name = |o: DynOutput| match o {
+                DynOutput::Size => tr("Размер"),
+                DynOutput::Density => tr("Плотность"),
+                DynOutput::Angle => tr("Поворот"),
+                DynOutput::Ratio => tr("Толщина"),
+                DynOutput::Scatter => tr("Разброс"),
+            };
+            let mut remove = None;
+            for (n, d) in dyns.iter_mut().enumerate() {
+                ui.push_id(("dyn", n), |ui| {
+                    ui.horizontal(|ui| {
+                        egui::ComboBox::from_id_salt("in").selected_text(input_name(d.input)).width(w * 0.45).show_ui(ui, |ui| {
+                            for i in DynInput::ALL {
+                                if ui.selectable_label(d.input == i, input_name(i)).clicked() && d.input != i {
+                                    d.input = i;
+                                    d.scale = i.default_scale();
+                                }
+                            }
+                        });
+                        ui.label("→");
+                        egui::ComboBox::from_id_salt("out").selected_text(output_name(d.output)).width(w * 0.45).show_ui(ui, |ui| {
+                            for o in DynOutput::ALL {
+                                ui.selectable_value(&mut d.output, o, output_name(o));
+                            }
+                        });
+                        if ui.small_button("×").on_hover_text(tr("Удалить связь")).clicked() {
+                            remove = Some(n);
+                        }
+                    });
+                    if matches!(d.input, DynInput::Speed | DynInput::Distance) {
+                        sai_ui::row(ui, tr("   Масштаб"), lw, true, |ui| {
+                            ui.add(egui::DragValue::new(&mut d.scale).range(1.0..=100_000.0).suffix(" px").speed(1.0));
+                        });
+                    }
+                    sai_ui::points_editor(ui, &mut d.curve, w + lw - 8.0, 56.0);
+                    ui.add_space(4.0);
+                });
+            }
+            if let Some(n) = remove {
+                dyns.remove(n);
+            }
+            if dyns.len() < 32 && ui.button(tr("+ Связь «вход → кривая → параметр»")).clicked() {
+                dyns.push(Dynamic::new(DynInput::Pressure, DynOutput::Size));
             }
         }
         if sai_ui::section(ui, "sec_tex", tr("Текстура")) {
