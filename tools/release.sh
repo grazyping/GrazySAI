@@ -9,8 +9,8 @@ ROOT=$(pwd)
 if git ls-files -z | xargs -0 grep -l -E '(FUN|DAT|LAB)_14[0-9a-f]{5,}'; then
   echo "в файлах выше — адреса SAI; убрать перед выпуском"; exit 1
 fi
-cargo build -q --release -p paint-app
-cargo build -q --release -p paint-app --target x86_64-pc-windows-gnullvm
+cargo build -q --release -p paint-app -p paint-studio
+cargo build -q --release -p paint-app -p paint-studio --target x86_64-pc-windows-gnullvm
 cd dist/release
 for os in linux windows; do
   d=GrazySAI-$V-$os-x86_64; rm -rf $d; mkdir $d
@@ -21,8 +21,8 @@ for os in linux windows; do
   sed -i 's#(manual.en.md)#(MANUAL.md)#; s#(\.\./ROADMAP.md)#(ROADMAP.md)#' $d/РУКОВОДСТВО.md
   sed -i 's#(manual.md)#(РУКОВОДСТВО.md)#; s#(\.\./ROADMAP.en.md)#(ROADMAP.en.md)#' $d/MANUAL.md
 done
-cp ../../target/release/GrazySAI GrazySAI-$V-linux-x86_64/
-cp ../../target/x86_64-pc-windows-gnullvm/release/GrazySAI.exe GrazySAI-$V-windows-x86_64/
+cp ../../target/release/GrazySAI ../../target/release/GrazySAI-Studio GrazySAI-$V-linux-x86_64/
+cp ../../target/x86_64-pc-windows-gnullvm/release/GrazySAI.exe ../../target/x86_64-pc-windows-gnullvm/release/GrazySAI-Studio.exe GrazySAI-$V-windows-x86_64/
 rm -f GrazySAI-$V-*.tar.gz GrazySAI-$V-*.zip
 tar czf GrazySAI-$V-linux-x86_64.tar.gz GrazySAI-$V-linux-x86_64
 python3 -I "$ROOT/tools/mkzip.py" GrazySAI-$V-windows-x86_64.zip GrazySAI-$V-windows-x86_64

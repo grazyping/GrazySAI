@@ -393,7 +393,22 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
   Layer” makes the layer normal.
 - **Saving**: curves are saved to `.sai2` as curves.
 
-## Files
+## Brush workshop (GrazySAI Studio)
+
+A separate program next to GrazySAI: `GrazySAI-Studio` (`GrazySAI-Studio.exe` on Windows). There you make a
+brush and try it at once, without touching the painting program.
+
+- On the left — settings: name, kind (pencil, brush, watercolor…), size and density with pressure,
+  hardness, spacing, mixing, tip (a picture, GIMP brushes, or “Create”: circle, square, spray, chalk),
+  rotation and thickness, texture, “input → curve → parameter” dynamics.
+- In the middle — the test strip: the sample stroke is redrawn on every change, and on the rest of the
+  strip you can draw with the mouse (pressure from the “Mouse pressure” slider) or a pen. “Clear” wipes it.
+- “Save” / “Save as…” — a `.gsbrush` brush file you can share.
+- **“Export to GrazySAI”** — the brush appears in the running GrazySAI at once (at the end of the grid,
+  labelled “Studio”); exporting again replaces it instead of adding a new one. No need to close either
+  program. The brush is kept in the settings folder under `brushes/dev/`.
+- You can drag a picture or a brush file onto the workshop window.
+
 
 | Format | Open | Save |
 |---|---|---|

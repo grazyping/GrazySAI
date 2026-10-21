@@ -265,11 +265,13 @@ fn download_and_replace(rel: &Release) -> Result<(), String> {
             return Err(format!("{} not in archive", exe_name()));
         }
         replace(&new_exe, &exe)?;
-        // справка рядом с программой — тоже новая (только те файлы, что уже лежат рядом)
+        // справка рядом с программой — тоже новая (только те файлы, что уже лежат рядом);
+        // мастерская GrazySAI Studio — всегда (с 1.0.31 она в архиве)
+        let studio = if cfg!(windows) { "GrazySAI-Studio.exe" } else { "GrazySAI-Studio" };
         for entry in std::fs::read_dir(&folder).map_err(|e| e.to_string())?.flatten() {
             let p = entry.path();
             let name = entry.file_name();
-            if p != new_exe && dir.join(&name).is_file() {
+            if p != new_exe && (dir.join(&name).is_file() || name == studio) {
                 let _ = std::fs::copy(&p, dir.join(&name));
             }
         }

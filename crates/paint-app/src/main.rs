@@ -1065,6 +1065,9 @@ struct PaintApp {
     paper_names: Option<Vec<String>>,
     /// Имена форм (`blotmap`) и текстур кисти (`brushtex`) из папки SAI.
     grain_names: Option<GrainNames>,
+    /// Кисти из мастерской (`brushes/dev/`): когда смотрели и время отметки `.changed`.
+    dev_checked: Instant,
+    dev_stamp: Option<std::time::SystemTime>,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
     /// Линейка (прямая или эллипс) и её правка Ctrl + перетаскиванием: что взяли и где было.
@@ -1334,6 +1337,8 @@ impl PaintApp {
             paper_dir: String::new(),
             paper_names: None,
             grain_names: None,
+            dev_checked: Instant::now(),
+            dev_stamp: None,
             layer_drag: None,
             ruler: ruler::Ruler::default(),
             ruler_drag: None,
@@ -2604,6 +2609,64 @@ app.open_canvas_dialog(d == "resolution")
         match i {
             Some(i) => dir.join(format!("{}.gsbrush", paint_brush::safe_name(&self.brushes[i].full_name()))),
             None => dir.join(format!("{}.gsbrushes", tr("Мои кисти"))),
+        }
+    }
+
+    /// Кисти из мастерской: раз в секунду смотрим отметку `brushes/dev/.changed`; изменилась —
+    /// кисти из `brushes/dev/` встают в сетку (кисть с тем же именем и подписью «Studio»
+    /// заменяется, клавиша остаётся).
+    fn check_studio(&mut self, ctx: &egui::Context) {
+        if self.dev_checked.elapsed() < Duration::from_secs(1) {
+            ctx.request_repaint_after(Duration::from_secs(1));
+            return;
+        }
+        self.dev_checked = Instant::now();
+        ctx.request_repaint_after(Duration::from_secs(1));
+        let Some(dir) = settings::dir().map(|d| d.join("brushes").join("dev")) else { return };
+        let stamp = std::fs::metadata(dir.join(".changed")).and_then(|m| m.modified()).ok();
+        if stamp.is_none() || stamp == self.dev_stamp {
+            return;
+        }
+        let first = self.dev_stamp.is_none();
+        self.dev_stamp = stamp;
+        // при запуске прошлые кисти мастерской не подхватываются — только новые экспорты
+        if first && self.started.elapsed() < Duration::from_secs(3) {
+            return;
+        }
+        let Ok(rd) = std::fs::read_dir(&dir) else { return };
+        let mut files: Vec<(std::time::SystemTime, PathBuf)> = rd
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "gsbrush"))
+            .filter_map(|p| Some((std::fs::metadata(&p).ok()?.modified().ok()?, p)))
+            .collect();
+        files.sort();
+        // только то, что изменилось за последние секунды перед отметкой
+        let since = stamp.and_then(|t| t.checked_sub(Duration::from_secs(5)));
+        let mut names = Vec::new();
+        for (_, p) in files.into_iter().filter(|(t, _)| since.is_none_or(|s| *t >= s)) {
+            let Ok(f) = paint_formats::pack::read(&p) else { continue };
+            for mut brush in paint_brush::from_files(&f, tr("Кисть")) {
+                brush.extra = "Studio".into();
+                let name = brush.custom.clone().unwrap_or_default();
+                match self.brushes.iter().position(|b| b.extra == "Studio" && b.custom == brush.custom) {
+                    Some(i) => {
+                        self.brushes[i].brush = brush;
+                        self.brush = i;
+                    }
+                    None => {
+                        self.brushes.push(BrushTool { brush, key: None });
+                        self.brush = self.brushes.len() - 1;
+                    }
+                }
+                names.push(name);
+            }
+        }
+        if !names.is_empty() {
+            self.tool = Tool::Brush;
+            self.grain_names = None;
+            self.status = trf("Из мастерской: {0}", &[&names.join(", ")]);
+            ctx.request_repaint();
         }
     }
 
@@ -9961,6 +10024,7 @@ impl eframe::App for PaintApp {
         self.poll_file_dialog();
         self.check_exit(ctx);
         self.autosave();
+        self.check_studio(ctx);
         let dropped = ctx.input(|i| i.raw.dropped_files.iter().find_map(|f| f.path.clone()));
         if let Some(path) = dropped {
             // с Ctrl картинка становится опорной, а не открывается

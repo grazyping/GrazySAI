@@ -1915,6 +1915,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "paint-studio"
+version = "1.0.30"
+dependencies = [
+ "eframe",
+ "paint-brush",
+ "paint-core",
+ "paint-formats",
+ "rfd",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
