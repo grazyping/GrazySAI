@@ -971,3 +971,17 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Управление плагинами… = Gérer les extensions…
 Установить = Installer
 Установить плагин = Installer l’extension
+До = Avant
+Как писать плагины (docs/36-plugins.md) = Écrire des extensions (docs/36-plugins.en.md)
+Команда = Commande
+Новый из примера = Nouveau depuis un exemple
+Ошибка — см. ниже = Erreur — voir ci-dessous
+Плагин = Extension
+Плагин «{0}» отправлен в GrazySAI: меню «Плагины» = Extension « {0} » envoyée à GrazySAI : menu « Extensions »
+Плагин открыт = Extension ouverte
+Плагин сразу появится в меню «Плагины» открытой рисовалки (папка plugins/dev) = L’extension apparaît aussitôt dans le menu « Extensions » de GrazySAI ouvert (dossier plugins/dev)
+После = Après
+▶ Проверить на пробной картинке = ▶ Tester sur l’image d’exemple
+Проверка = Test
+Проверка прошла за {0} мс; слоёв: {1} = Test réussi en {0} ms ; calques : {1}
+Сохранить плагин = Enregistrer l’extension

@@ -26,6 +26,9 @@ pub enum Ask {
     SaveBrush(usize),
     /// Сохранить все инструменты сетки набором `.gsbrushes`.
     SaveBrushSet,
+    /// Сохранить пакет плагина `.gsplugin` (только мастерская).
+    #[allow(dead_code)]
+    SavePlugin,
 }
 
 pub struct Pending {
@@ -74,6 +77,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
         ),
         Ask::SaveBrush(_) => (tr("Сохранить кисть"), vec![(tr("Кисть GrazySAI").to_string(), vec!["gsbrush"])]),
         Ask::SaveBrushSet => (tr("Сохранить набор кистей"), vec![(tr("Набор кистей GrazySAI").to_string(), vec!["gsbrushes"])]),
+        Ask::SavePlugin => (tr("Сохранить плагин"), vec![(tr("Плагины GrazySAI").to_string(), vec!["gsplugin"])]),
         Ask::SaveAs => (
             tr("Сохранить как"),
             vec![("SAI 2 (.sai2)".to_string(), vec!["sai2"]), ("OpenRaster (.ora)".to_string(), vec!["ora"]), ("Photoshop (.psd)".to_string(), vec!["psd"]), ("Photoshop PSB (.psb)".to_string(), vec!["psb"])],

@@ -3577,7 +3577,7 @@ app.open_canvas_dialog(d == "resolution")
                 self.save_brush_file(p, None);
             }
             (files::Answer::Unavailable, files::Ask::Tip) => self.status = String::from(tr("Перетащите картинку в окно с Shift — она станет отпечатком кисти")),
-            (files::Answer::Cancelled, _) => {}
+            (files::Answer::Cancelled, _) | (_, files::Ask::SavePlugin) => {}
         }
     }
 

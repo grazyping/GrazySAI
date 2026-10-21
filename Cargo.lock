@@ -2006,6 +2006,7 @@ dependencies = [
  "paint-brush",
  "paint-core",
  "paint-formats",
+ "paint-plugin",
  "rfd",
 ]
 

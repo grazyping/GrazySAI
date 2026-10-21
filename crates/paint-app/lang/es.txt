@@ -971,3 +971,17 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Управление плагинами… = Gestionar complementos…
 Установить = Instalar
 Установить плагин = Instalar complemento
+До = Antes
+Как писать плагины (docs/36-plugins.md) = Cómo escribir complementos (docs/36-plugins.en.md)
+Команда = Comando
+Новый из примера = Nuevo desde ejemplo
+Ошибка — см. ниже = Error: vea abajo
+Плагин = Complemento
+Плагин «{0}» отправлен в GrazySAI: меню «Плагины» = Complemento «{0}» enviado a GrazySAI: menú «Complementos»
+Плагин открыт = Complemento abierto
+Плагин сразу появится в меню «Плагины» открытой рисовалки (папка plugins/dev) = El complemento aparece al instante en el menú «Complementos» de GrazySAI abierto (carpeta plugins/dev)
+После = Después
+▶ Проверить на пробной картинке = ▶ Probar en la imagen de muestra
+Проверка = Prueba
+Проверка прошла за {0} мс; слоёв: {1} = Prueba superada en {0} ms; capas: {1}
+Сохранить плагин = Guardar complemento

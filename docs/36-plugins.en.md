@@ -4,6 +4,10 @@ A plugin is a small program in **Luau** (a Lua variant) that adds commands to th
 changes the open picture. Any text editor will do; no compiler is needed. Examples are in
 [`plugins/examples/`](../plugins/examples/).
 
+The easiest place to write a plugin is the **GrazySAI Studio** workshop (the “Plugin” tab): it has
+templates, a test on a sample picture with errors by line, and an “Export to GrazySAI” button that puts the
+plugin into the menu of the running painting program at once. Below is how to do the same by hand.
+
 ## A first plugin in 10 minutes
 
 1. Make a folder with two files.

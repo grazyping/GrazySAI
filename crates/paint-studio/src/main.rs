@@ -17,6 +17,7 @@ mod files;
 #[allow(dead_code)]
 #[path = "../../paint-app/src/settings.rs"]
 mod settings;
+mod plugin_tab;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Vec2};
 use i18n::{tr, trf};
@@ -51,14 +52,25 @@ struct Studio {
     tex_names: Option<Vec<String>>,
     /// Генератор отпечатка: вид и число брызг.
     gen_dots: u32,
+    /// Вкладка: кисть или плагин.
+    tab: Tab,
+    plugin: plugin_tab::PluginTab,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Tab {
+    Brush,
+    Plugin,
 }
 
 /// Что ждём от окна выбора файла.
 #[derive(Clone, Copy, PartialEq)]
-enum Want {
+pub enum Want {
     Open,
     Save,
     Tip,
+    OpenPlugin,
+    SavePlugin,
 }
 
 impl Studio {
@@ -83,6 +95,8 @@ impl Studio {
             tip_names: None,
             tex_names: None,
             gen_dots: 24,
+            tab: Tab::Brush,
+            plugin: plugin_tab::PluginTab::new(),
         }
     }
 
@@ -191,15 +205,19 @@ impl Studio {
     }
 
     fn ask(&mut self, ctx: &egui::Context, want: Want) {
-        let suggested = self.path.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join(format!("{}.gsbrush", paint_brush::safe_name(&self.name()))));
+        let suggested = match want {
+            Want::OpenPlugin | Want::SavePlugin => self.plugin.path.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("plugin.gsplugin")),
+            _ => self.path.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join(format!("{}.gsbrush", paint_brush::safe_name(&self.name())))),
+        };
         if !files::native() {
             self.status = tr("Окно выбора файла недоступно; перетащите файл в окно").to_string();
             return;
         }
         let ask = match want {
-            Want::Open => files::Ask::Open,
+            Want::Open | Want::OpenPlugin => files::Ask::Open,
             Want::Save => files::Ask::SaveBrush(0),
             Want::Tip => files::Ask::Tip,
+            Want::SavePlugin => files::Ask::SavePlugin,
         };
         self.dialog = Some((files::ask(ask, &suggested, ctx), want));
     }
@@ -212,6 +230,8 @@ impl Studio {
                 Want::Open => self.open(p),
                 Want::Save => self.save_to(p),
                 Want::Tip => self.add_tip(p),
+                Want::OpenPlugin => self.plugin.open(p),
+                Want::SavePlugin => self.plugin.save_to(p),
             }
         }
     }
@@ -451,9 +471,32 @@ impl eframe::App for Studio {
             let ext = p.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
             if ext == "gsbrush" || ext == "gsbrushes" {
                 self.open(p);
+            } else if ext == "gsplugin" {
+                self.tab = Tab::Plugin;
+                self.plugin.open(p);
             } else {
                 self.add_tip(p);
             }
+        }
+        egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.tab, Tab::Brush, egui::RichText::new(tr("Кисть")).heading());
+                ui.selectable_value(&mut self.tab, Tab::Plugin, egui::RichText::new(tr("Плагин")).heading());
+            });
+        });
+        if self.tab == Tab::Plugin {
+            egui::TopBottomPanel::top("pbar").show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if let Some(w) = self.plugin.bar(ui) {
+                        self.ask(ctx, w);
+                    }
+                });
+            });
+            egui::TopBottomPanel::bottom("pstatus").show(ctx, |ui| {
+                ui.label(if self.plugin.status.is_empty() { &self.status } else { &self.plugin.status });
+            });
+            self.plugin.ui(ctx);
+            return;
         }
         egui::TopBottomPanel::top("bar").show(ctx, |ui| {
             ui.horizontal(|ui| {

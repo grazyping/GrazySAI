@@ -419,6 +419,12 @@ brush and try it at once, without touching the painting program.
   program. The brush is kept in the settings folder under `brushes/dev/`.
 - You can drag a picture or a brush file onto the workshop window.
 
+The **“Plugin”** tab is for plugins: `plugin.txt` and `main.lua` in the editor on the left, “Test” on the
+right — choose a command, set its fields and press “▶ Test on the sample picture” to see “before” and
+“after”, the log and an error with its line number. “New from example” (invert, grid, noise), “Save”
+(`.gsplugin`) and **“Export to GrazySAI”** — the plugin appears in the “Plugins” menu of the running
+GrazySAI at once (`plugins/dev/` folder).
+
 
 | Format | Open | Save |
 |---|---|---|
