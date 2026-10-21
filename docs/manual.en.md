@@ -406,6 +406,8 @@ examples — `plugins/examples/` in the repository.
 
 ## Brush workshop (GrazySAI Studio)
 
+Step by step: making and sharing a brush — [docs/37-brushes-guide.en.md](37-brushes-guide.en.md).
+
 A separate program next to GrazySAI: `GrazySAI-Studio` (`GrazySAI-Studio.exe` on Windows). There you make a
 brush and try it at once, without touching the painting program.
 

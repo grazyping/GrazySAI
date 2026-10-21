@@ -16,6 +16,8 @@ for os in linux windows; do
   d=GrazySAI-$V-$os-x86_64; rm -rf $d; mkdir $d
   cp ../../LICENSE ../../README.md ../../README.ru.md ../../ROADMAP.md ../../ROADMAP.en.md $d/
   cp ../../docs/manual.md $d/РУКОВОДСТВО.md; cp ../../docs/manual.en.md $d/MANUAL.md
+  # инструкции для авторов кистей и плагинов — рядом с руководством (ссылки в нём на соседние файлы)
+  cp ../../docs/35-gsbrush-format.md ../../docs/36-plugins.md ../../docs/36-plugins.en.md ../../docs/37-brushes-guide.md ../../docs/37-brushes-guide.en.md $d/
   sed -i 's#(docs/manual.en.md)#(MANUAL.md)#' $d/README.md
   sed -i 's#(docs/manual.md)#(РУКОВОДСТВО.md)#' $d/README.ru.md
   sed -i 's#(manual.en.md)#(MANUAL.md)#; s#(\.\./ROADMAP.md)#(ROADMAP.md)#' $d/РУКОВОДСТВО.md

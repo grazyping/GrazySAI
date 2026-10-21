@@ -410,6 +410,8 @@ Português (Brasil), 日本語, 简体中文, 한국어. При первом з�
 
 ## Мастерская кистей (GrazySAI Studio)
 
+Как сделать и передать свою кисть по шагам — [docs/37-brushes-guide.md](37-brushes-guide.md).
+
 Отдельная программа рядом с GrazySAI: `GrazySAI-Studio` (в Windows — `GrazySAI-Studio.exe`). В ней
 кисть делают и сразу пробуют, не трогая рисовалку.
 

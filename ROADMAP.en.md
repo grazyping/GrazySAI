@@ -226,5 +226,5 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 - [x] Workshop: editing and testing a plugin, “Export to GrazySAI” (1.0.33)
 - [x] Plugins: custom brush dynamics (a function per dab) (1.0.34)
 - [x] WebAssembly plugins (wasmi): tiled filters on several threads, with margins for neighbours (1.0.35)
-- [ ] Guides for authors (ru, en), templates and examples
+- [x] Guides for authors (ru, en), templates and examples: `docs/36-plugins.en.md`, `docs/37-brushes-guide.en.md`, `plugins/examples/` (1.0.36)
 - [ ] Later: a free shared catalog (a repository with an index and files in Releases)
