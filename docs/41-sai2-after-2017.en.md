@@ -33,6 +33,12 @@ not analysed; live checks only on official builds, hidden display, a separate Wi
   the gap closed by **a straight segment between the line ends**, the fill reaching the line's outer edge.
 - “New Canvas” (Alpha): presets (edit, add), “Color Mode” (RGB etc.).
 - A brush preview above the brush parameters (confirms item 8).
+- **Blur (1.0.41):** the Watercolor blur without paint; dab 0.93 of the size, width 50 % = 0.88 of it;
+  profiles at 50 and 100 px within 4–7 levels in the middle, 16 at the edge.
+- **Smudge (1.0.42):** in SAI it transports pixels along the stroke (a bar moves ~½ of the travelled path at
+  the stroke middle, ~¼ 10 px off, barely at the edge) with smearing. Ours: “shift under the dab by a share
+  of the step + a carried reservoir” (0.87 of the size; 0.83 / 0.22 / 0.7), fitted by search; within ~30
+  levels at the blob edge. “Coloring” not checked.
 - **Control step (item 1) done.** The Pencil sheet (5 hardness steps × sizes 1–100, a size-20 line,
   density 100, mouse) in 2026-07-02b against the same 2017 sheet: at mid hardness 2026 dabs carry
   20–35 % less paint and are 10–15 % smaller in diameter (50 % level); size-20 lines are nearly the same

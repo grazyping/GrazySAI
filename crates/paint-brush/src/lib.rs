@@ -104,6 +104,8 @@ pub enum ToolKind {
     SelErs,
     /// «Размытие» (SAI 2020+): кисть, которая только размывает под собой.
     Blur,
+    /// «Растушёвка» (SAI 2017-11+): тянет краску холста.
+    Smudge,
     /// Заливка лассо (SAI 2026): обвести — залить; с «замкнутыми областями» — только то, что
     /// замкнуто линиями внутри обводки (docs/41).
     LassoFill,
@@ -111,7 +113,7 @@ pub enum ToolKind {
 
 impl ToolKind {
     /// В порядке меню SAI.
-    pub const ALL: [ToolKind; 13] = [
+    pub const ALL: [ToolKind; 14] = [
         ToolKind::Pencil,
         ToolKind::AirBrush,
         ToolKind::Brush,
@@ -124,6 +126,7 @@ impl ToolKind {
         ToolKind::SelPen,
         ToolKind::SelErs,
         ToolKind::Blur,
+        ToolKind::Smudge,
         ToolKind::LassoFill,
     ];
 
@@ -141,6 +144,7 @@ impl ToolKind {
             ToolKind::SelPen => "selpen",
             ToolKind::SelErs => "selers",
             ToolKind::Blur => "blur",
+            ToolKind::Smudge => "smudge",
             ToolKind::LassoFill => "lassofill",
         }
     }
@@ -164,6 +168,7 @@ impl ToolKind {
             ToolKind::SelPen => "Перо выделения",
             ToolKind::SelErs => "Ластик выделения",
             ToolKind::Blur => "Размытие",
+            ToolKind::Smudge => "Растушёвка",
             ToolKind::LassoFill => "Заливка лассо",
         }
     }
@@ -223,6 +228,13 @@ impl ToolKind {
             ToolKind::LassoFill => ("Зал.лассо", "lassofill", b(10.0, 1.0, 1.0)),
             // «Размытие» в SAI 2026: 50 px, самая мягкая ступень, плотность от нажима (мин. 0 %),
             // ширина размытия 50 %, резкость 50
+            // «Растушёвка» в SAI 2026: 50 px, самая мягкая ступень, нажим на размер и плотность
+            // (мин. 0 %), плотность 90, «Окрашивание» выключено (20), «Нажим без окраски» 90 %
+            ToolKind::Smudge => (
+                "Растуш.",
+                "smudge",
+                BrushParams { min_size: 0.0, density_by_pressure: true, mix: Some(MixParams { smudge: true, blend_by_pressure: false, ..MixParams::new(0.0, 0.0, 0.5) }), ..b(50.0, 0.0, 0.9) },
+            ),
             ToolKind::Blur => (
                 "Размытие",
                 "blur",
@@ -323,6 +335,10 @@ pub fn read(b: &mut Brush, s: &Kv, prefix: &str) {
         s.read_f32(&k("blur_pressure"), &mut m.blur_pressure);
         s.read_bool(&k("blend_by_pressure"), &mut m.blend_by_pressure);
         s.read_f32(&k("blur_width"), &mut m.blur_width);
+        s.read_f32(&k("smudge_color"), &mut m.smudge_color);
+        s.read_f32(&k("smudge_uncolor"), &mut m.smudge_uncolor);
+        m.smudge_color = m.smudge_color.clamp(0.0, 1.0);
+        m.smudge_uncolor = m.smudge_uncolor.clamp(0.0, 1.0);
         m.blur_width = m.blur_width.clamp(0.0, 1.0);
     }
     p.size = p.size.clamp(0.1, 5000.0);
@@ -393,6 +409,10 @@ pub fn write(b: &Brush, s: &mut Kv, prefix: &str) {
         s.set(&k("blend_by_pressure"), m.blend_by_pressure as u8);
         if m.blur_only {
             s.set(&k("blur_width"), m.blur_width);
+        }
+        if m.smudge {
+            s.set(&k("smudge_color"), m.smudge_color);
+            s.set(&k("smudge_uncolor"), m.smudge_uncolor);
         }
     }
     let g = &b.grain;

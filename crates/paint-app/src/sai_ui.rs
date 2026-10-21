@@ -798,6 +798,15 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
             glyph(p, r, c, "lasso");
         }
         // значки меню (новые пункты сверх SAI)
+        "smudge" => {
+            // палец: дуга и след
+            let pts: Vec<Pos2> = (0..=12).map(|i| {
+                let t = i as f32 / 12.0;
+                ctr + Vec2::new(-k * 0.7 + t * k * 1.2, k * 0.5 - (t * PI).sin() * k * 0.9)
+            }).collect();
+            p.add(Shape::line(pts, s));
+            p.circle_filled(ctr + Vec2::new(k * 0.55, -k * 0.2), k * 0.25, c);
+        }
         "f_blur" | "blur" => {
             // размытое пятно: круги с убывающей плотностью
             for (i, a) in [(1.0, 60u8), (0.75, 110), (0.5, 200)] {

@@ -492,6 +492,8 @@ pub struct Stroke {
     /// Отпечатки обычной кисти, ещё не наложенные в покрытие.
     queued: Vec<Placed>,
     mixer: Option<Mixer>,
+    /// Растушёвка: запас под отпечатком (сторона `2r+1`, с предумножением) и прошлая точка.
+    smudge: Option<SmudgeState>,
     /// Форма «пятно» и текстура кисти.
     grain: Option<Grain>,
     /// Значения текстур по плиткам холста: пятно и текстура.
@@ -527,6 +529,7 @@ impl Stroke {
             pending: Vec::new(),
             queued: Vec::new(),
             mixer: None,
+            smudge: None,
             grain: None,
             grain_cache: Default::default(),
             level_cache: HashMap::new(),
@@ -968,6 +971,9 @@ impl Stroke {
         finish: bool,
     ) -> Vec<Key> {
         let Some(mix) = self.params.mix else { return Vec::new() };
+        if mix.smudge {
+            return self.paint_smudge(pixels, rgb, preserve_opacity, sel, originals);
+        }
         let softness = 1.0 - self.params.hardness.clamp(0.0, 1.0);
         let mixer = self.mixer.get_or_insert_with(|| Mixer::new(mix, rgb));
         let mut changed = HashSet::new();
@@ -1044,6 +1050,114 @@ impl Stroke {
                         self.level_cache.remove(&(level, *key));
                     }
                 }
+            }
+        }
+        let keys: Vec<Key> = changed.into_iter().collect();
+        self.touched.extend(keys.iter().copied());
+        keys
+    }
+}
+
+/// Запас растушёвки: радиус, точки (с предумножением), прошлая точка кисти.
+type SmudgeState = (i32, Vec<[f32; 4]>, (f32, f32));
+
+/// Коэффициенты растушёвки, подобранные по живой SAI 2026 (`paint-brush/tests/smudge_live.rs`):
+/// отпечаток 0,87 размера; сдвиг под отпечатком — 0,83·плотность·покрытие шага; запас смешивается
+/// с холстом на 0,22·плотность·покрытие и подхватывает холст на 0,7.
+const SMUDGE_DAB: f32 = 0.87;
+const SMUDGE_MOVE: f32 = 0.833;
+const SMUDGE_CARRY: f32 = 0.222;
+const SMUDGE_PICKUP: f32 = 0.7;
+
+impl Stroke {
+    /// Растушёвка: каждый отпечаток сдвигает пиксели под собой вдоль хода кисти на долю шага и
+    /// смешивает их с запасом, который едет вместе с кистью.
+    fn paint_smudge(&mut self, pixels: &mut ColorMap, rgb: [u8; 3], preserve_opacity: bool, sel: &crate::selection::Selection, originals: &mut HashMap<Key, Option<Tile<Px>>>) -> Vec<Key> {
+        let Some(mix) = self.params.mix else { return Vec::new() };
+        let softness = 1.0 - self.params.hardness.clamp(0.0, 1.0);
+        let dabs: Vec<Pending> = std::mem::take(&mut self.pending);
+        let mut changed: HashSet<Key> = HashSet::new();
+        let one = ONE as f32;
+        let brush = [rgb[0] as f32 / 255.0 * one, rgb[1] as f32 / 255.0 * one, rgb[2] as f32 / 255.0 * one, one];
+        for d in dabs {
+            let diameter = self.params.diameter_at(d.pressure) * SMUDGE_DAB;
+            let dab = Dab::new(DabInput { diameter, softness, density: 1.0, density_factor: 1.0, density_scale: 1.0, flat: false, ver1: false, blot: false, taper: 0.0, amplify: 0.0, amplify_by_pressure: false });
+            let density = self.params.density_at(d.pressure);
+            let r = dab.outer().ceil() as i32 + 1;
+            let n = (2 * r + 1) as usize;
+            let (cx, cy) = (d.x.floor() as i32, d.y.floor() as i32);
+            let get = |p: &ColorMap, x: i32, y: i32| -> [f32; 4] { p.get(x, y).map(|v| v as f32) };
+            // запас — заново, если кисть только началась или размер сменился
+            let fresh = self.smudge.as_ref().is_none_or(|s| s.0 != r);
+            if fresh {
+                let carry = (0..n * n).map(|j| get(pixels, cx + j as i32 % n as i32 - r, cy + j as i32 / n as i32 - r)).collect();
+                self.smudge = Some((r, carry, (d.x, d.y)));
+                continue;
+            }
+            let (_, carry, last) = self.smudge.as_mut().unwrap();
+            let (mx, my) = (d.x - last.0, d.y - last.1);
+            *last = (d.x, d.y);
+            // снимок области под отпечатком (с запасом на сдвиг)
+            let pad = r + (mx.abs().max(my.abs()).ceil() as i32) + 2;
+            let (sx0, sy0, sn) = (cx - pad, cy - pad, (2 * pad + 1) as usize);
+            let snap: Vec<[f32; 4]> = (0..sn * sn).map(|j| get(pixels, sx0 + (j % sn) as i32, sy0 + (j / sn) as i32)).collect();
+            let sample = |x: f32, y: f32| -> [f32; 4] {
+                let (fx, fy) = (x - 0.5, y - 0.5);
+                let (x0, y0) = (fx.floor(), fy.floor());
+                let (tx, ty) = (fx - x0, fy - y0);
+                let at = |xx: i32, yy: i32| -> [f32; 4] {
+                    let (u, v) = ((xx - sx0).clamp(0, sn as i32 - 1) as usize, (yy - sy0).clamp(0, sn as i32 - 1) as usize);
+                    snap[v * sn + u]
+                };
+                let (a, b, c, e) = (at(x0 as i32, y0 as i32), at(x0 as i32 + 1, y0 as i32), at(x0 as i32, y0 as i32 + 1), at(x0 as i32 + 1, y0 as i32 + 1));
+                std::array::from_fn(|k| (a[k] * (1.0 - tx) + b[k] * tx) * (1.0 - ty) + (c[k] * (1.0 - tx) + e[k] * tx) * ty)
+            };
+            let color = if mix.smudge_color > 0.0 && d.pressure > mix.smudge_uncolor { mix.smudge_color } else { 0.0 };
+            for (j, kk) in carry.iter_mut().enumerate() {
+                let (u, v) = (j as i32 % n as i32 - r, j as i32 / n as i32 - r);
+                let (x, y) = (cx + u, cy + v);
+                let dist = (((x as f32 + 0.5) - d.x).powi(2) + ((y as f32 + 0.5) - d.y).powi(2)).sqrt();
+                let cov = dab.coverage(dist);
+                if cov <= 0.0 {
+                    continue;
+                }
+                let s = sel.amount(x, y) as f32 / one;
+                if s <= 0.0 {
+                    continue;
+                }
+                let m = (cov * density * SMUDGE_MOVE).min(1.0) * s;
+                let mut px = sample(x as f32 + 0.5 - m * mx, y as f32 + 0.5 - m * my);
+                let mb = (cov * density * SMUDGE_CARRY).min(1.0) * s;
+                let before = px;
+                for c in 0..4 {
+                    px[c] += (kk[c] - px[c]) * mb;
+                    kk[c] += (before[c] - kk[c]) * SMUDGE_PICKUP;
+                }
+                if color > 0.0 {
+                    let mc = (cov * density * color).min(1.0) * s;
+                    for c in 0..4 {
+                        px[c] += (brush[c] - px[c]) * mc;
+                    }
+                }
+                let old = pixels.get(x, y);
+                let mut out: Px = std::array::from_fn(|c| px[c].round().clamp(0.0, one) as u16);
+                out[3] = out[3].max(out[0]).max(out[1]).max(out[2]);
+                if preserve_opacity {
+                    // непрозрачность прежняя, цвет — новый
+                    let a = old[3] as f32;
+                    let na = (out[3] as f32).max(1.0);
+                    for v in out.iter_mut().take(3) {
+                        *v = (*v as f32 * a / na).round().clamp(0.0, a) as u16;
+                    }
+                    out[3] = old[3];
+                }
+                if out == old {
+                    continue;
+                }
+                let key = key_of(x, y);
+                originals.entry(key).or_insert_with(|| pixels.tiles.get(&key).cloned());
+                pixels.set(x, y, out);
+                changed.insert(key);
             }
         }
         let keys: Vec<Key> = changed.into_iter().collect();

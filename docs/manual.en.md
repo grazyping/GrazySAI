@@ -465,6 +465,13 @@ the center or all over the picture), size, opacity, margin; a preview on the pic
 export…” the mark goes into image exports (PNG, JPEG, WebP, BMP, TGA, TIFF, QOI); it is never written into
 the picture itself, `.sai2`, `.psd` or `.ora`.
 
+### Smudge
+
+The “Smudge” grid tool (from SAI 2 2017-11+): drags canvas paint along with the brush, like a finger; lays
+no paint of its own. Strength follows density and pressure. “Coloring” (off by default) mixes in the brush
+color; below “Uncolor pressure” the brush only drags. Behaviour fitted to the live SAI 2026 (our own model,
+not SAI's code).
+
 ### Blur
 
 The “Blur” grid tool (from SAI 2 2020+; right-click an empty cell): a brush that only blurs what is under

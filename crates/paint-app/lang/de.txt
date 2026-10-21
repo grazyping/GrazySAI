@@ -1111,3 +1111,9 @@ Zip с паролем = Zip mit Passwort
 
 # размытие
 Ширина размытия = Weichzeichnerbreite
+
+# растушёвка
+Нажим без окраски = Druck ohne Farbe
+Окрашивание = Einfärben
+Растуш. = Wischen
+Растушёвка = Wischfinger

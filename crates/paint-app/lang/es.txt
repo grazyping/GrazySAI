@@ -1111,3 +1111,9 @@ Zip с паролем = Zip con contraseña
 
 # размытие
 Ширина размытия = Ancho de desenfoque
+
+# растушёвка
+Нажим без окраски = Presión sin color
+Окрашивание = Coloreado
+Растуш. = Difumin.
+Растушёвка = Difuminar

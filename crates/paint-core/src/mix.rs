@@ -36,13 +36,19 @@ pub struct MixParams {
     pub blur_only: bool,
     /// «Ширина размытия» 0..=1; 0,5 — как размытие Акварели.
     pub blur_width: f32,
+    /// «Растушёвка» (SAI 2017-11+): тянет краску холста (`stroke::paint_smudge`), своей не кладёт.
+    pub smudge: bool,
+    /// «Окрашивание» растушёвки: доля цвета кисти (0 — выключено) и «Нажим без окраски»:
+    /// при нажиме ниже — только тянет.
+    pub smudge_color: f32,
+    pub smudge_uncolor: f32,
 }
 
 impl MixParams {
     /// Значения нового инструмента в образце: Кисть и Маркер — 0/0/50, Акварель — 30/30/50;
     /// порог размытия 50, нажим на смешивание включён.
     pub fn new(blending: f32, dilution: f32, persistence: f32) -> Self {
-        Self { blending, dilution, persistence, blend_by_pressure: true, blur_pressure: 0.5, blur: false, marker: false, blur_only: false, blur_width: 0.5 }
+        Self { blending, dilution, persistence, blend_by_pressure: true, blur_pressure: 0.5, blur: false, marker: false, blur_only: false, blur_width: 0.5, smudge: false, smudge_color: 0.0, smudge_uncolor: 0.9 }
     }
 }
 

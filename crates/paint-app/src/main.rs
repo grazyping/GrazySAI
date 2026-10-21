@@ -6996,14 +6996,24 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 });
             };
-            if mix.blur_only {
+            if mix.smudge {
+                // «Окрашивание»: флажок и доля цвета кисти; ниже «Нажима без окраски» — только тянет
+                let mut on = mix.smudge_color > 0.0;
+                if ui.checkbox(&mut on, tr("Окрашивание")).changed() {
+                    mix.smudge_color = if on { 0.2 } else { 0.0 };
+                }
+                if on {
+                    pct(ui, tr("Окрашивание"), &mut mix.smudge_color);
+                    pct(ui, tr("Нажим без окраски"), &mut mix.smudge_uncolor);
+                }
+            } else if mix.blur_only {
                 pct(ui, tr("Ширина размытия"), &mut mix.blur_width);
             } else {
                 pct(ui, tr("Смешивание"), &mut mix.blending);
                 pct(ui, tr("Разбавление"), &mut mix.dilution);
                 pct(ui, tr("Стойкость"), &mut mix.persistence);
             }
-            if mix.blend_by_pressure && !mix.blur_only {
+            if mix.blend_by_pressure && !mix.blur_only && !mix.smudge {
                 pct(ui, tr("Порог размыт."), &mut mix.blur_pressure);
             }
         }

@@ -95,6 +95,30 @@ pub fn run(report: Option<PathBuf>) -> bool {
             }
             Ok(format!("{} мс", r.elapsed.as_millis()))
         })),
+        ("инструмент «Растушёвка» и отмена", Box::new(|_| {
+            let mut doc = Document::new(200, 120);
+            let mut bar = Stroke::new(BrushParams { size: 20.0, hardness: 1.0, size_by_pressure: false, ..Default::default() });
+            for y in (0..=120).step_by(10) {
+                bar.add_point(InputPoint { x: 100.0, y: y as f32, pressure: 1.0 });
+            }
+            doc.commit_stroke(0, &bar, [0, 0, 0]);
+            let before = doc.layers[0].pixels.clone();
+            let mut live = paint_core::LiveStroke::new(vec![0], Stroke::new(paint_brush::ToolKind::Smudge.new_brush().params), [0, 0, 0]);
+            for x in (60..=160).step_by(4) {
+                live.stroke.add_point(InputPoint { x: x as f32, y: 60.0, pressure: 1.0 });
+                doc.live_update(&mut live);
+            }
+            doc.live_finish(live);
+            let moved = (112..150).map(|x| paint_core::pixel::to_rgba8(doc.layers[0].pixels.get(x, 60))[3]).max().unwrap_or(0);
+            if moved < 10 {
+                return Err("краска не потянулась".into());
+            }
+            doc.undo();
+            if doc.layers[0].pixels != before {
+                return Err("отмена не вернула".into());
+            }
+            Ok(format!("{moved}"))
+        })),
         ("инструмент «Размытие»", Box::new(|_| {
             let mut doc = Document::new(200, 100);
             for y in 0..100 {

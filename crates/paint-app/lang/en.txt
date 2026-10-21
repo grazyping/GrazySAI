@@ -1112,3 +1112,9 @@ Zip с паролем = Password-protected zip
 
 # размытие
 Ширина размытия = Blur width
+
+# растушёвка
+Нажим без окраски = Uncolor pressure
+Окрашивание = Coloring
+Растуш. = Smudge
+Растушёвка = Smudge
