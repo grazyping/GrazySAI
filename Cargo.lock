@@ -1936,7 +1936,7 @@ dependencies = [
 
 [[package]]
 name = "paint-app"
-version = "1.0.33"
+version = "1.0.34"
 dependencies = [
  "arboard",
  "eframe",
@@ -1951,7 +1951,7 @@ dependencies = [
 
 [[package]]
 name = "paint-brush"
-version = "1.0.33"
+version = "1.0.34"
 dependencies = [
  "paint-core",
  "paint-formats",
@@ -1959,7 +1959,7 @@ dependencies = [
 
 [[package]]
 name = "paint-cli"
-version = "1.0.33"
+version = "1.0.34"
 dependencies = [
  "paint-core",
  "paint-formats",
@@ -1967,7 +1967,7 @@ dependencies = [
 
 [[package]]
 name = "paint-core"
-version = "1.0.33"
+version = "1.0.34"
 dependencies = [
  "image-webp",
  "jpeg-encoder",
@@ -1979,7 +1979,7 @@ dependencies = [
 
 [[package]]
 name = "paint-formats"
-version = "1.0.33"
+version = "1.0.34"
 dependencies = [
  "ab_glyph",
  "miniz_oxide 0.8.9",
@@ -1991,7 +1991,7 @@ dependencies = [
 
 [[package]]
 name = "paint-plugin"
-version = "1.0.33"
+version = "1.0.34"
 dependencies = [
  "mlua",
  "paint-brush",
@@ -2001,7 +2001,7 @@ dependencies = [
 
 [[package]]
 name = "paint-studio"
-version = "1.0.33"
+version = "1.0.34"
 dependencies = [
  "eframe",
  "paint-brush",
@@ -2042,7 +2042,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pen-test"
-version = "1.0.33"
+version = "1.0.34"
 dependencies = [
  "paint-core",
  "windows-sys 0.59.0",
@@ -2825,7 +2825,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "virtual-tablet"
-version = "1.0.33"
+version = "1.0.34"
 dependencies = [
  "libc",
 ]
