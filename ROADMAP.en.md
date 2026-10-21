@@ -213,3 +213,16 @@ Everything SAI has comes first; these come later. They do not hurt compatibility
 - [x] Colouring by line art (like Krita's colorize mask); the result is plain pixels (1.0.19)
 - [x] Reference images over the canvas (1.0.12)
 - [x] Pop-up palette on right click (off by default) (1.0.11)
+
+### Own brushes and plugins (GrazySAI Studio workshop)
+
+Anyone may write them, so plugin code runs in a sandbox. Details and measurements:
+`docs/34-brushes-and-plugins.md`.
+
+- [ ] Own brush file `.gsbrush` and set `.gsbrushes`: save and open a grid tool
+- [ ] Brush dynamics: inputs (pressure, speed, tilt, direction, stroke progress, random) → curve → parameters
+- [ ] GrazySAI Studio workshop: brush editor with a test strip, tip generator, “Export to GrazySAI” with live reload
+- [ ] Luau plugins (sandboxed): menu commands, parameter windows, custom brush dynamics
+- [ ] WebAssembly plugins (wasmi): tiled filters, custom tips
+- [ ] Guides for authors (ru, en), templates and examples
+- [ ] Later: a free shared catalog (a repository with an index and files in Releases)
