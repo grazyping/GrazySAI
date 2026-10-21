@@ -460,6 +460,11 @@ folder under `brushtex`). The image tip is taken from the CSP material thumbnail
 dual brush, tip thickness, watercolor edge — is skipped, and the status bar lists it. The stroke looks like CSP but is not identical: the
 engines differ. A `.bfps` palette has no images (it refers to CSP materials), so only settings are taken.
 
+“File → Watermark…” — text (your font and color) or a picture (PNG with transparency etc.), position (a corner,
+the center or all over the picture), size, opacity, margin; a preview on the picture. With “Add on image
+export…” the mark goes into image exports (PNG, JPEG, WebP, BMP, TGA, TIFF, QOI); it is never written into
+the picture itself, `.sai2`, `.psd` or `.ora`.
+
 “File → Save with number” saves next to the file under the next free number: `picture.sai2` → `picture_001.sai2`, `picture_009.sai2` → `picture_010.sai2`.
 
 “Help → Options…” has “PSD and PSB — 16 bits per channel”: GrazySAI works with 15 bits per channel inside,

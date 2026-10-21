@@ -1088,6 +1088,11 @@ struct PaintApp {
     plugin_log: Vec<String>,
     /// Ошибка своей динамики из плагина у текущего мазка (показывается после него).
     dyn_error: Option<paint_plugin::DynError>,
+    /// Водяной знак: настройки, добавлять ли при экспорте картинки, открыто ли окно, предпросмотр.
+    watermark: paint_formats::watermark::Watermark,
+    watermark_on: bool,
+    show_watermark: bool,
+    watermark_preview: Option<egui::TextureHandle>,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
     /// Линейка (прямая или эллипс) и её правка Ctrl + перетаскиванием: что взяли и где было.
@@ -1367,6 +1372,10 @@ impl PaintApp {
             show_plugins: false,
             plugin_log: Vec::new(),
             dyn_error: None,
+            watermark: Default::default(),
+            watermark_on: false,
+            show_watermark: false,
+            watermark_preview: None,
             layer_drag: None,
             ruler: ruler::Ruler::default(),
             ruler_drag: None,
@@ -1713,6 +1722,28 @@ app.open_canvas_dialog(d == "resolution")
         s.read_bool("dark_theme", &mut self.dark_theme);
         s.read_bool("pixel_grid", &mut self.pixel_grid);
         s.read_bool("wrap_around", &mut self.wrap_around);
+        {
+            let wm = &mut self.watermark;
+            s.read_bool("wm.on", &mut self.watermark_on);
+            if let Some(v) = s.str("wm.text") {
+                wm.text = v.to_string();
+            }
+            if let Some(v) = s.str("wm.image") {
+                wm.image = (!v.is_empty()).then(|| PathBuf::from(v));
+            }
+            if let Some(v) = s.str("wm.font").filter(|v| !v.is_empty()) {
+                wm.font = v.to_string();
+            }
+            if let Some(n) = s.str("wm.color").and_then(|v| u32::from_str_radix(v, 16).ok()) {
+                wm.color = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
+            }
+            s.read_f32("wm.opacity", &mut wm.opacity);
+            s.read_f32("wm.size", &mut wm.size);
+            s.read_f32("wm.margin", &mut wm.margin);
+            if let Some(p) = s.str("wm.place").and_then(paint_formats::watermark::Place::from_key) {
+                wm.place = p;
+            }
+        }
         if let Some(v) = s.f32("symmetry") {
             self.symmetry = (v as u8).min(3);
         }
@@ -1910,6 +1941,18 @@ app.open_canvas_dialog(d == "resolution")
         s.set("dark_theme", self.dark_theme as u8);
         s.set("pixel_grid", self.pixel_grid as u8);
         s.set("wrap_around", self.wrap_around as u8);
+        {
+            let wm = &self.watermark;
+            s.set("wm.on", self.watermark_on as u8);
+            s.set("wm.text", &wm.text);
+            s.set("wm.image", wm.image.as_ref().map(|p| p.display().to_string()).unwrap_or_default());
+            s.set("wm.font", &wm.font);
+            s.set("wm.color", format!("{:02x}{:02x}{:02x}", wm.color[0], wm.color[1], wm.color[2]));
+            s.set("wm.opacity", wm.opacity);
+            s.set("wm.size", wm.size);
+            s.set("wm.margin", wm.margin);
+            s.set("wm.place", wm.place.key());
+        }
         s.set("symmetry", self.symmetry);
         for (a, id, _, _) in keys::ALL {
             let v = self.keymap.get(&a).copied().flatten().map_or_else(|| "none".to_string(), |b| b.text());
@@ -2655,6 +2698,95 @@ app.open_canvas_dialog(d == "resolution")
                 Err(e) => self.status = trf("Ошибка плагина «{0}»: {1}", &[&p.plugin.name, &e]),
             },
             None => self.status = trf("Динамика «{0}»: плагин {1} не установлен", &[&name, &id]),
+        }
+    }
+
+    /// Окно «Водяной знак»: текст или картинка, место, размер, непрозрачность; предпросмотр на
+    /// уменьшенном рисунке.
+    fn watermark_window(&mut self, ctx: &egui::Context) {
+        use paint_formats::watermark::Place;
+        let mut open = true;
+        let mut changed = false;
+        let mut pick_image = false;
+        egui::Window::new(tr("Водяной знак")).open(&mut open).resizable(false).show(ctx, |ui| {
+            ui.spacing_mut().slider_width = 180.0;
+            ui.checkbox(&mut self.watermark_on, tr("Добавлять при экспорте картинки и в запись процесса"));
+            let wm = &mut self.watermark;
+            ui.horizontal(|ui| {
+                ui.label(tr("Текст"));
+                changed |= ui.add_enabled(wm.image.is_none(), egui::TextEdit::singleline(&mut wm.text).desired_width(220.0)).changed();
+            });
+            ui.horizontal(|ui| {
+                ui.label(tr("Картинка"));
+                ui.label(wm.image.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| tr("[ нет — текст ]").to_string()));
+                if ui.small_button(tr("Выбрать…")).clicked() {
+                    pick_image = true;
+                }
+                if wm.image.is_some() && ui.small_button("×").clicked() {
+                    wm.image = None;
+                    changed = true;
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(tr("Место"));
+                let name = |p: Place| match p {
+                    Place::BottomRight => tr("справа внизу"),
+                    Place::BottomLeft => tr("слева внизу"),
+                    Place::TopRight => tr("справа вверху"),
+                    Place::TopLeft => tr("слева вверху"),
+                    Place::Center => tr("посередине"),
+                    Place::Tiled => tr("по всей картинке"),
+                };
+                egui::ComboBox::from_id_salt("wmplace").selected_text(name(wm.place)).show_ui(ui, |ui| {
+                    for p in Place::ALL {
+                        changed |= ui.selectable_value(&mut wm.place, p, name(p)).changed();
+                    }
+                });
+            });
+            changed |= ui.add(egui::Slider::new(&mut wm.size, 0.01..=0.3).custom_formatter(|v, _| format!("{:.0} %", v * 100.0)).text(tr("Размер"))).changed();
+            changed |= ui.add(egui::Slider::new(&mut wm.opacity, 0.05..=1.0).custom_formatter(|v, _| format!("{:.0} %", v * 100.0)).text(tr("Непрозрачность"))).changed();
+            changed |= ui.add(egui::Slider::new(&mut wm.margin, 0.0..=0.1).custom_formatter(|v, _| format!("{:.1} %", v * 100.0)).text(tr("Отступ"))).changed();
+            if wm.image.is_none() {
+                let mut c = Color32::from_rgb(wm.color[0], wm.color[1], wm.color[2]);
+                ui.horizontal(|ui| {
+                    ui.label(tr("Цвет"));
+                    if ui.color_edit_button_srgba(&mut c).changed() {
+                        wm.color = [c.r(), c.g(), c.b()];
+                        changed = true;
+                    }
+                });
+            }
+            if self.watermark_preview.is_none() || changed {
+                // предпросмотр: рисунок, уменьшенный до 360 px по большей стороне
+                let (w, h) = (self.doc.width, self.doc.height);
+                let k = (360.0 / w.max(h) as f32).min(1.0);
+                let (pw, ph) = (((w as f32 * k) as u32).max(1), ((h as f32 * k) as u32).max(1));
+                let full = self.doc.flatten();
+                let mut img = vec![0u8; (pw * ph * 4) as usize];
+                for y in 0..ph {
+                    for x in 0..pw {
+                        let (sx, sy) = ((x as f32 / k) as u32, (y as f32 / k) as u32);
+                        let si = ((sy.min(h - 1) * w + sx.min(w - 1)) * 4) as usize;
+                        img[((y * pw + x) * 4) as usize..][..4].copy_from_slice(&full[si..si + 4]);
+                    }
+                }
+                paint_formats::watermark::apply(&mut img, pw, ph, wm);
+                self.watermark_preview = Some(ctx.load_texture("wm_preview", egui::ColorImage::from_rgba_unmultiplied([pw as usize, ph as usize], &img), egui::TextureOptions::LINEAR));
+            }
+            if let Some(t) = &self.watermark_preview {
+                ui.image((t.id(), t.size_vec2()));
+            }
+            ui.label(tr("Знак добавляется только в экспорт (PNG, JPEG, WebP и др.) и в запись процесса; в сам рисунок и в .sai2 он не пишется."));
+        });
+        if pick_image {
+            let dir = self.file.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("x"));
+            if !self.native_dialog(files::Ask::Watermark, &dir) {
+                self.status = tr("Окно выбора файла недоступно; перетащите файл в окно").to_string();
+            }
+        }
+        if !open {
+            self.show_watermark = false;
+            self.save_settings();
         }
     }
 
@@ -3579,6 +3711,10 @@ app.open_canvas_dialog(d == "resolution")
             (files::Answer::Path(p), files::Ask::Export(ext)) => self.export_to(files::with_ext(p, ext), ext),
             (files::Answer::Path(p), files::Ask::Reference) => self.add_reference(&p),
             (files::Answer::Path(p), files::Ask::Tip) => self.add_tip(&p),
+            (files::Answer::Path(p), files::Ask::Watermark) => {
+                self.watermark.image = Some(p);
+                self.watermark_preview = None;
+            }
             (files::Answer::Path(p), files::Ask::SaveBrush(i)) => self.save_brush_file(files::with_ext(p, "gsbrush"), Some(i)),
             (files::Answer::Path(p), files::Ask::SaveBrushSet) => self.save_brush_file(files::with_ext(p, "gsbrushes"), None),
             (files::Answer::Unavailable, files::Ask::Open) => self.show_open = true,
@@ -3597,7 +3733,7 @@ app.open_canvas_dialog(d == "resolution")
                 self.save_brush_file(p, None);
             }
             (files::Answer::Unavailable, files::Ask::Tip) => self.status = String::from(tr("Перетащите картинку в окно с Shift — она станет отпечатком кисти")),
-            (files::Answer::Cancelled, _) | (_, files::Ask::SavePlugin) | (_, files::Ask::OpenWasm) => {}
+            (files::Answer::Cancelled, _) | (_, files::Ask::SavePlugin) | (_, files::Ask::OpenWasm) | (_, files::Ask::Watermark) => {}
         }
     }
 
@@ -3651,7 +3787,13 @@ app.open_canvas_dialog(d == "resolution")
             "psd" => paint_formats::psd::save_with(&self.doc, &path, paint_formats::psd::SaveOptions { big: false, deep: self.opts.psd16, exact: self.opts.psd_exact }),
             "psb" => paint_formats::psd::save_with(&self.doc, &path, paint_formats::psd::SaveOptions { big: true, deep: self.opts.psd16, exact: self.opts.psd_exact }),
             "ora" => paint_formats::ora::save(&self.doc, &path),
-            _ => paint_core::io::save_image(&path, self.doc.width, self.doc.height, &self.doc.flatten()),
+            _ => {
+                let mut img = self.doc.flatten();
+                if self.watermark_on {
+                    paint_formats::watermark::apply(&mut img, self.doc.width, self.doc.height, &self.watermark);
+                }
+                paint_core::io::save_image(&path, self.doc.width, self.doc.height, &img)
+            }
         };
         self.status = match result {
             Ok(()) => trf("Сохранено: {0}", &[&path.display()]),
@@ -5347,6 +5489,11 @@ app.open_canvas_dialog(d == "resolution")
                 }
                 if ui.button(tr("Сохранить набор кистей…")).on_hover_text(tr("Все инструменты сетки — одним файлом .gsbrushes")).clicked() {
                     self.ask_save_brush(None);
+                    ui.close_menu();
+                }
+                if ui.button(tr("Водяной знак…")).clicked() {
+                    self.show_watermark = true;
+                    self.watermark_preview = None;
                     ui.close_menu();
                 }
                 ui.separator();
@@ -9716,6 +9863,9 @@ impl PaintApp {
         }
         if self.plugin_ask.is_some() || self.plugin_install.is_some() || self.show_plugins {
             self.plugin_windows(ctx);
+        }
+        if self.show_watermark {
+            self.watermark_window(ctx);
         }
         if self.viewer.is_some() {
             self.viewer_window(ctx);

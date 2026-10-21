@@ -231,7 +231,7 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 
 ### Process recording, watermark, 3D
 
-- [ ] Watermark on export (text or picture, position, opacity)
+- [x] Watermark on export (text or picture, position, opacity) (1.0.37)
 - [ ] Drawing process recording: sped-up video, without chosen layers, with a password (AES zip)
 - [ ] 3D reference: a 3D layer with a mannequin of simple shapes, poses, camera (plan — `docs/39-3d-reference.md`)
 - [ ] 3D: glTF / OBJ import, scenes, camera from the perspective ruler

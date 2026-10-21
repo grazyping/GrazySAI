@@ -16,4 +16,5 @@ pub mod sai2_doc;
 pub mod sai2_pixels;
 pub mod sai2_text;
 pub mod sai2_vector;
+pub mod watermark;
 pub mod sai2_write;
