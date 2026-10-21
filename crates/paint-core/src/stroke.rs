@@ -1024,13 +1024,16 @@ impl Stroke {
             }
             let paint = mixer.paint(sample, n, batch[0].pressure);
             if mix.blur {
-                let size = self.params.diameter_at(batch[0].pressure);
+                // «Размытие»: ширина 50 % — 0,88 размера отпечатка (сверено с живой SAI 2026,
+                // paint-brush/tests/blur_tool_live.rs); у Акварели — как было
+                let k = if mix.blur_only { (mix.blur_width / 0.5).clamp(0.02, 2.0) * 0.88 } else { 1.0 };
+                let size = self.params.diameter_at(batch[0].pressure) * k;
                 water_blur(pixels, &batch, mask, size, sel, originals, &mut changed, &mut self.level_cache);
             }
             let marker = (mix.marker && !preserve_opacity).then(|| rgb.map(|c| c as f64 / 255.0));
             // Акварель при нажиме не выше порога размытия только размывает — краску не кладёт
             // (по сверке с живой SAI: мазки 0,5 и 0,3 сошлись с 12,9 и 8,9 до 2,1 и 1,4 уровня).
-            let only_blur = mix.blur && mix.blend_by_pressure && batch[0].pressure <= mix.blur_pressure + 1e-6;
+            let only_blur = mix.blur_only || (mix.blur && mix.blend_by_pressure && batch[0].pressure <= mix.blur_pressure + 1e-6);
             if !only_blur {
                 lay_batch(pixels, &batch, mask, paint, marker, preserve_opacity, sel, originals, &mut changed);
             }

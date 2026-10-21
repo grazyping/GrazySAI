@@ -32,13 +32,17 @@ pub struct MixParams {
     /// чистым цветом кисти с прежней непрозрачностью; подхваченный цвет ложится только на
     /// прозрачное (`stroke::lay`, docs/16-mixing.md).
     pub marker: bool,
+    /// Инструмент «Размытие» (SAI 2020+): только размывает, краску не кладёт никогда.
+    pub blur_only: bool,
+    /// «Ширина размытия» 0..=1; 0,5 — как размытие Акварели.
+    pub blur_width: f32,
 }
 
 impl MixParams {
     /// Значения нового инструмента в образце: Кисть и Маркер — 0/0/50, Акварель — 30/30/50;
     /// порог размытия 50, нажим на смешивание включён.
     pub fn new(blending: f32, dilution: f32, persistence: f32) -> Self {
-        Self { blending, dilution, persistence, blend_by_pressure: true, blur_pressure: 0.5, blur: false, marker: false }
+        Self { blending, dilution, persistence, blend_by_pressure: true, blur_pressure: 0.5, blur: false, marker: false, blur_only: false, blur_width: 0.5 }
     }
 }
 

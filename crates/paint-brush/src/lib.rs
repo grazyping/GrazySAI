@@ -102,6 +102,8 @@ pub enum ToolKind {
     Gradient,
     SelPen,
     SelErs,
+    /// «Размытие» (SAI 2020+): кисть, которая только размывает под собой.
+    Blur,
     /// Заливка лассо (SAI 2026): обвести — залить; с «замкнутыми областями» — только то, что
     /// замкнуто линиями внутри обводки (docs/41).
     LassoFill,
@@ -109,7 +111,7 @@ pub enum ToolKind {
 
 impl ToolKind {
     /// В порядке меню SAI.
-    pub const ALL: [ToolKind; 12] = [
+    pub const ALL: [ToolKind; 13] = [
         ToolKind::Pencil,
         ToolKind::AirBrush,
         ToolKind::Brush,
@@ -121,6 +123,7 @@ impl ToolKind {
         ToolKind::Gradient,
         ToolKind::SelPen,
         ToolKind::SelErs,
+        ToolKind::Blur,
         ToolKind::LassoFill,
     ];
 
@@ -137,6 +140,7 @@ impl ToolKind {
             ToolKind::Gradient => "gradient",
             ToolKind::SelPen => "selpen",
             ToolKind::SelErs => "selers",
+            ToolKind::Blur => "blur",
             ToolKind::LassoFill => "lassofill",
         }
     }
@@ -159,6 +163,7 @@ impl ToolKind {
             ToolKind::Gradient => "Градиент",
             ToolKind::SelPen => "Перо выделения",
             ToolKind::SelErs => "Ластик выделения",
+            ToolKind::Blur => "Размытие",
             ToolKind::LassoFill => "Заливка лассо",
         }
     }
@@ -216,6 +221,13 @@ impl ToolKind {
             ToolKind::SelPen => ("Выд.К.", "selpen", BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
             ToolKind::SelErs => ("Выд.Л.", "selers", BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
             ToolKind::LassoFill => ("Зал.лассо", "lassofill", b(10.0, 1.0, 1.0)),
+            // «Размытие» в SAI 2026: 50 px, самая мягкая ступень, плотность от нажима (мин. 0 %),
+            // ширина размытия 50 %, резкость 50
+            ToolKind::Blur => (
+                "Размытие",
+                "blur",
+                BrushParams { size_by_pressure: false, density_by_pressure: true, sharpness: 0.5, mix: Some(MixParams { blur: true, blur_only: true, ..MixParams::new(0.0, 0.0, 0.5) }), ..b(50.0, 0.0, 1.0) },
+            ),
         };
         Brush { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), dynamics: Vec::new(), dyn_plugin: None }
     }
@@ -310,6 +322,8 @@ pub fn read(b: &mut Brush, s: &Kv, prefix: &str) {
         s.read_f32(&k("persistence"), &mut m.persistence);
         s.read_f32(&k("blur_pressure"), &mut m.blur_pressure);
         s.read_bool(&k("blend_by_pressure"), &mut m.blend_by_pressure);
+        s.read_f32(&k("blur_width"), &mut m.blur_width);
+        m.blur_width = m.blur_width.clamp(0.0, 1.0);
     }
     p.size = p.size.clamp(0.1, 5000.0);
     let g = &mut b.grain;
@@ -377,6 +391,9 @@ pub fn write(b: &Brush, s: &mut Kv, prefix: &str) {
         s.set(&k("persistence"), m.persistence);
         s.set(&k("blur_pressure"), m.blur_pressure);
         s.set(&k("blend_by_pressure"), m.blend_by_pressure as u8);
+        if m.blur_only {
+            s.set(&k("blur_width"), m.blur_width);
+        }
     }
     let g = &b.grain;
     s.set(&k("form"), g.form.as_deref().unwrap_or(""));

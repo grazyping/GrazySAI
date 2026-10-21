@@ -1108,3 +1108,6 @@ Zip с паролем = Zip com senha
 прозрачное с допуском = transparente (difuso)
 текущий слой = camada atual
 указанные слои = camadas indicadas
+
+# размытие
+Ширина размытия = Largura do desfoque

@@ -88,7 +88,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Large Water brush: blur over a reduced copy of the layer, as in SAI — 350 px: 7.4 → 2.0 s per 1000 px of line
 - [x] Perspective rulers: display and drawing along them (reference: Krita's perspective and vanishing point assistants); our own version, not written to the file (0.8.38)
 
-### 1.0 — everything from SAI 2 for everyday work (current version 1.0.40)
+### 1.0 — everything from SAI 2 for everyday work (current version 1.0.41)
 
 Everything people use in PaintTool SAI 2017 for everyday work is there and checked against the original (feature-by-feature comparison — `docs/32-sai-comparison.md`); `.sai2` files open and save without loss. A code audit came before the release (`docs/audit-2026-10-16.md`).
 
@@ -246,7 +246,7 @@ calibrated against SAI 2017 stay unchanged; files still open in SAI 2017.
 
 - [x] Control step: SAI 2026 base strokes against the 2017 sheets (engine differs: −20…35 % paint, −10…15 % diameter)
 - [x] Lasso Fill: freeform and polygonal, enclosed regions with gap tolerance, dilation, “ignore painted”, source (1.0.40)
-- [ ] Blur tool
+- [x] Blur tool: blur only, “blur width”; checked against live SAI 2026 within 16 levels (1.0.41)
 - [ ] Smudge
 - [ ] Line and point symmetry, up to 20 parts
 - [ ] Scattering brush and Effect Pen

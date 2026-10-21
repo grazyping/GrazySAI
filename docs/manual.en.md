@@ -465,6 +465,12 @@ the center or all over the picture), size, opacity, margin; a preview on the pic
 export…” the mark goes into image exports (PNG, JPEG, WebP, BMP, TGA, TIFF, QOI); it is never written into
 the picture itself, `.sai2`, `.psd` or `.ora`.
 
+### Blur
+
+The “Blur” grid tool (from SAI 2 2020+; right-click an empty cell): a brush that only blurs what is under
+it and lays no paint. “Blur width” sets how far it blurs; density follows pressure (light pressure — a
+light blur). Checked against the live official SAI 2 2026.
+
 ### Lasso Fill
 
 The “Lasso Fill” grid tool (right-click an empty cell; in SAI 2 since 2026): outline an area and it is

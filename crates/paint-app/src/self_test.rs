@@ -95,6 +95,25 @@ pub fn run(report: Option<PathBuf>) -> bool {
             }
             Ok(format!("{} мс", r.elapsed.as_millis()))
         })),
+        ("инструмент «Размытие»", Box::new(|_| {
+            let mut doc = Document::new(200, 100);
+            for y in 0..100 {
+                for x in 0..100 {
+                    doc.layers[0].pixels.set(x, y, [0, 0, 0, paint_core::pixel::ONE as u16]);
+                }
+            }
+            let mut live = paint_core::LiveStroke::new(vec![0], paint_core::Stroke::new(paint_brush::ToolKind::Blur.new_brush().params), [0, 0, 0]);
+            for x in (60..=140).step_by(4) {
+                live.stroke.add_point(paint_core::InputPoint { x: x as f32, y: 50.0, pressure: 1.0 });
+                doc.live_update(&mut live);
+            }
+            doc.live_finish(live);
+            let a = paint_core::pixel::to_rgba8(doc.layers[0].pixels.get(104, 50))[3];
+            if !(20..235).contains(&a) {
+                return Err(format!("край не размыт: {a}").into());
+            }
+            Ok(format!("{a}"))
+        })),
         ("заливка лассо: замкнутая область с зазором", Box::new(|_| {
             use paint_core::selection::{lasso_fill, polygon, LassoFill};
             let mut ring = paint_core::tile::ColorMap::new();

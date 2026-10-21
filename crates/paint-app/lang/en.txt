@@ -1109,3 +1109,6 @@ Zip с паролем = Password-protected zip
 прозрачное с допуском = transparent (fuzzy)
 текущий слой = current layer
 указанные слои = specified layers
+
+# размытие
+Ширина размытия = Blur width

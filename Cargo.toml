@@ -4,7 +4,7 @@ members = ["crates/paint-core", "crates/paint-cli", "crates/paint-formats", "cra
 
 [workspace.package]
 edition = "2021"
-version = "1.0.40"
+version = "1.0.41"
 license = "MIT"
 
 [profile.dev]

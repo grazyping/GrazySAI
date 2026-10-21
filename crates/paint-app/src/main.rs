@@ -6996,10 +6996,14 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 });
             };
-            pct(ui, tr("Смешивание"), &mut mix.blending);
-            pct(ui, tr("Разбавление"), &mut mix.dilution);
-            pct(ui, tr("Стойкость"), &mut mix.persistence);
-            if mix.blend_by_pressure {
+            if mix.blur_only {
+                pct(ui, tr("Ширина размытия"), &mut mix.blur_width);
+            } else {
+                pct(ui, tr("Смешивание"), &mut mix.blending);
+                pct(ui, tr("Разбавление"), &mut mix.dilution);
+                pct(ui, tr("Стойкость"), &mut mix.persistence);
+            }
+            if mix.blend_by_pressure && !mix.blur_only {
                 pct(ui, tr("Порог размыт."), &mut mix.blur_pressure);
             }
         }

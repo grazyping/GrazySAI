@@ -60,11 +60,14 @@ impl Default for BrushParams {
 
 impl BrushParams {
     pub fn diameter_at(&self, pressure: f32) -> f32 {
+        // «Размытие» — инструмент SAI 2020+, отпечатки там на ~7 % меньше (сверено с живой SAI
+        // 2026, paint-brush/tests/blur_tool_live.rs); остальные виды — как в SAI 2017
+        let size = if self.mix.is_some_and(|m| m.blur_only) { self.size * 0.93 } else { self.size };
         if !self.size_by_pressure {
-            return self.size;
+            return size;
         }
         let p = pressure.clamp(0.0, 1.0);
-        self.size * (self.min_size + (1.0 - self.min_size) * p)
+        size * (self.min_size + (1.0 - self.min_size) * p)
     }
 
     pub fn density_at(&self, pressure: f32) -> f32 {

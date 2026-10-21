@@ -798,7 +798,7 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
             glyph(p, r, c, "lasso");
         }
         // значки меню (новые пункты сверх SAI)
-        "f_blur" => {
+        "f_blur" | "blur" => {
             // размытое пятно: круги с убывающей плотностью
             for (i, a) in [(1.0, 60u8), (0.75, 110), (0.5, 200)] {
                 p.circle_filled(ctr, k * i, Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (a as f32 * c.a() as f32 / 255.0) as u8));
