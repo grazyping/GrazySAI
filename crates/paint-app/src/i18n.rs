@@ -208,9 +208,10 @@ mod tests {
     /// вывода в терминал). Так тест ловит и подписи, которые переводятся при показе: режимы,
     /// кисти, действия клавиш.
     fn keys_in_code() -> Vec<String> {
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
+        // своя папка и общая библиотека кистей (названия видов инструментов — там)
+        let dirs = [concat!(env!("CARGO_MANIFEST_DIR"), "/src"), concat!(env!("CARGO_MANIFEST_DIR"), "/../paint-brush/src")];
         let mut keys = Vec::new();
-        for e in std::fs::read_dir(dir).unwrap() {
+        for e in dirs.iter().flat_map(|d| std::fs::read_dir(d).unwrap()) {
             let path = e.unwrap().path();
             // отчёт самопроверки — для разработчика, по-русски и по-английски сразу, без перевода
             if path.ends_with("i18n.rs") || path.ends_with("self_test.rs") {

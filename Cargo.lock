@@ -1866,11 +1866,20 @@ version = "1.0.30"
 dependencies = [
  "arboard",
  "eframe",
+ "paint-brush",
  "paint-core",
  "paint-formats",
  "rfd",
  "rusqlite",
  "x11rb",
+]
+
+[[package]]
+name = "paint-brush"
+version = "1.0.30"
+dependencies = [
+ "paint-core",
+ "paint-formats",
 ]
 
 [[package]]

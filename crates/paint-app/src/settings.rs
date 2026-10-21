@@ -6,12 +6,29 @@
 //! запуске). При проверках виртуальным пером (`PAINT_VIRTUAL_PEN`) без
 //! `PAINT_SETTINGS` настройки не используются, чтобы прогоны не зависели от прошлых запусков.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-#[derive(Default)]
-pub struct Settings {
-    map: BTreeMap<String, String>,
+/// Настройки — тот же текст `ключ=значение`, что у файла кисти (`paint_brush::Kv`).
+pub type Settings = paint_brush::Kv;
+
+/// Чтение и запись файла настроек.
+pub trait SettingsFile: Sized {
+    fn load() -> Self;
+    fn save(&self);
+}
+
+impl SettingsFile for Settings {
+    fn load() -> Self {
+        file().and_then(|p| std::fs::read_to_string(p).ok()).map_or_else(Self::default, |t| Self::from_text(&t))
+    }
+
+    fn save(&self) {
+        let Some(path) = file() else { return };
+        if let Some(d) = path.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = paint_core::io::write_atomic(&path, self.to_text().as_bytes());
+    }
 }
 
 /// Папка настроек и восстановления (`None` — настройки выключены).
@@ -50,68 +67,3 @@ fn file() -> Option<PathBuf> {
     }
 }
 
-impl Settings {
-    pub fn load() -> Self {
-        file().and_then(|p| std::fs::read_to_string(p).ok()).map_or_else(Self::default, |t| Self::from_text(&t))
-    }
-
-    /// Из текста `ключ=значение` по строке (строки с `#` в начале — пояснения).
-    pub fn from_text(text: &str) -> Self {
-        let mut map = BTreeMap::new();
-        for line in text.lines() {
-            if line.trim_start().starts_with('#') {
-                continue;
-            }
-            if let Some((k, v)) = line.split_once('=') {
-                map.insert(k.trim().to_string(), v.trim().to_string());
-            }
-        }
-        Self { map }
-    }
-
-    /// Текстом `ключ=значение`, по ключам по алфавиту.
-    pub fn to_text(&self) -> String {
-        self.map.iter().map(|(k, v)| format!("{k}={v}\n")).collect()
-    }
-
-    pub fn save(&self) {
-        let Some(path) = file() else { return };
-        if let Some(d) = path.parent() {
-            let _ = std::fs::create_dir_all(d);
-        }
-        let _ = paint_core::io::write_atomic(&path, self.to_text().as_bytes());
-    }
-
-    pub fn set(&mut self, key: &str, value: impl ToString) {
-        self.map.insert(key.to_string(), value.to_string());
-    }
-
-    pub fn f32(&self, key: &str) -> Option<f32> {
-        self.map.get(key).and_then(|v| v.parse().ok()).filter(|v: &f32| v.is_finite())
-    }
-
-    pub fn bool(&self, key: &str) -> Option<bool> {
-        self.map.get(key).map(|v| v == "1" || v == "true")
-    }
-
-    pub fn remove(&mut self, key: &str) {
-        self.map.remove(key);
-    }
-
-    pub fn str(&self, key: &str) -> Option<&str> {
-        self.map.get(key).map(|s| s.as_str())
-    }
-
-    /// Прочитать число в поле, если оно есть.
-    pub fn read_f32(&self, key: &str, into: &mut f32) {
-        if let Some(v) = self.f32(key) {
-            *into = v;
-        }
-    }
-
-    pub fn read_bool(&self, key: &str, into: &mut bool) {
-        if let Some(v) = self.bool(key) {
-            *into = v;
-        }
-    }
-}
