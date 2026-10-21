@@ -982,7 +982,10 @@ pub fn color_wheel(ui: &mut Ui, hsv: &mut [f32; 3], size: f32) -> bool {
     let square = Rect::from_center_size(ctr, Vec2::splat(half * 2.0));
     let mut changed = false;
     let drag_id = response.id.with("part");
-    if response.drag_started() || response.clicked() {
+    // часть (кольцо или квадрат) — в кадре нажатия: перетаскивание начинается позже, и до него
+    // бралась часть прошлого нажатия (нажатие на кольцо сдвигало точку в квадрате к краю)
+    let pressed = ui.input(|i| i.pointer.any_pressed()) && response.is_pointer_button_down_on();
+    if pressed || response.drag_started() || response.clicked() {
         if let Some(pos) = response.interact_pointer_pos() {
             let ring = (pos - ctr).length() > inner - 2.0;
             ui.data_mut(|d| d.insert_temp(drag_id, ring));
@@ -990,7 +993,7 @@ pub fn color_wheel(ui: &mut Ui, hsv: &mut [f32; 3], size: f32) -> bool {
     }
     if let Some(pos) = response.interact_pointer_pos() {
         if response.is_pointer_button_down_on() || response.clicked() {
-            let ring = ui.data(|d| d.get_temp::<bool>(drag_id)).unwrap_or(false);
+            let ring = ui.data(|d| d.get_temp::<bool>(drag_id)).unwrap_or_else(|| (pos - ctr).length() > inner - 2.0);
             if ring {
                 let a = (pos - ctr).angle();
                 hsv[0] = ((a - HUE0) / TAU).rem_euclid(1.0);
