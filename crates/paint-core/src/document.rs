@@ -889,13 +889,18 @@ impl Document {
     /// Залить слой цветом `rgb` в пределах `area` (доля 0..=ONE) и выделения — одна запись истории.
     /// С «сохранять непрозрачность» меняется только цвет.
     pub fn fill(&mut self, path: &[usize], area: &MaskMap, rgb: [u8; 3]) -> Vec<Key> {
+        self.fill_with(path, area, rgb, true)
+    }
+
+    /// То же; `clip` — только в пределах выделения (иначе выделение не учитывается).
+    pub fn fill_with(&mut self, path: &[usize], area: &MaskMap, rgb: [u8; 3], clip: bool) -> Vec<Key> {
         let Some(layer) = self.layer(path) else { return Vec::new() };
         if layer.children.is_some() || !layer.paintable() {
             return Vec::new();
         }
         let mut tiles: TileBackup = Vec::new();
         for (key, a) in &area.tiles {
-            let sel = self.selection.tile(*key);
+            let sel = if clip { self.selection.tile(*key) } else { None };
             let mut t = layer.pixels.tiles.get(key).cloned().unwrap_or_else(|| Tile::filled([0; 4]));
             let mut any = false;
             for (i, px) in t.0.iter_mut().enumerate() {
@@ -959,6 +964,22 @@ impl Document {
             for tx in 0..tw {
                 let mut buf = vec![[0f32; 4]; TILE_LEN];
                 render_group(&layers, (tx, ty), &mut buf, self.size(), self.fx());
+                if buf.iter().any(|p| p[3] > 0.0) {
+                    out.tiles.insert((tx, ty), Tile(buf.iter().map(|p| from_f32(*p)).collect()));
+                }
+            }
+        }
+        out
+    }
+
+    /// Сведённое изображение всех видимых слоёв (без фона холста) — плитками.
+    pub fn merged_pixels(&self) -> ColorMap {
+        let mut out = ColorMap::new();
+        let (tw, th) = ((self.width as i32 + TILE - 1) / TILE, (self.height as i32 + TILE - 1) / TILE);
+        for ty in 0..th {
+            for tx in 0..tw {
+                let mut buf = vec![[0f32; 4]; TILE_LEN];
+                render_group(&self.layers, (tx, ty), &mut buf, self.size(), self.fx());
                 if buf.iter().any(|p| p[3] > 0.0) {
                     out.tiles.insert((tx, ty), Tile(buf.iter().map(|p| from_f32(*p)).collect()));
                 }

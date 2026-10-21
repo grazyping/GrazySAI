@@ -95,6 +95,25 @@ pub fn run(report: Option<PathBuf>) -> bool {
             }
             Ok(format!("{} мс", r.elapsed.as_millis()))
         })),
+        ("заливка лассо: замкнутая область с зазором", Box::new(|_| {
+            use paint_core::selection::{lasso_fill, polygon, LassoFill};
+            let mut ring = paint_core::tile::ColorMap::new();
+            for y in 0..200 {
+                for x in 0..200 {
+                    let (dx, dy) = (x as f64 - 100.0, y as f64 - 100.0);
+                    let r = (dx * dx + dy * dy).sqrt();
+                    if (58.0..=62.0).contains(&r) && dy.atan2(dx).to_degrees().abs() > 12.0 {
+                        ring.set(x, y, [0, 0, 0, paint_core::pixel::ONE as u16]);
+                    }
+                }
+            }
+            let lasso = polygon(&[[10.0, 10.0], [190.0, 10.0], [190.0, 190.0], [10.0, 190.0]]);
+            let m = lasso_fill(&lasso, &ring, 200, 200, (10, 10), LassoFill { enclosed: true, gap: 20, ..Default::default() });
+            if m.get(100, 100) == 0 || m.get(20, 20) != 0 {
+                return Err("залито не то".into());
+            }
+            Ok("ок".into())
+        })),
         ("слой 3D: модель glTF и отрисовка", Box::new(|_| {
             let t = std::time::Instant::now();
             let files = vec![("scene.glb".to_string(), include_bytes!("../../paint-3d/tests/data/scene.glb").to_vec())];

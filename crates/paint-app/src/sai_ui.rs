@@ -792,6 +792,11 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
                 if name == "selpen" { "pen" } else { "eraser" },
             );
         }
+        "lassofill" => {
+            // петля лассо и залитое пятно внутри
+            p.circle_filled(ctr + Vec2::new(-k * 0.1, -k * 0.15), k * 0.4, c);
+            glyph(p, r, c, "lasso");
+        }
         // значки меню (новые пункты сверх SAI)
         "f_blur" => {
             // размытое пятно: круги с убывающей плотностью

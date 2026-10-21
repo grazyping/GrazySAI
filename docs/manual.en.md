@@ -465,6 +465,20 @@ the center or all over the picture), size, opacity, margin; a preview on the pic
 export…” the mark goes into image exports (PNG, JPEG, WebP, BMP, TGA, TIFF, QOI); it is never written into
 the picture itself, `.sai2`, `.psd` or `.ora`.
 
+### Lasso Fill
+
+The “Lasso Fill” grid tool (right-click an empty cell; in SAI 2 since 2026): outline an area and it is
+filled with the main color. Outline freeform, polygonal (clicks; double-click or Enter finishes, Esc
+cancels) or both (freeform while the button is held).
+
+“Enclosed regions only” fills not the whole outline but what lines enclose inside it (handy for filling
+several spots in one move): “transparent”, “transparent (fuzzy)”, “similar color” (the color where the
+outline starts), “non-transparent” and their tolerance. **“Gap tolerance”** closes gaps in the lines — a
+ring with a gap is filled when the tolerance exceeds half the gap. “Dilate” grows the fill by that many
+pixels; “Ignore painted parts” fills only empty pixels; “Search in” — the current layer, layers marked
+“Selection Source”, or the merged image. The fill stays inside the selection unless “Ignore selection” is
+on.
+
 ### 3D layer
 
 “Layer → New 3D layer…” (or “File → Open”, or drag the file into the window) turns a glTF (`.glb`,

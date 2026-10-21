@@ -102,11 +102,14 @@ pub enum ToolKind {
     Gradient,
     SelPen,
     SelErs,
+    /// Заливка лассо (SAI 2026): обвести — залить; с «замкнутыми областями» — только то, что
+    /// замкнуто линиями внутри обводки (docs/41).
+    LassoFill,
 }
 
 impl ToolKind {
     /// В порядке меню SAI.
-    pub const ALL: [ToolKind; 11] = [
+    pub const ALL: [ToolKind; 12] = [
         ToolKind::Pencil,
         ToolKind::AirBrush,
         ToolKind::Brush,
@@ -118,6 +121,7 @@ impl ToolKind {
         ToolKind::Gradient,
         ToolKind::SelPen,
         ToolKind::SelErs,
+        ToolKind::LassoFill,
     ];
 
     pub fn key(self) -> &'static str {
@@ -133,6 +137,7 @@ impl ToolKind {
             ToolKind::Gradient => "gradient",
             ToolKind::SelPen => "selpen",
             ToolKind::SelErs => "selers",
+            ToolKind::LassoFill => "lassofill",
         }
     }
 
@@ -154,6 +159,7 @@ impl ToolKind {
             ToolKind::Gradient => "Градиент",
             ToolKind::SelPen => "Перо выделения",
             ToolKind::SelErs => "Ластик выделения",
+            ToolKind::LassoFill => "Заливка лассо",
         }
     }
 
@@ -209,6 +215,7 @@ impl ToolKind {
             // кисти выделения в SAI по умолчанию не реагируют на нажим
             ToolKind::SelPen => ("Выд.К.", "selpen", BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
             ToolKind::SelErs => ("Выд.Л.", "selers", BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
+            ToolKind::LassoFill => ("Зал.лассо", "lassofill", b(10.0, 1.0, 1.0)),
         };
         Brush { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), dynamics: Vec::new(), dyn_plugin: None }
     }

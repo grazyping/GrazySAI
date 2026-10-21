@@ -1085,3 +1085,26 @@ Zip с паролем = Zip mit Passwort
 серая фигура = graue Figur
 силуэт = Silhouette
 цвет и свет = Farbe und Licht
+
+# заливка лассо
+Внутри обводки нет замкнутых областей (увеличьте «Допуск зазоров») = Keine geschlossenen Bereiche innerhalb der Umrandung („Lückentoleranz“ erhöhen)
+Где искать: = Suchen in:
+Допуск зазоров = Lückentoleranz
+Зал.лассо = Lassofüll.
+Заливается только то, что внутри обводки замкнуто линиями; зазоры в линиях закрываются = Nur von Linien umschlossene Bereiche innerhalb der Umrandung werden gefüllt; Lücken werden geschlossen
+Заливка лассо = Lasso-Füllung
+Не ограничиваться выделением = Auswahl ignorieren
+Не трогать закрашенное = Gemaltes nicht füllen
+Обводка: = Umrandung:
+Расширить = Erweitern
+Только замкнутые области = Nur geschlossene Bereiche
+всё изображение = gesamtes Bild
+многоугольник = Polygon
+многоугольник и от руки = Polygon + frei
+непрозрачное = deckend
+от руки = frei
+похожий цвет = ähnliche Farbe
+прозрачное = transparent
+прозрачное с допуском = transparent (weich)
+текущий слой = aktuelle Ebene
+указанные слои = festgelegte Ebenen

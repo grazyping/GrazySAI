@@ -18,6 +18,7 @@ mod self_test;
 mod plugins;
 mod recording;
 mod scene3d;
+mod lassofill;
 
 use i18n::{tr, trf};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
@@ -947,6 +948,8 @@ struct SelDrag {
     /// Точки в координатах холста: у прямоугольника — начало и текущая, у лассо — весь путь.
     points: Vec<Vec2>,
     mode: Combine,
+    /// Обводка заливки лассо (а не выделения).
+    fill: bool,
 }
 
 /// Инструмент рисования в сетке «кистей слоя», как у образца: кисть (`paint_brush::Brush` —
@@ -1339,6 +1342,8 @@ struct PaintApp {
     /// Палочка и заливка: закрывать щели контура до 2·N px; расширять под линию на N px.
     fill_gap: u32,
     fill_expand: u32,
+    /// Настройки заливки лассо.
+    lassofill: lassofill::Settings,
     /// Обновление с GitHub: состояние фоновой проверки и загрузки.
     update: update::Shared,
     show_update: bool,
@@ -1547,6 +1552,7 @@ impl PaintApp {
             wand_tolerance: 10,
             fill_gap: 0,
             fill_expand: 0,
+            lassofill: Default::default(),
             update: std::sync::Arc::new(std::sync::Mutex::new(update::State::Idle)),
             show_update: false,
             check_updates: true,
@@ -1823,6 +1829,7 @@ app.open_canvas_dialog(d == "resolution")
         s.read_bool("gradient_transparent", &mut self.grad_opts.to_transparent);
         s.read_bool("gradient_reverse", &mut self.grad_opts.reverse);
         s.read_bool("gradient_s_curve", &mut self.grad_opts.s_curve);
+        self.lassofill.load(&s);
         if let Some(t) = s.f32("fill_gap") {
             self.fill_gap = t.clamp(0.0, 20.0) as u32;
         }
@@ -1914,6 +1921,7 @@ app.open_canvas_dialog(d == "resolution")
         s.set("back.b", self.back.b());
         s.set("stabilizer", self.stabilizer.label());
         s.set("wand_tolerance", self.wand_tolerance);
+        self.lassofill.save(&mut s);
         s.set("fill_gap", self.fill_gap);
         s.set("fill_expand", self.fill_expand);
         s.set("transform_perspective", self.transform_perspective);
@@ -5265,6 +5273,10 @@ app.open_canvas_dialog(d == "resolution")
     /// Закрыть многоугольное лассо и выделить.
     fn close_polygon(&mut self) {
         let Some(d) = self.sel_poly.take() else { return };
+        if d.fill {
+            self.lasso_fill_points(&d.points);
+            return;
+        }
         let pts: Vec<[f64; 2]> = d.points.iter().map(|p| [p.x as f64, p.y as f64]).collect();
         let area = paint_core::selection::polygon_aa(&pts, self.lasso_aa);
         self.apply_selection(&area, d.mode);
@@ -6872,6 +6884,10 @@ app.open_canvas_dialog(d == "resolution")
             return;
         }
         self.font_scroll = true;
+        if self.tool == Tool::Brush && self.kind() == ToolKind::LassoFill {
+            self.lasso_fill_panel(ui, lw, w);
+            return;
+        }
         if self.tool == Tool::Brush && self.kind() == ToolKind::Bucket {
             let tol = &mut self.wand_tolerance;
             sai_ui::row(ui, tr("Допуск"), lw, true, |ui| {
@@ -8555,6 +8571,12 @@ app.open_canvas_dialog(d == "resolution")
                     self.begin_text(c.x as f64, c.y as f64);
                 }
             }
+        } else if self.tool == Tool::Brush && self.kind() == ToolKind::LassoFill && !ui.input(|i| i.modifiers.alt) {
+            let xf = ViewXf::new(rect, self.zoom, self.offset, vang, vflip);
+            let pts: Vec<Vec2> = moves.iter().map(|p| xf.to_canvas(*p)).collect();
+            let at = pointer.filter(|_| response.hovered()).map(|p| xf.to_canvas(p));
+            let down = ui.input(|i| i.pointer.primary_down());
+            self.lasso_fill_input(at, &pts, pressed && response.hovered(), released, response.double_clicked(), down);
         } else if matches!(self.tool, Tool::Marquee | Tool::Lasso | Tool::Wand) {
             // Выделение: Shift — добавить, Alt — вычесть, Shift+Alt — пересечь.
             let poly = self.tool == Tool::Lasso && self.lasso_polygon;
@@ -8578,10 +8600,10 @@ app.open_canvas_dialog(d == "resolution")
                                     d.points.push(c);
                                 }
                             }
-                            None => self.sel_poly = Some(SelDrag { points: vec![c], mode }),
+                            None => self.sel_poly = Some(SelDrag { points: vec![c], mode, fill: false }),
                         }
                     } else {
-                        self.sel_drag = Some(SelDrag { points: vec![c, c], mode });
+                        self.sel_drag = Some(SelDrag { points: vec![c, c], mode, fill: false });
                     }
                 }
             } else if let Some(d) = self.sel_drag.as_mut() {
@@ -8802,7 +8824,7 @@ app.open_canvas_dialog(d == "resolution")
             ui.ctx().request_repaint_after(Duration::from_millis(300));
         }
         if let Some(d) = &self.sel_drag {
-            let pts: Vec<Pos2> = if self.tool == Tool::Lasso {
+            let pts: Vec<Pos2> = if self.tool == Tool::Lasso || d.fill {
                 d.points.iter().map(|p| to_screen(p.x, p.y)).collect()
             } else {
                 let (a, b) = (d.points[0], d.points[1]);
@@ -9016,7 +9038,8 @@ impl PaintApp {
             self.finish_gradient(true);
         }
         self.update_gradient();
-        if self.sel_poly.is_some() && !(self.tool == Tool::Lasso && self.lasso_polygon) {
+        let fill_poly = self.tool == Tool::Brush && self.kind() == ToolKind::LassoFill && self.lassofill.shape != 0;
+        if self.sel_poly.as_ref().is_some_and(|d| !(if d.fill { fill_poly } else { self.tool == Tool::Lasso && self.lasso_polygon })) {
             self.sel_poly = None;
         }
         if let Some(i) = self.close_ask {

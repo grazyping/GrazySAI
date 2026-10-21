@@ -16,6 +16,32 @@ same content: `41-sai2-after-2017.md`.
 Rules (public repository): no SAI addresses, code or screenshots in docs or code; the licence part is
 not analysed; live checks only on official builds, hidden display, a separate Wine prefix.
 
+## Checked live (2026-10-21)
+
+- **Builds.** 2026-07-02b offers Effect Pen, Scatter, Blur, Smudge, Bucket, Gradation; groups “Basic /
+  Binary / Artistic (oil, gouache, chalk) / Ver.1 Like (incl. Canvas + Acrylic, Paper + Acrylic,
+  Crayon)”. **Lasso Fill is missing there — it exists only in Alpha 2026-10-11.** **Liquify is in
+  neither** (only its name inside) — item 6 moves to the end.
+- Alpha's transform has new **Lattice** and **Mesh** modes (grid division 2×2…, overlapping
+  “Overwrite / Blend”) — grid deformation; a candidate instead of Liquify.
+- **Lasso Fill (Alpha):** outline freeform / polygonal / both; antialiasing; “Select Enclosed Region” —
+  transparent / transparent (fuzzy) / similar color / non-transparent, “Range of Transparency”, “Reduce
+  Small Omissions”, **“Gap Tolerance”, px**, source current / specified layer / merged image, “Dilation
+  Width”, px, “Ignore Painted Parts”, “Pass Through Selections”. Without the enclosed region it just
+  fills the outlined area (1 px antialiased edge). With it, it fills only regions **not touching the
+  outline's edge**: a ring with a 52 px gap was not filled at tolerance 0; at 60 the inside was filled,
+  the gap closed by **a straight segment between the line ends**, the fill reaching the line's outer edge.
+- “New Canvas” (Alpha): presets (edit, add), “Color Mode” (RGB etc.).
+- A brush preview above the brush parameters (confirms item 8).
+- **Control step (item 1) done.** The Pencil sheet (5 hardness steps × sizes 1–100, a size-20 line,
+  density 100, mouse) in 2026-07-02b against the same 2017 sheet: at mid hardness 2026 dabs carry
+  20–35 % less paint and are 10–15 % smaller in diameter (50 % level); size-20 lines are nearly the same
+  (21 = 21 px, the softest 23 vs 27). The size list differs: 1 → 1.5 → 2 → 2.3 → 2.6 → 3 (2017: 1 → 1.3 →
+  1.6 → 2 → 2.5 → 3). Conclusion: new tools are measured against the 2026 stroke; existing brushes stay.
+  The sheet is kept outside the repository.
+- Caution: a new Wine prefix links to the user's real Documents — replace the links with own folders
+  right after creating the prefix.
+
 ## Main constraints
 
 1. **Files must keep opening in SAI 2017.** Nothing new goes into SAI's own blocks. In 2026 the

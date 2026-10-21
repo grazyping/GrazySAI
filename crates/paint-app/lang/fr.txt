@@ -1085,3 +1085,26 @@ Zip с паролем = Zip protégé par mot de passe
 серая фигура = figure grise
 силуэт = silhouette
 цвет и свет = couleur et lumière
+
+# заливка лассо
+Внутри обводки нет замкнутых областей (увеличьте «Допуск зазоров») = Aucune zone fermée dans le contour (augmentez la « Tolérance d’écart »)
+Где искать: = Chercher dans :
+Допуск зазоров = Tolérance d’écart
+Зал.лассо = Rempl.lasso
+Заливается только то, что внутри обводки замкнуто линиями; зазоры в линиях закрываются = Seules les zones fermées par des traits dans le contour sont remplies ; les écarts sont refermés
+Заливка лассо = Remplissage au lasso
+Не ограничиваться выделением = Ignorer la sélection
+Не трогать закрашенное = Ignorer les parties peintes
+Обводка: = Contour :
+Расширить = Dilater
+Только замкнутые области = Zones fermées seulement
+всё изображение = image fusionnée
+многоугольник = polygonal
+многоугольник и от руки = polygonal + libre
+непрозрачное = opaque
+от руки = libre
+похожий цвет = couleur similaire
+прозрачное = transparent
+прозрачное с допуском = transparent (flou)
+текущий слой = calque actuel
+указанные слои = calques désignés

@@ -1085,3 +1085,26 @@ Zip с паролем = Zip com senha
 серая фигура = figura cinza
 силуэт = silhueta
 цвет и свет = cor e luz
+
+# заливка лассо
+Внутри обводки нет замкнутых областей (увеличьте «Допуск зазоров») = Não há áreas fechadas dentro do contorno (aumente a “Tolerância de falhas”)
+Где искать: = Procurar em:
+Допуск зазоров = Tolerância de falhas
+Зал.лассо = Preen.laço
+Заливается только то, что внутри обводки замкнуто линиями; зазоры в линиях закрываются = Só se preenche o que as linhas fecham dentro do contorno; falhas nas linhas são fechadas
+Заливка лассо = Preenchimento com laço
+Не ограничиваться выделением = Ignorar seleção
+Не трогать закрашенное = Ignorar partes pintadas
+Обводка: = Contorno:
+Расширить = Dilatar
+Только замкнутые области = Só áreas fechadas
+всё изображение = imagem mesclada
+многоугольник = poligonal
+многоугольник и от руки = poligonal + livre
+непрозрачное = opaco
+от руки = livre
+похожий цвет = cor semelhante
+прозрачное = transparente
+прозрачное с допуском = transparente (difuso)
+текущий слой = camada atual
+указанные слои = camadas indicadas

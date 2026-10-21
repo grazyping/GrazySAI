@@ -407,6 +407,189 @@ pub fn magic_wand_closing(pixels: &ColorMap, width: u32, height: u32, x: i32, y:
     out
 }
 
+/// Что считается «заливаемым» у заливки лассо с замкнутыми областями (как в SAI 2026).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FillRegion {
+    /// Прозрачное (непрозрачность не больше допуска).
+    #[default]
+    Transparent,
+    /// Прозрачное с допуском: полупрозрачное заливается частично (тем сильнее, чем прозрачнее).
+    TransparentFuzzy,
+    /// Цвет, похожий на цвет в начале обводки (в пределах допуска).
+    Similar,
+    /// Непрозрачное (непрозрачность больше допуска).
+    Opaque,
+}
+
+/// Настройки заливки лассо.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LassoFill {
+    /// Заливать только замкнутые области внутри обводки (не касающиеся её края).
+    pub enclosed: bool,
+    pub region: FillRegion,
+    /// Допуск 0..=255.
+    pub range: u8,
+    /// Зазоры в линиях до `2·gap` px считаются закрытыми.
+    pub gap: u32,
+    /// Расширить заливку на столько px (в пределах обводки).
+    pub dilate: u32,
+    /// Не заливать то, что уже закрашено (только заливаемые точки).
+    pub ignore_painted: bool,
+}
+
+/// Заливка лассо: доля заливки каждой точки (0..=ONE). `lasso` — маска обводки (со сглаженным
+/// краем), `src` — по чему искать области (слой или сведённое), `seed` — точка начала обводки
+/// (для «похожего цвета»).
+///
+/// Без замкнутых областей — просто обводка. С ними: от края обводки заливается «внешняя» часть
+/// сквозь линии, утолщённые на `gap`, и возвращается к краю линий на те же `gap`; залито всё
+/// остальное внутри обводки — замкнутые области вместе с их линиями (как в SAI: кольцо залито до
+/// наружного края, зазор закрыт почти прямым отрезком между концами линии).
+pub fn lasso_fill(lasso: &MaskMap, src: &ColorMap, width: u32, height: u32, seed: (i32, i32), o: LassoFill) -> MaskMap {
+    if !o.enclosed {
+        return lasso.clone();
+    }
+    let Some((x0, y0, x1, y1)) = mask_bounds(lasso) else { return MaskMap::new() };
+    // рамка с полем в 1 px: всё за обводкой и за краем холста — «снаружи»
+    let (x0, y0, x1, y1) = (x0.max(0), y0.max(0), x1.min(width as i32), y1.min(height as i32));
+    if x1 <= x0 || y1 <= y0 {
+        return MaskMap::new();
+    }
+    let (bx0, by0, bx1, by1) = (x0 - 1, y0 - 1, x1 + 1, y1 + 1);
+    let (w, h) = ((bx1 - bx0) as usize, (by1 - by0) as usize);
+    let n = w * h;
+    let at = |i: usize| (bx0 + (i % w) as i32, by0 + (i / w) as i32);
+    let inside: Vec<bool> = (0..n).map(|i| {
+        let (x, y) = at(i);
+        x >= 0 && y >= 0 && x < width as i32 && y < height as i32 && lasso.get(x, y) as u32 * 2 > ONE
+    }).collect();
+    let seed_c = to_rgba8(src.get(seed.0, seed.1));
+    let r = o.range as i32;
+    // насколько точка «заливаемая»: 0..=1
+    let weight: Vec<f32> = (0..n).map(|i| {
+        let (x, y) = at(i);
+        let c = to_rgba8(src.get(x, y));
+        match o.region {
+            FillRegion::Transparent => (c[3] as i32 <= r) as u8 as f32,
+            FillRegion::TransparentFuzzy => {
+                if c[3] as i32 <= r { 1.0 } else { 1.0 - (c[3] as i32 - r) as f32 / (255 - r).max(1) as f32 }
+            }
+            FillRegion::Similar => (0..4).all(|k| (c[k] as i32 - seed_c[k] as i32).abs() <= r) as u8 as f32,
+            FillRegion::Opaque => (c[3] as i32 > r) as u8 as f32,
+        }
+    }).collect();
+    let fillable: Vec<bool> = weight.iter().map(|&v| v > 0.0).collect();
+    const N8: [(i32, i32); 8] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)];
+    let nb = |i: usize, dx: i32, dy: i32| -> Option<usize> {
+        let (x, y) = ((i % w) as i32 + dx, (i / w) as i32 + dy);
+        (x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h).then(|| y as usize * w + x as usize)
+    };
+    // рост на `steps` шагов по 8 соседям через точки, где `pass`
+    let grow = |set: &mut Vec<bool>, steps: u32, pass: &dyn Fn(usize) -> bool| {
+        let mut front: Vec<usize> = (0..n).filter(|&i| set[i]).collect();
+        for _ in 0..steps {
+            let mut next = Vec::new();
+            for i in front {
+                for (dx, dy) in N8 {
+                    if let Some(j) = nb(i, dx, dy) {
+                        if !set[j] && pass(j) {
+                            set[j] = true;
+                            next.push(j);
+                        }
+                    }
+                }
+            }
+            if next.is_empty() {
+                break;
+            }
+            front = next;
+        }
+    };
+    // 1. линии внутри обводки, утолщённые на gap
+    let mut thick: Vec<bool> = (0..n).map(|i| inside[i] && !fillable[i]).collect();
+    grow(&mut thick, o.gap, &|j| inside[j]);
+    // 2. внешняя часть: всё за обводкой, оттуда — по заливаемым точкам вне утолщения
+    let open = |i: usize| inside[i] && fillable[i] && !thick[i];
+    let mut outer: Vec<bool> = inside.iter().map(|v| !v).collect();
+    let mut stack: Vec<usize> = (0..n).filter(|&i| open(i) && [(1, 0), (-1, 0), (0, 1), (0, -1)].iter().any(|&(dx, dy)| nb(i, dx, dy).is_some_and(|j| outer[j]))).collect();
+    while let Some(i) = stack.pop() {
+        if outer[i] {
+            continue;
+        }
+        outer[i] = true;
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            if let Some(j) = nb(i, dx, dy) {
+                if !outer[j] && open(j) {
+                    stack.push(j);
+                }
+            }
+        }
+    }
+    // 3. назад к краю линий
+    grow(&mut outer, o.gap, &|j| inside[j] && fillable[j]);
+    // 4. заливка — остальное внутри обводки, но только куски, где есть заливаемые точки (сама
+    //    линия без замкнутой пустоты не заливается — как в SAI при допуске 0)
+    let cand: Vec<bool> = (0..n).map(|i| inside[i] && !outer[i]).collect();
+    let mut keep = vec![false; n];
+    let mut seen = vec![false; n];
+    for s0 in 0..n {
+        if !cand[s0] || seen[s0] {
+            continue;
+        }
+        let (mut part, mut any, mut st) = (Vec::new(), false, vec![s0]);
+        seen[s0] = true;
+        while let Some(i) = st.pop() {
+            part.push(i);
+            any |= fillable[i];
+            for (dx, dy) in N8 {
+                if let Some(j) = nb(i, dx, dy) {
+                    if cand[j] && !seen[j] {
+                        seen[j] = true;
+                        st.push(j);
+                    }
+                }
+            }
+        }
+        if any {
+            for i in part {
+                keep[i] = true;
+            }
+        }
+    }
+    let mut fill: Vec<bool> = (0..n).map(|i| keep[i] && (!o.ignore_painted || fillable[i])).collect();
+    grow(&mut fill, o.dilate, &|j| inside[j]);
+    let mut out = MaskMap::new();
+    for i in 0..n {
+        if fill[i] {
+            let (x, y) = at(i);
+            let edge = lasso.get(x, y) as f32;
+            let k = if o.region == FillRegion::TransparentFuzzy && !o.ignore_painted { 1.0 } else if o.region == FillRegion::TransparentFuzzy { weight[i] } else { 1.0 };
+            let v = (edge * k).round() as u32;
+            if v > 0 {
+                out.set(x, y, v.min(ONE) as u16);
+            }
+        }
+    }
+    out
+}
+
+/// Рамка ненулевой части маски (x0, y0, x1, y1), x1/y1 — не включительно.
+pub fn mask_bounds(m: &MaskMap) -> Option<(i32, i32, i32, i32)> {
+    let (mut x0, mut y0, mut x1, mut y1) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+    for (&(tx, ty), t) in &m.tiles {
+        for (i, &v) in t.0.iter().enumerate() {
+            if v != 0 {
+                let (x, y) = (tx * TILE + i as i32 % TILE, ty * TILE + i as i32 / TILE);
+                x0 = x0.min(x);
+                y0 = y0.min(y);
+                x1 = x1.max(x + 1);
+                y1 = y1.max(y + 1);
+            }
+        }
+    }
+    (x0 < x1).then_some((x0, y0, x1, y1))
+}
+
 /// Маска, сдвинутая на целые (`dx`, `dy`).
 pub fn shift_mask(src: &MaskMap, dx: i32, dy: i32) -> MaskMap {
     let mut out = MaskMap::new();
@@ -657,6 +840,44 @@ pub fn limit(m: u32, sel: u16) -> u32 {
 
 #[cfg(test)]
 mod tests {
+
+    /// Кольцо с разрывом (как в живой проверке SAI 2026): без замкнутых областей — залита вся
+    /// обводка; с ними и допуском 0 — ничего (кольцо открыто); с допуском больше половины
+    /// разрыва — внутренность до наружного края линии, снаружи пусто.
+    #[test]
+    fn lasso_fill_enclosed_ring_with_gap() {
+        let (w, h) = (300u32, 300u32);
+        let mut layer = ColorMap::new();
+        // сплошное кольцо r = 98…102 без дуги ±15° справа (зазор ≈ 52 px)
+        for y in 0..h as i32 {
+            for x in 0..w as i32 {
+                let (dx, dy) = (x as f64 + 0.5 - 150.0, y as f64 + 0.5 - 150.0);
+                let r = (dx * dx + dy * dy).sqrt();
+                if (98.0..=102.0).contains(&r) && dy.atan2(dx).to_degrees().abs() > 15.0 {
+                    layer.set(x, y, [0, 0, 0, ONE as u16]);
+                }
+            }
+        }
+        let lasso = polygon(&[[20.0, 20.0], [280.0, 20.0], [280.0, 280.0], [20.0, 280.0]]);
+        let count = |m: &MaskMap| m.tiles.values().map(|t| t.0.iter().filter(|&&v| v as u32 * 2 > ONE).count()).sum::<usize>();
+        let plain = lasso_fill(&lasso, &layer, w, h, (20, 20), LassoFill::default());
+        assert_eq!(count(&plain), count(&lasso));
+        let mut o = LassoFill { enclosed: true, ..Default::default() };
+        assert_eq!(count(&lasso_fill(&lasso, &layer, w, h, (20, 20), o)), 0, "открытое кольцо не заливается");
+        o.gap = 30;
+        let m = lasso_fill(&lasso, &layer, w, h, (20, 20), o);
+        assert!(m.get(150, 150) as u32 == ONE, "внутри залито");
+        assert!(m.get(150, 51) as u32 == ONE, "линия покрыта");
+        assert_eq!(m.get(40, 40), 0, "снаружи пусто");
+        assert_eq!(m.get(150, 46), 0, "за линией пусто");
+        // зазор закрыт у концов линии: точка в середине зазора залита, далеко за ним — нет
+        assert!(m.get(240, 150) as u32 == ONE, "середина зазора");
+        assert_eq!(m.get(262, 150), 0, "за зазором");
+        // «не трогать закрашенное» — линия не покрыта
+        o.ignore_painted = true;
+        assert_eq!(lasso_fill(&lasso, &layer, w, h, (20, 20), o).get(150, 50), 0);
+    }
+
     use super::*;
 
     #[test]

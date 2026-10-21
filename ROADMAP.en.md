@@ -88,7 +88,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Large Water brush: blur over a reduced copy of the layer, as in SAI — 350 px: 7.4 → 2.0 s per 1000 px of line
 - [x] Perspective rulers: display and drawing along them (reference: Krita's perspective and vanishing point assistants); our own version, not written to the file (0.8.38)
 
-### 1.0 — everything from SAI 2 for everyday work (current version 1.0.39)
+### 1.0 — everything from SAI 2 for everyday work (current version 1.0.40)
 
 Everything people use in PaintTool SAI 2017 for everyday work is there and checked against the original (feature-by-feature comparison — `docs/32-sai-comparison.md`); `.sai2` files open and save without loss. A code audit came before the release (`docs/audit-2026-10-16.md`).
 
@@ -244,13 +244,13 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 Plan, analysis and order — `docs/41-sai2-after-2017.en.md`. New tools are separate kinds; brushes
 calibrated against SAI 2017 stay unchanged; files still open in SAI 2017.
 
-- [ ] Control step: SAI 2026 base strokes against the 2017 sheets
-- [ ] Lasso Fill (first — confirm the tool in SAI 2026)
+- [x] Control step: SAI 2026 base strokes against the 2017 sheets (engine differs: −20…35 % paint, −10…15 % diameter)
+- [x] Lasso Fill: freeform and polygonal, enclosed regions with gap tolerance, dilation, “ignore painted”, source (1.0.40)
 - [ ] Blur tool
 - [ ] Smudge
 - [ ] Line and point symmetry, up to 20 parts
 - [ ] Scattering brush and Effect Pen
-- [ ] Liquify (first — confirm the tool and its modes in SAI 2026)
+- [ ] Liquify: not in the 2026 builds (name only) — grid deformation instead (Lattice / Mesh from Alpha)
 - [ ] Pixel Art Pen, binary eraser, binary selection pen and eraser
 - [ ] Brush details: minimum pressure, hook trimming, Anti-Ripple, Shift after starting a stroke, brush preview
 - [ ] Canvas size presets; reserve and restore tool settings

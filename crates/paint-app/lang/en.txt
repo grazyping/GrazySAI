@@ -1086,3 +1086,26 @@ Zip с паролем = Password-protected zip
 серая фигура = clay figure
 силуэт = silhouette
 цвет и свет = color and light
+
+# заливка лассо
+Внутри обводки нет замкнутых областей (увеличьте «Допуск зазоров») = No enclosed regions inside the outline (increase “Gap tolerance”)
+Где искать: = Search in:
+Допуск зазоров = Gap tolerance
+Зал.лассо = LassoFill
+Заливается только то, что внутри обводки замкнуто линиями; зазоры в линиях закрываются = Only what lines enclose inside the outline is filled; gaps in the lines are closed
+Заливка лассо = Lasso Fill
+Не ограничиваться выделением = Ignore selection
+Не трогать закрашенное = Ignore painted parts
+Обводка: = Outline:
+Расширить = Dilate
+Только замкнутые области = Enclosed regions only
+всё изображение = merged image
+многоугольник = polygonal
+многоугольник и от руки = polygonal + freeform
+непрозрачное = non-transparent
+от руки = freeform
+похожий цвет = similar color
+прозрачное = transparent
+прозрачное с допуском = transparent (fuzzy)
+текущий слой = current layer
+указанные слои = specified layers
