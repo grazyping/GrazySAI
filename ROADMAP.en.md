@@ -227,4 +227,11 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 - [x] Plugins: custom brush dynamics (a function per dab) (1.0.34)
 - [x] WebAssembly plugins (wasmi): tiled filters on several threads, with margins for neighbours (1.0.35)
 - [x] Guides for authors (ru, en), templates and examples: `docs/36-plugins.en.md`, `docs/37-brushes-guide.en.md`, `plugins/examples/` (1.0.36)
-- [ ] Later: a free shared catalog (a repository with an index and files in Releases)
+- [x] We do not run a shared catalog; the index format is described for anyone who wants to host one — `docs/38-catalog.md`
+
+### Process recording, watermark, 3D
+
+- [ ] Watermark on export (text or picture, position, opacity)
+- [ ] Drawing process recording: sped-up video, without chosen layers, with a password (AES zip)
+- [ ] 3D reference: a 3D layer with a mannequin of simple shapes, poses, camera (plan — `docs/39-3d-reference.md`)
+- [ ] 3D: glTF / OBJ import, scenes, camera from the perspective ruler
