@@ -985,3 +985,6 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Проверка = Prueba
 Проверка прошла за {0} мс; слоёв: {1} = Prueba superada en {0} ms; capas: {1}
 Сохранить плагин = Guardar complemento
+Динамика «{0}»: плагин {1} не установлен = Dinámica «{0}»: el complemento {1} no está instalado
+Из плагина = Del complemento
+Своя динамика кисти: выберите её на вкладке «Кисть» → «Динамика» → «Из плагина» — образец мазка покажет её сразу. = Dinámica propia del pincel: elíjala en la pestaña «Pincel» → «Dinámica» → «Del complemento»; el trazo de muestra la muestra al instante.

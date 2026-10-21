@@ -91,6 +91,43 @@ pixels, (0, 0) is the top left corner.
 
 A plugin works on the current layer if it is a normal layer (not a folder or a linework layer).
 
+## Custom brush dynamics
+
+A plugin can give brushes its own dynamics — a function called for every dab of a stroke. In `plugin.txt`:
+
+```
+dynamics.0.name=Jitter
+dynamics.0.function=jitter
+```
+
+In `main.lua`:
+
+```lua
+function jitter(i)
+  return { size = 0.6 + i.random * 0.6, angle = (i.random2 - 0.5) * 120, scatter = (i.random - 0.5) * 0.8 }
+end
+```
+
+| Input (`i.…`) | Meaning |
+|---|---|
+| `pressure` | pressure 0..1 |
+| `speed` | pen travel per input event, px |
+| `direction` | stroke direction 0..1 (0 — right, 0.25 — down) |
+| `distance` | distance from the stroke start, px |
+| `random`, `random2` | two random numbers 0..1 per dab (a stroke repeats the same way) |
+
+| Output | Meaning |
+|---|---|
+| `size`, `density`, `ratio` | multipliers of size, density and tip thickness |
+| `angle` | tip rotation, degrees |
+| `scatter` | offset across the stroke in diameters (signed) |
+
+What the answer lacks stays unchanged. To use it: brush settings → “Dynamics” → “From plugin” (in GrazySAI
+and in the workshop); the choice is saved in the brush (`dyn_plugin=id/name` in `brush.txt`) and works on
+top of the “input → curve → parameter” links. A package may contain only dynamics, without commands. A call
+costs a fraction of a microsecond; each stroke gets its own sandbox (up to 10 s and 64 MB); after an error
+the dynamics switch off until the stroke ends, and the error goes to the status bar and the log.
+
 ## What a plugin cannot do
 
 The code runs in a sandbox:

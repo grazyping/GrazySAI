@@ -505,6 +505,8 @@ pub struct Stroke {
     heading: Option<f32>,
     /// Динамика кисти (`dynamics.rs`): связи «вход → кривая → выход».
     pub dynamics: Vec<crate::dynamics::Dynamic>,
+    /// Своя динамика из плагина (вызывается на каждый отпечаток).
+    pub dyn_hook: Option<crate::dynamics::DynHook>,
     /// Путь от начала штриха до текущего отпечатка, px; скорость — путь за событие ввода.
     travel: f32,
     at: f32,
@@ -531,6 +533,7 @@ impl Stroke {
             hard_mask: MaskMap::new(),
             heading: None,
             dynamics: Vec::new(),
+            dyn_hook: None,
             travel: 0.0,
             at: 0.0,
             speed: 0.0,
@@ -847,7 +850,7 @@ impl Stroke {
     }
 
     fn dab(&mut self, p: InputPoint) {
-        let fx = if self.dynamics.is_empty() {
+        let fx = if self.dynamics.is_empty() && self.dyn_hook.is_none() {
             crate::dynamics::DynEffect::default()
         } else {
             let n = self.dab_count as u64;
@@ -858,7 +861,11 @@ impl Stroke {
                 distance: self.at,
                 random: [crate::dynamics::hash01(n * 2), crate::dynamics::hash01(n * 2 + 1)],
             };
-            crate::dynamics::apply(&self.dynamics, &inputs)
+            let fx = crate::dynamics::apply(&self.dynamics, &inputs);
+            match self.dyn_hook.as_mut() {
+                Some(h) => crate::dynamics::combine(fx, h(&inputs)),
+                None => fx,
+            }
         };
         let diameter = self.params.diameter_at(p.pressure) * fx.size;
         let density = (self.params.density_at(p.pressure) * fx.density).min(1.0);

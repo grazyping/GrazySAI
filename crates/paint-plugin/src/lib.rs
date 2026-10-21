@@ -53,6 +53,8 @@ pub struct Plugin {
     pub description: String,
     pub api: u32,
     pub commands: Vec<Command>,
+    /// Своя динамика кисти: имя (для списка в настройках кисти) и функция в `main.lua`.
+    pub dynamics: Vec<(String, String)>,
     pub source: String,
 }
 
@@ -87,10 +89,15 @@ pub fn parse(manifest: &str, source: &str) -> Res<Plugin> {
         }
         commands.push(Command { menu: menu.chars().take(120).collect(), function: function.chars().take(64).collect(), params });
     }
-    if commands.is_empty() {
-        return Err("plugin.txt: нет ни одной команды (command.0.menu, command.0.function)".into());
+    let mut dynamics = Vec::new();
+    for n in 0..16 {
+        let (Some(name), Some(function)) = (kv.str(&format!("dynamics.{n}.name")), kv.str(&format!("dynamics.{n}.function"))) else { break };
+        dynamics.push((name.chars().take(64).collect(), function.chars().take(64).collect()));
     }
-    Ok(Plugin { name: if get("name").is_empty() { id.clone() } else { get("name") }, id, version: get("version"), author: get("author"), description: get("description"), api, commands, source: source.to_string() })
+    if commands.is_empty() && dynamics.is_empty() {
+        return Err("plugin.txt: нет ни команды (command.0.menu, command.0.function), ни динамики (dynamics.0.name, dynamics.0.function)".into());
+    }
+    Ok(Plugin { name: if get("name").is_empty() { id.clone() } else { get("name") }, id, version: get("version"), author: get("author"), description: get("description"), api, commands, dynamics, source: source.to_string() })
 }
 
 fn parse_param(line: &str) -> Option<Param> {
@@ -174,16 +181,7 @@ pub fn run(plugin: &Plugin, command: &Command, params: &[(String, f64)], canvas:
     }
     let started = Instant::now();
     // только безопасные части стандартной библиотеки Luau: без os, io, debug, package
-    let lua = Lua::new_with(StdLib::MATH | StdLib::STRING | StdLib::TABLE | StdLib::UTF8 | StdLib::BIT, LuaOptions::default()).map_err(|e| e.to_string())?;
-    lua.set_memory_limit(limits.memory).map_err(|e| e.to_string())?;
-    let deadline = started + limits.time;
-    lua.set_interrupt(move |_| {
-        if Instant::now() > deadline {
-            Err(mlua::Error::runtime("плагин работает слишком долго — остановлен"))
-        } else {
-            Ok(VmState::Continue)
-        }
-    });
+    let lua = sandbox(limits, started + limits.time).map_err(|e| e.to_string())?;
     let log = RefCell::new(Vec::<String>::new());
     let cell = RefCell::new(canvas);
     let result = lua.scope(|scope| {
@@ -249,10 +247,6 @@ pub fn run(plugin: &Plugin, command: &Command, params: &[(String, f64)], canvas:
         for (k, v) in params {
             p.set(k.as_str(), *v)?;
         }
-        // загрузка кода из файлов (require в mlua умеет читать модули с диска) — убрать
-        for name in ["require", "dofile", "loadfile", "load"] {
-            g.raw_set(name, Value::Nil)?;
-        }
         // песочница: общие таблицы только для чтения, у скрипта своё окружение
         lua.sandbox(true)?;
         lua.load(plugin.source.as_str()).set_name(format!("={}/main.lua", plugin.id)).exec()?;
@@ -269,6 +263,75 @@ pub fn run(plugin: &Plugin, command: &Command, params: &[(String, f64)], canvas:
 /// Рамка как четыре значения Luau (x0, y0, x1, y1) или `nil`.
 fn rect4(r: Option<[i32; 4]>) -> mlua::Variadic<i32> {
     mlua::Variadic::from_iter(r.into_iter().flatten())
+}
+
+/// Песочница Luau без API холста: безопасная часть стандартной библиотеки, без загрузчиков кода,
+/// с пределом памяти и временем до `deadline`.
+fn sandbox(limits: Limits, deadline: Instant) -> mlua::Result<Lua> {
+    let lua = Lua::new_with(StdLib::MATH | StdLib::STRING | StdLib::TABLE | StdLib::UTF8 | StdLib::BIT, LuaOptions::default())?;
+    lua.set_memory_limit(limits.memory)?;
+    lua.set_interrupt(move |_| if Instant::now() > deadline { Err(mlua::Error::runtime("плагин работает слишком долго — остановлен")) } else { Ok(VmState::Continue) });
+    // загрузка кода из файлов (require в mlua умеет читать модули с диска) — убрать
+    for name in ["require", "dofile", "loadfile", "load"] {
+        lua.globals().raw_set(name, Value::Nil)?;
+    }
+    Ok(lua)
+}
+
+/// Ошибка своей динамики кисти (последняя), общая для мазка и программы.
+pub type DynError = std::rc::Rc<RefCell<Option<String>>>;
+
+/// Своя динамика кисти из плагина: функция `name` из `dynamics.N` вызывается на каждый отпечаток
+/// с таблицей входов (`pressure`, `speed`, `direction` 0..1, `distance` px, `random`, `random2`) и
+/// возвращает таблицу (`size`, `density`, `ratio` — множители, `angle` — градусы, `scatter` — доля
+/// диаметра поперёк мазка; чего нет — без изменений). Песочница — на один мазок, до 10 с на мазок;
+/// после ошибки динамика выключается до конца мазка, текст ошибки — в `DynError`.
+pub fn dynamics_hook(plugin: &Plugin, name: &str) -> Result<(paint_core::dynamics::DynHook, DynError), String> {
+    if plugin.api > API {
+        return Err(format!("плагину нужна версия API {}, у программы — {API}", plugin.api));
+    }
+    let (_, function) = plugin.dynamics.iter().find(|(n, _)| n == name).ok_or_else(|| format!("в плагине нет динамики «{name}»"))?;
+    let limits = Limits { memory: 64 << 20, time: Duration::from_secs(10) };
+    let lua = sandbox(limits, Instant::now() + limits.time).map_err(|e| e.to_string())?;
+    let log_free = lua.create_function(|_, _: mlua::Variadic<Value>| Ok(())).map_err(|e| e.to_string())?;
+    lua.globals().set("log", log_free).map_err(|e| e.to_string())?;
+    lua.sandbox(true).map_err(|e| e.to_string())?;
+    lua.load(plugin.source.as_str()).set_name(format!("={}/main.lua", plugin.id)).exec().map_err(|e| clean_error(&e.to_string()))?;
+    let f: mlua::Function = lua.globals().get(function.as_str()).map_err(|_| format!("в main.lua нет функции {function}"))?;
+    let error: DynError = Default::default();
+    let err = error.clone();
+    let hook = move |i: &paint_core::dynamics::DynInputs| -> paint_core::dynamics::DynEffect {
+        let none = paint_core::dynamics::DynEffect::default();
+        if err.borrow().is_some() {
+            return none;
+        }
+        let r = (|| -> mlua::Result<paint_core::dynamics::DynEffect> {
+            let t = lua.create_table()?;
+            t.set("pressure", i.pressure)?;
+            t.set("speed", i.speed)?;
+            t.set("direction", (i.heading / std::f32::consts::TAU).rem_euclid(1.0))?;
+            t.set("distance", i.distance)?;
+            t.set("random", i.random[0])?;
+            t.set("random2", i.random[1])?;
+            let out: mlua::Table = f.call(t)?;
+            let num = |k: &str, d: f32| -> f32 { out.get::<Option<f64>>(k).ok().flatten().map(|v| v as f32).filter(|v| v.is_finite()).unwrap_or(d) };
+            Ok(paint_core::dynamics::DynEffect {
+                size: num("size", 1.0).clamp(0.0, 10.0),
+                density: num("density", 1.0).clamp(0.0, 1.0),
+                angle: num("angle", 0.0).clamp(-3600.0, 3600.0).to_radians(),
+                ratio: num("ratio", 1.0).clamp(0.01, 1.0),
+                scatter: num("scatter", 0.0).clamp(-10.0, 10.0),
+            })
+        })();
+        match r {
+            Ok(e) => e,
+            Err(e) => {
+                *err.borrow_mut() = Some(clean_error(&e.to_string()));
+                none
+            }
+        }
+    };
+    Ok((Box::new(hook), error))
 }
 
 /// Значение канала из числа плагина: 0..255, дробное округляется.
@@ -439,6 +502,22 @@ mod tests {
     }
 
     #[test]
+    fn brush_dynamics_from_plugin() {
+        let m = "id=test.dyn\ndynamics.0.name=Дрожь\ndynamics.0.function=jitter\n";
+        let p = parse(m, "function jitter(i) return { size = 0.5 + i.pressure * 0.5, angle = i.random * 90, scatter = 0.25 } end").unwrap();
+        let (mut h, err) = dynamics_hook(&p, "Дрожь").unwrap();
+        let e = h(&paint_core::dynamics::DynInputs { pressure: 1.0, random: [0.5, 0.0], ..Default::default() });
+        assert!((e.size - 1.0).abs() < 1e-6 && (e.angle - 45f32.to_radians()).abs() < 1e-4 && (e.scatter - 0.25).abs() < 1e-6);
+        assert!(err.borrow().is_none());
+        // ошибка — динамика выключается, текст сохраняется
+        let p = parse(m, "function jitter(i) return nil + 1 end").unwrap();
+        let (mut h, err) = dynamics_hook(&p, "Дрожь").unwrap();
+        assert_eq!(h(&Default::default()), paint_core::dynamics::DynEffect::default());
+        assert!(err.borrow().as_deref().is_some_and(|e| e.contains("main.lua:1")));
+        assert!(dynamics_hook(&p, "нет").is_err());
+    }
+
+    #[test]
     fn package_round_trip() {
         let dir = std::env::temp_dir().join(format!("grazysai-plugin-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -464,6 +543,13 @@ mod examples {
                 let values: Vec<(String, f64)> = c.params.iter().map(|q| (q.id.clone(), q.default)).collect();
                 let mut cv = super::MemoryCanvas::new(40, 30, [120, 60, 30, 255]);
                 super::run(&p, c, &values, &mut cv, super::Limits::default()).unwrap_or_else(|e| panic!("{}: {e}", p.id));
+            }
+            for (name, _) in &p.dynamics {
+                let (mut h, err) = super::dynamics_hook(&p, name).unwrap();
+                for k in 0..20 {
+                    h(&paint_core::dynamics::DynInputs { pressure: k as f32 / 20.0, distance: k as f32 * 40.0, random: [0.3, 0.7], ..Default::default() });
+                }
+                assert!(err.borrow().is_none(), "{}: {:?}", p.id, err.borrow());
             }
             n += 1;
         }

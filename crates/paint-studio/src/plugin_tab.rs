@@ -7,10 +7,11 @@ use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use std::path::PathBuf;
 
 /// Заготовки — примеры из репозитория.
-const TEMPLATES: [(&str, &str, &str); 3] = [
+const TEMPLATES: [(&str, &str, &str); 4] = [
     ("invert", include_str!("../../../plugins/examples/invert/plugin.txt"), include_str!("../../../plugins/examples/invert/main.lua")),
     ("grid", include_str!("../../../plugins/examples/grid/plugin.txt"), include_str!("../../../plugins/examples/grid/main.lua")),
     ("noise", include_str!("../../../plugins/examples/noise/plugin.txt"), include_str!("../../../plugins/examples/noise/main.lua")),
+    ("jitter", include_str!("../../../plugins/examples/jitter/plugin.txt"), include_str!("../../../plugins/examples/jitter/main.lua")),
 ];
 
 /// Пробная картинка.
@@ -52,11 +53,17 @@ impl PluginTab {
         t
     }
 
+    /// Плагин из редактора, если он разобрался.
+    pub fn current(&self) -> Option<&paint_plugin::Plugin> {
+        self.parsed.as_ref().ok()
+    }
+
     fn reparse(&mut self) {
         self.parsed = paint_plugin::parse(&self.manifest, &self.source).map_err(|e| e.to_string());
-        if let Ok(p) = &self.parsed {
-            self.command = self.command.min(p.commands.len().saturating_sub(1));
-            let c = &p.commands[self.command];
+        if let Some(c) = self.parsed.as_ref().ok().filter(|p| !p.commands.is_empty()).map(|p| {
+            self.command = self.command.min(p.commands.len() - 1);
+            &p.commands[self.command]
+        }) {
             // значения полей сохраняются, пока поле с тем же id есть
             let old = std::mem::take(&mut self.values);
             self.values = c.params.iter().map(|q| (q.id.clone(), old.iter().find(|(k, _)| *k == q.id).map_or(q.default, |(_, v)| *v))).collect();
@@ -215,8 +222,13 @@ impl PluginTab {
     pub fn ui(&mut self, ctx: &egui::Context) {
         egui::SidePanel::right("plugin_test").default_width(420.0).show(ctx, |ui| {
             ui.heading(tr("Проверка"));
+            if let Ok(p) = &self.parsed {
+                if !p.dynamics.is_empty() {
+                    ui.label(tr("Своя динамика кисти: выберите её на вкладке «Кисть» → «Динамика» → «Из плагина» — образец мазка покажет её сразу."));
+                }
+            }
             match &self.parsed {
-                Ok(p) => {
+                Ok(p) if !p.commands.is_empty() => {
                     let p = p.clone();
                     ui.label(format!("{} · {} {}", p.name, p.id, p.version));
                     egui::ComboBox::from_label(tr("Команда")).selected_text(p.commands.get(self.command).map(|c| c.menu.clone()).unwrap_or_default()).show_ui(ui, |ui| {
@@ -260,6 +272,7 @@ impl PluginTab {
                         }
                     }
                 }
+                Ok(_) => {}
                 Err(e) if !e.is_empty() => {
                     ui.colored_label(Color32::from_rgb(200, 50, 50), e);
                 }

@@ -170,6 +170,14 @@ impl Default for DynEffect {
     }
 }
 
+/// Своя динамика (из плагина): по входам отпечатка — его итог; складывается со связями.
+pub type DynHook = Box<dyn FnMut(&DynInputs) -> DynEffect>;
+
+/// Свести два итога: множители перемножаются, повороты и разброс складываются.
+pub fn combine(a: DynEffect, b: DynEffect) -> DynEffect {
+    DynEffect { size: a.size * b.size, density: a.density * b.density, angle: a.angle + b.angle, ratio: a.ratio * b.ratio, scatter: a.scatter + b.scatter }
+}
+
 /// Сложить все связи: множители перемножаются, повороты и разброс складываются.
 pub fn apply(dyns: &[Dynamic], i: &DynInputs) -> DynEffect {
     let mut e = DynEffect::default();

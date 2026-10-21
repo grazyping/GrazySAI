@@ -1,0 +1,11 @@
+# Пример: своя динамика кисти — дрожащий отпечаток
+id=grazysai.example.jitter
+name=Дрожь
+version=1.0
+author=GrazySAI
+description=Своя динамика кисти: случайный размер, поворот и разброс отпечатков. Выбирается в разделе «Динамика» кисти.
+api=1
+dynamics.0.name=Дрожь
+dynamics.0.function=jitter
+dynamics.1.name=Сильнее к концу
+dynamics.1.function=grow

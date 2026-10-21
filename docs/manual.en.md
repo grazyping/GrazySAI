@@ -118,7 +118,8 @@ pressure, speed, stroke direction, distance from the stroke start, random (speed
 and thickness, scatter across the stroke. The curve has 4 points: the end ones move up and down, the
 middle ones anywhere; the curve may also fall. Examples: “Distance → Size” with a falling curve tapers the
 stroke; “Random → Scatter” gives splatter; “Speed → Density” falling makes fast strokes lighter. Several
-links to one parameter multiply (rotation and scatter add up). Dynamics are saved in the brush file.
+links to one parameter multiply (rotation and scatter add up). “From plugin” — custom dynamics from an
+installed plugin (a function per dab, docs/36-plugins.en.md). Dynamics are saved in the brush file.
 
 **Form and texture** (the “Form” and “Texture” sections, as in SAI 2):
 

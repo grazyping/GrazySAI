@@ -1086,6 +1086,8 @@ struct PaintApp {
     show_plugins: bool,
     /// Журнал последних запусков (для окна «Плагины»).
     plugin_log: Vec<String>,
+    /// Ошибка своей динамики из плагина у текущего мазка (показывается после него).
+    dyn_error: Option<paint_plugin::DynError>,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
     /// Линейка (прямая или эллипс) и её правка Ctrl + перетаскиванием: что взяли и где было.
@@ -1364,6 +1366,7 @@ impl PaintApp {
             plugin_install: None,
             show_plugins: false,
             plugin_log: Vec::new(),
+            dyn_error: None,
             layer_drag: None,
             ruler: ruler::Ruler::default(),
             ruler_drag: None,
@@ -2638,6 +2641,23 @@ app.open_canvas_dialog(d == "resolution")
         }
     }
 
+    /// Динамика инструмента `i` в мазок: связи и (если выбрана) своя динамика из плагина.
+    fn attach_dynamics(&mut self, st: &mut Stroke, i: usize) {
+        st.dynamics = self.brushes[i].dynamics.clone();
+        let Some(spec) = self.brushes[i].dyn_plugin.clone() else { return };
+        let Some((id, name)) = spec.split_once('/') else { return };
+        match self.plugins.iter().find(|p| p.plugin.id == id) {
+            Some(p) => match paint_plugin::dynamics_hook(&p.plugin, name) {
+                Ok((hook, err)) => {
+                    st.dyn_hook = Some(hook);
+                    self.dyn_error = Some(err);
+                }
+                Err(e) => self.status = trf("Ошибка плагина «{0}»: {1}", &[&p.plugin.name, &e]),
+            },
+            None => self.status = trf("Динамика «{0}»: плагин {1} не установлен", &[&name, &id]),
+        }
+    }
+
     /// Перечитать установленные плагины.
     fn reload_plugins(&mut self) {
         let (list, errors) = plugins::load_all();
@@ -3900,7 +3920,8 @@ app.open_canvas_dialog(d == "resolution")
             let mut st = Stroke::new(params);
             st.mirror = self.mirror();
             st.set_grain(self.grain_for(if eraser_end { self.eraser_index() } else { self.brush }));
-            st.dynamics = self.brushes[if eraser_end { self.eraser_index() } else { self.brush }].dynamics.clone();
+            let tool_index = if eraser_end { self.eraser_index() } else { self.brush };
+            self.attach_dynamics(&mut st, tool_index);
             st.add_point(self.smoother.push(p));
             let keys = self.doc.mask_stroke_preview(&self.selected.clone(), &orig.hide, &st.mask, target);
             self.invalidate(keys);
@@ -3949,7 +3970,8 @@ app.open_canvas_dialog(d == "resolution")
         let mut stroke = Stroke::new(params);
         stroke.mirror = self.mirror();
         stroke.set_grain(self.grain_for(if eraser_end { self.eraser_index() } else { self.brush }));
-        stroke.dynamics = self.brushes[if eraser_end { self.eraser_index() } else { self.brush }].dynamics.clone();
+        let tool_index = if eraser_end { self.eraser_index() } else { self.brush };
+        self.attach_dynamics(&mut stroke, tool_index);
         // прямая, как в SAI: кнопка «Прямая линия» — весь штрих прямой от точки нажатия;
         // Shift + нажатие — прямая от конца прошлого штриха
         let shift = self.ctx.as_ref().is_some_and(|c| c.input(|i| i.modifiers.shift));
@@ -3984,7 +4006,8 @@ app.open_canvas_dialog(d == "resolution")
         }
         let mut stroke = Stroke::new(params);
         stroke.set_grain(self.grain_for(if eraser { self.eraser_index() } else { self.brush }));
-        stroke.dynamics = self.brushes[if eraser { self.eraser_index() } else { self.brush }].dynamics.clone();
+        let tool_index = if eraser { self.eraser_index() } else { self.brush };
+        self.attach_dynamics(&mut stroke, tool_index);
         let c = self.color();
         let mut live = LiveStroke::new(self.selected.clone(), stroke, [c.r(), c.g(), c.b()]);
         live.stroke.add_point(a);
@@ -6661,9 +6684,11 @@ app.open_canvas_dialog(d == "resolution")
         let (blot_names, tex_names, bristle_names, tip_names) = self.grain_names.clone().unwrap_or_default();
         let mut set_dir = false;
         let mut add_tip = false;
+        // своя динамика из плагинов: «id/имя» → подпись
+        let plugin_dyns: Vec<(String, String)> = self.plugins.iter().flat_map(|p| p.plugin.dynamics.iter().map(move |(n, _)| (format!("{}/{n}", p.plugin.id), format!("{} — {n}", p.plugin.name)))).collect();
         let tool = &mut self.brushes[self.brush];
         let tool = &mut tool.brush;
-        let (brush, grain, dyns) = (&mut tool.params, &mut tool.grain, &mut tool.dynamics);
+        let (brush, grain, dyns, dyn_plugin) = (&mut tool.params, &mut tool.grain, &mut tool.dynamics, &mut tool.dyn_plugin);
         sai_ui::row(ui, tr("Режим"), lw, false, |ui| {
             egui::ComboBox::from_id_salt("paintmode")
                 .selected_text(tr("Обычный"))
@@ -6910,6 +6935,22 @@ app.open_canvas_dialog(d == "resolution")
             }
             if dyns.len() < 32 && ui.button(tr("+ Связь «вход → кривая → параметр»")).clicked() {
                 dyns.push(Dynamic::new(DynInput::Pressure, DynOutput::Size));
+            }
+            if !plugin_dyns.is_empty() || dyn_plugin.is_some() {
+                sai_ui::row(ui, tr("   Из плагина"), lw, true, |ui| {
+                    let none = tr("[ Нет ]");
+                    let shown = dyn_plugin.as_ref().map(|s| plugin_dyns.iter().find(|(k, _)| k == s).map_or_else(|| s.clone(), |(_, l)| l.clone())).unwrap_or_else(|| none.to_string());
+                    egui::ComboBox::from_id_salt("dynplug").selected_text(shown).width(w - 8.0).show_ui(ui, |ui| {
+                        if ui.selectable_label(dyn_plugin.is_none(), none).clicked() {
+                            *dyn_plugin = None;
+                        }
+                        for (k, l) in &plugin_dyns {
+                            if ui.selectable_label(dyn_plugin.as_deref() == Some(k), l).clicked() {
+                                *dyn_plugin = Some(k.clone());
+                            }
+                        }
+                    });
+                });
             }
         }
         if sai_ui::section(ui, "sec_tex", tr("Текстура")) {
@@ -10327,6 +10368,10 @@ impl eframe::App for PaintApp {
         self.check_exit(ctx);
         self.autosave();
         self.check_studio(ctx);
+        if let Some(e) = self.dyn_error.as_ref().and_then(|e| e.borrow_mut().take()) {
+            self.status = trf("Ошибка плагина «{0}»: {1}", &[&tr("Динамика"), &e.lines().next().unwrap_or("")]);
+            self.plugin_log.push(e);
+        }
         let dropped = ctx.input(|i| i.raw.dropped_files.iter().find_map(|f| f.path.clone()));
         if let Some(path) = dropped {
             // с Ctrl картинка становится опорной, а не открывается

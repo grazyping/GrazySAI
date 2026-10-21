@@ -224,7 +224,7 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 - [x] GrazySAI Studio workshop: brush editor with a test strip, tip generator, “Export to GrazySAI” with live reload (1.0.31)
 - [x] Luau plugins (sandboxed): menu commands, parameter windows, live reload from `plugins/dev/` (1.0.32)
 - [x] Workshop: editing and testing a plugin, “Export to GrazySAI” (1.0.33)
-- [ ] Plugins: custom brush dynamics
+- [x] Plugins: custom brush dynamics (a function per dab) (1.0.34)
 - [ ] WebAssembly plugins (wasmi): tiled filters, custom tips
 - [ ] Guides for authors (ru, en), templates and examples
 - [ ] Later: a free shared catalog (a repository with an index and files in Releases)

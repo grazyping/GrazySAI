@@ -55,6 +55,8 @@ struct Studio {
     /// Вкладка: кисть или плагин.
     tab: Tab,
     plugin: plugin_tab::PluginTab,
+    /// Список своей динамики из плагинов (читается с диска не чаще раза в 2 с).
+    dyn_cache: Option<(std::time::Instant, Vec<paint_plugin::Plugin>)>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -97,7 +99,39 @@ impl Studio {
             gen_dots: 24,
             tab: Tab::Brush,
             plugin: plugin_tab::PluginTab::new(),
+            dyn_cache: None,
         }
+    }
+
+    /// Своя динамика из плагинов: плагин из вкладки «Плагин» (если в нём есть динамика) и
+    /// установленные в GrazySAI. Ключ — «id/имя».
+    fn plugin_dynamics(&mut self) -> Vec<(String, String, paint_plugin::Plugin)> {
+        // установленные — из кеша (не чаще раза в 2 с), плагин из редактора — всегда свежий
+        let fresh = self.dyn_cache.as_ref().is_some_and(|(t, _)| t.elapsed() < std::time::Duration::from_secs(2));
+        if !fresh {
+            self.dyn_cache = Some((std::time::Instant::now(), installed_plugins()));
+        }
+        let mut list: Vec<paint_plugin::Plugin> = self.plugin.current().filter(|p| !p.dynamics.is_empty()).cloned().into_iter().collect();
+        for p in self.dyn_cache.as_ref().map(|(_, v)| v.clone()).unwrap_or_default() {
+            if !list.iter().any(|q| q.id == p.id) {
+                list.push(p);
+            }
+        }
+        list.into_iter().flat_map(|p| p.dynamics.clone().into_iter().map(move |(n, _)| (format!("{}/{n}", p.id), format!("{} — {n}", p.name), p.clone()))).collect()
+    }
+
+    /// Мазок кистью с её динамикой из плагина.
+    fn stroke(&mut self) -> Stroke {
+        let mut st = self.brush.stroke(None);
+        if let Some(spec) = self.brush.dyn_plugin.clone() {
+            if let Some((_, _, p)) = self.plugin_dynamics().into_iter().find(|(k, _, _)| *k == spec) {
+                match paint_plugin::dynamics_hook(&p, spec.split_once('/').map_or("", |s| s.1)) {
+                    Ok((h, _)) => st.dyn_hook = Some(h),
+                    Err(e) => self.status = e,
+                }
+            }
+        }
+        st
     }
 
     fn name(&self) -> String {
@@ -108,7 +142,7 @@ impl Studio {
     fn render(&mut self, ctx: &egui::Context) {
         self.pad.layers[0] = self.base.clone();
         if self.sample {
-            let mut st = self.brush.stroke(None);
+            let mut st = self.stroke();
             st.params.erase = false;
             let (w, h) = (PAD_W as f32, 110.0);
             for k in 0..=90 {
@@ -237,6 +271,7 @@ impl Studio {
     }
 
     fn settings_ui(&mut self, ui: &mut egui::Ui) {
+        let plugin_dyns: Vec<(String, String)> = self.plugin_dynamics().into_iter().map(|(k, l, _)| (k, l)).collect();
         let b = &mut self.brush;
         let mut changed = false;
         egui::CollapsingHeader::new(tr("Кисть")).default_open(true).show(ui, |ui| {
@@ -408,6 +443,23 @@ impl Studio {
                 b.dynamics.push(Dynamic::new(DynInput::Pressure, DynOutput::Size));
                 changed = true;
             }
+            ui.horizontal(|ui| {
+                ui.label(tr("Из плагина"));
+                let none = tr("[ Нет ]");
+                let shown = b.dyn_plugin.as_ref().map(|s| plugin_dyns.iter().find(|(k, _)| k == s).map_or_else(|| s.clone(), |(_, l)| l.clone())).unwrap_or_else(|| none.to_string());
+                egui::ComboBox::from_id_salt("dynplug").selected_text(shown).show_ui(ui, |ui| {
+                    if ui.selectable_label(b.dyn_plugin.is_none(), none).clicked() {
+                        b.dyn_plugin = None;
+                        changed = true;
+                    }
+                    for (k, l) in &plugin_dyns {
+                        if ui.selectable_label(b.dyn_plugin.as_deref() == Some(k), l).clicked() {
+                            b.dyn_plugin = Some(k.clone());
+                            changed = true;
+                        }
+                    }
+                });
+            });
         });
         if want_tip {
             if let Some(ctx) = Some(ui.ctx().clone()) {
@@ -438,7 +490,7 @@ impl Studio {
         let to_pad = |p: Pos2| InputPoint { x: (p.x - rect.left()) / k, y: (p.y - rect.top()) / k, pressure };
         if resp.drag_started() {
             if let Some(p) = resp.interact_pointer_pos() {
-                let mut st = self.brush.stroke(None);
+                let mut st = self.stroke();
                 let q = to_pad(p);
                 st.add_point(q);
                 self.live = Some((st, vec![q]));
@@ -480,7 +532,10 @@ impl eframe::App for Studio {
         }
         egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.tab, Tab::Brush, egui::RichText::new(tr("Кисть")).heading());
+                // плагин из редактора мог измениться — образец мазка пересчитать
+                if ui.selectable_value(&mut self.tab, Tab::Brush, egui::RichText::new(tr("Кисть")).heading()).changed() {
+                    self.redraw = true;
+                }
                 ui.selectable_value(&mut self.tab, Tab::Plugin, egui::RichText::new(tr("Плагин")).heading());
             });
         });
@@ -565,6 +620,23 @@ impl eframe::App for Studio {
             self.render(ctx);
         }
     }
+}
+
+/// Плагины, установленные в GrazySAI (`plugins/dev/` — поверх `plugins/`).
+fn installed_plugins() -> Vec<paint_plugin::Plugin> {
+    let mut list: Vec<paint_plugin::Plugin> = Vec::new();
+    if let Some(d) = settings::dir().map(|d| d.join("plugins")) {
+        for dir in [d.join("dev"), d] {
+            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                if let Ok(p) = paint_plugin::load(&e.path()) {
+                    if !list.iter().any(|q| q.id == p.id) {
+                        list.push(p);
+                    }
+                }
+            }
+        }
+    }
+    list
 }
 
 /// Пустая полоса пробы: белый слой.

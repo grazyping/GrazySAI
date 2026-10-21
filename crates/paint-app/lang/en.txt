@@ -986,3 +986,6 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Проверка = Test
 Проверка прошла за {0} мс; слоёв: {1} = Test passed in {0} ms; layers: {1}
 Сохранить плагин = Save plugin
+Динамика «{0}»: плагин {1} не установлен = Dynamics “{0}”: plugin {1} is not installed
+Из плагина = From plugin
+Своя динамика кисти: выберите её на вкладке «Кисть» → «Динамика» → «Из плагина» — образец мазка покажет её сразу. = Custom brush dynamics: pick it on the “Brush” tab → “Dynamics” → “From plugin” — the sample stroke shows it at once.

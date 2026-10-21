@@ -1995,6 +1995,7 @@ version = "1.0.33"
 dependencies = [
  "mlua",
  "paint-brush",
+ "paint-core",
  "paint-formats",
 ]
 

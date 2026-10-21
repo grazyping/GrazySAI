@@ -84,6 +84,8 @@ pub struct Brush {
     pub extra: String,
     /// Динамика кисти: «вход → кривая → выход» поверх нажима.
     pub dynamics: Vec<paint_core::dynamics::Dynamic>,
+    /// Своя динамика из плагина: «id плагина/имя динамики».
+    pub dyn_plugin: Option<String>,
 }
 
 /// Вид инструмента сетки — как в меню SAI 2017 по правому щелчку на пустой ячейке.
@@ -208,7 +210,7 @@ impl ToolKind {
             ToolKind::SelPen => ("Выд.К.", "selpen", BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
             ToolKind::SelErs => ("Выд.Л.", "selers", BrushParams { size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
         };
-        Brush { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), dynamics: Vec::new() }
+        Brush { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), dynamics: Vec::new(), dyn_plugin: None }
     }
 }
 
@@ -277,6 +279,9 @@ impl Default for GrainSettings {
 /// то же пишет файл кисти `.gsbrush`.
 pub fn read(b: &mut Brush, s: &Kv, prefix: &str) {
     let k = |name: &str| format!("{prefix}{name}");
+    if let Some(v) = s.str(&k("dyn_plugin")) {
+        b.dyn_plugin = (!v.is_empty()).then(|| v.chars().take(200).collect());
+    }
     if let Some(n) = s.f32(&k("dyn.count")) {
         b.dynamics = (0..(n as usize).min(32)).filter_map(|i| s.str(&k(&format!("dyn.{i}"))).and_then(paint_core::dynamics::Dynamic::from_text)).collect();
     }
@@ -342,6 +347,7 @@ pub fn read(b: &mut Brush, s: &Kv, prefix: &str) {
 /// Параметры инструмента сетки в настройки (обратное к [`read`]).
 pub fn write(b: &Brush, s: &mut Kv, prefix: &str) {
     let k = |name: &str| format!("{prefix}{name}");
+    s.set(&k("dyn_plugin"), b.dyn_plugin.as_deref().unwrap_or(""));
     s.set(&k("dyn.count"), b.dynamics.len());
     for (n, d) in b.dynamics.iter().enumerate() {
         s.set(&k(&format!("dyn.{n}")), d.to_text());

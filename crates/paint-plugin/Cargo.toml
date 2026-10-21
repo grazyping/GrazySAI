@@ -8,3 +8,4 @@ license.workspace = true
 paint-brush = { path = "../paint-brush" }
 paint-formats = { path = "../paint-formats" }
 mlua = { version = "0.12", features = ["luau", "vendored"] }
+paint-core = { path = "../paint-core" }

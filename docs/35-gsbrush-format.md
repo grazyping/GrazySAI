@@ -36,6 +36,7 @@
 | `bristle`, `hair_size`, `hair_min`, `randomize`, `direction` | имя, 0–1…, 0/1/2 | щетина из папки SAI `bristle` (по имени) |
 | `texture`, `tex_strength`, `tex_scale`, `tex_min_density` | пусто, `paper`, `file:имя`; 0–1; 10–500; `0`/`1` | текстура: нет, бумага слоя, файл (`texture.bmp` из архива или узор SAI по имени) |
 
+| `dyn_plugin` | `id плагина/имя` | своя динамика из плагина (если плагин не установлен — пропускается) |
 | `dyn.count`, `dyn.0`, `dyn.1`… | число; строка `вход выход масштаб x0 y0 x1 y1 x2 y2 x3 y3` | динамика: входы `pressure`, `speed`, `direction`, `distance`, `random`; выходы `size`, `density`, `angle`, `ratio`, `scatter`; масштаб — пиксели для скорости и пути; 4 точки кривой 0..1 |
 
 Пример динамики: `dyn.0=distance size 400 0 1 0.33 0.7 0.67 0.4 1 0.05` — к 400-му пикселю пути
