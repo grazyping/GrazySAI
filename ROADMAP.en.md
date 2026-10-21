@@ -238,3 +238,23 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 - [ ] 3D: “drag the hand or foot” (inverse kinematics)
 - [ ] 3D: camera from the perspective ruler
 - [ ] 3D: turning the model into lines (crease outline)
+
+### New in SAI 2 after 2017
+
+Plan, analysis and order — `docs/41-sai2-after-2017.en.md`. New tools are separate kinds; brushes
+calibrated against SAI 2017 stay unchanged; files still open in SAI 2017.
+
+- [ ] Control step: SAI 2026 base strokes against the 2017 sheets
+- [ ] Lasso Fill (first — confirm the tool in SAI 2026)
+- [ ] Blur tool
+- [ ] Smudge
+- [ ] Line and point symmetry, up to 20 parts
+- [ ] Scattering brush and Effect Pen
+- [ ] Liquify (first — confirm the tool and its modes in SAI 2026)
+- [ ] Pixel Art Pen, binary eraser, binary selection pen and eraser
+- [ ] Brush details: minimum pressure, hook trimming, Anti-Ripple, Shift after starting a stroke, brush preview
+- [ ] Canvas size presets; reserve and restore tool settings
+- [ ] Rulers: parallel lines, concentric ellipses, vanishing point
+- [ ] Groups and Asset Manager, swatch sets
+- [ ] 2026 details: wand/bucket “reduce small omissions”, selection operation in settings, lasso stabilizer, grayscale, view list, clearing Recent
+- [ ] Binary linework tools — if compatible storage is found
