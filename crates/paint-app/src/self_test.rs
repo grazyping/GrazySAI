@@ -95,6 +95,17 @@ pub fn run(report: Option<PathBuf>) -> bool {
             }
             Ok(format!("{} мс", r.elapsed.as_millis()))
         })),
+        ("слой 3D: модель glTF и отрисовка", Box::new(|_| {
+            let t = std::time::Instant::now();
+            let files = vec![("scene.glb".to_string(), include_bytes!("../../paint-3d/tests/data/scene.glb").to_vec())];
+            let (data, _) = paint_3d::new_layer_data(files)?;
+            let px = paint_3d::render_layer(&data, 320, 240, 2)?;
+            let n: usize = px.tiles.values().map(|t| t.0.iter().filter(|p| p[3] > 0).count()).sum();
+            if n < 2000 {
+                return Err(format!("нарисовано мало точек: {n}").into());
+            }
+            Ok(format!("{n} точек, {} мс", t.elapsed().as_millis()))
+        })),
         ("системные шрифты", Box::new(|_| {
             let n = paint_formats::sai2_text::system_fonts().len();
             if n == 0 {

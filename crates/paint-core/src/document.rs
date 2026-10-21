@@ -22,6 +22,8 @@ enum Op {
     Selection { mask: MaskMap },
     /// Заменить кривые слоя контура или фигур (обратный шаг — прежние кривые).
     Vector { path: Vec<usize>, vector: Option<crate::layer::VectorData> },
+    /// Заменить сцену слоя 3D (обратный шаг — прежняя сцена).
+    Scene { path: Vec<usize>, scene: Option<Box<crate::layer::Scene3dData>> },
     /// Заменить маску слоя (обратный шаг — прежняя маска).
     Mask { path: Vec<usize>, mask: Option<crate::layer::LayerMask> },
     /// Заменить весь холст: размер, слои, выделение (для действий над холстом).
@@ -36,6 +38,7 @@ pub enum StepKind {
     DeleteLayer,
     Mask,
     Vector,
+    Scene3d,
     Paint,
     Selection,
     Other,
@@ -72,6 +75,7 @@ impl HistoryEntry {
                 Op::Canvas { layers, selection, .. } => layers.iter().map(layer_bytes).sum::<usize>() + selection.tiles.len() * TILE_LEN * 2,
                 Op::Selection { mask } => mask.tiles.len() * TILE_LEN * 2,
                 Op::Vector { vector, .. } => vector.as_ref().map_or(0, |v| v.raw.len()),
+                Op::Scene { scene, .. } => scene.as_ref().map_or(0, |s| s.state.len()),
                 Op::Remove { .. } | Op::TilesOnDisk { .. } => 0,
                 Op::Mask { mask, .. } => mask.as_ref().map_or(0, |m| m.hide.tiles.len() * TILE_LEN * 2),
             })
@@ -307,7 +311,7 @@ impl Document {
                         out.push(Change::Tiles { uid: l.uid, keys: tiles.iter().map(|(k, _)| *k).collect() });
                     }
                 }
-                Op::TilesOnDisk { path, .. } | Op::Vector { path, .. } | Op::Mask { path, .. } => {
+                Op::TilesOnDisk { path, .. } | Op::Vector { path, .. } | Op::Scene { path, .. } | Op::Mask { path, .. } => {
                     if let Some(l) = self.layer(path) {
                         out.push(Change::Layer(l.uid));
                     }
@@ -420,6 +424,11 @@ impl Document {
                 let layer = self.layer_mut(&path)?;
                 let old = std::mem::replace(&mut layer.vector, vector);
                 Some((Op::Vector { path, vector: old }, Vec::new()))
+            }
+            Op::Scene { path, scene } => {
+                let layer = self.layer_mut(&path)?;
+                let old = std::mem::replace(&mut layer.scene3d, scene);
+                Some((Op::Scene { path, scene: old }, Vec::new()))
             }
             Op::Mask { path, mask } => {
                 let layer = self.layer_mut(&path)?;
@@ -1010,6 +1019,30 @@ impl Document {
         self.perform(vec![Op::Vector { path: path.to_vec(), vector: Some(vector) }, Op::Tiles { path: path.to_vec(), tiles }])
     }
 
+    /// Новая сцена слоя 3D и её пиксели — одна запись истории.
+    pub fn set_scene_layer(&mut self, path: &[usize], scene: crate::layer::Scene3dData, pixels: ColorMap) -> Vec<Key> {
+        let Some(layer) = self.layer(path) else { return Vec::new() };
+        let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
+        keys.extend(pixels.tiles.keys().copied());
+        keys.sort_unstable();
+        keys.dedup();
+        let tiles: TileBackup = keys.iter().map(|k| (*k, pixels.tiles.get(k).cloned())).collect();
+        self.perform(vec![Op::Scene { path: path.to_vec(), scene: Some(Box::new(scene)) }, Op::Tiles { path: path.to_vec(), tiles }])
+    }
+
+    /// Сцена и пиксели слоя 3D без записи в историю (живая правка: камера, поза). Итог — потом
+    /// `set_scene_layer` от прежнего состояния.
+    pub fn set_scene_quiet(&mut self, path: &[usize], scene: Option<crate::layer::Scene3dData>, pixels: ColorMap) -> Vec<Key> {
+        let Some(layer) = self.layer_mut(path) else { return Vec::new() };
+        let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
+        keys.extend(pixels.tiles.keys().copied());
+        keys.sort_unstable();
+        keys.dedup();
+        layer.scene3d = scene.map(Box::new);
+        layer.pixels = pixels;
+        keys
+    }
+
     /// Вставить слой без записи в историю — для живой правки (итог потом записывается обычным
     /// шагом, а этот снимается `remove_layer_quiet`).
     pub fn insert_layer_quiet(&mut self, path: &[usize], layer: Layer) -> Vec<Key> {
@@ -1039,7 +1072,7 @@ impl Document {
     /// Растеризовать слой контура или фигур: кривые отбрасываются, пиксели остаются; отмена —
     /// одним шагом.
     pub fn rasterize_layer(&mut self, path: &[usize]) -> Vec<Key> {
-        if self.layer(path).is_none_or(|l| l.vector.is_none()) {
+        if self.layer(path).is_none_or(|l| l.vector.is_none() && l.scene3d.is_none()) {
             return Vec::new();
         }
         let mut layers = self.layers.clone();
@@ -1054,6 +1087,7 @@ impl Document {
         }
         if let Some(l) = at(&mut layers, path) {
             l.vector = None;
+            l.scene3d = None;
         }
         let selection = self.selection.mask.clone();
         self.perform(vec![Op::Canvas { width: self.width, height: self.height, layers, selection }])
@@ -1249,7 +1283,8 @@ impl Document {
         below.push(last - 1);
         let upper = self.layer(path)?;
         let lower = self.layer(&below)?;
-        if upper.children.is_some() || lower.children.is_some() {
+        // слой 3D рисует сам себя: в него не сливают, и «перенести» его нельзя (сцена осталась бы)
+        if upper.children.is_some() || lower.children.is_some() || lower.scene3d.is_some() || (keep_upper && upper.scene3d.is_some()) {
             return None;
         }
         // У нижнего слоя с маской маска сначала применяется (как «Применить маску»), иначе она
@@ -1313,6 +1348,7 @@ impl Document {
                 Op::Remove { path } => (if forward { StepKind::DeleteLayer } else { StepKind::NewLayer }, Some(path)),
                 Op::Selection { .. } => (StepKind::Selection, None),
                 Op::Vector { path, .. } => (StepKind::Vector, Some(path)),
+                Op::Scene { path, .. } => (StepKind::Scene3d, Some(path)),
                 Op::Mask { path, .. } => (StepKind::Mask, Some(path)),
                 Op::Canvas { .. } => (StepKind::Canvas, None),
             };

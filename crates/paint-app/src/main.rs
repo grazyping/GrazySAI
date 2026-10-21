@@ -17,6 +17,7 @@ mod clip;
 mod self_test;
 mod plugins;
 mod recording;
+mod scene3d;
 
 use i18n::{tr, trf};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
@@ -1099,6 +1100,10 @@ struct PaintApp {
     rec: Option<paint_formats::record::Recorder>,
     rec_export: Option<recording::ExportDialog>,
     rec_job: Option<recording::Job>,
+    /// Правка выбранного слоя 3D и видно ли окно «3D».
+    s3d: Option<scene3d::Edit3d>,
+    show_3d: bool,
+    s3d_mode: scene3d::MouseMode,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
     /// Линейка (прямая или эллипс) и её правка Ctrl + перетаскиванием: что взяли и где было.
@@ -1385,6 +1390,9 @@ impl PaintApp {
             rec: None,
             rec_export: None,
             rec_job: None,
+            s3d: None,
+            show_3d: false,
+            s3d_mode: scene3d::MouseMode::Camera,
             layer_drag: None,
             ruler: ruler::Ruler::default(),
             ruler_drag: None,
@@ -3296,6 +3304,10 @@ app.open_canvas_dialog(d == "resolution")
             self.open_brush_file(&path);
             return;
         }
+        if paint_3d::MODEL_EXTS.contains(&ext.as_str()) {
+            self.s3d_new_layer(&path);
+            return;
+        }
         if ext == "kpp" || ext == "bundle" {
             self.import_krita(&path);
             return;
@@ -3369,6 +3381,7 @@ app.open_canvas_dialog(d == "resolution")
 
     /// Забрать поля активного холста во вкладку (на их месте — пустой холст).
     fn take_tab(&mut self) -> Tab {
+        self.s3d_finish();
         if let Some(r) = self.rec.as_mut() {
             r.capture(&mut self.doc);
         }
@@ -3734,6 +3747,14 @@ app.open_canvas_dialog(d == "resolution")
                 let p = self.record_export_default(zip);
                 self.run_record_export(p);
             }
+            (files::Answer::Path(p), files::Ask::Model3d(add)) => {
+                if add {
+                    self.s3d_add_model(&p);
+                } else {
+                    self.s3d_new_layer(&p);
+                }
+            }
+            (files::Answer::Unavailable, files::Ask::Model3d(_)) => self.status = String::from(tr("Окно выбора файла недоступно; перетащите файл модели в окно")),
             (files::Answer::Path(p), files::Ask::Reference) => self.add_reference(&p),
             (files::Answer::Path(p), files::Ask::Tip) => self.add_tip(&p),
             (files::Answer::Path(p), files::Ask::Watermark) => {
@@ -4108,7 +4129,9 @@ app.open_canvas_dialog(d == "resolution")
         }
         if !self.can_paint() {
             let kind = self.doc.layer(&self.selected).and_then(|l| l.vector.as_ref().map(|v| v.kind));
-            self.status = if kind == Some(*b"text") {
+            self.status = if self.doc.layer(&self.selected).is_some_and(|l| l.scene3d.is_some()) {
+                String::from(tr("Это слой 3D: рисуйте на слое выше (в окне «3D» мышь — «рисование»); «Слой → Растеризовать слой» — сделать обычным"))
+            } else if kind == Some(*b"text") {
                 String::from(tr("Это текстовый слой: кистью он не правится (как в SAI). «Слой → Растеризовать слой» — сделать обычным"))
             } else if kind == Some(*b"pers") || kind == Some(*b"grid") {
                 String::from(tr("Это линейка перспективы из более новой SAI: она сохранится в файле как была"))
@@ -4570,6 +4593,7 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn undo(&mut self) {
+        self.s3d_finish();
         if self.gradient.is_some() {
             self.finish_gradient(false);
             return;
@@ -4594,6 +4618,7 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn redo(&mut self) {
+        self.s3d_finish();
         if self.transform.is_some() {
             return;
         }
@@ -5711,6 +5736,17 @@ app.open_canvas_dialog(d == "resolution")
                     self.add_layer(true);
                     ui.close_menu();
                 }
+                if ui.button(tr("Новый слой 3D…")).on_hover_text(tr("Модель glTF (.glb, .gltf) или OBJ: камера, поза по суставам, вид")).clicked() {
+                    let dir = self.file.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("x"));
+                    if !self.native_dialog(files::Ask::Model3d(false), &dir) {
+                        self.status = String::from(tr("Окно выбора файла недоступно; перетащите файл модели в окно"));
+                    }
+                    ui.close_menu();
+                }
+                if ui.add_enabled(self.s3d.is_some(), egui::Button::new(tr("Окно 3D"))).clicked() {
+                    self.show_3d = true;
+                    ui.close_menu();
+                }
                 ui.separator();
                 for (item, key, action) in [
                     ("Копировать слой", "", LayerAction::Duplicate),
@@ -5773,8 +5809,9 @@ app.open_canvas_dialog(d == "resolution")
                     ui.close_menu();
                 }
                 ui.separator();
-                let is_vec = self.doc.layer(&self.selected).is_some_and(|l| l.vector.is_some());
+                let is_vec = self.doc.layer(&self.selected).is_some_and(|l| l.vector.is_some() || l.scene3d.is_some());
                 if ui.add_enabled(is_vec, egui::Button::new(tr("Растеризовать слой"))).clicked() {
+                    self.s3d_finish();
                     let path = self.selected.clone();
                     let keys = self.doc.rasterize_layer(&path);
                     self.invalidate(keys);
@@ -8336,7 +8373,14 @@ app.open_canvas_dialog(d == "resolution")
         }
         let panning = middle || space || self.tool == Tool::Hand;
         let ctrl = ui.input(|i| i.modifiers.command);
-        if self.transform.is_some() && !panning {
+        if self.s3d_takes_mouse(pressed && response.hovered() && !panning) {
+            // слой 3D: мышь вращает камеру или сустав
+            let xf = ViewXf::new(rect, self.zoom, self.offset, vang, vflip);
+            let pts: Vec<Vec2> = moves.iter().map(|p| xf.to_canvas(*p)).collect();
+            let mods = ui.input(|i| i.modifiers);
+            let up = released || !ui.input(|i| i.pointer.primary_down());
+            self.s3d_mouse(pointer.map(|p| xf.to_canvas(p)), &pts, pressed, up, mods);
+        } else if self.transform.is_some() && !panning {
             let zoom = self.zoom;
             let vx = ViewXf::new(rect, zoom, self.offset, vang, vflip);
             let screen = |c: Vec2| vx.to_screen(c);
@@ -8732,6 +8776,7 @@ app.open_canvas_dialog(d == "resolution")
             painter.extend(egui::Shape::dashed_line(&[xf.to_screen(Vec2::new(0.0, h / 2.0)), xf.to_screen(Vec2::new(w, h / 2.0))], axis, 6.0, 4.0));
         }
         self.draw_ruler(&painter, xf, ctrl);
+        self.s3d_overlay(&painter, xf);
         self.draw_text_box(&painter, xf);
         self.draw_line_nodes(&painter, xf);
         // Граница выделения («бегущие муравьи») и выделение, которое сейчас тянут.
@@ -9893,6 +9938,7 @@ impl PaintApp {
             self.plugin_windows(ctx);
         }
         self.record_export_window(ctx);
+        self.s3d_window(ctx);
         if self.show_watermark {
             self.watermark_window(ctx);
         }
@@ -10112,6 +10158,7 @@ impl PaintApp {
                 K::DeleteLayer => tr("Удаление слоя"),
                 K::Mask => tr("Маска слоя"),
                 K::Vector => tr("Контур"),
+                K::Scene3d => tr("Сцена 3D"),
                 K::Selection => tr("Выделение"),
                 K::Canvas => tr("Холст"),
                 K::Other => tr("Изменение"),
@@ -10554,6 +10601,8 @@ impl eframe::App for PaintApp {
         self.autosave();
         self.check_studio(ctx);
         self.recording_tick(ctx);
+        self.s3d_sync();
+        self.s3d_tick(ctx);
         if let Some(e) = self.dyn_error.as_ref().and_then(|e| e.borrow_mut().take()) {
             self.status = trf("Ошибка плагина «{0}»: {1}", &[&tr("Динамика"), &e.lines().next().unwrap_or("")]);
             self.plugin_log.push(e);

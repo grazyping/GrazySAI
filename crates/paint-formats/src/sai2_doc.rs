@@ -310,6 +310,25 @@ pub fn load(path: &Path) -> io::Result<Loaded> {
             }
         }
     }
+    // модели слоёв 3D
+    let mut layers = layers;
+    if info.layers.iter().any(|l| l.extra.iter().any(|(t, _)| *t == crate::sai2_3d::LAYER_TAG)) {
+        let mut assets = std::collections::HashMap::new();
+        for e in info.entries.iter().filter(|e| e.tag == crate::sai2_3d::FILE_TAG) {
+            if e.len > 4 << 30 {
+                continue;
+            }
+            let mut data = vec![0u8; e.len as usize];
+            file.seek(SeekFrom::Start(e.offset))?;
+            file.read_exact(&mut data)?;
+            if let Some(a) = crate::sai2_3d::parse_asset(&data) {
+                assets.insert(a.id, std::sync::Arc::new(a));
+            }
+        }
+        for name in crate::sai2_3d::attach(&mut layers, &assets) {
+            notes.insert(format!("слой 3D «{name}»: модель не найдена в файле"));
+        }
+    }
     let mut document = Document::new(info.width, info.height);
     document.set_background(info.bg_code, info.bg_color);
     document.effect_color = info.effect_color;

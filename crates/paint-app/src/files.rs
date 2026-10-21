@@ -32,6 +32,8 @@ pub enum Ask {
     /// Модуль WebAssembly для плагина (только мастерская).
     #[allow(dead_code)]
     OpenWasm,
+    /// Модель для слоя 3D (`true` — добавить в сцену выбранного слоя 3D).
+    Model3d(bool),
     /// Выгрузка записи процесса: `true` — zip с паролем, иначе анимированный PNG.
     RecordExport(bool),
     /// Картинка водяного знака.
@@ -67,6 +69,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
             tr("Открыть"),
             vec![
                 (tr("Рисунки").to_string(), vec!["sai2", "psd", "psb", "ora", "png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi"]),
+                (tr("Модели 3D (glTF, OBJ)").to_string(), vec!["glb", "gltf", "obj"]),
                 (tr("Палитры (GIMP, Krita)").to_string(), vec!["gpl", "kpl"]),
                 (tr("Кисти GrazySAI").to_string(), vec!["gsbrush", "gsbrushes"]),
                 (tr("Плагины GrazySAI").to_string(), vec!["gsplugin"]),
@@ -88,6 +91,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
         Ask::SavePlugin => (tr("Сохранить плагин"), vec![(tr("Плагины GrazySAI").to_string(), vec!["gsplugin"])]),
         Ask::OpenWasm => (tr("Модуль WebAssembly"), vec![("WebAssembly (.wasm)".to_string(), vec!["wasm"])]),
         Ask::Watermark => (tr("Водяной знак"), vec![(tr("Картинки").to_string(), vec!["png", "webp", "bmp", "tga", "tif", "tiff", "qoi", "jpg", "jpeg"])]),
+        Ask::Model3d(_) => (tr("Модель 3D"), vec![(tr("Модели 3D (glTF, OBJ)").to_string(), vec!["glb", "gltf", "obj"])]),
         Ask::RecordExport(zip) => (
             tr("Выгрузить запись процесса"),
             vec![if *zip { (tr("Zip с паролем").to_string(), vec!["zip"]) } else { (tr("Анимированный PNG").to_string(), vec!["png"]) }],
@@ -121,7 +125,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
             d = d.set_directory(dir);
         }
         let picked = match kind {
-            Ask::Open | Ask::Reference | Ask::Tip | Ask::OpenWasm | Ask::Watermark => d.pick_file(),
+            Ask::Open | Ask::Reference | Ask::Tip | Ask::OpenWasm | Ask::Watermark | Ask::Model3d(_) => d.pick_file(),
             _ => {
                 if let Some(n) = name {
                     d = d.set_file_name(n);

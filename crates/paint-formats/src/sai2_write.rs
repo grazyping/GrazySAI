@@ -386,6 +386,12 @@ fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4], mask_id: Option<u
         d.extend(m.flags);
     }
     let effect = l.effect.as_ref().map(|e| e.to_block());
+    if let Some(s) = &l.scene3d {
+        let body = crate::sai2_3d::layer_block(s);
+        d.extend(crate::sai2_3d::LAYER_TAG);
+        d.extend((body.len() as u32).to_le_bytes());
+        d.extend(body);
+    }
     for (tag, body) in effect.iter().chain(&l.extra) {
         d.extend(tag);
         d.extend((body.len() as u32).to_le_bytes());
@@ -397,6 +403,11 @@ fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4], mask_id: Option<u
 
 /// Сохраняет документ в `.sai2`.
 pub fn save(doc: &Document, path: &Path) -> io::Result<()> {
+    save_with_blocks(doc, path, Vec::new())
+}
+
+/// То же и свои блоки файла (вид, номер, данные) — в конце оглавления (например, модели слоёв 3D).
+pub fn save_with_blocks(doc: &Document, path: &Path, own: Vec<([u8; 4], u32, Vec<u8>)>) -> io::Result<()> {
     let (w, h) = (doc.width as usize, doc.height as usize);
     let (bw, bh) = (w.div_ceil(BLOCK), h.div_ceil(BLOCK));
     let rect = [0, 0, bw as i32, bh as i32];
@@ -468,6 +479,8 @@ pub fn save(doc: &Document, path: &Path) -> io::Result<()> {
             blocks.push((*b"mpix", mid, encode_mpix(&m.hide, bw, bh)));
         }
     }
+    blocks.extend(crate::sai2_3d::file_blocks(&doc.layers));
+    blocks.extend(own);
     let mut out = Vec::new();
     out.extend(crate::sai2::MAGIC);
     // признаки холста: байт 1 — фон (как поле +0x249 SAI 2017)

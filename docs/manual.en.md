@@ -465,6 +465,31 @@ the center or all over the picture), size, opacity, margin; a preview on the pic
 export…” the mark goes into image exports (PNG, JPEG, WebP, BMP, TGA, TIFF, QOI); it is never written into
 the picture itself, `.sai2`, `.psd` or `.ora`.
 
+### 3D layer
+
+“Layer → New 3D layer…” (or “File → Open”, or drag the file into the window) turns a glTF (`.glb`,
+`.gltf`) or OBJ model into a layer: a figure for proportions, an object, a room, a street. No models are
+bundled — bring your own (Blender saves glTF directly; models from websites, VRoid, Mixamo via Blender
+work). Compressed meshes (Draco, meshopt) are not read — save the model without compression.
+
+The “3D” window opens by itself when a 3D layer is selected (again — “Layer → 3D window”):
+
+- “Mouse on canvas”: **camera** — drag to orbit, with Shift to pan, with Ctrl to zoom; **pose** — the
+  joints show as dots; grab one and drag: the bone after it turns toward the pointer (the elbow bends
+  the forearm, the shoulder the whole arm); **painting** — the mouse works as usual.
+- “Camera”: orbit, tilt, distance, field of view (smaller — flat “telephoto” perspective, larger — “wide
+  angle”), horizon, “Fit to frame”.
+- “Display”: color and light (the model's colors and textures), clay figure (good for copying forms),
+  silhouette, outline; light direction, line color and width.
+- “Objects”: one scene can hold several models (“Add…”), each with its own position, rotation, size.
+- “Joints and parts”: the model tree; the checkbox hides a part; the selected joint has exact X, Y, Z
+  angles, “Reset”, “Reset the whole pose”; scene parts without a skeleton can be moved.
+- “Morphs (shape)”: shapes built into the model (weight, facial expressions etc.).
+
+Every edit is one undo step (Ctrl+Z). Paint on an ordinary layer above; “Layer → Rasterize layer” turns
+the 3D layer into an ordinary picture. The model is stored inside `.sai2`; SAI 2 opens such a file and
+shows the layer's last picture. A 3D layer can be excluded from the process recording like any layer.
+
 ### Process recording
 
 Some clients ask for proof that you painted the picture yourself. “File → Process recording → Start

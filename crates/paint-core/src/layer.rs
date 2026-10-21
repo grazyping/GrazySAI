@@ -15,6 +15,25 @@ pub struct VectorData {
     pub raw: Vec<u8>,
 }
 
+/// Файл модели слоя 3D (glTF, GLB, OBJ с соседними файлами) — общий для копий слоя и шагов
+/// истории: при правках позы и камеры не копируется.
+#[derive(Debug, PartialEq)]
+pub struct Asset3d {
+    /// Номер модели (по нему сцена ссылается на неё, и по нему же кэшируется разбор).
+    pub id: u64,
+    pub name: String,
+    /// Главный файл первым, затем соседние (буферы, картинки): имя без пути и содержимое.
+    pub files: Vec<(String, Vec<u8>)>,
+}
+
+/// Сцена слоя 3D: модели и состояние (положение, поза, камера — текст `paint-3d`). Пиксели
+/// слоя — её отрисовка, их обновляет программа после каждой правки.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Scene3dData {
+    pub assets: Vec<std::sync::Arc<Asset3d>>,
+    pub state: String,
+}
+
 /// Маска слоя, как в SAI 2: сколько слоя скрыто в точке, 0 (виден) ..= 16384 (скрыт).
 #[derive(Clone, Debug, PartialEq)]
 pub struct LayerMask {
@@ -41,6 +60,8 @@ pub struct Layer {
     /// Слой контура или фигур: кривые сохраняются в `.sai2` как были; кистью такой слой не
     /// правится (как в SAI), для правки — «Растеризовать».
     pub vector: Option<VectorData>,
+    /// Слой 3D: сцена, пиксели слоя — её отрисовка.
+    pub scene3d: Option<Box<Scene3dData>>,
     /// Обтравка: слой виден только в пределах слоя, лежащего под ним.
     pub clipping: bool,
     /// Папка: вложенные слои снизу вверх. У обычного слоя — `None`.
@@ -110,6 +131,7 @@ impl Layer {
             selection_source: false,
             marked: false,
             vector: None,
+            scene3d: None,
             clipping: false,
             children: None,
             pass_through: false,
@@ -122,12 +144,12 @@ impl Layer {
 
     /// Рисовать на слое можно (нет запрета рисования или «всего»).
     pub fn paintable(&self) -> bool {
-        !self.lock_paint && !self.lock_all && self.vector.is_none()
+        !self.lock_paint && !self.lock_all && self.vector.is_none() && self.scene3d.is_none()
     }
 
     /// Двигать и трансформировать слой можно.
     pub fn movable(&self) -> bool {
-        !self.lock_move && !self.lock_all && self.vector.is_none()
+        !self.lock_move && !self.lock_all && self.vector.is_none() && self.scene3d.is_none()
     }
 
     pub fn folder(name: &str, children: Vec<Layer>) -> Self {

@@ -89,6 +89,35 @@ pub fn load_image(path: &Path) -> Res<Image> {
     }
 }
 
+/// Прочитать картинку из байтов по первым байтам (PNG, JPEG, WebP, BMP, QOI) — для текстур моделей.
+pub fn decode_image(data: &[u8]) -> Res<Image> {
+    if data.starts_with(b"\x89PNG") {
+        decode_png(data)
+    } else if data.starts_with(&[0xFF, 0xD8]) {
+        let opts = zune_core::options::DecoderOptions::default().jpeg_set_out_colorspace(zune_core::colorspace::ColorSpace::RGBA);
+        let mut dec = zune_jpeg::JpegDecoder::new_with_options(data, opts);
+        let pixels = dec.decode()?;
+        let (w, h) = dec.dimensions().ok_or("JPEG: нет размеров")?;
+        Ok((w as u32, h as u32, pixels))
+    } else if data.len() > 12 && &data[0..4] == b"RIFF" && &data[8..12] == b"WEBP" {
+        let mut dec = image_webp::WebPDecoder::new(std::io::Cursor::new(data))?;
+        let (w, h) = dec.dimensions();
+        let need = dec.output_buffer_size().ok_or("WebP: слишком большой")?;
+        if w as u64 * h as u64 > 1 << 29 || need > data.len().saturating_mul(1100).saturating_add(1 << 20) {
+            return Err(format!("WebP: неверный размер {w}×{h}").into());
+        }
+        let mut buf = vec![0u8; need];
+        dec.read_image(&mut buf)?;
+        Ok((w, h, if dec.has_alpha() { buf } else { buf.chunks(3).flat_map(|c| [c[0], c[1], c[2], 255]).collect() }))
+    } else if data.starts_with(b"BM") {
+        decode_bmp(data)
+    } else if data.starts_with(b"qoif") {
+        decode_qoi(data)
+    } else {
+        Err("картинка неизвестного вида".into())
+    }
+}
+
 /// Сохранить картинку по расширению: PNG, JPEG (92), BMP, TGA, TIFF, WebP (без потерь), QOI.
 pub fn save_image(path: &Path, width: u32, height: u32, rgba: &[u8]) -> Res<()> {
     // пишется во временный файл, потом подменяет прежний (сбой не портит старый экспорт)
