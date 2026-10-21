@@ -1008,3 +1008,36 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 слева внизу = abajo a la izquierda
 справа вверху = arriba a la derecha
 справа внизу = abajo a la derecha
+
+# запись процесса
+Zip с паролем = Zip con contraseña
+Анимированный PNG = PNG animado
+Без пароля — анимированный PNG (открывается в браузере). = Sin contraseña — PNG animado (se abre en el navegador).
+Большая сторона кадра = Lado mayor del fotograma
+Водяной знак (настройки — «Файл → Водяной знак…») = Marca de agua (ajustes — «Archivo → Marca de agua…»)
+Выгрузить видео… = Exportar vídeo…
+Выгрузить запись процесса = Exportar grabación del proceso
+Выгрузить… = Exportar…
+Выгрузка записи: {0} % = Exportando grabación: {0} %
+Длительность = Duración
+Запись выгружена: {0} (кадров: {1}) = Grabación exportada: {0} ({1} fotogramas)
+Запись остановлена: {0} = Grabación detenida: {0}
+Запись процесса = Grabación del proceso
+Запись процесса: {0} = Grabando el proceso: {0}
+Кадров в секунду = Fotogramas por segundo
+Каждый шаг рисования пишется в файл рядом с рисунком (.gsrec) = Cada paso del dibujo se escribe en un archivo junto a la imagen (.gsrec)
+Начать запись = Iniciar grabación
+Не показывать слои: = Ocultar capas:
+Не удалось выгрузить запись: {0} = No se pudo exportar la grabación: {0}
+Не удалось начать запись: {0} = No se pudo iniciar la grabación: {0}
+Не удалось перенести запись: {0} = No se pudo mover la grabación: {0}
+Не удалось прочитать запись: {0} = No se pudo leer la grabación: {0}
+Остановить запись = Detener grabación
+Пароль = Contraseña
+Показ готовой картинки в конце = Mostrar la imagen terminada al final
+С паролем — zip с шифрованием AES-256; открыть: 7-Zip, WinRAR, Keka (проводник Windows такой zip не откроет). = Con contraseña — zip con cifrado AES-256; ábralo con 7-Zip, WinRAR o Keka (el Explorador de Windows no lo abre).
+Сам файл записи (.gsrec) хранит все слои — передавайте только выгрузку. = El archivo de grabación (.gsrec) guarda todas las capas — comparta solo la exportación.
+Сбой записи: {0} = Fallo de grabación: {0}
+Шагов: {0}, время записи: {1}, файл: {2} = Pasos: {0}, tiempo de grabación: {1}, archivo: {2}
+запись процесса продолжается = la grabación del proceso continúa
+показать = mostrar

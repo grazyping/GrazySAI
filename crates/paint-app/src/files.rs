@@ -32,6 +32,8 @@ pub enum Ask {
     /// Модуль WebAssembly для плагина (только мастерская).
     #[allow(dead_code)]
     OpenWasm,
+    /// Выгрузка записи процесса: `true` — zip с паролем, иначе анимированный PNG.
+    RecordExport(bool),
     /// Картинка водяного знака.
     #[allow(dead_code)]
     Watermark,
@@ -86,6 +88,10 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
         Ask::SavePlugin => (tr("Сохранить плагин"), vec![(tr("Плагины GrazySAI").to_string(), vec!["gsplugin"])]),
         Ask::OpenWasm => (tr("Модуль WebAssembly"), vec![("WebAssembly (.wasm)".to_string(), vec!["wasm"])]),
         Ask::Watermark => (tr("Водяной знак"), vec![(tr("Картинки").to_string(), vec!["png", "webp", "bmp", "tga", "tif", "tiff", "qoi", "jpg", "jpeg"])]),
+        Ask::RecordExport(zip) => (
+            tr("Выгрузить запись процесса"),
+            vec![if *zip { (tr("Zip с паролем").to_string(), vec!["zip"]) } else { (tr("Анимированный PNG").to_string(), vec!["png"]) }],
+        ),
         Ask::SaveAs => (
             tr("Сохранить как"),
             vec![("SAI 2 (.sai2)".to_string(), vec!["sai2"]), ("OpenRaster (.ora)".to_string(), vec!["ora"]), ("Photoshop (.psd)".to_string(), vec!["psd"]), ("Photoshop PSB (.psb)".to_string(), vec!["psb"])],

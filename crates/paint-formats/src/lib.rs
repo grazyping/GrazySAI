@@ -11,6 +11,7 @@ pub mod pack;
 pub mod palette;
 pub mod preview;
 pub mod psd;
+pub mod record;
 pub mod sai2;
 pub mod sai2_doc;
 pub mod sai2_pixels;

@@ -1009,3 +1009,36 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 слева внизу = bottom left
 справа вверху = top right
 справа внизу = bottom right
+
+# запись процесса
+Zip с паролем = Password-protected zip
+Анимированный PNG = Animated PNG
+Без пароля — анимированный PNG (открывается в браузере). = No password — animated PNG (opens in a web browser).
+Большая сторона кадра = Longer frame side
+Водяной знак (настройки — «Файл → Водяной знак…») = Watermark (settings — “File → Watermark…”)
+Выгрузить видео… = Export video…
+Выгрузить запись процесса = Export process recording
+Выгрузить… = Export…
+Выгрузка записи: {0} % = Exporting recording: {0} %
+Длительность = Duration
+Запись выгружена: {0} (кадров: {1}) = Recording exported: {0} ({1} frames)
+Запись остановлена: {0} = Recording stopped: {0}
+Запись процесса = Process recording
+Запись процесса: {0} = Recording the process: {0}
+Кадров в секунду = Frames per second
+Каждый шаг рисования пишется в файл рядом с рисунком (.gsrec) = Every painting step is written to a file next to the picture (.gsrec)
+Начать запись = Start recording
+Не показывать слои: = Hide layers:
+Не удалось выгрузить запись: {0} = Could not export the recording: {0}
+Не удалось начать запись: {0} = Could not start recording: {0}
+Не удалось перенести запись: {0} = Could not move the recording: {0}
+Не удалось прочитать запись: {0} = Could not read the recording: {0}
+Остановить запись = Stop recording
+Пароль = Password
+Показ готовой картинки в конце = Show the finished picture at the end
+С паролем — zip с шифрованием AES-256; открыть: 7-Zip, WinRAR, Keka (проводник Windows такой zip не откроет). = With a password — a zip with AES-256 encryption; open it with 7-Zip, WinRAR or Keka (Windows Explorer cannot open such a zip).
+Сам файл записи (.gsrec) хранит все слои — передавайте только выгрузку. = The recording file itself (.gsrec) keeps all layers — share only the export.
+Сбой записи: {0} = Recording failed: {0}
+Шагов: {0}, время записи: {1}, файл: {2} = Steps: {0}, recording time: {1}, file: {2}
+запись процесса продолжается = process recording continues
+показать = show

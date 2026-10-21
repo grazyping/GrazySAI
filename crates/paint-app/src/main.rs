@@ -16,6 +16,7 @@ mod virtual_pen;
 mod clip;
 mod self_test;
 mod plugins;
+mod recording;
 
 use i18n::{tr, trf};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
@@ -619,6 +620,7 @@ struct Tab {
     had_vectors: bool,
     view_angle: f32,
     view_flip: bool,
+    rec: Option<paint_formats::record::Recorder>,
 }
 
 impl Tab {
@@ -1093,6 +1095,10 @@ struct PaintApp {
     watermark_on: bool,
     show_watermark: bool,
     watermark_preview: Option<egui::TextureHandle>,
+    /// Запись процесса рисования (у активного холста), окно выгрузки и идущая выгрузка.
+    rec: Option<paint_formats::record::Recorder>,
+    rec_export: Option<recording::ExportDialog>,
+    rec_job: Option<recording::Job>,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
     /// Линейка (прямая или эллипс) и её правка Ctrl + перетаскиванием: что взяли и где было.
@@ -1376,6 +1382,9 @@ impl PaintApp {
             watermark_on: false,
             show_watermark: false,
             watermark_preview: None,
+            rec: None,
+            rec_export: None,
+            rec_job: None,
             layer_drag: None,
             ruler: ruler::Ruler::default(),
             ruler_drag: None,
@@ -3309,6 +3318,7 @@ app.open_canvas_dialog(d == "resolution")
             match loaded {
                 Ok(doc) => {
                     self.prepare_tab();
+                    self.stop_recording();
                     self.doc = doc;
                     self.had_vectors = false;
                     self.notes.clear();
@@ -3324,6 +3334,7 @@ app.open_canvas_dialog(d == "resolution")
                     self.ruler.placed = false;
                     self.dirty = false;
                     self.invalidate_all();
+                    self.resume_recording();
                 }
                 Err(e) => self.status = trf("Не удалось открыть {0}: {1}", &[&path.display(), &e]),
             }
@@ -3335,6 +3346,7 @@ app.open_canvas_dialog(d == "resolution")
                 self.prepare_tab();
                 // кривые слоёв контура и фигур теперь сохраняются как были
                 self.had_vectors = false;
+                self.stop_recording();
                 self.doc = loaded.document;
                 self.notes = loaded.warnings;
                 self.status = trf(
@@ -3349,6 +3361,7 @@ app.open_canvas_dialog(d == "resolution")
                 self.ruler.placed = false;
                 self.dirty = false;
                 self.invalidate_all();
+                self.resume_recording();
             }
             Err(e) => self.status = trf("Не удалось открыть {0}: {1}", &[&path.display(), &e]),
         }
@@ -3356,6 +3369,9 @@ app.open_canvas_dialog(d == "resolution")
 
     /// Забрать поля активного холста во вкладку (на их месте — пустой холст).
     fn take_tab(&mut self) -> Tab {
+        if let Some(r) = self.rec.as_mut() {
+            r.capture(&mut self.doc);
+        }
         Tab {
             doc: std::mem::replace(&mut self.doc, Document::new(1, 1)),
             file: self.file.take(),
@@ -3368,6 +3384,7 @@ app.open_canvas_dialog(d == "resolution")
             had_vectors: self.had_vectors,
             view_angle: self.view_angle,
             view_flip: self.view_flip,
+            rec: self.rec.take(),
         }
     }
 
@@ -3384,6 +3401,7 @@ app.open_canvas_dialog(d == "resolution")
         self.had_vectors = t.had_vectors;
         self.view_angle = t.view_angle;
         self.view_flip = t.view_flip;
+        self.rec = t.rec;
         self.live = None;
         self.thumbs.clear();
         self.sel_dirty = true;
@@ -3539,6 +3557,7 @@ app.open_canvas_dialog(d == "resolution")
             self.active_view = 0;
             return;
         }
+        self.stop_recording();
         self.tabs.remove(i);
         let next = i.min(self.tabs.len() - 1);
         let t = self.tabs[next].take().expect("tab slot");
@@ -3570,6 +3589,7 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn new_canvas_in_place(&mut self, w: u32, h: u32) {
+        self.stop_recording();
         self.doc = new_document(w, h);
         self.had_vectors = false;
         self.file = None;
@@ -3709,6 +3729,11 @@ app.open_canvas_dialog(d == "resolution")
                 self.save_to(files::with_ext(p, ext));
             }
             (files::Answer::Path(p), files::Ask::Export(ext)) => self.export_to(files::with_ext(p, ext), ext),
+            (files::Answer::Path(p), files::Ask::RecordExport(zip)) => self.run_record_export(files::with_ext(p, if zip { "zip" } else { "png" })),
+            (files::Answer::Unavailable, files::Ask::RecordExport(zip)) => {
+                let p = self.record_export_default(zip);
+                self.run_record_export(p);
+            }
             (files::Answer::Path(p), files::Ask::Reference) => self.add_reference(&p),
             (files::Answer::Path(p), files::Ask::Tip) => self.add_tip(&p),
             (files::Answer::Path(p), files::Ask::Watermark) => {
@@ -3752,6 +3777,7 @@ app.open_canvas_dialog(d == "resolution")
             Ok(()) => {
                 self.status = trf("Сохранено: {0} (за {1} с)", &[&path.display(), &format!("{:.1}", started.elapsed().as_secs_f32())]);
                 self.remember_recent(&path);
+                self.recording_saved_as(&path);
                 self.file = Some(path);
                 self.dirty = false;
                 self.had_vectors = false;
@@ -5491,6 +5517,7 @@ app.open_canvas_dialog(d == "resolution")
                     self.ask_save_brush(None);
                     ui.close_menu();
                 }
+                self.recording_menu(ui);
                 if ui.button(tr("Водяной знак…")).clicked() {
                     self.show_watermark = true;
                     self.watermark_preview = None;
@@ -8921,6 +8948,7 @@ impl PaintApp {
                 if restore {
                     match paint_formats::sai2_doc::load(&file) {
                         Ok(loaded) => {
+                            self.stop_recording();
                             self.doc = loaded.document;
                             self.file = (!original.is_empty()).then(|| PathBuf::from(&original));
                             self.dirty = true;
@@ -9864,6 +9892,7 @@ impl PaintApp {
         if self.plugin_ask.is_some() || self.plugin_install.is_some() || self.show_plugins {
             self.plugin_windows(ctx);
         }
+        self.record_export_window(ctx);
         if self.show_watermark {
             self.watermark_window(ctx);
         }
@@ -10423,6 +10452,12 @@ impl eframe::App for PaintApp {
     /// Для проверок: `PAINT_EXPORT_ON_EXIT=файл.png` — сохранить холст и вывести сводку по перу.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.save_settings();
+        self.stop_recording();
+        for t in self.tabs.iter_mut().flatten() {
+            if let Some(r) = t.rec.take() {
+                let _ = r.stop(&mut t.doc, false);
+            }
+        }
         paint_core::history_disk::cleanup();
         // для проверок: PAINT_SAVE_ON_EXIT=файл.sai2 — сохранить документ при выходе
         if let Ok(out) = std::env::var("PAINT_SAVE_ON_EXIT") {
@@ -10518,6 +10553,7 @@ impl eframe::App for PaintApp {
         self.check_exit(ctx);
         self.autosave();
         self.check_studio(ctx);
+        self.recording_tick(ctx);
         if let Some(e) = self.dyn_error.as_ref().and_then(|e| e.borrow_mut().take()) {
             self.status = trf("Ошибка плагина «{0}»: {1}", &[&tr("Динамика"), &e.lines().next().unwrap_or("")]);
             self.plugin_log.push(e);
@@ -11006,6 +11042,10 @@ impl eframe::App for PaintApp {
         egui::TopBottomPanel::top("menu").show(ctx, |ui| self.menu_bar(ui));
         egui::TopBottomPanel::bottom("status").show_animated(ctx, self.win.show[6], |ui| {
             ui.horizontal(|ui| {
+                if let Some(r) = &self.rec {
+                    ui.colored_label(Color32::from_rgb(220, 50, 50), format!("● REC {}", recording::size_text(r.bytes()))).on_hover_text(r.path.display().to_string());
+                    ui.separator();
+                }
                 ui.label(&self.status);
                 for note in &self.notes {
                     ui.separator();

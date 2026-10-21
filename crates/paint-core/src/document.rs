@@ -94,7 +94,20 @@ impl LiveStroke {
     }
 }
 
+/// Что изменилось в документе — для записи процесса (`Document::journal`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Change {
+    /// У слоя `uid` изменились плитки `keys`.
+    Tiles { uid: u64, keys: Vec<Key> },
+    /// Слой `uid` целиком (вставлен, маска, кривые): записать заново.
+    Layer(u64),
+    /// Весь холст (размер, сведение, поворот…): записать всё заново.
+    Canvas,
+}
+
 pub struct Document {
+    /// Журнал изменений для записи процесса; `None` — запись не идёт (ничего не копится).
+    pub journal: Option<Vec<Change>>,
     pub width: u32,
     pub height: u32,
     /// Слои снизу вверх.
@@ -121,6 +134,7 @@ pub struct Document {
 impl Document {
     pub fn new(width: u32, height: u32) -> Self {
         Self {
+            journal: None,
             width,
             height,
             layers: vec![Layer::new("Слой 1")],
@@ -138,6 +152,7 @@ impl Document {
     /// Копия холста без истории (для записи в фоне).
     pub fn snapshot(&self) -> Document {
         Document {
+            journal: None,
             width: self.width,
             height: self.height,
             layers: self.layers.clone(),
@@ -278,7 +293,50 @@ impl Document {
         keys
     }
 
+    /// Записать в журнал то, что сделали шаги `ops`, если запись идёт. `inverse` — это обратные
+    /// шаги (история хранит их): `Remove` значит «вставили», `Insert` — «убрали».
+    fn journal_ops(&mut self, ops: &[Op], inverse: bool) {
+        if self.journal.is_none() {
+            return;
+        }
+        let mut out = Vec::new();
+        for op in ops {
+            match op {
+                Op::Tiles { path, tiles } => {
+                    if let Some(l) = self.layer(path) {
+                        out.push(Change::Tiles { uid: l.uid, keys: tiles.iter().map(|(k, _)| *k).collect() });
+                    }
+                }
+                Op::TilesOnDisk { path, .. } | Op::Vector { path, .. } | Op::Mask { path, .. } => {
+                    if let Some(l) = self.layer(path) {
+                        out.push(Change::Layer(l.uid));
+                    }
+                }
+                Op::Remove { path } if inverse => {
+                    if let Some(l) = self.layer(path) {
+                        out.push(Change::Layer(l.uid));
+                    }
+                }
+                Op::Insert { path, .. } if !inverse => {
+                    if let Some(l) = self.layer(path) {
+                        out.push(Change::Layer(l.uid));
+                    }
+                }
+                Op::Canvas { .. } => out.push(Change::Canvas),
+                _ => {}
+            }
+        }
+        if let Some(j) = self.journal.as_mut() {
+            j.extend(out);
+        }
+    }
+
     fn push(&mut self, ops: Vec<Op>) {
+        self.journal_ops(&ops, true);
+        self.push_raw(ops);
+    }
+
+    fn push_raw(&mut self, ops: Vec<Op>) {
         self.undo.push(HistoryEntry(ops));
         self.redo.clear();
         // как в SAI: не больше 100 шагов
@@ -394,6 +452,8 @@ impl Document {
         let mut keys = Vec::new();
         for op in ops {
             if let Some((inv, k)) = self.apply_op(op) {
+                // в журнал — по уже применённому шагу (его обратный — `inv`)
+                self.journal_ops(std::slice::from_ref(&inv), true);
                 back.push(inv);
                 keys.extend(k);
             }
@@ -406,7 +466,8 @@ impl Document {
     fn perform(&mut self, ops: Vec<Op>) -> Vec<Key> {
         let (back, keys) = self.apply_entry(ops);
         if !back.is_empty() {
-            self.push(back);
+            // в журнал уже записано по шагам (apply_entry)
+            self.push_raw(back);
         }
         keys
     }
@@ -440,6 +501,7 @@ impl Document {
     pub fn duplicate_layer(&mut self, path: &[usize]) -> Vec<Key> {
         let Some(layer) = self.layer(path) else { return Vec::new() };
         let mut copy = layer.clone();
+        copy.fresh_uid();
         copy.name = format!("{} (копия)", layer.name);
         let mut at = path.to_vec();
         *at.last_mut().unwrap() += 1;

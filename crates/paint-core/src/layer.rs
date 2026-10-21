@@ -58,11 +58,46 @@ pub struct Layer {
     /// Прочие вложенные блоки описания слоя из `.sai2` (эффекты и т. п.) — записываются обратно
     /// как были.
     pub extra: Vec<([u8; 4], Vec<u8>)>,
+    /// Номер слоя на время работы программы (в файл не пишется): по нему запись процесса узнаёт
+    /// слой после перестановок, отмены и повтора. У копии слоя номер свой (`fresh_uid`).
+    pub uid: u64,
+}
+
+/// Новый номер слоя.
+///
+/// Номера не повторяются и между запусками: счёт начинается с «секунды запуска × 2²⁰» (запись
+/// процесса дописывается из разных запусков, и номер слоя в ней должен оставаться единственным).
+pub fn next_uid() -> u64 {
+    uid_counter().fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Следующие номера — больше `uid` (на случай, если часы ушли назад, а в записи есть номера новее).
+pub fn uids_above(uid: u64) {
+    uid_counter().fetch_max(uid.saturating_add(1), std::sync::atomic::Ordering::Relaxed);
+}
+
+fn uid_counter() -> &'static std::sync::atomic::AtomicU64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    if NEXT.load(Ordering::Relaxed) == 0 {
+        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_secs().max(1));
+        let _ = NEXT.compare_exchange(0, secs << 20, Ordering::Relaxed, Ordering::Relaxed);
+    }
+    &NEXT
 }
 
 impl Layer {
+    /// Дать слою (и вложенным) новые номера — у копии.
+    pub fn fresh_uid(&mut self) {
+        self.uid = next_uid();
+        for c in self.children.iter_mut().flatten() {
+            c.fresh_uid();
+        }
+    }
+
     pub fn new(name: &str) -> Self {
         Self {
+            uid: next_uid(),
             name: name.to_string(),
             pixels: ColorMap::new(),
             opacity: 1.0,

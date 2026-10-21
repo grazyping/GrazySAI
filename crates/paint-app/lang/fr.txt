@@ -1008,3 +1008,36 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 слева внизу = en bas à gauche
 справа вверху = en haut à droite
 справа внизу = en bas à droite
+
+# запись процесса
+Zip с паролем = Zip protégé par mot de passe
+Анимированный PNG = PNG animé
+Без пароля — анимированный PNG (открывается в браузере). = Sans mot de passe — PNG animé (s’ouvre dans un navigateur).
+Большая сторона кадра = Plus grand côté de l’image
+Водяной знак (настройки — «Файл → Водяной знак…») = Filigrane (réglages — « Fichier → Filigrane… »)
+Выгрузить видео… = Exporter la vidéo…
+Выгрузить запись процесса = Exporter l’enregistrement du processus
+Выгрузить… = Exporter…
+Выгрузка записи: {0} % = Export de l’enregistrement : {0} %
+Длительность = Durée
+Запись выгружена: {0} (кадров: {1}) = Enregistrement exporté : {0} ({1} images)
+Запись остановлена: {0} = Enregistrement arrêté : {0}
+Запись процесса = Enregistrement du processus
+Запись процесса: {0} = Enregistrement du processus : {0}
+Кадров в секунду = Images par seconde
+Каждый шаг рисования пишется в файл рядом с рисунком (.gsrec) = Chaque étape du dessin est écrite dans un fichier à côté de l’image (.gsrec)
+Начать запись = Démarrer l’enregistrement
+Не показывать слои: = Masquer les calques :
+Не удалось выгрузить запись: {0} = Impossible d’exporter l’enregistrement : {0}
+Не удалось начать запись: {0} = Impossible de démarrer l’enregistrement : {0}
+Не удалось перенести запись: {0} = Impossible de déplacer l’enregistrement : {0}
+Не удалось прочитать запись: {0} = Impossible de lire l’enregistrement : {0}
+Остановить запись = Arrêter l’enregistrement
+Пароль = Mot de passe
+Показ готовой картинки в конце = Montrer l’image finie à la fin
+С паролем — zip с шифрованием AES-256; открыть: 7-Zip, WinRAR, Keka (проводник Windows такой zip не откроет). = Avec mot de passe — zip chiffré AES-256 ; à ouvrir avec 7-Zip, WinRAR, Keka (l’Explorateur Windows ne l’ouvre pas).
+Сам файл записи (.gsrec) хранит все слои — передавайте только выгрузку. = Le fichier d’enregistrement (.gsrec) contient tous les calques — ne partagez que l’export.
+Сбой записи: {0} = Échec de l’enregistrement : {0}
+Шагов: {0}, время записи: {1}, файл: {2} = Étapes : {0}, durée : {1}, fichier : {2}
+запись процесса продолжается = l’enregistrement du processus continue
+показать = afficher

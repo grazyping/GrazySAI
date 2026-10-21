@@ -465,6 +465,24 @@ the center or all over the picture), size, opacity, margin; a preview on the pic
 export…” the mark goes into image exports (PNG, JPEG, WebP, BMP, TGA, TIFF, QOI); it is never written into
 the picture itself, `.sai2`, `.psd` or `.ora`.
 
+### Process recording
+
+Some clients ask for proof that you painted the picture yourself. “File → Process recording → Start
+recording” writes every step (stroke, fill, layer change, undo) into a file next to the picture:
+`picture.sai2` → `picture.sai2.gsrec`. Until the picture is saved, the recording lives in the settings
+folder (`recordings`) and moves next to the picture on the first save. The status bar shows a red
+“● REC” and the recording size. Opening a picture that has a recording continues it automatically (unless it was stopped from the menu).
+
+“Export video…” makes a sped-up replay of the whole process as an animated PNG (opens in a web browser):
+duration, frames per second, frame size, how long to show the finished picture at the end. In “Hide
+layers” tick the layers that must not appear in the video (reference pictures, guides) — this works for
+layers deleted along the way too (but if an excluded layer was merged into a visible one, its content shows up in the video with it). “Watermark” puts the mark from “File → Watermark…” on every frame. With a
+password the video goes into a zip with AES-256 encryption: open it with 7-Zip, WinRAR or Keka (Windows
+Explorer cannot open such a zip).
+
+The `.gsrec` file itself keeps all layers, hidden ones included — give clients only the export. File
+layout — `docs/40-recording.en.md`.
+
 “File → Save with number” saves next to the file under the next free number: `picture.sai2` → `picture_001.sai2`, `picture_009.sai2` → `picture_010.sai2`.
 
 “Help → Options…” has “PSD and PSB — 16 bits per channel”: GrazySAI works with 15 bits per channel inside,
