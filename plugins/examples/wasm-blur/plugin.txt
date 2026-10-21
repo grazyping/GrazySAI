@@ -1,0 +1,16 @@
+# Пример: фильтры на WebAssembly (исходник — src/lib.rs, сборка — в Cargo.toml)
+id=grazysai.example.wasm-blur
+name=Размытие и сепия (WebAssembly)
+version=1.0
+author=GrazySAI
+description=Пример фильтров на WebAssembly: размытие квадратом и сепия. Работают по плиткам в нескольких потоках.
+api=1
+command.0.menu=Примеры/Размытие (WebAssembly)
+command.0.function=blur
+command.0.wasm=filter.wasm
+command.0.margin=32
+command.0.param.0=radius slider 1 32 1 6 Радиус, px
+command.1.menu=Примеры/Сепия (WebAssembly)
+command.1.function=sepia
+command.1.wasm=filter.wasm
+command.1.param.0=amount slider 0 100 1 100 Сила, %

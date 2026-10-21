@@ -4,6 +4,8 @@
 //! слоя, цвет, выделение, новый слой, журнал), предел памяти и времени. Общая для рисовалки и
 //! мастерской: плагин ведёт себя в обеих одинаково.
 
+mod wasm;
+
 use mlua::{Lua, LuaOptions, StdLib, Value, VmState};
 use paint_brush::Kv;
 use std::cell::RefCell;
@@ -39,9 +41,13 @@ pub struct Param {
 pub struct Command {
     /// Путь в меню: «Подменю/Команда».
     pub menu: String,
-    /// Функция в `main.lua`.
+    /// Функция в `main.lua` (или экспорт модуля `wasm`).
     pub function: String,
     pub params: Vec<Param>,
+    /// Модуль WebAssembly из пакета: команда — фильтр по плиткам (`wasm.rs`).
+    pub wasm: Option<String>,
+    /// Поля вокруг плитки для фильтров с соседями, px (0..64).
+    pub margin: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -56,6 +62,8 @@ pub struct Plugin {
     /// Своя динамика кисти: имя (для списка в настройках кисти) и функция в `main.lua`.
     pub dynamics: Vec<(String, String)>,
     pub source: String,
+    /// Прочие файлы пакета (модули `.wasm`).
+    pub files: Vec<(String, Vec<u8>)>,
 }
 
 /// Разобрать `plugin.txt` (тот же вид `ключ=значение`, что у файла кисти) и код.
@@ -87,7 +95,12 @@ pub fn parse(manifest: &str, source: &str) -> Res<Plugin> {
             let Some(line) = kv.str(&format!("command.{n}.param.{m}")) else { break };
             params.push(parse_param(line).ok_or_else(|| format!("plugin.txt: не понят параметр «{line}»"))?);
         }
-        commands.push(Command { menu: menu.chars().take(120).collect(), function: function.chars().take(64).collect(), params });
+        let wasm = kv.str(&format!("command.{n}.wasm")).filter(|w| !w.is_empty()).map(|w| w.chars().take(64).collect::<String>());
+        if wasm.as_deref().is_some_and(|w| w.contains(['/', '\\']) || w.contains("..") || !w.ends_with(".wasm")) {
+            return Err(format!("plugin.txt: command.{n}.wasm — имя файла .wasm в пакете, без папок").into());
+        }
+        let margin = kv.f32(&format!("command.{n}.margin")).unwrap_or(0.0).clamp(0.0, 64.0) as u32;
+        commands.push(Command { menu: menu.chars().take(120).collect(), function: function.chars().take(64).collect(), params, wasm, margin });
     }
     let mut dynamics = Vec::new();
     for n in 0..16 {
@@ -97,7 +110,7 @@ pub fn parse(manifest: &str, source: &str) -> Res<Plugin> {
     if commands.is_empty() && dynamics.is_empty() {
         return Err("plugin.txt: нет ни команды (command.0.menu, command.0.function), ни динамики (dynamics.0.name, dynamics.0.function)".into());
     }
-    Ok(Plugin { name: if get("name").is_empty() { id.clone() } else { get("name") }, id, version: get("version"), author: get("author"), description: get("description"), api, commands, dynamics, source: source.to_string() })
+    Ok(Plugin { name: if get("name").is_empty() { id.clone() } else { get("name") }, id, version: get("version"), author: get("author"), description: get("description"), api, commands, dynamics, source: source.to_string(), files: Vec::new() })
 }
 
 fn parse_param(line: &str) -> Option<Param> {
@@ -123,16 +136,35 @@ fn parse_param(line: &str) -> Option<Param> {
     Some(Param { label: if label.is_empty() { id.clone() } else { label }, id, kind, default })
 }
 
-/// Пакет `.gsplugin` (zip: `plugin.txt`, `main.lua`).
+/// Пакет `.gsplugin` (zip: `plugin.txt`, `main.lua` — если есть команды на Luau, модули `.wasm`).
 pub fn load(path: &Path) -> Res<Plugin> {
-    let files = paint_formats::pack::read(path)?;
-    let text = |name: &str| files.iter().find(|(n, _)| n == name).map(|(_, d)| String::from_utf8_lossy(d).into_owned());
-    parse(&text("plugin.txt").ok_or("в пакете нет plugin.txt")?, &text("main.lua").ok_or("в пакете нет main.lua")?)
+    from_files(paint_formats::pack::read(path)?)
 }
 
-/// Собрать пакет из `plugin.txt` и `main.lua`.
+/// Плагин из файлов пакета.
+pub fn from_files(files: Vec<(String, Vec<u8>)>) -> Res<Plugin> {
+    let text = |name: &str| files.iter().find(|(n, _)| n == name).map(|(_, d)| String::from_utf8_lossy(d).into_owned());
+    let mut p = parse(&text("plugin.txt").ok_or("в пакете нет plugin.txt")?, &text("main.lua").unwrap_or_default())?;
+    p.files = files.into_iter().filter(|(n, _)| n.ends_with(".wasm") && !n.contains('/')).take(16).collect();
+    for c in &p.commands {
+        if let Some(w) = &c.wasm {
+            if !p.files.iter().any(|(n, _)| n == w) {
+                return Err(format!("в пакете нет {w}").into());
+            }
+        }
+    }
+    Ok(p)
+}
+
+/// Собрать пакет из `plugin.txt`, `main.lua` и модулей (`имя.wasm`, содержимое).
 pub fn pack(path: &Path, manifest: &str, source: &str) -> Res<()> {
-    paint_formats::pack::write(path, &[("plugin.txt".into(), manifest.as_bytes().to_vec()), ("main.lua".into(), source.as_bytes().to_vec())])
+    pack_with(path, manifest, source, &[])
+}
+
+pub fn pack_with(path: &Path, manifest: &str, source: &str, wasm: &[(String, Vec<u8>)]) -> Res<()> {
+    let mut entries = vec![("plugin.txt".to_string(), manifest.as_bytes().to_vec()), ("main.lua".to_string(), source.as_bytes().to_vec())];
+    entries.extend(wasm.iter().cloned());
+    paint_formats::pack::write(path, &entries)
 }
 
 /// Что плагин может делать с документом. Пиксели — RGBA по 8 бит без предумножения, слой —
@@ -178,6 +210,9 @@ pub struct Report {
 pub fn run(plugin: &Plugin, command: &Command, params: &[(String, f64)], canvas: &mut dyn Canvas, limits: Limits) -> Result<Report, String> {
     if plugin.api > API {
         return Err(format!("плагину нужна версия API {}, у программы — {API}", plugin.api));
+    }
+    if command.wasm.is_some() {
+        return wasm::run(plugin, command, params, canvas, limits);
     }
     let started = Instant::now();
     // только безопасные части стандартной библиотеки Luau: без os, io, debug, package
@@ -538,7 +573,15 @@ mod examples {
         let mut n = 0;
         for e in std::fs::read_dir(root).unwrap().flatten() {
             let d = e.path();
-            let p = super::parse(&std::fs::read_to_string(d.join("plugin.txt")).unwrap(), &std::fs::read_to_string(d.join("main.lua")).unwrap()).unwrap();
+            // файлы пакета из папки примера: plugin.txt, main.lua (если есть), *.wasm
+            let mut files = Vec::new();
+            for f in std::fs::read_dir(&d).unwrap().flatten() {
+                let n = f.file_name().to_string_lossy().into_owned();
+                if n == "plugin.txt" || n == "main.lua" || n.ends_with(".wasm") {
+                    files.push((n, std::fs::read(f.path()).unwrap()));
+                }
+            }
+            let p = super::from_files(files).unwrap_or_else(|e| panic!("{}: {e}", d.display()));
             for c in &p.commands {
                 let values: Vec<(String, f64)> = c.params.iter().map(|q| (q.id.clone(), q.default)).collect();
                 let mut cv = super::MemoryCanvas::new(40, 30, [120, 60, 30, 255]);
@@ -554,5 +597,63 @@ mod examples {
             n += 1;
         }
         assert!(n >= 3);
+    }
+}
+
+#[cfg(test)]
+mod wasm_tests {
+    use super::*;
+
+    fn blur_plugin() -> Plugin {
+        let d = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/examples/wasm-blur");
+        from_files(vec![("plugin.txt".into(), std::fs::read(format!("{d}/plugin.txt")).unwrap()), ("filter.wasm".into(), std::fs::read(format!("{d}/filter.wasm")).unwrap())]).unwrap()
+    }
+
+    /// Размытие по плиткам: шва на стыке плиток (x = 256) нет — поля дают соседей.
+    #[test]
+    fn tiled_blur_has_no_seams() {
+        let p = blur_plugin();
+        let (w, h) = (600u32, 80u32);
+        let mut c = MemoryCanvas::new(w, h, [0, 0, 0, 255]);
+        // полосы через 10 px: после размытия — ровная серость, без скачка на стыке
+        for y in 0..h as i32 {
+            for x in 0..w as i32 {
+                let v = if (x / 5) % 2 == 0 { 255 } else { 0 };
+                Canvas::set(&mut c, x, y, [v, v, v, 255]);
+            }
+        }
+        run(&p, &p.commands[0], &[("radius".into(), 5.0)], &mut c, Limits::default()).unwrap();
+        let row: Vec<i32> = (240..272).map(|x| Canvas::get(&c, x, 40)[0] as i32).collect();
+        let jump = row.windows(2).map(|w| (w[1] - w[0]).abs()).max().unwrap();
+        assert!(jump <= 30, "скачок {jump}: {row:?}");
+        assert!(row.iter().all(|&v| (60..=195).contains(&v)), "{row:?}");
+    }
+
+    #[test]
+    fn sepia_respects_selection() {
+        let p = blur_plugin();
+        let mut c = MemoryCanvas::new(20, 10, [0, 0, 255, 255]);
+        c.selection = Some([0, 0, 10, 10]);
+        run(&p, &p.commands[1], &[("amount".into(), 100.0)], &mut c, Limits::default()).unwrap();
+        assert_ne!(Canvas::get(&c, 2, 2), [0, 0, 255, 255], "в выделении — сепия");
+        assert_eq!(Canvas::get(&c, 15, 2), [0, 0, 255, 255], "вне выделения — как было");
+    }
+
+    /// Зацикленный модуль останавливается топливом, модуль с импортами не принимается.
+    #[test]
+    fn endless_or_importing_modules_are_refused() {
+        let wasm = wat::parse_str(r#"(module (memory (export "memory") 8)
+            (func (export "gs_alloc") (param i32) (result i32) i32.const 0)
+            (func (export "f") (param i32 i32 i32 i32 i32) (loop br 0)))"#).unwrap();
+        let m = "id=t.loop\ncommand.0.menu=x\ncommand.0.function=f\ncommand.0.wasm=f.wasm\n";
+        let p = from_files(vec![("plugin.txt".into(), m.as_bytes().to_vec()), ("f.wasm".into(), wasm)]).unwrap();
+        let mut c = MemoryCanvas::new(4, 4, [0; 4]);
+        let e = run(&p, &p.commands[0], &[], &mut c, Limits { time: std::time::Duration::from_millis(500), ..Default::default() }).unwrap_err();
+        assert!(e.contains("долго"), "{e}");
+        // модуль, которому нужен импорт: (module (import "env" "x" (func)))
+        let imp = wat::parse_str(r#"(module (import "env" "x" (func)))"#).unwrap();
+        let p = from_files(vec![("plugin.txt".into(), m.as_bytes().to_vec()), ("f.wasm".into(), imp)]).unwrap();
+        let e = run(&p, &p.commands[0], &[], &mut c, Limits::default()).unwrap_err();
+        assert!(e.contains("импорт"), "{e}");
     }
 }

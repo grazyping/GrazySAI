@@ -6,3 +6,5 @@ fuzz/corpus/
 fuzz/artifacts/
 fuzz/target/
 fuzz-*.log
+plugins/examples/*/target/
+plugins/examples/*/Cargo.lock

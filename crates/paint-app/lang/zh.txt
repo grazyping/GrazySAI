@@ -988,3 +988,8 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Динамика «{0}»: плагин {1} не установлен = 动态“{0}”：未安装插件 {1}
 Из плагина = 来自插件
 Своя динамика кисти: выберите её на вкладке «Кисть» → «Динамика» → «Из плагина» — образец мазка покажет её сразу. = 自定义笔刷动态：在“笔刷”选项卡 → “动态” → “来自插件”中选择，示例笔画会立即显示效果。
+Добавить .wasm… = 添加 .wasm…
+Модули WebAssembly: = WebAssembly 模块：
+Модуль WebAssembly = WebAssembly 模块
+Модуль фильтра (command.N.wasm в plugin.txt); как собрать — plugins/examples/wasm-blur = 滤镜模块（plugin.txt 中的 command.N.wasm）；构建方法见 plugins/examples/wasm-blur
+Это не модуль WebAssembly (.wasm) = 这不是 WebAssembly 模块（.wasm）

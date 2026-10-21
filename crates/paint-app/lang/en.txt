@@ -989,3 +989,8 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Динамика «{0}»: плагин {1} не установлен = Dynamics “{0}”: plugin {1} is not installed
 Из плагина = From plugin
 Своя динамика кисти: выберите её на вкладке «Кисть» → «Динамика» → «Из плагина» — образец мазка покажет её сразу. = Custom brush dynamics: pick it on the “Brush” tab → “Dynamics” → “From plugin” — the sample stroke shows it at once.
+Добавить .wasm… = Add .wasm…
+Модули WebAssembly: = WebAssembly modules:
+Модуль WebAssembly = WebAssembly module
+Модуль фильтра (command.N.wasm в plugin.txt); как собрать — plugins/examples/wasm-blur = Filter module (command.N.wasm in plugin.txt); how to build one — plugins/examples/wasm-blur
+Это не модуль WebAssembly (.wasm) = This is not a WebAssembly module (.wasm)

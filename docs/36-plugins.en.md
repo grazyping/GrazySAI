@@ -144,8 +144,49 @@ step, a new layer as another.
 ## Speed
 
 Luau is interpreted: about a million points per second through `canvas.map`. For filters over a whole
-large canvas that means seconds; heavy filters can later be written in WebAssembly
-(`docs/34-brushes-and-plugins.md`).
+large canvas that means seconds; heavy filters are written in WebAssembly (below).
+
+## WebAssembly filters
+
+For per-point work (blurs, convolutions, custom effects) a command can be a WebAssembly module built from
+Rust, C, Zig and other languages. The program cuts the area (the selection or the whole canvas) into
+256×256 tiles, processes them at once on several threads and blends the result with the original by the
+selection. An example with Rust source — [`plugins/examples/wasm-blur/`](../plugins/examples/wasm-blur/)
+(a 1200×900 blur takes about 0.2 s).
+
+In `plugin.txt`:
+
+```
+command.0.menu=Mine/Blur
+command.0.function=blur        # function name in the module
+command.0.wasm=filter.wasm     # module file in the package
+command.0.margin=32            # margins around a tile (neighbour points), 0..64
+command.0.param.0=radius slider 1 32 1 6 Radius, px
+```
+
+The module exports:
+
+| Export | What it does |
+|---|---|
+| `memory` | the module's memory |
+| `gs_alloc(bytes: u32) -> u32` | allocate memory; the program calls it once per thread and puts the tile and parameters there |
+| `name(pixels: u32, width: u32, height: u32, params: u32, count: u32)` | process the tile in place: RGBA 8 bit, not premultiplied, row by row; params — an f64 array in the order of the command's fields |
+
+A tile comes with margins (`margin`) on every side where the canvas has them; only the inner part is taken
+back, so a filter with neighbours leaves no seams. The module must have no imports (no program functions,
+files or network), memory up to 256 MB, and the number of steps per tile is limited: a looping module is
+stopped.
+
+Building the Rust example:
+
+```
+rustup target add wasm32-unknown-unknown
+cargo build --release --target wasm32-unknown-unknown
+cp target/wasm32-unknown-unknown/release/gs_blur.wasm filter.wasm
+```
+
+In the workshop: “Plugin” tab → “Add .wasm…” (or drag a `.wasm` file onto the window) — the module goes into
+the package on save and export; “▶ Test” works for WebAssembly filters too.
 
 ## Testing and updates
 

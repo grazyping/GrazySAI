@@ -988,3 +988,8 @@ PNG, BMP и др.: тёмное на белом или непрозрачное 
 Динамика «{0}»: плагин {1} не установлен = 다이내믹 “{0}”: 플러그인 {1}이(가) 설치되지 않았습니다
 Из плагина = 플러그인에서
 Своя динамика кисти: выберите её на вкладке «Кисть» → «Динамика» → «Из плагина» — образец мазка покажет её сразу. = 자체 브러시 다이내믹: “브러시” 탭 → “다이내믹” → “플러그인에서”에서 고르면 샘플 획에 바로 나타납니다.
+Добавить .wasm… = .wasm 추가…
+Модули WebAssembly: = WebAssembly 모듈:
+Модуль WebAssembly = WebAssembly 모듈
+Модуль фильтра (command.N.wasm в plugin.txt); как собрать — plugins/examples/wasm-blur = 필터 모듈 (plugin.txt의 command.N.wasm); 빌드 방법 — plugins/examples/wasm-blur
+Это не модуль WebAssembly (.wasm) = WebAssembly 모듈(.wasm)이 아닙니다

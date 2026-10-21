@@ -22,6 +22,8 @@ pub struct PluginTab {
     pub manifest: String,
     pub source: String,
     pub path: Option<PathBuf>,
+    /// Модули WebAssembly пакета: имя файла и содержимое.
+    pub wasm: Vec<(String, Vec<u8>)>,
     /// Разобранный плагин или ошибка разбора.
     parsed: Result<paint_plugin::Plugin, String>,
     /// Выбранная команда и значения её полей.
@@ -32,6 +34,8 @@ pub struct PluginTab {
     pub log: Vec<String>,
     pub error: Option<String>,
     pub status: String,
+    /// Нажата «Добавить .wasm…»: спросить у окна файлов.
+    pub want_wasm: bool,
 }
 
 impl PluginTab {
@@ -40,6 +44,7 @@ impl PluginTab {
             manifest: TEMPLATES[0].1.to_string(),
             source: TEMPLATES[0].2.to_string(),
             path: None,
+            wasm: Vec::new(),
             parsed: Err(String::new()),
             command: 0,
             values: Vec::new(),
@@ -48,6 +53,7 @@ impl PluginTab {
             log: Vec::new(),
             error: None,
             status: String::new(),
+            want_wasm: false,
         };
         t.reparse();
         t
@@ -59,7 +65,9 @@ impl PluginTab {
     }
 
     fn reparse(&mut self) {
-        self.parsed = paint_plugin::parse(&self.manifest, &self.source).map_err(|e| e.to_string());
+        let mut files = vec![("plugin.txt".to_string(), self.manifest.as_bytes().to_vec()), ("main.lua".to_string(), self.source.as_bytes().to_vec())];
+        files.extend(self.wasm.iter().cloned());
+        self.parsed = paint_plugin::from_files(files).map_err(|e| e.to_string());
         if let Some(c) = self.parsed.as_ref().ok().filter(|p| !p.commands.is_empty()).map(|p| {
             self.command = self.command.min(p.commands.len() - 1);
             &p.commands[self.command]
@@ -131,7 +139,7 @@ impl PluginTab {
             return;
         }
         let path = crate::files::with_ext(path, "gsplugin");
-        self.status = match paint_plugin::pack(&path, &self.manifest, &self.source) {
+        self.status = match paint_plugin::pack_with(&path, &self.manifest, &self.source, &self.wasm) {
             Ok(()) => {
                 self.path = Some(path.clone());
                 trf("Сохранено: {0}", &[&path.display()])
@@ -150,14 +158,29 @@ impl PluginTab {
         };
         let text = |name: &str| files.iter().find(|(n, _)| n == name).map(|(_, d)| String::from_utf8_lossy(d).into_owned());
         match (text("plugin.txt"), text("main.lua")) {
-            (Some(m), Some(s)) => {
+            (Some(m), s) => {
                 self.manifest = m;
-                self.source = s;
+                self.source = s.unwrap_or_default();
+                self.wasm = files.iter().filter(|(n, _)| n.ends_with(".wasm") && !n.contains('/')).cloned().collect();
                 self.path = Some(path);
                 self.reparse();
                 self.status = tr("Плагин открыт").to_string();
             }
             _ => self.status = trf("Плагин не открылся: {0}", &[&"plugin.txt / main.lua"]),
+        }
+    }
+
+    /// Добавить модуль WebAssembly (заменяет модуль с тем же именем).
+    pub fn add_wasm(&mut self, path: PathBuf) {
+        match std::fs::read(&path) {
+            Ok(d) if d.starts_with(b"\0asm") && d.len() < 32 << 20 => {
+                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "filter.wasm".into());
+                self.wasm.retain(|(n, _)| *n != name);
+                self.wasm.push((name, d));
+                self.reparse();
+            }
+            Ok(_) => self.status = tr("Это не модуль WebAssembly (.wasm)").to_string(),
+            Err(e) => self.status = e.to_string(),
         }
     }
 
@@ -178,7 +201,7 @@ impl PluginTab {
         let path = dir.join(format!("{}.gsplugin", p.id));
         let r = std::fs::create_dir_all(&dir)
             .map_err(|e| e.to_string())
-            .and_then(|_| paint_plugin::pack(&path, &self.manifest, &self.source).map_err(|e| e.to_string()))
+            .and_then(|_| paint_plugin::pack_with(&path, &self.manifest, &self.source, &self.wasm).map_err(|e| e.to_string()))
             .and_then(|_| std::fs::write(dir.join(".changed"), format!("{:?}", std::time::SystemTime::now())).map_err(|e| e.to_string()));
         self.status = match r {
             Ok(()) => trf("Плагин «{0}» отправлен в GrazySAI: меню «Плагины»", &[&p.name]),
@@ -194,10 +217,19 @@ impl PluginTab {
                 if ui.button(name).clicked() {
                     self.manifest = m.to_string();
                     self.source = s.to_string();
+                    self.wasm.clear();
                     self.path = None;
                     self.reparse();
                     ui.close_menu();
                 }
+            }
+            if ui.button("wasm-blur (WebAssembly)").clicked() {
+                self.manifest = include_str!("../../../plugins/examples/wasm-blur/plugin.txt").to_string();
+                self.source = String::new();
+                self.wasm = vec![("filter.wasm".to_string(), include_bytes!("../../../plugins/examples/wasm-blur/filter.wasm").to_vec())];
+                self.path = None;
+                self.reparse();
+                ui.close_menu();
             }
         });
         if ui.button(tr("Открыть…")).clicked() {
@@ -308,6 +340,23 @@ impl PluginTab {
             let mut changed = false;
             ui.label("plugin.txt");
             changed |= ui.add(egui::TextEdit::multiline(&mut self.manifest).code_editor().desired_rows(9).desired_width(f32::INFINITY)).changed();
+            ui.horizontal_wrapped(|ui| {
+                ui.label(tr("Модули WebAssembly:"));
+                let mut remove = None;
+                for (i, (n, d)) in self.wasm.iter().enumerate() {
+                    ui.label(format!("{n} ({} KB)", d.len().div_ceil(1024)));
+                    if ui.small_button("×").clicked() {
+                        remove = Some(i);
+                    }
+                }
+                if let Some(i) = remove {
+                    self.wasm.remove(i);
+                    changed = true;
+                }
+                if ui.small_button(tr("Добавить .wasm…")).on_hover_text(tr("Модуль фильтра (command.N.wasm в plugin.txt); как собрать — plugins/examples/wasm-blur")).clicked() {
+                    self.want_wasm = true;
+                }
+            });
             ui.label("main.lua");
             egui::ScrollArea::vertical().id_salt("src").show(ui, |ui| {
                 changed |= ui.add(egui::TextEdit::multiline(&mut self.source).code_editor().desired_rows(26).desired_width(f32::INFINITY)).changed();

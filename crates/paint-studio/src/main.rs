@@ -73,6 +73,7 @@ pub enum Want {
     Tip,
     OpenPlugin,
     SavePlugin,
+    AddWasm,
 }
 
 impl Studio {
@@ -240,7 +241,7 @@ impl Studio {
 
     fn ask(&mut self, ctx: &egui::Context, want: Want) {
         let suggested = match want {
-            Want::OpenPlugin | Want::SavePlugin => self.plugin.path.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("plugin.gsplugin")),
+            Want::OpenPlugin | Want::SavePlugin | Want::AddWasm => self.plugin.path.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("plugin.gsplugin")),
             _ => self.path.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join(format!("{}.gsbrush", paint_brush::safe_name(&self.name())))),
         };
         if !files::native() {
@@ -252,6 +253,7 @@ impl Studio {
             Want::Save => files::Ask::SaveBrush(0),
             Want::Tip => files::Ask::Tip,
             Want::SavePlugin => files::Ask::SavePlugin,
+            Want::AddWasm => files::Ask::OpenWasm,
         };
         self.dialog = Some((files::ask(ask, &suggested, ctx), want));
     }
@@ -266,6 +268,7 @@ impl Studio {
                 Want::Tip => self.add_tip(p),
                 Want::OpenPlugin => self.plugin.open(p),
                 Want::SavePlugin => self.plugin.save_to(p),
+                Want::AddWasm => self.plugin.add_wasm(p),
             }
         }
     }
@@ -526,6 +529,9 @@ impl eframe::App for Studio {
             } else if ext == "gsplugin" {
                 self.tab = Tab::Plugin;
                 self.plugin.open(p);
+            } else if ext == "wasm" {
+                self.tab = Tab::Plugin;
+                self.plugin.add_wasm(p);
             } else {
                 self.add_tip(p);
             }
@@ -551,6 +557,9 @@ impl eframe::App for Studio {
                 ui.label(if self.plugin.status.is_empty() { &self.status } else { &self.plugin.status });
             });
             self.plugin.ui(ctx);
+            if std::mem::take(&mut self.plugin.want_wasm) {
+                self.ask(ctx, Want::AddWasm);
+            }
             return;
         }
         egui::TopBottomPanel::top("bar").show(ctx, |ui| {
