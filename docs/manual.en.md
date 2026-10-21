@@ -393,6 +393,16 @@ Changes show on the canvas at once. OK applies, “Cancel” reverts.
   Layer” makes the layer normal.
 - **Saving**: curves are saved to `.sai2` as curves.
 
+## Plugins
+
+A plugin adds commands to the “Plugins” menu (a `.gsplugin` file). To install: “File → Open” or drag the
+file onto the window → a window with the description → “Install”. A command with parameters opens a small
+window (sliders, checkboxes, choices) → “OK”. The plugin changes the current layer (or makes new ones) and
+runs in a sandbox: no access to files, network or the system, with memory and time limits; everything can
+be undone. “Plugins → Manage plugins…” — the list, removal, errors and the log; “Open plugins folder” —
+`plugins/` in the settings folder. How to write your own — [docs/36-plugins.en.md](36-plugins.en.md),
+examples — `plugins/examples/` in the repository.
+
 ## Brush workshop (GrazySAI Studio)
 
 A separate program next to GrazySAI: `GrazySAI-Studio` (`GrazySAI-Studio.exe` on Windows). There you make a

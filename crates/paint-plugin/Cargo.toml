@@ -1,0 +1,10 @@
+[package]
+name = "paint-plugin"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+paint-brush = { path = "../paint-brush" }
+paint-formats = { path = "../paint-formats" }
+mlua = { version = "0.12", features = ["luau", "vendored"] }

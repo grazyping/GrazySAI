@@ -1,0 +1,11 @@
+# Пример: шум на слое
+id=grazysai.example.noise
+name=Шум
+version=1.0
+author=GrazySAI
+description=Добавляет случайный шум к цветам слоя.
+api=1
+command.0.menu=Примеры/Шум
+command.0.function=noise
+command.0.param.0=amount slider 0 128 1 24 Сила
+command.0.param.1=mono check 1 Одинаково по каналам

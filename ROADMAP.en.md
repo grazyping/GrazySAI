@@ -222,7 +222,8 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 - [x] Own brush file `.gsbrush` and set `.gsbrushes`: save and open a grid tool (1.0.29)
 - [x] Brush dynamics: inputs (pressure, speed, direction, distance, random) → curve → parameters (1.0.30; tilt once the pen input passes it)
 - [x] GrazySAI Studio workshop: brush editor with a test strip, tip generator, “Export to GrazySAI” with live reload (1.0.31)
-- [ ] Luau plugins (sandboxed): menu commands, parameter windows, custom brush dynamics
+- [x] Luau plugins (sandboxed): menu commands, parameter windows, live reload from `plugins/dev/` (1.0.32)
+- [ ] Plugins: custom brush dynamics; editing and testing a plugin in the workshop
 - [ ] WebAssembly plugins (wasmi): tiled filters, custom tips
 - [ ] Guides for authors (ru, en), templates and examples
 - [ ] Later: a free shared catalog (a repository with an index and files in Releases)

@@ -1,7 +1,10 @@
 [target.x86_64-pc-windows-gnullvm]
 linker = "/home/grazyping/.local/opt/llvm-mingw/bin/x86_64-w64-mingw32-clang"
-rustflags = ["-C", "target-feature=+crt-static"]
+rustflags = ["-C", "target-feature=+crt-static", "-L", "native=/home/grazyping/.local/opt/llvm-mingw/x86_64-w64-mingw32/lib"]
 
 [env]
 CC_x86_64_pc_windows_gnullvm = "/home/grazyping/.local/opt/llvm-mingw/bin/x86_64-w64-mingw32-clang"
 AR_x86_64_pc_windows_gnullvm = "/home/grazyping/.local/opt/llvm-mingw/bin/llvm-ar"
+# Luau (C++) для плагинов: libc++ — внутрь программы, без libc++.dll рядом
+CXX_x86_64_pc_windows_gnullvm = "/home/grazyping/.local/opt/llvm-mingw/bin/x86_64-w64-mingw32-clang++"
+CXXSTDLIB_x86_64_pc_windows_gnullvm = "static=c++"

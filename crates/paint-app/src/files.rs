@@ -58,6 +58,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
                 (tr("Рисунки").to_string(), vec!["sai2", "psd", "psb", "ora", "png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi"]),
                 (tr("Палитры (GIMP, Krita)").to_string(), vec!["gpl", "kpl"]),
                 (tr("Кисти GrazySAI").to_string(), vec!["gsbrush", "gsbrushes"]),
+                (tr("Плагины GrazySAI").to_string(), vec!["gsplugin"]),
                 (tr("Кисти Clip Studio Paint").to_string(), vec!["sut", "bfps"]),
                 (tr("Кисти Krita и GIMP").to_string(), vec!["kpp", "bundle", "gbr", "gih", "abr"]),
                 (tr("Все файлы").to_string(), vec!["*"]),

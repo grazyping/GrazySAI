@@ -1,0 +1,10 @@
+# Пример: инверсия цветов слоя (в выделении, если оно есть)
+id=grazysai.example.invert
+name=Инверсия
+version=1.0
+author=GrazySAI
+description=Обращает цвета текущего слоя; «Сила» — насколько.
+api=1
+command.0.menu=Примеры/Инверсия
+command.0.function=invert
+command.0.param.0=amount slider 0 100 1 100 Сила, %

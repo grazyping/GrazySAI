@@ -1,0 +1,12 @@
+# Пример: сетка на новом слое текущим цветом
+id=grazysai.example.grid
+name=Сетка
+version=1.0
+author=GrazySAI
+description=Рисует сетку на новом слое над текущим.
+api=1
+command.0.menu=Примеры/Сетка
+command.0.function=grid
+command.0.param.0=step slider 4 400 1 50 Шаг, px
+command.0.param.1=width slider 1 20 1 1 Толщина, px
+command.0.param.2=diagonal check 0 Диагонали

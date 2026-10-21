@@ -15,6 +15,7 @@ mod files;
 mod virtual_pen;
 mod clip;
 mod self_test;
+mod plugins;
 
 use i18n::{tr, trf};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
@@ -1068,6 +1069,17 @@ struct PaintApp {
     /// Кисти из мастерской (`brushes/dev/`): когда смотрели и время отметки `.changed`.
     dev_checked: Instant,
     dev_stamp: Option<std::time::SystemTime>,
+    /// Плагины: установленные, ошибки загрузки, отметка `plugins/dev/.changed`.
+    plugins: Vec<plugins::Installed>,
+    plugin_errors: Vec<String>,
+    plugins_stamp: Option<std::time::SystemTime>,
+    /// Окно параметров команды: плагин, команда, значения.
+    plugin_ask: Option<(usize, usize, Vec<(String, f64)>)>,
+    /// Окно установки: проверенный пакет и путь к нему.
+    plugin_install: Option<(paint_plugin::Plugin, PathBuf)>,
+    show_plugins: bool,
+    /// Журнал последних запусков (для окна «Плагины»).
+    plugin_log: Vec<String>,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
     /// Линейка (прямая или эллипс) и её правка Ctrl + перетаскиванием: что взяли и где было.
@@ -1339,6 +1351,13 @@ impl PaintApp {
             grain_names: None,
             dev_checked: Instant::now(),
             dev_stamp: None,
+            plugins: Vec::new(),
+            plugin_errors: Vec::new(),
+            plugins_stamp: None,
+            plugin_ask: None,
+            plugin_install: None,
+            show_plugins: false,
+            plugin_log: Vec::new(),
             layer_drag: None,
             ruler: ruler::Ruler::default(),
             ruler_drag: None,
@@ -1640,6 +1659,7 @@ app.open_canvas_dialog(d == "resolution")
     fn load_settings(&mut self) {
         // своя папка программы (текстуры и отпечатки из кистей CSP, GIMP) — всегда, даже без папки SAI
         paint_core::paper::set_user_dir(settings::dir());
+        self.reload_plugins();
         let s = settings::Settings::load();
         // свой список инструментов сетки (без него — сетка по умолчанию)
         if let Some(n) = s.f32("tools.count").map(|v| v as usize).filter(|&n| n > 0 && n < 1000) {
@@ -2612,6 +2632,258 @@ app.open_canvas_dialog(d == "resolution")
         }
     }
 
+    /// Перечитать установленные плагины.
+    fn reload_plugins(&mut self) {
+        let (list, errors) = plugins::load_all();
+        self.plugins = list;
+        self.plugin_errors = errors;
+    }
+
+    /// Меню «Плагины»: команды (подменю по «/» в пути), управление, папка.
+    fn plugins_menu(&mut self, ui: &mut egui::Ui) {
+        let mut run: Option<(usize, usize)> = None;
+        // команды разных плагинов с одним подменю — вместе: «Подменю» → [(подпись, плагин, команда)]
+        let mut groups: Vec<(String, Vec<(String, String, usize, usize)>)> = Vec::new();
+        for (pi, inst) in self.plugins.iter().enumerate() {
+            for (ci, c) in inst.plugin.commands.iter().enumerate() {
+                let parts: Vec<&str> = c.menu.split('/').map(str::trim).filter(|p| !p.is_empty()).collect();
+                let (group, label) = match parts.as_slice() {
+                    [] => (String::new(), c.menu.clone()),
+                    [one] => (String::new(), one.to_string()),
+                    [g, rest @ ..] => (g.to_string(), rest.join(" / ")),
+                };
+                let label = if inst.dev { format!("{label} ✱") } else { label };
+                let item = (label, inst.plugin.name.clone(), pi, ci);
+                match groups.iter_mut().find(|(g, _)| *g == group) {
+                    Some((_, items)) => items.push(item),
+                    None => groups.push((group, vec![item])),
+                }
+            }
+        }
+        let item = |ui: &mut egui::Ui, (label, hint, pi, ci): &(String, String, usize, usize), run: &mut Option<(usize, usize)>| {
+            if ui.button(label).on_hover_text(hint).clicked() {
+                *run = Some((*pi, *ci));
+                ui.close_menu();
+            }
+        };
+        for (group, items) in &groups {
+            if group.is_empty() {
+                for it in items {
+                    item(ui, it, &mut run);
+                }
+            } else {
+                ui.menu_button(group, |ui| {
+                    for it in items {
+                        item(ui, it, &mut run);
+                    }
+                });
+            }
+        }
+        if !self.plugins.is_empty() {
+            ui.separator();
+        }
+        if ui.button(tr("Управление плагинами…")).clicked() {
+            self.show_plugins = true;
+            ui.close_menu();
+        }
+        if ui.button(tr("Открыть папку плагинов")).clicked() {
+            if let Some(d) = plugins::dir() {
+                let _ = std::fs::create_dir_all(&d);
+                update::open_url(&d.display().to_string());
+            }
+            ui.close_menu();
+        }
+        if let Some((pi, ci)) = run {
+            let c = &self.plugins[pi].plugin.commands[ci];
+            let values: Vec<(String, f64)> = c.params.iter().map(|p| (p.id.clone(), p.default)).collect();
+            if c.params.is_empty() {
+                self.run_plugin(pi, ci, &values);
+            } else {
+                self.plugin_ask = Some((pi, ci, values));
+            }
+        }
+    }
+
+    /// Выполнить команду плагина над текущим слоем; всё, что плагин сделал, отменяется по слоям.
+    fn run_plugin(&mut self, pi: usize, ci: usize, values: &[(String, f64)]) {
+        if self.doc.layer(&self.selected).is_none_or(|l| l.children.is_some() || l.vector.is_some()) {
+            self.status = tr("Плагин работает с обычным слоем — выберите его").to_string();
+            return;
+        }
+        let (plugin, command) = (self.plugins[pi].plugin.clone(), self.plugins[pi].plugin.commands[ci].clone());
+        let c = self.color();
+        let sel = self.doc.selection.clone();
+        let mut canvas = plugins::DocCanvas { doc: &mut self.doc, path: self.selected.clone(), color: [c.r(), c.g(), c.b()], touched: Vec::new(), created: 0 };
+        let result = paint_plugin::run(&plugin, &command, values, &mut canvas, paint_plugin::Limits::default());
+        let (touched, path, color) = (std::mem::take(&mut canvas.touched), canvas.path.clone(), canvas.color);
+        for (p, orig) in touched {
+            self.doc.move_commit(&p, orig, None, sel.clone());
+        }
+        self.selected = path;
+        if color != [c.r(), c.g(), c.b()] {
+            self.set_color(Color32::from_rgb(color[0], color[1], color[2]));
+        }
+        self.invalidate_all();
+        self.thumbs.clear();
+        self.dirty = true;
+        let name = command.menu.rsplit('/').next().unwrap_or(&command.menu).to_string();
+        match result {
+            Ok(r) => {
+                self.status = trf("«{0}»: готово за {1} с", &[&name, &format!("{:.2}", r.elapsed.as_secs_f32())]);
+                self.plugin_log.extend(r.log.into_iter().map(|l| format!("{}: {l}", plugin.name)));
+            }
+            Err(e) => {
+                self.status = trf("Ошибка плагина «{0}»: {1}", &[&plugin.name, &e.lines().next().unwrap_or("")]);
+                self.plugin_log.push(format!("{}: {e}", plugin.name));
+                self.show_plugins = true;
+            }
+        }
+        let n = self.plugin_log.len();
+        if n > 200 {
+            self.plugin_log.drain(..n - 200);
+        }
+    }
+
+    /// Окна плагинов: параметры команды, установка, управление.
+    fn plugin_windows(&mut self, ctx: &egui::Context) {
+        let mut go: Option<(usize, usize, Vec<(String, f64)>)> = None;
+        let mut close_ask = false;
+        if let Some((pi, ci, values)) = self.plugin_ask.as_mut() {
+            let c = self.plugins.get(*pi).and_then(|p| p.plugin.commands.get(*ci)).cloned();
+            match c {
+                None => close_ask = true,
+                Some(c) => {
+                    let title = c.menu.rsplit('/').next().unwrap_or(&c.menu).to_string();
+                    egui::Window::new(title).collapsible(false).resizable(false).show(ctx, |ui| {
+                        ui.spacing_mut().slider_width = 180.0;
+                        for (p, (_, v)) in c.params.iter().zip(values.iter_mut()) {
+                            match &p.kind {
+                                paint_plugin::ParamKind::Slider { min, max, step } => {
+                                    let mut sl = egui::Slider::new(v, *min..=*max).text(&p.label);
+                                    if *step > 0.0 {
+                                        sl = sl.step_by(*step);
+                                    }
+                                    ui.add(sl);
+                                }
+                                paint_plugin::ParamKind::Check => {
+                                    let mut b = *v >= 0.5;
+                                    if ui.checkbox(&mut b, &p.label).changed() {
+                                        *v = b as u8 as f64;
+                                    }
+                                }
+                                paint_plugin::ParamKind::Choice(opts) => {
+                                    let cur = (*v as usize).min(opts.len().saturating_sub(1));
+                                    egui::ComboBox::from_label(&p.label).selected_text(opts.get(cur).cloned().unwrap_or_default()).show_ui(ui, |ui| {
+                                        for (i, o) in opts.iter().enumerate() {
+                                            if ui.selectable_label(i == cur, o).clicked() {
+                                                *v = i as f64;
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        ui.horizontal(|ui| {
+                            if ui.button(tr("ОК")).clicked() {
+                                go = Some((*pi, *ci, values.clone()));
+                            }
+                            if ui.button(tr("Отмена")).clicked() {
+                                close_ask = true;
+                            }
+                        });
+                    });
+                }
+            }
+        }
+        if close_ask || go.is_some() {
+            self.plugin_ask = None;
+        }
+        if let Some((pi, ci, values)) = go {
+            self.run_plugin(pi, ci, &values);
+        }
+        // установка
+        let mut install = None;
+        let mut close_install = false;
+        if let Some((p, path)) = &self.plugin_install {
+            egui::Window::new(tr("Установить плагин")).collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.heading(&p.name);
+                ui.label(format!("{} {} · {}", p.id, p.version, p.author));
+                if !p.description.is_empty() {
+                    ui.label(&p.description);
+                }
+                ui.separator();
+                ui.label(tr("Команды:"));
+                for c in &p.commands {
+                    ui.label(format!("  • {}", c.menu));
+                }
+                ui.separator();
+                ui.label(tr("Плагин работает в песочнице: без доступа к файлам, сети и системе; меняет только открытый рисунок, и всё это отменяется."));
+                ui.horizontal(|ui| {
+                    if ui.button(tr("Установить")).clicked() {
+                        install = Some(path.clone());
+                    }
+                    if ui.button(tr("Отмена")).clicked() {
+                        close_install = true;
+                    }
+                });
+            });
+        }
+        if let Some(path) = install {
+            self.status = match plugins::install(&path) {
+                Ok(p) => trf("Плагин «{0}» установлен: меню «Плагины»", &[&p.name]),
+                Err(e) => trf("Плагин не открылся: {0}", &[&e]),
+            };
+            self.reload_plugins();
+            close_install = true;
+        }
+        if close_install {
+            self.plugin_install = None;
+        }
+        // управление
+        if self.show_plugins {
+            let mut open = true;
+            let mut remove = None;
+            egui::Window::new(tr("Плагины")).open(&mut open).default_width(420.0).show(ctx, |ui| {
+                if self.plugins.is_empty() {
+                    ui.label(tr("Плагинов нет. Установить — «Файл → Открыть» файл .gsplugin или перетащить его в окно."));
+                }
+                for (i, p) in self.plugins.iter().enumerate() {
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(&p.plugin.name).strong());
+                        ui.label(format!("{} {}", p.plugin.version, if p.dev { tr("(из мастерской)") } else { "" }));
+                        if !p.dev && ui.small_button(tr("Удалить")).clicked() {
+                            remove = Some(i);
+                        }
+                    });
+                    if !p.plugin.description.is_empty() {
+                        ui.label(&p.plugin.description);
+                    }
+                }
+                if !self.plugin_errors.is_empty() {
+                    ui.separator();
+                    ui.label(tr("Не загрузились:"));
+                    for e in &self.plugin_errors {
+                        ui.colored_label(Color32::from_rgb(190, 40, 40), e);
+                    }
+                }
+                if !self.plugin_log.is_empty() {
+                    ui.separator();
+                    ui.label(tr("Журнал:"));
+                    egui::ScrollArea::vertical().max_height(180.0).stick_to_bottom(true).show(ui, |ui| {
+                        for l in &self.plugin_log {
+                            ui.monospace(l);
+                        }
+                    });
+                }
+            });
+            if let Some(i) = remove {
+                let _ = std::fs::remove_file(&self.plugins[i].path);
+                self.reload_plugins();
+            }
+            self.show_plugins = open;
+        }
+    }
+
     /// Кисти из мастерской: раз в секунду смотрим отметку `brushes/dev/.changed`; изменилась —
     /// кисти из `brushes/dev/` встают в сетку (кисть с тем же именем и подписью «Studio»
     /// заменяется, клавиша остаётся).
@@ -2622,6 +2894,17 @@ app.open_canvas_dialog(d == "resolution")
         }
         self.dev_checked = Instant::now();
         ctx.request_repaint_after(Duration::from_secs(1));
+        if let Some(d) = plugins::dir() {
+            let ps = std::fs::metadata(d.join("dev").join(".changed")).and_then(|m| m.modified()).ok();
+            if ps.is_some() && ps != self.plugins_stamp {
+                let first = self.plugins_stamp.is_none();
+                self.plugins_stamp = ps;
+                if !first || self.started.elapsed() > Duration::from_secs(3) {
+                    self.reload_plugins();
+                    self.status = trf("Плагины обновлены из мастерской: {0}", &[&self.plugins.iter().filter(|p| p.dev).map(|p| p.plugin.name.clone()).collect::<Vec<_>>().join(", ")]);
+                }
+            }
+        }
         let Some(dir) = settings::dir().map(|d| d.join("brushes").join("dev")) else { return };
         let stamp = std::fs::metadata(dir.join(".changed")).and_then(|m| m.modified()).ok();
         if stamp.is_none() || stamp == self.dev_stamp {
@@ -2833,6 +3116,13 @@ app.open_canvas_dialog(d == "resolution")
         }
         if ext == "gbr" || ext == "gih" || ext == "abr" {
             self.add_tip(&path);
+            return;
+        }
+        if ext == "gsplugin" {
+            match paint_plugin::load(&path) {
+                Ok(p) => self.plugin_install = Some((p, path.clone())),
+                Err(e) => self.status = trf("Плагин не открылся: {0}", &[&e]),
+            }
             return;
         }
         if ext == "gsbrush" || ext == "gsbrushes" {
@@ -5510,6 +5800,9 @@ app.open_canvas_dialog(d == "resolution")
                         }
                     }
                 });
+            });
+            ui.menu_button(tr("Плагины"), |ui| {
+                self.plugins_menu(ui);
             });
             ui.menu_button(keys::hint(tr("Вид(V)")), |ui| {
                 if ui.add(menu_item("Увеличить", "Ctrl++")).clicked() {
@@ -9373,6 +9666,9 @@ impl PaintApp {
         }
         if !self.refs.is_empty() {
             self.reference_windows(ctx);
+        }
+        if self.plugin_ask.is_some() || self.plugin_install.is_some() || self.show_plugins {
+            self.plugin_windows(ctx);
         }
         if self.viewer.is_some() {
             self.viewer_window(ctx);

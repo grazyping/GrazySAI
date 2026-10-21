@@ -86,6 +86,15 @@ pub fn run(report: Option<PathBuf>) -> bool {
             }
             Ok(name)
         })),
+        ("плагин Luau в песочнице", Box::new(|_| {
+            let p = paint_plugin::parse("id=selftest\ncommand.0.menu=x\ncommand.0.function=f\n", "function f(p) canvas.map(function(r, g, b) return 255 - r, g, b end) assert(io == nil and os == nil and require == nil) end")?;
+            let mut c = paint_plugin::MemoryCanvas::new(8, 8, [10, 20, 30, 255]);
+            let r = paint_plugin::run(&p, &p.commands[0], &[], &mut c, paint_plugin::Limits::default())?;
+            if paint_plugin::Canvas::get(&c, 3, 3) != [245, 20, 30, 255] {
+                return Err("плагин посчитал не то".into());
+            }
+            Ok(format!("{} мс", r.elapsed.as_millis()))
+        })),
         ("системные шрифты", Box::new(|_| {
             let n = paint_formats::sai2_text::system_fonts().len();
             if n == 0 {
