@@ -1386,6 +1386,8 @@ struct PaintApp {
     /// Деление сетки деформации (столбцы, строки) и «Смешивание» складок.
     grid_div: [u8; 2],
     grid_blend: bool,
+    /// Спросить перед переводом в оттенки серого.
+    ask_gray: bool,
     /// Нажим ниже «минимального нажима для мазка» (по последнему `pressure`).
     below_min: bool,
     /// Перо коснулось слабее порога: мазок начнётся, когда нажим его превысит (ластик ли).
@@ -1647,6 +1649,7 @@ impl PaintApp {
             grid_div: [2, 2],
             grid_blend: false,
             below_min: false,
+            ask_gray: false,
             pending_start: None,
             shift_lock: None,
             hook: None,
@@ -6279,6 +6282,7 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 });
                 let mut pick = None;
+                let mut clear_recent = false;
                 ui.add_enabled_ui(!self.recent.is_empty(), |ui| {
                     ui.menu_button(tr("Недавние"), |ui| {
                         for p in &self.recent {
@@ -6288,8 +6292,17 @@ app.open_canvas_dialog(d == "resolution")
                                 ui.close_menu();
                             }
                         }
+                        ui.separator();
+                        if ui.button(tr("Очистить список")).clicked() {
+                            clear_recent = true;
+                            ui.close_menu();
+                        }
                     });
                 });
+                if clear_recent {
+                    self.recent.clear();
+                    self.save_settings();
+                }
                 if let Some(p) = pick {
                     if p.exists() {
                         self.open(p);
@@ -6357,6 +6370,10 @@ app.open_canvas_dialog(d == "resolution")
                         self.open_canvas_dialog(resample);
                         ui.close_menu();
                     }
+                }
+                if ui.button(tr("Перевести в оттенки серого…")).clicked() {
+                    self.ask_gray = true;
+                    ui.close_menu();
                 }
                 ui.separator();
                 for (item, op) in [
@@ -6786,6 +6803,20 @@ app.open_canvas_dialog(d == "resolution")
                 self.plugins_menu(ui);
             });
             ui.menu_button(keys::hint(tr("Вид(V)")), |ui| {
+                // список открытых холстов (SAI 2026) — перейти к любому
+                let names: Vec<String> = (0..self.tabs.len()).map(|i| match self.tabs.get(i) {
+                    Some(Some(t)) => t.title(),
+                    _ => self.file_name(),
+                }).collect();
+                ui.menu_button(tr("Холсты"), |ui| {
+                    for (i, n) in names.iter().enumerate() {
+                        if ui.radio(i == self.active_tab, n).clicked() {
+                            self.switch_tab(i);
+                            ui.close_menu();
+                        }
+                    }
+                });
+                ui.separator();
                 if ui.add(menu_item("Увеличить", "Ctrl++")).clicked() {
                     self.set_zoom(self.zoom * 1.25);
                     ui.close_menu();
@@ -9459,21 +9490,28 @@ app.open_canvas_dialog(d == "resolution")
                             None => self.sel_poly = Some(SelDrag { points: vec![c], mode, fill: false }),
                         }
                     } else {
-                        self.sel_drag = Some(SelDrag { points: vec![c, c], mode, fill: false });
+                        // лассо сглаживается, как штрих (SAI 2026-10)
+                        self.smoother = Stabilizer::with_level(self.stabilizer);
+                        let first = if self.tool == Tool::Lasso { let q = self.smoother.push(InputPoint { x: c.x, y: c.y, pressure: 1.0 }); Vec2::new(q.x, q.y) } else { c };
+                        self.sel_drag = Some(SelDrag { points: vec![first, first], mode, fill: false });
                     }
                 }
             } else if let Some(d) = self.sel_drag.as_mut() {
                 for pos in &moves {
                     let c = to_canvas(*pos, self.zoom, self.offset);
                     if self.tool == Tool::Lasso {
-                        d.points.push(c);
+                        let q = self.smoother.push(InputPoint { x: c.x, y: c.y, pressure: 1.0 });
+                        d.points.push(Vec2::new(q.x, q.y));
                     } else {
                         d.points[1] = c;
                     }
                 }
             }
             if released {
-                if let Some(d) = self.sel_drag.take() {
+                if let Some(mut d) = self.sel_drag.take() {
+                    if self.tool == Tool::Lasso {
+                        d.points.extend(self.smoother.finish().into_iter().map(|q| Vec2::new(q.x, q.y)));
+                    }
                     let area = if self.tool == Tool::Lasso {
                         let pts: Vec<[f64; 2]> = d.points.iter().map(|p| [p.x as f64, p.y as f64]).collect();
                         paint_core::selection::polygon_aa(&pts, self.lasso_aa)
@@ -10747,6 +10785,32 @@ impl PaintApp {
             self.show_open &= open;
         }
         self.assets_window(ctx);
+        if self.ask_gray {
+            let mut choice = None;
+            egui::Window::new(tr("Оттенки серого")).collapsible(false).resizable(false).show(ctx, |ui| {
+                ui.label(tr("Все слои холста станут серыми. Цвет вернёт только отмена (Ctrl+Z)."));
+                ui.horizontal(|ui| {
+                    if ui.button(tr("Перевести")).clicked() {
+                        choice = Some(true);
+                    }
+                    if ui.button(tr("Отмена")).clicked() {
+                        choice = Some(false);
+                    }
+                });
+            });
+            if let Some(ok) = choice {
+                self.ask_gray = false;
+                if ok {
+                    if self.transform.is_some() {
+                        self.finish_transform(true);
+                    }
+                    let keys = self.doc.to_grayscale();
+                    self.invalidate(keys);
+                    self.thumbs.clear();
+                    self.dirty = true;
+                }
+            }
+        }
         if self.show_new {
             let mut open = true;
             egui::Window::new(tr("Новый холст"))

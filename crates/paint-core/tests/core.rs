@@ -1421,3 +1421,16 @@ fn dynamics_distance_tapers_the_stroke() {
     let (start, end) = (height(40), height(200));
     assert!(start >= 24 && end <= 8, "начало {start}, конец {end}");
 }
+
+/// Оттенки серого: цвет уходит, прозрачность остаётся, отмена возвращает цвет.
+#[test]
+fn grayscale_and_undo() {
+    let mut doc = paint_core::Document::new(20, 20);
+    doc.layers[0].pixels.set(3, 4, paint_core::pixel::from_rgba8([200, 40, 10, 128]));
+    let before = doc.layers[0].pixels.clone();
+    assert!(!doc.to_grayscale().is_empty());
+    let p = paint_core::pixel::to_rgba8(doc.layers[0].pixels.get(3, 4));
+    assert!(p[0] == p[1] && p[1] == p[2] && (p[3] as i32 - 128).abs() <= 1, "{p:?}");
+    doc.undo();
+    assert!(doc.layers[0].pixels == before);
+}

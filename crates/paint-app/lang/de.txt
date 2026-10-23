@@ -1228,3 +1228,11 @@ Zip с паролем = Zip mit Passwort
 Размер {0}×{1}: нужно от 1 до 4096 точек по стороне = Größe {0}×{1}: jede Seite 1 bis 4096 Pixel
 ресурс = Ressource
 Название: = Name:
+
+# Мелочи 2026
+Все слои холста станут серыми. Цвет вернёт только отмена (Ctrl+Z). = Alle Ebenen werden grau. Nur Rückgängig (Strg+Z) bringt die Farbe zurück.
+Оттенки серого = Graustufen
+Очистить список = Liste leeren
+Перевести = Umwandeln
+Перевести в оттенки серого… = In Graustufen umwandeln…
+Холсты = Leinwände

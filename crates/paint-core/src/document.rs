@@ -211,6 +211,55 @@ impl Document {
         self.push(vec![Op::Tiles { path: vec![layer], tiles }]);
     }
 
+    /// Перевести все обычные слои в оттенки серого (SAI 2026: «перевод в оттенки серого» с
+    /// предупреждением — цвет не вернуть, кроме отмены). Яркость — как у PSD/Rec. 601. Одна
+    /// запись истории.
+    pub fn to_grayscale(&mut self) -> Vec<Key> {
+        fn paths(layers: &[Layer], prefix: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+            for (i, l) in layers.iter().enumerate() {
+                prefix.push(i);
+                match &l.children {
+                    Some(c) => paths(c, prefix, out),
+                    None if l.vector.is_none() && l.scene3d.is_none() => out.push(prefix.clone()),
+                    None => {}
+                }
+                prefix.pop();
+            }
+        }
+        let mut all = Vec::new();
+        paths(&self.layers, &mut Vec::new(), &mut all);
+        let mut ops = Vec::new();
+        let mut keys = Vec::new();
+        for path in all {
+            let Some(layer) = self.layer_mut(&path) else { continue };
+            let mut tiles: TileBackup = Vec::new();
+            for (k, t) in layer.pixels.tiles.iter_mut() {
+                let before = t.clone();
+                let mut changed = false;
+                for p in t.0.iter_mut() {
+                    let y = ((p[0] as u32 * 299 + p[1] as u32 * 587 + p[2] as u32 * 114 + 500) / 1000).min(p[3] as u32) as u16;
+                    if p[0] != y || p[1] != y || p[2] != y {
+                        *p = [y, y, y, p[3]];
+                        changed = true;
+                    }
+                }
+                if changed {
+                    tiles.push((*k, Some(before)));
+                    keys.push(*k);
+                }
+            }
+            if !tiles.is_empty() {
+                ops.push(Op::Tiles { path, tiles });
+            }
+        }
+        if !ops.is_empty() {
+            self.push(ops);
+        }
+        keys.sort_unstable();
+        keys.dedup();
+        keys
+    }
+
     /// Показывает на слое новые отпечатки незавершённого штриха. Возвращает изменившиеся плитки.
     pub fn live_update(&mut self, live: &mut LiveStroke) -> Vec<Key> {
         self.live_paint(live, false)

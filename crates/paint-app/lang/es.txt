@@ -1228,3 +1228,11 @@ Zip с паролем = Zip con contraseña
 Размер {0}×{1}: нужно от 1 до 4096 точек по стороне = Tamaño {0}×{1}: cada lado de 1 a 4096 píxeles
 ресурс = recurso
 Название: = Nombre:
+
+# Мелочи 2026
+Все слои холста станут серыми. Цвет вернёт только отмена (Ctrl+Z). = Todas las capas quedarán en gris. Solo Deshacer (Ctrl+Z) devuelve el color.
+Оттенки серого = Escala de grises
+Очистить список = Vaciar la lista
+Перевести = Convertir
+Перевести в оттенки серого… = Convertir a escala de grises…
+Холсты = Lienzos

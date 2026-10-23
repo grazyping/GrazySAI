@@ -1228,3 +1228,11 @@ Zip с паролем = Zip com senha
 Размер {0}×{1}: нужно от 1 до 4096 точек по стороне = Tamanho {0}×{1}: cada lado de 1 a 4096 pixels
 ресурс = recurso
 Название: = Nome:
+
+# Мелочи 2026
+Все слои холста станут серыми. Цвет вернёт только отмена (Ctrl+Z). = Todas as camadas ficarão cinza. Só Desfazer (Ctrl+Z) traz a cor de volta.
+Оттенки серого = Tons de cinza
+Очистить список = Limpar a lista
+Перевести = Converter
+Перевести в оттенки серого… = Converter para tons de cinza…
+Холсты = Telas

@@ -1229,3 +1229,11 @@ Zip с паролем = Password-protected zip
 Размер {0}×{1}: нужно от 1 до 4096 точек по стороне = Size {0}×{1}: each side must be 1 to 4096 pixels
 ресурс = asset
 Название: = Name:
+
+# Мелочи 2026
+Все слои холста станут серыми. Цвет вернёт только отмена (Ctrl+Z). = All canvas layers will become gray. Only Undo (Ctrl+Z) brings the colour back.
+Оттенки серого = Grayscale
+Очистить список = Clear List
+Перевести = Convert
+Перевести в оттенки серого… = Convert to Grayscale…
+Холсты = Canvases
