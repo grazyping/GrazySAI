@@ -737,6 +737,27 @@ pub fn warp_pixels(src: &ColorMap, sel: &Selection, warp: Warp, mode: crate::res
     let bounds = if whole { content_bounds(src) } else { sel.bounds() };
     let Some((x0, y0, x1, y1)) = bounds else { return (src.clone(), sel.mask.clone()) };
     let Some(inverse) = warp.inverse() else { return (src.clone(), sel.mask.clone()) };
+    // область результата — образ углов
+    let corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].map(|(x, y)| warp.apply(x as f64, y as f64));
+    let dx0 = corners.iter().map(|c| c.0).fold(f64::MAX, f64::min).floor() as i32 - 1;
+    let dy0 = corners.iter().map(|c| c.1).fold(f64::MAX, f64::min).floor() as i32 - 1;
+    let dx1 = corners.iter().map(|c| c.0).fold(f64::MIN, f64::max).ceil() as i32 + 1;
+    let dy1 = corners.iter().map(|c| c.1).fold(f64::MIN, f64::max).ceil() as i32 + 1;
+    warp_core(src, sel, (x0, y0, x1, y1), (dx0, dy0, dx1, dy1), mode, &[&inverse])
+}
+
+/// Общая часть трансформаций: источник — прямоугольник `bounds` (с выделением — его часть),
+/// результат — в прямоугольнике `dest`; `layers` — обратные отображения по слоям наложения
+/// (первый — снизу; у деформации сеткой со «Смешиванием» складки ложатся вторым слоем).
+pub(crate) fn warp_core(
+    src: &ColorMap,
+    sel: &Selection,
+    (x0, y0, x1, y1): (i32, i32, i32, i32),
+    (dx0, dy0, dx1, dy1): (i32, i32, i32, i32),
+    mode: crate::resample::Mode,
+    layers: &[&dyn Fn(f64, f64) -> Option<(f64, f64)>],
+) -> (ColorMap, MaskMap) {
+    let whole = sel.mask.tiles.is_empty();
     let (sw, sh) = ((x1 - x0) as usize, (y1 - y0) as usize);
     let k = 1.0 / ONE as f32;
     let mut part = vec![[0f32; 4]; sw * sh];
@@ -763,33 +784,29 @@ pub fn warp_pixels(src: &ColorMap, sel: &Selection, warp: Warp, mode: crate::res
             }
         }
     }
-    // область результата — образ углов
-    let corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].map(|(x, y)| warp.apply(x as f64, y as f64));
-    let dx0 = corners.iter().map(|c| c.0).fold(f64::MAX, f64::min).floor() as i32 - 1;
-    let dy0 = corners.iter().map(|c| c.1).fold(f64::MAX, f64::min).floor() as i32 - 1;
-    let dx1 = corners.iter().map(|c| c.0).fold(f64::MIN, f64::max).ceil() as i32 + 1;
-    let dy1 = corners.iter().map(|c| c.1).fold(f64::MIN, f64::max).ceil() as i32 + 1;
     let (dw, dh) = ((dx1 - dx0) as usize, (dy1 - dy0) as usize);
-    // обратное отображение в координаты буфера источника
-    let back = |x: f64, y: f64| inverse(x, y).map(|(sx, sy)| (sx - x0 as f64, sy - y0 as f64));
-    let moved = crate::resample::sample_map(&part, sw, sh, dx0, dy0, dw, dh, mode, back);
-    let mmask = crate::resample::sample_map(&mpart, sw, sh, dx0, dy0, dw, dh, mode, back);
     let mut mask = MaskMap::new();
-    for j in 0..dh {
-        for i in 0..dw {
-            let (x, y) = (dx0 + i as i32, dy0 + j as i32);
-            let p = moved[j * dw + i];
-            if p[3] > 0.0 {
-                let mv = p.map(|c| (c.clamp(0.0, 1.0) * ONE as f32 + 0.5) as u32);
-                let under = out.get(x, y);
-                let inv_a = ONE - mv[3].min(ONE);
-                let v = [0, 1, 2, 3].map(|c| (mv[c] + (under[c] as u32 * inv_a + ONE / 2) / ONE).min(ONE) as u16);
-                out.set(x, y, v);
-            }
-            if !whole {
-                let a = (mmask[j * dw + i][3].clamp(0.0, 1.0) * ONE as f32 + 0.5) as u16;
-                if a > 0 {
-                    mask.set(x, y, a);
+    for inverse in layers {
+        // обратное отображение в координаты буфера источника
+        let back = |x: f64, y: f64| inverse(x, y).map(|(sx, sy)| (sx - x0 as f64, sy - y0 as f64));
+        let moved = crate::resample::sample_map(&part, sw, sh, dx0, dy0, dw, dh, mode, back);
+        let mmask = crate::resample::sample_map(&mpart, sw, sh, dx0, dy0, dw, dh, mode, back);
+        for j in 0..dh {
+            for i in 0..dw {
+                let (x, y) = (dx0 + i as i32, dy0 + j as i32);
+                let p = moved[j * dw + i];
+                if p[3] > 0.0 {
+                    let mv = p.map(|c| (c.clamp(0.0, 1.0) * ONE as f32 + 0.5) as u32);
+                    let under = out.get(x, y);
+                    let inv_a = ONE - mv[3].min(ONE);
+                    let v = [0, 1, 2, 3].map(|c| (mv[c] + (under[c] as u32 * inv_a + ONE / 2) / ONE).min(ONE) as u16);
+                    out.set(x, y, v);
+                }
+                if !whole {
+                    let a = (mmask[j * dw + i][3].clamp(0.0, 1.0) * ONE as f32 + 0.5) as u16;
+                    if a > mask.get(x, y) {
+                        mask.set(x, y, a);
+                    }
                 }
             }
         }

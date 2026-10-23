@@ -11,6 +11,7 @@ pub mod dab;
 pub mod document;
 pub mod effects;
 pub mod filters;
+pub mod gridwarp;
 pub mod io;
 pub mod layer;
 pub mod mix;

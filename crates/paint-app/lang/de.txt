@@ -1149,3 +1149,10 @@ Zip с паролем = Zip mit Passwort
 Ш : В = B:H
 Россыпь = Streuung
 Разлёт = Streuweite
+
+# Деформация сеткой
+Наложение = Überlappung
+Поверх = Überschreiben
+Решётка = Gitter
+Сетка = Netz
+Смешать = Mischen

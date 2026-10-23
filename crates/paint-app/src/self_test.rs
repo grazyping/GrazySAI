@@ -212,6 +212,26 @@ pub fn run(report: Option<PathBuf>) -> bool {
             }
             Ok(format!("{off}"))
         })),
+        ("деформация сеткой: решётка и сетка", Box::new(|_| {
+            use paint_core::gridwarp::{warp_pixels, GridKind, GridWarp};
+            let mut g = GridWarp::new([0.0, 0.0, 200.0, 200.0], 2, 2, GridKind::Lattice);
+            g.points[4] = [160.0, 140.0];
+            let (x, y) = g.apply(100.0, 100.0);
+            if (x - 115.0).abs() > 1e-6 || (y - 110.0).abs() > 1e-6 {
+                return Err(format!("решётка: середина в ({x}, {y}), а не (115, 110)").into());
+            }
+            let mut src = paint_core::tile::ColorMap::new();
+            for (px, py) in [(0, 0), (199, 199)].into_iter().chain((95..105).flat_map(|y| (95..105).map(move |x| (x, y)))) {
+                src.set(px, py, [0, 0, 0, paint_core::pixel::ONE as u16]);
+            }
+            let mut m = GridWarp::new([0.0, 0.0, 200.0, 200.0], 2, 2, GridKind::Mesh);
+            m.points[4] = [140.0, 100.0];
+            let (out, _) = warp_pixels(&src, &paint_core::selection::Selection::default(), &m, paint_core::resample::Mode::Bilinear);
+            if out.get(140, 100)[3] == 0 || out.get(100, 100)[3] != 0 {
+                return Err("сетка не сдвинула картинку за узлом".into());
+            }
+            Ok("ок".into())
+        })),
         ("слой 3D: модель glTF и отрисовка", Box::new(|_| {
             let t = std::time::Instant::now();
             let files = vec![("scene.glb".to_string(), include_bytes!("../../paint-3d/tests/data/scene.glb").to_vec())];

@@ -1149,3 +1149,10 @@ Zip с паролем = Zip protégé par mot de passe
 Ш : В = L:H
 Россыпь = Dispersion
 Разлёт = Écartement
+
+# Деформация сеткой
+Наложение = Chevauchement
+Поверх = Écraser
+Решётка = Treillis
+Сетка = Maillage
+Смешать = Mélanger

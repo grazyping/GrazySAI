@@ -52,6 +52,14 @@ not analysed; live checks only on official builds, hidden display, a separate Wi
 - **Effect Pen:** the mode comes from the layer blend mode list; Multiply red (252, 0, 0) over the
   same red gives 249, over transparent pixels it paints normally. We use the layer blend formula
   with the stroke coverage as opacity.
+- **Grid deformation (Alpha 2026-10-11):** the transform panel has Lattice and Mesh, Division
+  2×2, 3×3, 4×4, 5×5 or Manual Input, Overlapping Overwrite / Blend. Lattice draws straight lines
+  between nodes and the image does not reach the node: at 2×2, moving the middle node by (60, 40)
+  moves the image centre by exactly (15, 10), a quarter, i.e. a quadratic spline over the nodes; at
+  3×3 the image follows the node by about 0.4–0.5 and fades towards the far edges (we use a clamped
+  quadratic B-spline of node shifts, within a few pixels). Mesh draws curves through the nodes and
+  the image passes through the node (we use a Catmull–Rom spline of node shifts; SAI seems to
+  parametrize by chord length, so its left and right halves bend differently, ours are symmetric).
 - **Control step (item 1) done.** The Pencil sheet (5 hardness steps × sizes 1–100, a size-20 line,
   density 100, mouse) in 2026-07-02b against the same 2017 sheet: at mid hardness 2026 dabs carry
   20–35 % less paint and are 10–15 % smaller in diameter (50 % level); size-20 lines are nearly the same

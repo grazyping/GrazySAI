@@ -1150,3 +1150,10 @@ Zip с паролем = Password-protected zip
 Ш : В = W:H
 Россыпь = Scatter
 Разлёт = Scattering
+
+# Деформация сеткой
+Наложение = Overlapping
+Поверх = Overwrite
+Решётка = Lattice
+Сетка = Mesh
+Смешать = Blend

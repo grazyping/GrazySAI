@@ -751,6 +751,20 @@ enum TransformKind {
     Deform,
     /// Только поворот и сдвиг.
     Rotate,
+    /// Деформация сеткой (SAI 2 Alpha 2026): узлы тянут картинку мягко.
+    Lattice,
+    /// Деформация сеткой: картинка проходит через узлы.
+    Mesh,
+}
+
+impl TransformKind {
+    fn grid(self) -> Option<paint_core::gridwarp::GridKind> {
+        match self {
+            TransformKind::Lattice => Some(paint_core::gridwarp::GridKind::Lattice),
+            TransformKind::Mesh => Some(paint_core::gridwarp::GridKind::Mesh),
+            _ => None,
+        }
+    }
 }
 
 /// За какую часть рамки трансформации тянут.
@@ -762,6 +776,8 @@ enum Handle {
     Scale(i8, i8),
     /// Угол свободной деформации (0 — левый верхний, далее по часовой).
     Corner(usize),
+    /// Узел сетки деформации (по строкам).
+    Node(usize),
 }
 
 /// Идёт трансформация (Ctrl+T). Рамка — прямоугольник источника `src`, переведённый в
@@ -784,6 +800,8 @@ struct Transform {
     quad: Option<[Vec2; 4]>,
     /// Доля перспективы свободной деформации, 0..=1 (0 — билинейно, как SAI по умолчанию).
     perspective: f64,
+    /// Деформация сеткой («Решётка», «Сетка»); `None` — рамка.
+    grid: Option<paint_core::gridwarp::GridWarp>,
 }
 
 impl Transform {
@@ -796,8 +814,19 @@ impl Transform {
         }
     }
 
+    /// Рамка ещё не тронута (сетку можно ставить прямо на источник).
+    fn untouched(&self) -> bool {
+        let [x0, y0, x1, y1] = self.src;
+        let [cx, cy] = self.center();
+        self.quad.is_none() && self.angle == 0.0 && self.shift == [0.0, 0.0] && self.edges == [x0 - cx, y0 - cy, x1 - cx, y1 - cy]
+    }
+
     /// Углы рамки на холсте по часовой, начиная с левого верхнего.
     fn corners(&self) -> [Vec2; 4] {
+        if let Some(g) = &self.grid {
+            let (c, r) = (g.cols, g.rows);
+            return [g.point(0, 0), g.point(c, 0), g.point(c, r), g.point(0, r)].map(|p| Vec2::new(p[0] as f32, p[1] as f32));
+        }
         match self.quad {
             Some(q) => q,
             None => {
@@ -809,6 +838,9 @@ impl Transform {
 
     /// Ручки на холсте.
     fn handle_points(&self) -> Vec<(Handle, Vec2)> {
+        if let Some(g) = &self.grid {
+            return g.points.iter().enumerate().map(|(i, p)| (Handle::Node(i), Vec2::new(p[0] as f32, p[1] as f32))).collect();
+        }
         match self.quad {
             Some(q) => (0..4).map(|i| (Handle::Corner(i), q[i])).collect(),
             None => self.handles().into_iter().map(|(h, u, v)| (h, self.world(u, v))).collect(),
@@ -870,6 +902,23 @@ impl Transform {
     }
 
     fn drag_to(&mut self, handle: Handle, from: Vec2, to: Vec2) {
+        if let Some(g) = self.grid.as_mut() {
+            match handle {
+                Handle::Node(i) => {
+                    if let Some(p) = g.points.get_mut(i) {
+                        *p = [to.x as f64, to.y as f64];
+                    }
+                }
+                _ => {
+                    for p in g.points.iter_mut() {
+                        p[0] += (to.x - from.x) as f64;
+                        p[1] += (to.y - from.y) as f64;
+                    }
+                }
+            }
+            self.dirty = true;
+            return;
+        }
         if let Some(q) = self.quad.as_mut() {
             match handle {
                 Handle::Corner(i) => q[i] = to,
@@ -883,7 +932,7 @@ impl Transform {
             return;
         }
         match handle {
-            Handle::Corner(_) => {}
+            Handle::Corner(_) | Handle::Node(_) => {}
             Handle::Move => {
                 self.shift[0] += (to.x - from.x) as f64;
                 self.shift[1] += (to.y - from.y) as f64;
@@ -1286,6 +1335,9 @@ struct PaintApp {
     keys_filter: String,
     /// Ползунок «Перспектива» трансформации, 0–100.
     transform_perspective: u8,
+    /// Деление сетки деформации (столбцы, строки) и «Смешивание» складок.
+    grid_div: [u8; 2],
+    grid_blend: bool,
     move_drag: Option<MoveDrag>,
     transform: Option<Transform>,
     /// Мазок пера или ластика выделения и его путь на холсте (для показа во время мазка).
@@ -1522,6 +1574,8 @@ impl PaintApp {
             clip_own: None,
             layer_props: None,
             transform_perspective: 0,
+            grid_div: [2, 2],
+            grid_blend: false,
             move_drag: None,
             transform: None,
             sel_stroke: None,
@@ -1839,6 +1893,12 @@ app.open_canvas_dialog(d == "resolution")
         if let (Some(w), Some(h)) = (s.f32("new_width"), s.f32("new_height")) {
             self.new_size = [(w as u32).clamp(1, 16000), (h as u32).clamp(1, 16000)];
         }
+        if let (Some(c), Some(r)) = (s.f32("grid_cols"), s.f32("grid_rows")) {
+            self.grid_div = [c.clamp(1.0, 32.0) as u8, r.clamp(1.0, 32.0) as u8];
+        }
+        if let Some(v) = s.bool("grid_blend") {
+            self.grid_blend = v;
+        }
         if let Some(v) = s.f32("transform_perspective") {
             self.transform_perspective = v.clamp(0.0, 100.0) as u8;
         }
@@ -1944,6 +2004,9 @@ app.open_canvas_dialog(d == "resolution")
         s.set("fill_gap", self.fill_gap);
         s.set("fill_expand", self.fill_expand);
         s.set("transform_perspective", self.transform_perspective);
+        s.set("grid_cols", self.grid_div[0]);
+        s.set("grid_rows", self.grid_div[1]);
+        s.set("grid_blend", self.grid_blend as u8);
         let w = &self.win;
         s.set("ui_scale", w.ui_scale);
         s.set("tools_right", w.tools_right as u8);
@@ -5021,8 +5084,49 @@ app.open_canvas_dialog(d == "resolution")
             dirty: false,
             quad: None,
             perspective: self.transform_perspective as f64 / 100.0,
+            grid: None,
         });
+        self.ensure_grid();
         self.status = String::from(tr("Трансформация: углы и стороны — размер, Ctrl + угол — свободная деформация, внутри — сдвиг, снаружи — поворот; Enter — применить, Esc — отмена"));
+    }
+
+    /// Режим «Решётка» или «Сетка»: поставить сетку на источник (если рамку уже двигали —
+    /// сначала применить её, дальше деформировать результат), или снять её в других режимах.
+    fn ensure_grid(&mut self) {
+        let kind = self.transform_kind.grid();
+        let (cols, rows, blend) = (self.grid_div[0] as usize, self.grid_div[1] as usize, self.grid_blend);
+        let Some(t) = self.transform.as_mut() else { return };
+        match kind {
+            None => {
+                if t.grid.take().is_some() {
+                    // деформацию сеткой применить — дальше рамка работает с её итогом
+                    self.finish_transform(true);
+                    self.begin_transform();
+                }
+            }
+            Some(k) => {
+                let same = t.grid.as_ref().is_some_and(|g| g.kind == k && g.cols == cols && g.rows == rows);
+                if same {
+                    if let Some(g) = t.grid.as_mut() {
+                        if g.blend != blend {
+                            g.blend = blend;
+                            t.dirty = true;
+                        }
+                    }
+                    return;
+                }
+                let moved = t.grid.as_ref().is_some_and(|g| *g != paint_core::gridwarp::GridWarp::new(g.src, g.cols, g.rows, g.kind)) || !t.untouched();
+                if moved {
+                    self.finish_transform(true);
+                    self.begin_transform();
+                    return;
+                }
+                let mut g = paint_core::gridwarp::GridWarp::new(t.src, cols, rows, k);
+                g.blend = blend;
+                t.grid = Some(g);
+                t.dirty = true;
+            }
+        }
     }
 
     /// Пересчитать показ трансформации (во время протяжки — быстрым билинейным способом).
@@ -5030,7 +5134,10 @@ app.open_canvas_dialog(d == "resolution")
         let Some(t) = self.transform.as_mut() else { return };
         t.dirty = false;
         let mode = if fast { paint_core::resample::Mode::Bilinear } else { t.mode };
-        let keys = self.doc.warp_preview(&t.path, &t.original, t.orig_mask.as_ref(), &t.orig_sel, t.warp(), mode);
+        let keys = match &t.grid {
+            Some(g) => self.doc.grid_preview(&t.path, &t.original, t.orig_mask.as_ref(), &t.orig_sel, g, mode),
+            None => self.doc.warp_preview(&t.path, &t.original, t.orig_mask.as_ref(), &t.orig_sel, t.warp(), mode),
+        };
         self.sel_dirty = true;
         self.invalidate(keys);
     }
@@ -6872,8 +6979,31 @@ app.open_canvas_dialog(d == "resolution")
                 (TransformKind::Resize, tr("Изменить размер")),
                 (TransformKind::Deform, tr("Деформация")),
                 (TransformKind::Rotate, tr("Поворот")),
+                (TransformKind::Lattice, tr("Решётка")),
+                (TransformKind::Mesh, tr("Сетка")),
             ] {
                 ui.radio_value(&mut self.transform_kind, k, name);
+            }
+            if self.transform_kind.grid().is_some() {
+                // деление сетки и складки — как в SAI 2 Alpha 2026
+                ui.horizontal(|ui| {
+                    ui.label(tr("Деление"));
+                    egui::ComboBox::from_id_salt("griddiv").selected_text(format!("{} × {}", self.grid_div[0], self.grid_div[1])).show_ui(ui, |ui| {
+                        for n in 2..=5u8 {
+                            if ui.selectable_label(self.grid_div == [n, n], format!("{n} × {n}")).clicked() {
+                                self.grid_div = [n, n];
+                            }
+                        }
+                    });
+                    ui.add(egui::DragValue::new(&mut self.grid_div[0]).range(1..=32));
+                    ui.label("×");
+                    ui.add(egui::DragValue::new(&mut self.grid_div[1]).range(1..=32));
+                });
+                ui.horizontal(|ui| {
+                    ui.label(tr("Наложение"));
+                    ui.radio_value(&mut self.grid_blend, false, tr("Поверх"));
+                    ui.radio_value(&mut self.grid_blend, true, tr("Смешать"));
+                });
             }
             sai_ui::row(ui, tr("Перспектива"), lw, true, |ui| {
                 let mut v = self.transform_perspective as f32;
@@ -6892,6 +7022,9 @@ app.open_canvas_dialog(d == "resolution")
                 }
             });
             ui.add_space(4.0);
+        }
+        if finish.is_none() && self.transform.as_ref().is_some_and(|t| t.drag.is_none()) {
+            self.ensure_grid();
         }
         if let Some(apply) = finish {
             self.finish_transform(apply);
@@ -9013,6 +9146,14 @@ app.open_canvas_dialog(d == "resolution")
             let pts: Vec<Pos2> = [c[0], c[1], c[2], c[3], c[0]].iter().map(|w| to_screen(w.x, w.y)).collect();
             painter.add(egui::Shape::line(pts.clone(), egui::Stroke::new(1.0_f32, Color32::WHITE)));
             painter.extend(egui::Shape::dashed_line(&pts, egui::Stroke::new(1.0_f32, Color32::BLACK), 4.0, 4.0));
+            // линии сетки деформации — голубым, как в SAI
+            if let Some(g) = &t.grid {
+                let blue = egui::Stroke::new(1.0_f32, Color32::from_rgb(90, 170, 250));
+                for line in g.guide_lines(8) {
+                    let pts: Vec<Pos2> = line.iter().map(|p| to_screen(p[0] as f32, p[1] as f32)).collect();
+                    painter.add(egui::Shape::line(pts, blue));
+                }
+            }
             for (_, w) in t.handle_points() {
                 let c = to_screen(w.x, w.y);
                 let hr = Rect::from_center_size(c, Vec2::splat(7.0));

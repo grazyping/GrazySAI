@@ -592,6 +592,14 @@ impl Document {
         self.replace_preview(path, pixels, mask)
     }
 
+    /// Показ деформации сеткой (как `warp_preview`).
+    pub fn grid_preview(&mut self, path: &[usize], original: &ColorMap, orig_mask: Option<&MaskMap>, orig_sel: &Selection, grid: &crate::gridwarp::GridWarp, mode: crate::resample::Mode) -> Vec<Key> {
+        let (pixels, sel) = crate::gridwarp::warp_pixels(original, orig_sel, grid, mode);
+        let mask = orig_mask.map(|m| color_as_mask(&crate::gridwarp::warp_pixels(&mask_as_color(m), orig_sel, grid, mode).0));
+        self.selection.mask = sel;
+        self.replace_preview(path, pixels, mask)
+    }
+
     /// Поставить слою пиксели (и маску, если есть) без записи в историю; плитки для перерисовки.
     fn replace_preview(&mut self, path: &[usize], pixels: ColorMap, mask: Option<MaskMap>) -> Vec<Key> {
         let Some(layer) = self.layer_mut(path) else { return Vec::new() };

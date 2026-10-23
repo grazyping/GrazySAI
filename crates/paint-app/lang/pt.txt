@@ -1149,3 +1149,10 @@ Zip с паролем = Zip com senha
 Ш : В = L:A
 Россыпь = Dispersão
 Разлёт = Afastamento
+
+# Деформация сеткой
+Наложение = Sobreposição
+Поверх = Sobrescrever
+Решётка = Treliça
+Сетка = Malha
+Смешать = Misturar
