@@ -1275,6 +1275,10 @@ struct PaintApp {
     tab_brush: usize,
     /// Диапазон полоски размера кисти (номер в `SIZE_RANGES`).
     size_range: u8,
+    /// Миниатюра навигатора: уменьшенная копия холста (с усреднением, как в SAI — тонкие линии
+    /// не рвутся), её масштаб и размер; плитки ядра, изменённые с прошлого показа.
+    nav: Option<(f32, [usize; 2], Vec<Color32>, egui::TextureHandle)>,
+    nav_dirty: HashSet<Key>,
     /// Когда смотрели занятость диска и что увидели.
     disk_seen: Option<(Instant, Option<(u64, u64)>)>,
     brush: usize,
@@ -1586,6 +1590,8 @@ impl PaintApp {
             group_rename: None,
             tab_brush: usize::MAX,
             size_range: 1,
+            nav: None,
+            nav_dirty: HashSet::new(),
             disk_seen: None,
             // PAINT_BRUSH — номер кисти в сетке при запуске (для проверок виртуальным пером)
             brush: std::env::var("PAINT_BRUSH").ok().and_then(|v| v.parse().ok()).filter(|&i: &usize| i != 5 && i < 8).unwrap_or(0),
@@ -4663,6 +4669,7 @@ app.open_canvas_dialog(d == "resolution")
                     tile.pixels[dst..dst + TILE as usize].copy_from_slice(&rgba[src..src + TILE as usize]);
                 }
                 tile.dirty |= 1 << ((oy / TILE) * SUB + ox / TILE);
+                self.nav_dirty.insert(key);
             }
             if started.elapsed() > budget {
                 break;
@@ -8678,25 +8685,11 @@ app.open_canvas_dialog(d == "resolution")
         let (w, h) = (self.doc.width as f32, self.doc.height as f32);
         let k = ((rect.width() - 6.0) / w).min((rect.height() - 6.0) / h);
         let origin = rect.center() - Vec2::new(w, h) * k / 2.0;
-        p.rect_filled(Rect::from_min_size(origin, Vec2::new(w, h) * k), 0.0, Color32::WHITE);
-        for (&(dx, dy), tile) in &self.display {
-            if let Some(t) = &tile.texture {
-                let min = origin + Vec2::new((dx * DT) as f32, (dy * DT) as f32) * k;
-                let part = Vec2::new(
-                    (w - (dx * DT) as f32).min(DT as f32),
-                    (h - (dy * DT) as f32).min(DT as f32),
-                );
-                let uv = Rect::from_min_max(
-                    Pos2::ZERO,
-                    Pos2::new(part.x / DT as f32, part.y / DT as f32),
-                );
-                p.image(
-                    t.id(),
-                    Rect::from_min_size(min, part * k),
-                    uv,
-                    Color32::WHITE,
-                );
-            }
+        let canvas = Rect::from_min_size(origin, Vec2::new(w, h) * k);
+        p.rect_filled(canvas, 0.0, Color32::WHITE);
+        self.update_nav(ui.ctx(), k * self.ppp);
+        if let Some((_, _, _, tex)) = &self.nav {
+            p.image(tex.id(), canvas, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
         }
         if self.view.is_positive() {
             // углы вида на холсте (с поворотом и зеркалом) → навигатор
@@ -8716,6 +8709,72 @@ app.open_canvas_dialog(d == "resolution")
             }
         }
         p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::border()));
+    }
+
+    /// Пересчитать миниатюру навигатора: целиком (сменились масштаб или холст) или только места
+    /// изменённых плиток. Точка миниатюры — среднее точек холста под ней.
+    fn update_nav(&mut self, ctx: &egui::Context, kp: f32) {
+        let (w, h) = (self.doc.width as usize, self.doc.height as usize);
+        let size = [((w as f32 * kp).round() as usize).max(1), ((h as f32 * kp).round() as usize).max(1)];
+        let fresh = self.nav.as_ref().is_none_or(|n| (n.0 - kp).abs() > 1e-4 || n.1 != size);
+        if !fresh && self.nav_dirty.is_empty() {
+            return;
+        }
+        let (sx, sy) = (w as f32 / size[0] as f32, h as f32 / size[1] as f32);
+        let mut img = if fresh { vec![Color32::TRANSPARENT; size[0] * size[1]] } else { self.nav.as_ref().map(|n| n.2.clone()).unwrap_or_default() };
+        // какие точки миниатюры пересчитать
+        let mut spans: Vec<(usize, usize, usize, usize)> = Vec::new();
+        if fresh {
+            spans.push((0, 0, size[0], size[1]));
+        } else {
+            for &(tx, ty) in &self.nav_dirty {
+                let (x0, y0) = ((tx * TILE) as f32 / sx, (ty * TILE) as f32 / sy);
+                let (x1, y1) = (((tx + 1) * TILE) as f32 / sx, ((ty + 1) * TILE) as f32 / sy);
+                spans.push((x0.floor().max(0.0) as usize, y0.floor().max(0.0) as usize, (x1.ceil() as usize).min(size[0]), (y1.ceil() as usize).min(size[1])));
+            }
+        }
+        self.nav_dirty.clear();
+        let display = &self.display;
+        let px = |x: usize, y: usize| -> [u32; 4] {
+            let (dx, dy) = ((x as i32) / DT, (y as i32) / DT);
+            display.get(&(dx, dy)).map_or([0; 4], |t| {
+                let c = t.pixels[((y as i32 % DT) * DT + x as i32 % DT) as usize];
+                [c.r() as u32, c.g() as u32, c.b() as u32, c.a() as u32]
+            })
+        };
+        for (u0, v0, u1, v1) in spans {
+            for v in v0..v1 {
+                let (ya, yb) = ((v as f32 * sy) as usize, (((v + 1) as f32 * sy).ceil() as usize).min(h).max((v as f32 * sy) as usize + 1));
+                for u in u0..u1 {
+                    let (xa, xb) = ((u as f32 * sx) as usize, (((u + 1) as f32 * sx).ceil() as usize).min(w).max((u as f32 * sx) as usize + 1));
+                    // при сильном уменьшении — не больше 8×8 проб на точку
+                    let (stx, sty) = ((xb - xa).div_ceil(8).max(1), (yb - ya).div_ceil(8).max(1));
+                    let (mut acc, mut n) = ([0u32; 4], 0u32);
+                    for y in (ya..yb).step_by(sty) {
+                        for x in (xa..xb).step_by(stx) {
+                            let c = px(x, y);
+                            for i in 0..4 {
+                                acc[i] += c[i];
+                            }
+                            n += 1;
+                        }
+                    }
+                    let n = n.max(1);
+                    img[v * size[0] + u] = Color32::from_rgba_premultiplied((acc[0] / n) as u8, (acc[1] / n) as u8, (acc[2] / n) as u8, (acc[3] / n) as u8);
+                }
+            }
+        }
+        let image = egui::ColorImage { size, pixels: img.clone() };
+        match self.nav.as_mut() {
+            Some(n) if !fresh => {
+                n.3.set(image, egui::TextureOptions::LINEAR);
+                n.2 = img;
+            }
+            _ => {
+                let tex = ctx.load_texture("navigator", image, egui::TextureOptions::LINEAR);
+                self.nav = Some((kp, size, img, tex));
+            }
+        }
     }
 
     fn right_panel(&mut self, ui: &mut egui::Ui) {
