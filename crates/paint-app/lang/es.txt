@@ -1156,3 +1156,13 @@ Zip с паролем = Zip con contraseña
 Решётка = Retícula
 Сетка = Malla
 Смешать = Mezclar
+
+# Двоичные инструменты
+Дв.Выд.К. = PlumaSelBin
+Дв.Выд.Л. = BorrSelBin
+Дв.ластик = BorradorBin
+Двоичное перо выделения = Pluma de selección binaria
+Двоичный ластик = Borrador binario
+Двоичный ластик выделения = Borrador de selección binario
+Пикс.перо = Pluma píxel
+Пиксельное перо = Pluma de pixel art

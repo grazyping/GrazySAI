@@ -2225,7 +2225,12 @@ app.open_canvas_dialog(d == "resolution")
 
     /// Перо или ластик выделения.
     fn sel_tool(&self) -> bool {
-        matches!(self.kind(), ToolKind::SelPen | ToolKind::SelErs)
+        matches!(self.kind(), ToolKind::SelPen | ToolKind::SelErs | ToolKind::BinSelPen | ToolKind::BinSelErs)
+    }
+
+    /// Ластик выделения (обычный или двоичный).
+    fn sel_eraser(&self) -> bool {
+        matches!(self.kind(), ToolKind::SelErs | ToolKind::BinSelErs)
     }
 
     fn grain_for(&self, tool: usize) -> Option<paint_core::stroke::Grain> {
@@ -4214,7 +4219,7 @@ app.open_canvas_dialog(d == "resolution")
             };
             let mut params = if eraser_end { self.brushes[self.eraser_index()].params } else { self.brushes[self.brush].params };
             params.mix = None;
-            let erase = eraser_end || self.kind() == ToolKind::Eraser;
+            let erase = eraser_end || matches!(self.kind(), ToolKind::Eraser | ToolKind::BinEraser);
             let c = self.color();
             let lum = (c.r() as u32 * 77 + c.g() as u32 * 150 + c.b() as u32 * 29) >> 8;
             let target = if erase { 0 } else { ((255 - lum.min(255)) * 0x4000 / 255) as u16 };
@@ -4501,7 +4506,7 @@ app.open_canvas_dialog(d == "resolution")
             for q in self.smoother.finish() {
                 s.add_point(q);
             }
-            let mode = if self.kind() == ToolKind::SelErs { Combine::Subtract } else { Combine::Add };
+            let mode = if self.sel_eraser() { Combine::Subtract } else { Combine::Add };
             self.apply_selection(&s.mask, mode);
             return;
         }
@@ -9103,7 +9108,7 @@ app.open_canvas_dialog(d == "resolution")
         // Мазок пера или ластика выделения — полупрозрачная полоса по пути.
         if let Some((s, path)) = &self.sel_stroke {
             let width = (s.params.size * self.zoom).max(1.0);
-            let color = if self.kind() == ToolKind::SelErs { Color32::from_rgba_unmultiplied(220, 60, 60, 110) } else { Color32::from_rgba_unmultiplied(60, 110, 230, 110) };
+            let color = if self.sel_eraser() { Color32::from_rgba_unmultiplied(220, 60, 60, 110) } else { Color32::from_rgba_unmultiplied(60, 110, 230, 110) };
             let pts: Vec<Pos2> = path.iter().map(|p| to_screen(p.x, p.y)).collect();
             if pts.len() == 1 {
                 painter.circle_filled(pts[0], width / 2.0, color);

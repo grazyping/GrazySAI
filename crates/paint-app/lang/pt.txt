@@ -1156,3 +1156,13 @@ Zip с паролем = Zip com senha
 Решётка = Treliça
 Сетка = Malha
 Смешать = Misturar
+
+# Двоичные инструменты
+Дв.Выд.К. = CanetaSelBin
+Дв.Выд.Л. = BorrSelBin
+Дв.ластик = BorrachaBin
+Двоичное перо выделения = Caneta de seleção binária
+Двоичный ластик = Borracha binária
+Двоичный ластик выделения = Borracha de seleção binária
+Пикс.перо = Caneta pixel
+Пиксельное перо = Caneta de pixel art

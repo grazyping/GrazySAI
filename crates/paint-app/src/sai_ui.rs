@@ -797,6 +797,18 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
             p.circle_filled(ctr + Vec2::new(-k * 0.1, -k * 0.15), k * 0.4, c);
             glyph(p, r, c, "lasso");
         }
+        "pixelpen" => {
+            // клетки пикселей лесенкой
+            let q = k * 0.32;
+            for (i, j) in [(-1.0, 1.0), (0.0, 0.0), (1.0, -1.0), (0.0, 1.0), (1.0, 0.0)] {
+                p.rect_filled(Rect::from_center_size(ctr + Vec2::new(i * q, j * q), Vec2::splat(q * 0.9)), 0.0, c);
+            }
+        }
+        "binerase" | "binselpen" | "binselers" => {
+            glyph(p, r, c, match name { "binerase" => "eraser", "binselpen" => "selpen", _ => "selers" });
+            let q = k * 0.22;
+            p.rect_filled(Rect::from_center_size(r.max - Vec2::splat(q), Vec2::splat(q * 1.4)), 0.0, c);
+        }
         "scatter" => {
             // россыпь точек разного размера
             for (x, y, rr) in [(-0.6, 0.4, 0.22), (-0.1, -0.5, 0.16), (0.45, 0.1, 0.26), (0.1, 0.6, 0.12), (0.65, -0.55, 0.14), (-0.55, -0.2, 0.1)] {

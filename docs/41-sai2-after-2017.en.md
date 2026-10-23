@@ -60,6 +60,12 @@ not analysed; live checks only on official builds, hidden display, a separate Wi
   quadratic B-spline of node shifts, within a few pixels). Mesh draws curves through the nodes and
   the image passes through the node (we use a Catmull–Rom spline of node shifts; SAI seems to
   parametrize by chord length, so its left and right halves bend differently, ours are symmetric).
+- **Binary tab (2026-07-02b):** BinPen, PixArt Pen, binary Eraser, SelPen, SelErs, Bucket. The
+  Pixel Art Pen has 1 px, min size 0 %, Opacity 255, algorithm Simple (no pressure), color picker
+  Normal / Layer ARGB; the binary eraser has 50 px, Simple. Pixel Art Pen dots at sizes 1…20 are
+  the pixels whose centres lie inside the size circle, with the size rounded to an integer
+  (2.3 → 2, 2.6 → 3, 3.5 → 4; 9 → 69 pixels, 20 → 316) — identical to our binary pen pixel for
+  pixel. The Layer ARGB picker is not done here.
 - **Control step (item 1) done.** The Pencil sheet (5 hardness steps × sizes 1–100, a size-20 line,
   density 100, mouse) in 2026-07-02b against the same 2017 sheet: at mid hardness 2026 dabs carry
   20–35 % less paint and are 10–15 % smaller in diameter (50 % level); size-20 lines are nearly the same

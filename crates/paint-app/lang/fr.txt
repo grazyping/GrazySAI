@@ -1156,3 +1156,13 @@ Zip с паролем = Zip protégé par mot de passe
 Решётка = Treillis
 Сетка = Maillage
 Смешать = Mélanger
+
+# Двоичные инструменты
+Дв.Выд.К. = StyloSélBin
+Дв.Выд.Л. = GommeSélBin
+Дв.ластик = GommeBin
+Двоичное перо выделения = Stylo de sélection binaire
+Двоичный ластик = Gomme binaire
+Двоичный ластик выделения = Gomme de sélection binaire
+Пикс.перо = Stylo pixel
+Пиксельное перо = Stylo pixel art

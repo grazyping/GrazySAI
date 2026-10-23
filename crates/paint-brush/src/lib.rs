@@ -113,11 +113,18 @@ pub enum ToolKind {
     Scatter,
     /// «Перо эффектов» (SAI 2019+): мазок ложится выбранным режимом наложения.
     EffectPen,
+    /// «Пиксельное перо» (SAI 2020+, вкладка Binary): точки без сглаживания, без нажима.
+    PixelPen,
+    /// Двоичный ластик (SAI 2020+): стирает точками без сглаживания.
+    BinEraser,
+    /// Двоичные перо и ластик выделения (SAI 2020+).
+    BinSelPen,
+    BinSelErs,
 }
 
 impl ToolKind {
     /// В порядке меню SAI.
-    pub const ALL: [ToolKind; 16] = [
+    pub const ALL: [ToolKind; 20] = [
         ToolKind::Pencil,
         ToolKind::AirBrush,
         ToolKind::Brush,
@@ -134,6 +141,10 @@ impl ToolKind {
         ToolKind::LassoFill,
         ToolKind::Scatter,
         ToolKind::EffectPen,
+        ToolKind::PixelPen,
+        ToolKind::BinEraser,
+        ToolKind::BinSelPen,
+        ToolKind::BinSelErs,
     ];
 
     pub fn key(self) -> &'static str {
@@ -154,6 +165,10 @@ impl ToolKind {
             ToolKind::LassoFill => "lassofill",
             ToolKind::Scatter => "scatter",
             ToolKind::EffectPen => "effectpen",
+            ToolKind::PixelPen => "pixelpen",
+            ToolKind::BinEraser => "binerase",
+            ToolKind::BinSelPen => "binselpen",
+            ToolKind::BinSelErs => "binselers",
         }
     }
 
@@ -180,6 +195,10 @@ impl ToolKind {
             ToolKind::LassoFill => "Заливка лассо",
             ToolKind::Scatter => "Россыпь",
             ToolKind::EffectPen => "Перо эффектов",
+            ToolKind::PixelPen => "Пиксельное перо",
+            ToolKind::BinEraser => "Двоичный ластик",
+            ToolKind::BinSelPen => "Двоичное перо выделения",
+            ToolKind::BinSelErs => "Двоичный ластик выделения",
         }
     }
 
@@ -258,6 +277,12 @@ impl ToolKind {
                 "effectpen",
                 BrushParams { min_size: 0.5, effect: Some(paint_core::blend::BlendMode::Normal), ..b(50.0, 1.0, 1.0) },
             ),
+            // вкладка Binary в SAI 2026: пиксельное перо — 1 px, без нажима (алгоритм «Simple»),
+            // непрозрачность 255; ластик — 50 px; формы — круг точек с центрами внутри (сверено)
+            ToolKind::PixelPen => ("Пикс.перо", "pixelpen", BrushParams { binary: true, size_by_pressure: false, ..b(1.0, 1.0, 1.0) }),
+            ToolKind::BinEraser => ("Дв.ластик", "binerase", BrushParams { binary: true, erase: true, size_by_pressure: false, ..b(50.0, 1.0, 1.0) }),
+            ToolKind::BinSelPen => ("Дв.Выд.К.", "binselpen", BrushParams { binary: true, size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
+            ToolKind::BinSelErs => ("Дв.Выд.Л.", "binselers", BrushParams { binary: true, size_by_pressure: false, ..b(10.0, 1.0, 1.0) }),
             ToolKind::Blur => (
                 "Размытие",
                 "blur",

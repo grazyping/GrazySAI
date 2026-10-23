@@ -1156,3 +1156,13 @@ Zip с паролем = Zip mit Passwort
 Решётка = Gitter
 Сетка = Netz
 Смешать = Mischen
+
+# Двоичные инструменты
+Дв.Выд.К. = BinAuswStift
+Дв.Выд.Л. = BinAuswRadierer
+Дв.ластик = BinRadierer
+Двоичное перо выделения = Binärer Auswahlstift
+Двоичный ластик = Binärer Radierer
+Двоичный ластик выделения = Binärer Auswahlradierer
+Пикс.перо = Pixelstift
+Пиксельное перо = Pixel-Art-Stift

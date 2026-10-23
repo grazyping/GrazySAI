@@ -232,6 +232,27 @@ pub fn run(report: Option<PathBuf>) -> bool {
             }
             Ok("ок".into())
         })),
+        ("пиксельное перо и двоичный ластик", Box::new(|_| {
+            let mut doc = Document::new(60, 60);
+            let mut b = paint_brush::ToolKind::PixelPen.new_brush();
+            b.params.size = 5.0;
+            let mut st = b.stroke(None);
+            st.add_point(InputPoint { x: 30.2, y: 30.6, pressure: 0.3 });
+            doc.commit_stroke(0, &st, [0, 0, 0]);
+            let n = (0..60).flat_map(|y| (0..60).map(move |x| (x, y))).filter(|&(x, y)| paint_core::pixel::to_rgba8(doc.layers[0].pixels.get(x, y))[3] == 255).count();
+            if n != 21 {
+                return Err(format!("точка 5 px — {n} точек вместо 21").into());
+            }
+            let mut e = paint_brush::ToolKind::BinEraser.new_brush();
+            e.params.size = 9.0;
+            let mut st = e.stroke(None);
+            st.add_point(InputPoint { x: 30.5, y: 30.5, pressure: 1.0 });
+            doc.commit_stroke(0, &st, [0, 0, 0]);
+            if doc.layers[0].pixels.get(30, 30)[3] != 0 {
+                return Err("двоичный ластик не стёр".into());
+            }
+            Ok("ок".into())
+        })),
         ("слой 3D: модель glTF и отрисовка", Box::new(|_| {
             let t = std::time::Instant::now();
             let files = vec![("scene.glb".to_string(), include_bytes!("../../paint-3d/tests/data/scene.glb").to_vec())];

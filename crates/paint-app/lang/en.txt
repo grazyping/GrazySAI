@@ -1157,3 +1157,13 @@ Zip с паролем = Password-protected zip
 Решётка = Lattice
 Сетка = Mesh
 Смешать = Blend
+
+# Двоичные инструменты
+Дв.Выд.К. = BinSelPen
+Дв.Выд.Л. = BinSelErs
+Дв.ластик = BinEraser
+Двоичное перо выделения = Binary Selection Pen
+Двоичный ластик = Binary Eraser
+Двоичный ластик выделения = Binary Selection Eraser
+Пикс.перо = PixArt Pen
+Пиксельное перо = Pixel Art Pen
