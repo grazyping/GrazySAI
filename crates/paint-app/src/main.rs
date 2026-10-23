@@ -7523,6 +7523,8 @@ app.open_canvas_dialog(d == "resolution")
         if !self.win.show[3] {
             return;
         }
+        // вкладки групп — над общими инструментами, как в SAI 2
+        self.tool_group_tabs(ui);
         // Общие инструменты и два цвета.
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
@@ -7633,7 +7635,6 @@ app.open_canvas_dialog(d == "resolution")
         // Кисти слоя: 4 в ряд, имя сверху, значок снизу справа. Как в SAI: правый щелчок по пустой
         // ячейке — новый инструмент выбранного вида, по инструменту — копия, удаление, свойства.
         let mut grid_action: Option<(usize, GridAction)> = None;
-        self.tool_group_tabs(ui);
         // в сетке — инструменты открытой группы (номера — общие)
         let shown: Vec<usize> = (0..self.brushes.len()).filter(|&i| self.brushes[i].group == self.tool_group).collect();
         let groups = self.tool_groups.clone();
