@@ -1026,6 +1026,10 @@ struct BrushTool {
     brush: paint_brush::Brush,
     /// Своя клавиша инструмента («Shortcut Key» в SAI).
     key: Option<keys::Binding>,
+    /// «Запомнить настройки» (SAI 2020+): к ним можно вернуться.
+    reserved: Option<paint_brush::Brush>,
+    /// Настройки до последнего «Вернуть» — чтобы отменить возврат.
+    before_restore: Option<paint_brush::Brush>,
 }
 
 impl std::ops::Deref for BrushTool {
@@ -1048,7 +1052,7 @@ trait NewTool {
 
 impl NewTool for ToolKind {
     fn new_tool(self) -> BrushTool {
-        BrushTool { brush: self.new_brush(), key: None }
+        BrushTool { brush: self.new_brush(), key: None, reserved: None, before_restore: None }
     }
 }
 
@@ -1098,6 +1102,10 @@ enum GridAction {
     Property,
     /// Сохранить в файл кисти `.gsbrush`.
     Save,
+    /// Запомнить настройки, вернуть запомненные, отменить возврат.
+    Reserve,
+    Restore,
+    UndoRestore,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1246,6 +1254,9 @@ struct PaintApp {
     show_open: bool,
     show_new: bool,
     new_size: [u32; 2],
+    /// Заготовки размеров холста (SAI 2018+): имя, ширина, высота; выбранная — по номеру.
+    canvas_presets: Vec<(String, u32, u32)>,
+    preset_sel: Option<usize>,
     show_about: bool,
     /// Есть несохранённые изменения.
     dirty: bool,
@@ -1536,6 +1547,13 @@ impl PaintApp {
             show_open: false,
             show_new: false,
             new_size: [1200, 900],
+            canvas_presets: vec![
+                ("512 × 512".into(), 512, 512),
+                ("1200 × 900".into(), 1200, 900),
+                ("A4, 300 dpi".into(), 2480, 3508),
+                ("4096 × 4096".into(), 4096, 4096),
+            ],
+            preset_sel: None,
             show_about: false,
             dirty: false,
             had_vectors: false,
@@ -1817,6 +1835,11 @@ app.open_canvas_dialog(d == "resolution")
         }
         for (i, b) in self.brushes.iter_mut().enumerate() {
             read_tool(b, &s, &format!("brush.{i}."));
+            if s.bool(&format!("brush.{i}.has_reserved")) == Some(true) {
+                let mut r = b.kind.new_brush();
+                paint_brush::read(&mut r, &s, &format!("brush.{i}.reserved."));
+                b.reserved = Some(r);
+            }
         }
         if let Some(i) = s.f32("brush").map(|v| v as usize).filter(|&i| i < self.brushes.len()) {
             if std::env::var_os("PAINT_BRUSH").is_none() {
@@ -1927,6 +1950,17 @@ app.open_canvas_dialog(d == "resolution")
         if let Some(v) = s.f32("swatch_size") {
             self.win.swatch_size = (v as u8).min(2);
         }
+        if let Some(n) = s.f32("canvas_preset.count").map(|v| v as usize).filter(|&n| n <= 200) {
+            self.canvas_presets = (0..n)
+                .filter_map(|i| {
+                    let v = s.str(&format!("canvas_preset.{i}"))?;
+                    let mut it = v.rsplitn(3, '|');
+                    let h: u32 = it.next()?.parse().ok()?;
+                    let w: u32 = it.next()?.parse().ok()?;
+                    Some((it.next()?.to_string(), w.clamp(1, 16000), h.clamp(1, 16000)))
+                })
+                .collect();
+        }
         if let (Some(w), Some(h)) = (s.f32("new_width"), s.f32("new_height")) {
             self.new_size = [(w as u32).clamp(1, 16000), (h as u32).clamp(1, 16000)];
         }
@@ -2027,6 +2061,10 @@ app.open_canvas_dialog(d == "resolution")
         }
         for (i, b) in self.brushes.iter().enumerate() {
             write_tool(b, &mut s, &format!("brush.{i}."));
+            s.set(&format!("brush.{i}.has_reserved"), b.reserved.is_some() as u8);
+            if let Some(r) = &b.reserved {
+                paint_brush::write(r, &mut s, &format!("brush.{i}.reserved."));
+            }
         }
         s.set("brush", self.brush);
         for c in 0..3 {
@@ -2074,6 +2112,10 @@ app.open_canvas_dialog(d == "resolution")
         s.set("brush_circle", w.brush_circle as u8);
         s.set("hsv_mode", w.hsv_mode);
         s.set("swatch_size", w.swatch_size);
+        s.set("canvas_preset.count", self.canvas_presets.len());
+        for (i, (n, w, h)) in self.canvas_presets.iter().enumerate() {
+            s.set(&format!("canvas_preset.{i}"), format!("{}|{w}|{h}", n.replace('|', "/")));
+        }
         s.set("new_width", self.new_size[0]);
         s.set("new_height", self.new_size[1]);
         s.set("lasso_polygon", self.lasso_polygon);
@@ -2229,7 +2271,7 @@ app.open_canvas_dialog(d == "resolution")
             }
             GridAction::Duplicate => {
                 let src = &self.brushes[i];
-                let copy = BrushTool { brush: src.brush.clone(), key: None };
+                let copy = BrushTool { brush: src.brush.clone(), key: None, reserved: src.reserved.clone(), before_restore: None };
                 self.brushes.insert(i + 1, copy);
                 if self.brush > i {
                     self.brush += 1;
@@ -2244,6 +2286,29 @@ app.open_canvas_dialog(d == "resolution")
                 }
             }
             GridAction::Save => self.ask_save_brush(Some(i)),
+            GridAction::Reserve => {
+                let t = &mut self.brushes[i];
+                t.reserved = Some(t.brush.clone());
+                self.status = String::from(tr("Настройки инструмента запомнены"));
+            }
+            GridAction::Restore => {
+                let t = &mut self.brushes[i];
+                if let Some(r) = t.reserved.clone() {
+                    // имя, подпись и вид — те же; возвращаются настройки
+                    let (custom, extra) = (t.brush.custom.clone(), t.brush.extra.clone());
+                    t.before_restore = Some(std::mem::replace(&mut t.brush, r));
+                    t.brush.custom = custom;
+                    t.brush.extra = extra;
+                    self.status = String::from(tr("Настройки инструмента возвращены"));
+                }
+            }
+            GridAction::UndoRestore => {
+                let t = &mut self.brushes[i];
+                if let Some(b) = t.before_restore.take() {
+                    t.brush = b;
+                    self.status = String::from(tr("Возврат настроек отменён"));
+                }
+            }
             GridAction::Property => {
                 let t = &self.brushes[i];
                 self.tool_props = Some((i, t.title(), t.extra.clone(), t.key));
@@ -3294,7 +3359,7 @@ app.open_canvas_dialog(d == "resolution")
                         self.brush = i;
                     }
                     None => {
-                        self.brushes.push(BrushTool { brush, key: None });
+                        self.brushes.push(BrushTool { brush, key: None, reserved: None, before_restore: None });
                         self.brush = self.brushes.len() - 1;
                     }
                 }
@@ -3336,7 +3401,7 @@ app.open_canvas_dialog(d == "resolution")
             return;
         }
         let added = list.len();
-        self.brushes.extend(list.into_iter().map(|brush| BrushTool { brush, key: None }));
+        self.brushes.extend(list.into_iter().map(|brush| BrushTool { brush, key: None, reserved: None, before_restore: None }));
         self.brush = self.brushes.len() - 1;
         self.tool = Tool::Brush;
         self.grain_names = None;
@@ -7071,9 +7136,21 @@ app.open_canvas_dialog(d == "resolution")
                                     self.tool = Tool::Brush;
                                     self.brush = i;
                                 }
+                                let (has_res, has_undo) = (tool.reserved.is_some(), tool.before_restore.is_some());
                                 r.context_menu(|ui| {
                                     for (act, name) in [(GridAction::Duplicate, tr("Копия")), (GridAction::Delete, tr("Удалить")), (GridAction::Property, tr("Свойства…")), (GridAction::Save, tr("Сохранить кисть…"))] {
                                         if ui.button(name).clicked() {
+                                            grid_action = Some((i, act));
+                                            ui.close_menu();
+                                        }
+                                    }
+                                    ui.separator();
+                                    for (act, name, on) in [
+                                        (GridAction::Reserve, tr("Запомнить настройки"), true),
+                                        (GridAction::Restore, tr("Вернуть запомненные"), has_res),
+                                        (GridAction::UndoRestore, tr("Отменить возврат"), has_undo),
+                                    ] {
+                                        if ui.add_enabled(on, egui::Button::new(name)).clicked() {
                                             grid_action = Some((i, act));
                                             ui.close_menu();
                                         }
@@ -10301,13 +10378,69 @@ impl PaintApp {
                         );
                         ui.end_row();
                     });
+                    // заготовки: выбрать, добавить текущий размер, изменить, удалить, порядок
+                    if self.preset_sel.is_none() {
+                        self.preset_sel = self.canvas_presets.iter().position(|p| [p.1, p.2] == self.new_size);
+                    }
                     ui.horizontal(|ui| {
-                        for (w, h) in [(512, 512), (1200, 900), (2480, 3508), (4096, 4096)] {
-                            if ui.small_button(format!("{w}×{h}")).clicked() {
-                                self.new_size = [w, h];
+                        ui.label(tr("Заготовка:"));
+                        let shown = self.preset_sel.and_then(|i| self.canvas_presets.get(i)).map_or(String::from(tr("(свой размер)")), |p| format!("{} — {}×{}", p.0, p.1, p.2));
+                        egui::ComboBox::from_id_salt("canvas_preset").selected_text(shown).width(220.0).show_ui(ui, |ui| {
+                            for (i, (n, w, h)) in self.canvas_presets.iter().enumerate() {
+                                if ui.selectable_label(self.preset_sel == Some(i), format!("{n} — {w}×{h}")).clicked() {
+                                    self.preset_sel = Some(i);
+                                    self.new_size = [*w, *h];
+                                }
+                            }
+                        });
+                    });
+                    ui.horizontal(|ui| {
+                        let mut changed = false;
+                        if ui.small_button("+").on_hover_text(tr("Добавить текущий размер в заготовки")).clicked() {
+                            let [w, h] = self.new_size;
+                            self.canvas_presets.push((format!("{w} × {h}"), w, h));
+                            self.preset_sel = Some(self.canvas_presets.len() - 1);
+                            changed = true;
+                        }
+                        if let Some(i) = self.preset_sel.filter(|&i| i < self.canvas_presets.len()) {
+                            if ui.small_button(tr("Изменить")).on_hover_text(tr("Поставить заготовке текущий размер")).clicked() {
+                                let [w, h] = self.new_size;
+                                self.canvas_presets[i].1 = w;
+                                self.canvas_presets[i].2 = h;
+                                changed = true;
+                            }
+                            if ui.small_button("↑").clicked() && i > 0 {
+                                self.canvas_presets.swap(i, i - 1);
+                                self.preset_sel = Some(i - 1);
+                                changed = true;
+                            }
+                            if ui.small_button("↓").clicked() && i + 1 < self.canvas_presets.len() {
+                                self.canvas_presets.swap(i, i + 1);
+                                self.preset_sel = Some(i + 1);
+                                changed = true;
+                            }
+                            if ui.small_button(tr("Удалить")).clicked() {
+                                self.canvas_presets.remove(i);
+                                self.preset_sel = None;
+                                changed = true;
                             }
                         }
+                        if changed {
+                            self.save_settings();
+                        }
                     });
+                    if let Some(i) = self.preset_sel.filter(|&i| i < self.canvas_presets.len()) {
+                        ui.horizontal(|ui| {
+                            ui.label(tr("Имя заготовки:"));
+                            if ui.text_edit_singleline(&mut self.canvas_presets[i].0).lost_focus() {
+                                self.save_settings();
+                            }
+                        });
+                        let (_, w, h) = self.canvas_presets[i];
+                        if self.new_size != [w, h] {
+                            self.preset_sel = None;
+                        }
+                    }
                     ui.horizontal(|ui| {
                         if ui.button("OK").clicked() {
                             let [w, h] = self.new_size;

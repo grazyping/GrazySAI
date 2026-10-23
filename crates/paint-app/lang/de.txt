@@ -1172,3 +1172,17 @@ Zip с паролем = Zip mit Passwort
 Минимальный нажим для мазка: = Mindestdruck für Pinselstrich:
 Слабее — перо не рисует (защита от случайных касаний); нажим отсчитывается от этого порога = Leichterer Druck malt nicht (Schutz vor versehentlichen Berührungen); der Druck zählt ab dieser Schwelle
 Срезать крючки = Anti-Haken
+
+# Заготовки холста, запомнить настройки
+(свой размер) = (eigene Größe)
+Вернуть запомненные = Gespeicherte Einstellungen wiederherstellen
+Возврат настроек отменён = Wiederherstellung rückgängig gemacht
+Добавить текущий размер в заготовки = Aktuelle Größe zu den Vorlagen hinzufügen
+Заготовка: = Vorlage:
+Запомнить настройки = Aktuelle Einstellungen merken
+Изменить = Ändern
+Имя заготовки: = Name der Vorlage:
+Настройки инструмента возвращены = Werkzeugeinstellungen wiederhergestellt
+Настройки инструмента запомнены = Werkzeugeinstellungen gemerkt
+Отменить возврат = Wiederherstellung rückgängig
+Поставить заготовке текущий размер = Der Vorlage die aktuelle Größe geben

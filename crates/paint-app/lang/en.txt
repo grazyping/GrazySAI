@@ -1173,3 +1173,17 @@ Zip с паролем = Password-protected zip
 Минимальный нажим для мазка: = Minimum pressure for brush stroke:
 Слабее — перо не рисует (защита от случайных касаний); нажим отсчитывается от этого порога = Lighter pressure does not paint (guards against accidental touches); pressure is counted from this threshold
 Срезать крючки = Anti-Hook
+
+# Заготовки холста, запомнить настройки
+(свой размер) = (custom size)
+Вернуть запомненные = Restore Reserved Settings
+Возврат настроек отменён = Restore undone
+Добавить текущий размер в заготовки = Add the current size to the presets
+Заготовка: = Preset:
+Запомнить настройки = Reserve Current Settings
+Изменить = Edit
+Имя заготовки: = Preset name:
+Настройки инструмента возвращены = Tool settings restored
+Настройки инструмента запомнены = Tool settings reserved
+Отменить возврат = Undo Restore
+Поставить заготовке текущий размер = Give the preset the current size

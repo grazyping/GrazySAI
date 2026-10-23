@@ -71,6 +71,9 @@ not analysed; live checks only on official builds, hidden display, a separate Wi
   range of hooks at both ends of a stroke", in screen pixels); Anti-Ripple for Flatten Brush
   ("suppress ripple like artifacts of a flattest large brush") — not done here: our flat brushes
   show no ripple to measure against.
+- **Canvas presets and reserved settings:** the SAI 2026 New Canvas window has a preset list
+  ("512 × 512 - 72ppi" etc.) with edit and add buttons; SAI 2020+ tools have Reserve Current
+  Settings / Restore Reserved Settings (here — in the tool cell menu, with Undo Restore).
 - **Control step (item 1) done.** The Pencil sheet (5 hardness steps × sizes 1–100, a size-20 line,
   density 100, mouse) in 2026-07-02b against the same 2017 sheet: at mid hardness 2026 dabs carry
   20–35 % less paint and are 10–15 % smaller in diameter (50 % level); size-20 lines are nearly the same

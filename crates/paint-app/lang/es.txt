@@ -1172,3 +1172,17 @@ Zip с паролем = Zip con contraseña
 Минимальный нажим для мазка: = Presión mínima para el trazo:
 Слабее — перо не рисует (защита от случайных касаний); нажим отсчитывается от этого порога = Con menos presión no pinta (evita toques accidentales); la presión se cuenta desde este umbral
 Срезать крючки = Antiganchos
+
+# Заготовки холста, запомнить настройки
+(свой размер) = (tamaño propio)
+Вернуть запомненные = Restaurar ajustes reservados
+Возврат настроек отменён = Restauración deshecha
+Добавить текущий размер в заготовки = Añadir el tamaño actual a los preajustes
+Заготовка: = Preajuste:
+Запомнить настройки = Reservar ajustes actuales
+Изменить = Cambiar
+Имя заготовки: = Nombre del preajuste:
+Настройки инструмента возвращены = Ajustes de la herramienta restaurados
+Настройки инструмента запомнены = Ajustes de la herramienta reservados
+Отменить возврат = Deshacer restauración
+Поставить заготовке текущий размер = Dar al preajuste el tamaño actual

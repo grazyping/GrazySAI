@@ -1172,3 +1172,17 @@ Zip с паролем = Zip protégé par mot de passe
 Минимальный нажим для мазка: = Pression minimale pour un trait :
 Слабее — перо не рисует (защита от случайных касаний); нажим отсчитывается от этого порога = Plus léger, le stylet ne peint pas (évite les contacts accidentels) ; la pression est comptée à partir de ce seuil
 Срезать крючки = Anti-crochet
+
+# Заготовки холста, запомнить настройки
+(свой размер) = (taille personnalisée)
+Вернуть запомненные = Restaurer les réglages réservés
+Возврат настроек отменён = Restauration annulée
+Добавить текущий размер в заготовки = Ajouter la taille actuelle aux préréglages
+Заготовка: = Préréglage :
+Запомнить настройки = Réserver les réglages actuels
+Изменить = Modifier
+Имя заготовки: = Nom du préréglage :
+Настройки инструмента возвращены = Réglages de l'outil restaurés
+Настройки инструмента запомнены = Réglages de l'outil réservés
+Отменить возврат = Annuler la restauration
+Поставить заготовке текущий размер = Donner la taille actuelle au préréglage
