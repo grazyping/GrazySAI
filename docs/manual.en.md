@@ -294,6 +294,12 @@ Normal layers only (not folders).
     “Perspective” 0–100 — 0 stretches evenly (bilinear), 100 adds perspective;
   - drag inside the frame — move, outside — rotate;
   - the resampling method is in the panel;
+  - **Lattice and Mesh** (grid deformation from SAI 2 2026): a grid of nodes lies over the picture —
+    Division 2×2…5×5 or your own up to 32×32. With Lattice the nodes pull the picture softly (the
+    picture does not reach the node), with Mesh the picture passes through the nodes. Drag the
+    nodes; inside — move the whole grid. Overlapping: where the picture folds over itself —
+    Overwrite or Blend. If the frame was already moved, it is applied first and the grid lies on
+    the result;
   - Enter — apply, Esc — cancel.
 
 ## Canvas and view
@@ -302,7 +308,11 @@ Normal layers only (not folders).
   - change resolution (the image is resampled);
   - change canvas size (the image is not scaled, 3×3 anchor);
   - flip;
-  - rotate by 90°.
+  - rotate by 90°;
+  - “Convert to Grayscale…” — all layers become gray (with a warning; only Undo brings colour back).
+- “File → New” has size presets: pick one from the list, “+” adds the current size, “Edit” gives the
+  preset the current size, ↑ ↓ reorder, “Delete”; the preset name is edited below.
+- “View → Canvases” lists the open canvases to switch to. “File → Recent → Clear List”.
 - **View**:
   - mouse wheel — zoom at the cursor; Space or the middle button + drag — pan;
   - Shift+PageUp / Shift+PageDown — rotate by 15°, Shift+Home — reset the angle;
@@ -319,6 +329,9 @@ Normal layers only (not folders).
 - “View → Pixel grid (from 800%)” — thin lines between canvas pixels at 800% zoom and above.
 - “Ruler → Symmetry” repeats every stroke mirrored: “Left ↔ right”, “Top ↔ bottom” or “Both axes”
   (the axis is the middle of the canvas, shown dashed). Works for all brushes, the selection pen and masks.
+  **Radial** — 1–20 parts around a centre: “Mirrored” gives as many axes as parts (2N copies),
+  without it N rotated copies; “Angle” turns the first axis, “Centre” is a canvas point. These
+  settings are kept by the program, not in `.sai2`.
 - “View → New View” adds another tab of the same canvas with its own zoom, position, rotation
   and mirror (the tab shows the view number). Closing a view keeps the canvas while another view
   of it is open. A key can be assigned in Hotkeys.
@@ -345,6 +358,12 @@ wherever it starts.
   vanishing point its first movement points at (one point also gives horizontals and verticals,
   two points give verticals). Ctrl + drag a vanishing point to move it. Our own version: it is
   not saved in the file.
+- **Parallel Lines**: the same band as Straight, but the stroke goes straight, parallel to it, from
+  where it starts.
+- **Concentric Ellipses**: the same ring as Ellipse, but the stroke follows the ellipse with the same
+  centre, shape and tilt through the start point.
+- **Vanishing Point (rays)**: the stroke goes straight from its start toward the point; Ctrl + drag
+  moves the point. A guide through the cursor shows where the stroke will go.
 - “Ignore Ruler” (menu or the quick bar button) — draw freely without hiding it; “Reset
   Ruler” — place it again in the middle of the view.
 
@@ -464,6 +483,47 @@ engines differ. A `.bfps` palette has no images (it refers to CSP materials), so
 the center or all over the picture), size, opacity, margin; a preview on the picture. With “Add on image
 export…” the mark goes into image exports (PNG, JPEG, WebP, BMP, TGA, TIFF, QOI); it is never written into
 the picture itself, `.sai2`, `.psd` or `.ora`.
+
+### Scatter and Effect Pen
+
+The “Scatter” grid tool (Scatter from SAI 2 2018+): each stroke step places one or more shapes (the tip
+from “Form → Tip” or a circle). The “Scatter” section: “Angle Control” (none, auto, pen direction), angle
+and its jitter, shape scaling and size jitter, “Scattering” — a shift across the stroke up to two brush
+sizes (“All Direction” adds a shift along it, “Gaussian” keeps shapes closer to the line), “W:H” and its
+jitter, “Count” per step and its jitter, “Absolute Size”, “Integer Pos.”. Colour: “FG to BG”, hue,
+saturation and brightness jitter — for the whole stroke or “Apply to Each Shape”. The distributions are
+checked against live SAI 2026.
+
+The “Effect Pen” is a plain pen whose stroke goes on with the blend mode chosen in the “Mode” list
+(multiply, screen, overlay, shade, shine and others): over paint by the mode formula, over transparent
+pixels as normal paint. The “Mode” list works for Scatter too.
+
+### Pixel Art Pen and binary tools
+
+The “Pixel Art Pen” (Binary tab in SAI 2) paints dots without anti-aliasing and without pressure: the size
+is rounded to an integer and a dot is a circle of pixels exactly as in SAI (checked at sizes 1–20). There
+are also a binary eraser, binary selection pen and eraser.
+
+### Brush details
+
+- Above the brush settings — a preview stroke of this brush; it follows the settings.
+- “Misc → Anti-Hook” cuts bends at the stroke ends shorter than the given length (in screen pixels) when
+  the pen lifts; while the pen moves, the stroke end lags by that length.
+- Shift pressed during a stroke keeps it straight — horizontal or vertical (by the first movement);
+  release Shift and the stroke is free again.
+- “Options → Minimum pressure for brush stroke” — lighter pressure does not paint (guards against
+  accidental touches), and brush pressure is counted from the threshold; the cursor shows the
+  smallest-size circle.
+- Right-click a tool cell: “Reserve Current Settings”, “Restore Reserved Settings”, “Undo Restore”.
+
+### Asset Manager
+
+“Window → Asset Manager…” (from SAI 2 2020+):
+- **Swatches sets** — several swatch palettes; switch them also with the list above the swatches.
+- **Scratch pads** — save the current scratch pad under a name, open a saved one.
+- **Layer paper, brush forms, brush textures, tips and scattering shapes** — your own files of these
+  kinds: rename, delete, put into groups. “New from the current layer” makes an asset from the selected
+  part of the layer or everything drawn: black on white, white on black or by transparency.
 
 ### Smudge
 

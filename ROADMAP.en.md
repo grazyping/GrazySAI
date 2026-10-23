@@ -10,6 +10,8 @@ third number.
 On 16 October 2026 **1.0.0** was released: everything on the 1.0 list is done. Next come
 feedback, Clip Studio Paint-like filters and ideas from Krita.
 
+On 23 October 2026 **1.1.0** was released: new features from SAI 2 after 2017. From this version on, releases come by sections: a section is done in full, tested and released as one version with the next second number.
+
 On GitHub every stage is a milestone with a progress bar
 ([Milestones](https://github.com/grazyping/GrazySAI/milestones)) and every item is an issue
 ([Issues](https://github.com/grazyping/GrazySAI/issues), written in Russian); finished items are closed.
@@ -88,7 +90,7 @@ The Russian [ROADMAP.md](ROADMAP.md) is the master copy.
 - [x] Large Water brush: blur over a reduced copy of the layer, as in SAI — 350 px: 7.4 → 2.0 s per 1000 px of line
 - [x] Perspective rulers: display and drawing along them (reference: Krita's perspective and vanishing point assistants); our own version, not written to the file (0.8.38)
 
-### 1.0 — everything from SAI 2 for everyday work (current version 1.0.42)
+### 1.0 — everything from SAI 2 for everyday work
 
 Everything people use in PaintTool SAI 2017 for everyday work is there and checked against the original (feature-by-feature comparison — `docs/32-sai-comparison.md`); `.sai2` files open and save without loss. A code audit came before the release (`docs/audit-2026-10-16.md`).
 
@@ -149,6 +151,26 @@ Everything people use in PaintTool SAI 2017 for everyday work is there and check
 - [x] Transparent color; keys for the pickers and brush density 10…100 (0.8.48)
 - [x] “Save changes?” question on exit (0.8.48)
 - [x] Own file viewer with thumbnails, as in SAI (0.9.4)
+
+### 1.1 — new in SAI 2 after 2017 (current version 1.1.0)
+
+Plan, analysis and measurements — `docs/41-sai2-after-2017.en.md`. New tools are separate kinds;
+brushes calibrated against SAI 2017 stay unchanged; files still open in SAI 2017.
+
+- [x] Control step: SAI 2026 base strokes against the 2017 sheets (engine differs: −20…35 % paint, −10…15 % diameter)
+- [x] Lasso Fill: freeform and polygonal, enclosed regions with gap tolerance, dilation, “ignore painted”, source (1.0.40)
+- [x] Blur tool: blur only, “blur width”; checked against live SAI 2026 within 16 levels (1.0.41)
+- [x] Smudge: drags paint, “Coloring”; our own transport model fitted to live SAI 2026 within ~30 levels at the blob edge (1.0.42)
+- [x] Radial symmetry: up to 20 parts, mirrored or rotated, angle and centre (1.1.0)
+- [x] Scatter brush: shapes with random offset, size, angle, width, count and colour; distributions checked against SAI 2026 (1.1.0)
+- [x] Effect Pen: the stroke goes on with a layer blend mode (1.1.0)
+- [x] Grid deformation Lattice and Mesh (instead of Liquify, which SAI 2026 lacks) (1.1.0)
+- [x] Pixel Art Pen, binary eraser, binary selection pen and eraser; dots as in SAI (1.1.0)
+- [x] Brush details: stroke preview, minimum pressure for a stroke, Anti-Hook, Shift after starting a stroke (1.1.0)
+- [x] Canvas size presets; reserve and restore tool settings (1.1.0)
+- [x] Rulers: parallel lines, concentric ellipses, vanishing point (1.1.0)
+- [x] Asset Manager: swatch sets, scratch pads, papers, forms, textures and tips, groups, asset from a layer (1.1.0)
+- [x] 2026 details: lasso stabilizer, grayscale, canvas list in View, clearing Recent (1.1.0)
 
 ### Beyond the plan
 - [x] Dark interface theme: “Window → Dark theme” (the canvas and drawing colors stay as they are)
@@ -239,22 +261,11 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 - [ ] 3D: camera from the perspective ruler
 - [ ] 3D: turning the model into lines (crease outline)
 
-### New in SAI 2 after 2017
+### Leftovers of new SAI 2 features
 
-Plan, analysis and order — `docs/41-sai2-after-2017.en.md`. New tools are separate kinds; brushes
-calibrated against SAI 2017 stay unchanged; files still open in SAI 2017.
+Not done in section 1.1 — needs a live check or compatible storage.
 
-- [x] Control step: SAI 2026 base strokes against the 2017 sheets (engine differs: −20…35 % paint, −10…15 % diameter)
-- [x] Lasso Fill: freeform and polygonal, enclosed regions with gap tolerance, dilation, “ignore painted”, source (1.0.40)
-- [x] Blur tool: blur only, “blur width”; checked against live SAI 2026 within 16 levels (1.0.41)
-- [x] Smudge: drags paint, “Coloring”; our own transport model fitted to live SAI 2026 within ~30 levels at the blob edge (1.0.42)
-- [ ] Line and point symmetry, up to 20 parts
-- [ ] Scattering brush and Effect Pen
-- [ ] Liquify: not in the 2026 builds (name only) — grid deformation instead (Lattice / Mesh from Alpha)
-- [ ] Pixel Art Pen, binary eraser, binary selection pen and eraser
-- [ ] Brush details: minimum pressure, hook trimming, Anti-Ripple, Shift after starting a stroke, brush preview
-- [ ] Canvas size presets; reserve and restore tool settings
-- [ ] Rulers: parallel lines, concentric ellipses, vanishing point
-- [ ] Groups and Asset Manager, swatch sets
-- [ ] 2026 details: wand/bucket “reduce small omissions”, selection operation in settings, lasso stabilizer, grayscale, view list, clearing Recent
+- [ ] Anti-Ripple for the flattest large brushes
+- [ ] “Reduce gaps at tips” for the wand and bucket
+- [ ] Layer ARGB colour picker for the Pixel Art Pen; colour (ARGB) assets from a layer; custom tools per layer type
 - [ ] Binary linework tools — if compatible storage is found
