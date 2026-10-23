@@ -26,6 +26,13 @@ pub enum Kind {
     Ellipse,
     /// Перспектива с 1, 2 или 3 точками схода.
     Perspective(u8),
+    /// Параллельные линии (SAI 2017-11+): штрих идёт прямо, параллельно линейке, от точки начала.
+    Parallel,
+    /// Концентрические эллипсы: штрих идёт по эллипсу с тем же центром, формой и наклоном,
+    /// проходящему через точку начала.
+    Concentric,
+    /// Точка схода (лучи): штрих идёт по прямой из точки начала к точке схода `vp[0]`.
+    Radial,
 }
 
 /// За что взялись при правке.
@@ -116,7 +123,7 @@ impl Ruler {
     pub fn place_vps(&mut self, c: [f32; 2], view_min: f32) {
         let m = view_min.max(8.0);
         self.vp = match self.kind {
-            Kind::Perspective(1) => [c, [c[0] + m, c[1]], [c[0], c[1] + m]],
+            Kind::Perspective(1) | Kind::Radial => [c, [c[0] + m, c[1]], [c[0], c[1] + m]],
             _ => [[c[0] - 0.45 * m, c[1] - 0.1 * m], [c[0] + 0.45 * m, c[1] - 0.1 * m], [c[0], c[1] + 0.6 * m]],
         };
     }
@@ -125,6 +132,7 @@ impl Ruler {
     pub fn vps(&self) -> usize {
         match self.kind {
             Kind::Perspective(n) => n.clamp(1, 3) as usize,
+            Kind::Radial => 1,
             _ => 0,
         }
     }
@@ -190,6 +198,56 @@ impl Ruler {
         [self.start[0] + t * g[0], self.start[1] + t * g[1]]
     }
 
+    /// Линейка ведёт штрих от точки его начала (параллельные, концентрические, точка схода).
+    pub fn from_start(&self) -> bool {
+        matches!(self.kind, Kind::Parallel | Kind::Concentric | Kind::Radial)
+    }
+
+    /// Точка штриха у линеек «от начала»: `first` — начало штриха.
+    pub fn snap_from(&mut self, p: [f32; 2], first: bool) -> [f32; 2] {
+        if first {
+            self.start = p;
+            return p;
+        }
+        let st = self.start;
+        let line = |dir: [f32; 2]| {
+            let l = dir[0].hypot(dir[1]);
+            if l < 1e-6 {
+                return st;
+            }
+            let g = [dir[0] / l, dir[1] / l];
+            let d = sub(p, st);
+            let t = d[0] * g[0] + d[1] * g[1];
+            [st[0] + t * g[0], st[1] + t * g[1]]
+        };
+        match self.kind {
+            Kind::Parallel => line([self.angle.cos(), self.angle.sin()]),
+            Kind::Radial => line(sub(self.vp[0], st)),
+            Kind::Concentric => {
+                // эллипс через начало: те же полуоси, умноженные на «радиус» точки начала
+                let k = self.ellipse_scale(st);
+                if k < 1e-6 {
+                    return st;
+                }
+                let l = rot(sub(p, self.center), -self.tilt);
+                let u = [l[0] / (self.rx * k), l[1] / (self.ry * k)];
+                let n = (u[0] * u[0] + u[1] * u[1]).sqrt();
+                if n < 1e-6 {
+                    return st;
+                }
+                let e = rot([u[0] / n * self.rx * k, u[1] / n * self.ry * k], self.tilt);
+                [self.center[0] + e[0], self.center[1] + e[1]]
+            }
+            _ => p,
+        }
+    }
+
+    /// Во сколько раз эллипс линейки меньше эллипса с тем же центром через точку `p`.
+    pub fn ellipse_scale(&self, p: [f32; 2]) -> f32 {
+        let l = rot(sub(p, self.center), -self.tilt);
+        ((l[0] / self.rx.max(1e-6)).powi(2) + (l[1] / self.ry.max(1e-6)).powi(2)).sqrt()
+    }
+
     /// Прижимать ли сейчас штрих к линейке.
     pub fn active(&self) -> bool {
         self.visible && !self.ignore && self.placed
@@ -204,7 +262,7 @@ impl Ruler {
                 let t = d[0] * c + d[1] * s;
                 [self.pivot[0] + t * c, self.pivot[1] + t * s]
             }
-            Kind::Perspective(_) => p,
+            Kind::Perspective(_) | Kind::Parallel | Kind::Concentric | Kind::Radial => p,
             Kind::Ellipse => {
                 let l = rot(sub(p, self.center), -self.tilt);
                 let u = [l[0] / self.rx, l[1] / self.ry];
@@ -225,18 +283,18 @@ impl Ruler {
             return None;
         }
         match self.kind {
-            Kind::Perspective(_) => (0..self.vps()).find(|&i| {
+            Kind::Perspective(_) | Kind::Radial => (0..self.vps()).find(|&i| {
                 let d = sub(p, self.vp[i]);
                 d[0].hypot(d[1]) * zoom < GRIP + 4.0
             })
             .map(|i| Grip::Vp(i as u8)),
-            Kind::Straight => {
+            Kind::Straight | Kind::Parallel => {
                 let (s, c) = self.angle.sin_cos();
                 let d = sub(p, self.pivot);
                 let across = (-s * d[0] + c * d[1]) * zoom;
                 (-3.0..=BAND).contains(&across).then_some(if self.lock_pivot { Grip::Rotate } else { Grip::Move })
             }
-            Kind::Ellipse => {
+            Kind::Ellipse | Kind::Concentric => {
                 let l = rot(sub(p, self.center), -self.tilt);
                 let tol = GRIP / zoom;
                 let side = |v: f32, r: f32| -> Option<i8> {
@@ -263,7 +321,13 @@ impl Ruler {
     /// Перетащить взятое из `from` в `to`.
     pub fn drag(&mut self, grip: Grip, from: [f32; 2], to: [f32; 2]) {
         let d = sub(to, from);
-        match (self.kind, grip) {
+        // параллельные правятся как прямая, концентрические — как эллипс
+        let kind = match self.kind {
+            Kind::Parallel => Kind::Straight,
+            Kind::Concentric => Kind::Ellipse,
+            k => k,
+        };
+        match (kind, grip) {
             (Kind::Straight, Grip::Move) => {
                 self.pivot = [self.pivot[0] + d[0], self.pivot[1] + d[1]];
             }
@@ -376,6 +440,26 @@ mod tests {
 
     /// Правка как в образце: полоса прямой — сдвиг (с закреплённой осью — поворот), мимо —
     /// ничего; у эллипса сторона рамки тянет одну сторону, внутри — сдвиг, снаружи — поворот.
+    #[test]
+    fn rulers_from_the_stroke_start() {
+        let mut r = shown(Kind::Parallel);
+        r.angle = 0.0;
+        r.snap_from([10.0, 50.0], true);
+        assert!(close(r.snap_from([40.0, 70.0], false), [40.0, 50.0]));
+        let mut r = shown(Kind::Radial);
+        r.vp[0] = [100.0, 100.0];
+        r.snap_from([0.0, 100.0], true);
+        assert!(close(r.snap_from([50.0, 130.0], false), [50.0, 100.0]));
+        let mut r = shown(Kind::Concentric);
+        r.center = [0.0, 0.0];
+        r.rx = 20.0;
+        r.ry = 10.0;
+        r.tilt = 0.0;
+        r.snap_from([40.0, 0.0], true);
+        // эллипс через начало — полуоси 40 и 20
+        assert!(close(r.snap_from([0.0, 5.0], false), [0.0, 20.0]));
+    }
+
     #[test]
     fn grips_follow_the_reference() {
         let mut s = shown(Kind::Straight);

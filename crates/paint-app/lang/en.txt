@@ -1187,3 +1187,8 @@ Zip с паролем = Password-protected zip
 Настройки инструмента запомнены = Tool settings reserved
 Отменить возврат = Undo Restore
 Поставить заготовке текущий размер = Give the preset the current size
+
+# Линейки 2017-11
+Концентрические эллипсы = Concentric Ellipses
+Параллельные линии = Parallel Lines
+Точка схода (лучи) = Vanishing Point (rays)

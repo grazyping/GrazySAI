@@ -74,6 +74,12 @@ not analysed; live checks only on official builds, hidden display, a separate Wi
 - **Canvas presets and reserved settings:** the SAI 2026 New Canvas window has a preset list
   ("512 × 512 - 72ppi" etc.) with edit and add buttons; SAI 2020+ tools have Reserve Current
   Settings / Restore Reserved Settings (here — in the tool cell menu, with Undo Restore).
+- **Rulers (2017-11-24):** the SAI 2026 Ruler menu has Straight, Ellipse, Parallel Lines, Concentric
+  Ellipse, Vanishing Point. Showing the ruler under Wine failed ("Windows function call failed"
+  errors), so the behaviour follows the names: Parallel Lines — the stroke goes straight, parallel
+  to the ruler, from its start point; Concentric Ellipse — along the ellipse with the same centre
+  and shape through the start point; Vanishing Point — along the ray to the point. To be checked on
+  real Windows.
 - **Control step (item 1) done.** The Pencil sheet (5 hardness steps × sizes 1–100, a size-20 line,
   density 100, mouse) in 2026-07-02b against the same 2017 sheet: at mid hardness 2026 dabs carry
   20–35 % less paint and are 10–15 % smaller in diameter (50 % level); size-20 lines are nearly the same

@@ -1186,3 +1186,8 @@ Zip с паролем = Zip con contraseña
 Настройки инструмента запомнены = Ajustes de la herramienta reservados
 Отменить возврат = Deshacer restauración
 Поставить заготовке текущий размер = Dar al preajuste el tamaño actual
+
+# Линейки 2017-11
+Концентрические эллипсы = Elipses concéntricas
+Параллельные линии = Líneas paralelas
+Точка схода (лучи) = Punto de fuga (rayos)

@@ -4234,6 +4234,8 @@ app.open_canvas_dialog(d == "resolution")
         }
         let [x, y] = if matches!(self.ruler.kind, ruler::Kind::Perspective(_)) {
             self.ruler.snap_perspective([p.x, p.y], first, self.zoom)
+        } else if self.ruler.from_start() {
+            self.ruler.snap_from([p.x, p.y], first)
         } else {
             self.ruler.snap([p.x, p.y])
         };
@@ -6339,12 +6341,15 @@ app.open_canvas_dialog(d == "resolution")
                     (ruler::Kind::Perspective(1), tr("Перспектива: 1 точка")),
                     (ruler::Kind::Perspective(2), tr("Перспектива: 2 точки")),
                     (ruler::Kind::Perspective(3), tr("Перспектива: 3 точки")),
+                    (ruler::Kind::Parallel, tr("Параллельные линии")),
+                    (ruler::Kind::Concentric, tr("Концентрические эллипсы")),
+                    (ruler::Kind::Radial, tr("Точка схода (лучи)")),
                 ] {
                     if ui.radio(self.ruler.kind == kind, label).clicked() {
                         let was = self.ruler.kind;
                         self.ruler.kind = kind;
                         // точки схода — заново посреди вида, если сменилось их число
-                        if was != kind && matches!(kind, ruler::Kind::Perspective(_)) && self.ruler.placed {
+                        if was != kind && matches!(kind, ruler::Kind::Perspective(_) | ruler::Kind::Radial) && self.ruler.placed {
                             let (c, min) = self.view_frame();
                             self.ruler.place_vps(c, min);
                         }
@@ -6356,7 +6361,7 @@ app.open_canvas_dialog(d == "resolution")
                 }
                 ui.separator();
                 ui.checkbox(&mut self.ruler.ignore, tr("Не замечать линейку"));
-                ui.add_enabled_ui(self.ruler.kind == ruler::Kind::Straight, |ui| {
+                ui.add_enabled_ui(matches!(self.ruler.kind, ruler::Kind::Straight | ruler::Kind::Parallel), |ui| {
                     ui.checkbox(&mut self.ruler.lock_pivot, tr("Закрепить ось"))
                         .on_hover_text(tr("Ctrl + перетаскивание полосы поворачивает линейку вокруг оси"));
                 });
@@ -8648,8 +8653,46 @@ app.open_canvas_dialog(d == "resolution")
                 painter.line_segment([c - d, c + d], egui::Stroke::new(1.0_f32, ink));
             }
         };
+        // через курсор — линия, по которой пойдёт штрих у линеек «от начала»
+        let hover = painter.ctx().input(|i| i.pointer.hover_pos()).filter(|m| painter.clip_rect().contains(*m));
+        let guide = Color32::from_rgba_premultiplied(30, 120, 105, 160).gamma_multiply(if r.ignore { 0.4 } else { 1.0 });
+        let far = painter.clip_rect().size().length() * 2.0;
         match r.kind {
-            ruler::Kind::Straight => {
+            ruler::Kind::Parallel | ruler::Kind::Radial => {
+                if let Some(m) = hover {
+                    let mc = xf.to_canvas(m);
+                    let to = if r.kind == ruler::Kind::Parallel { [mc.x + r.angle.cos() * 10.0, mc.y + r.angle.sin() * 10.0] } else { r.vp[0] };
+                    let d = (s(to) - m).normalized();
+                    painter.line_segment([m - d * far, m + d * far], egui::Stroke::new(1.0_f32, guide));
+                }
+            }
+            ruler::Kind::Concentric => {
+                if let Some(m) = hover {
+                    let mc = xf.to_canvas(m);
+                    let k = r.ellipse_scale([mc.x, mc.y]);
+                    let (sn, cs) = r.tilt.sin_cos();
+                    let pts: Vec<Pos2> = (0..96).map(|i| {
+                        let (st, ct) = (i as f32 / 96.0 * std::f32::consts::TAU).sin_cos();
+                        let l = [r.rx * k * ct, r.ry * k * st];
+                        s([r.center[0] + cs * l[0] - sn * l[1], r.center[1] + sn * l[0] + cs * l[1]])
+                    }).collect();
+                    painter.add(egui::Shape::closed_line(pts, egui::Stroke::new(1.0_f32, guide)));
+                }
+            }
+            _ => {}
+        }
+        match r.kind {
+            ruler::Kind::Radial => {
+                let c = s(r.vp[0]);
+                let faint = Color32::from_rgba_premultiplied(16, 60, 54, 60);
+                for k in 0..36 {
+                    let t = k as f32 / 36.0 * std::f32::consts::TAU;
+                    painter.line_segment([c, c + Vec2::angled(t) * far], egui::Stroke::new(1.0_f32, faint));
+                }
+                painter.circle_filled(c, 4.0, ink);
+                painter.circle_stroke(c, 8.0, egui::Stroke::new(1.5_f32, ink));
+            }
+            ruler::Kind::Straight | ruler::Kind::Parallel => {
                 // линия на экране и нормаль в сторону полосы
                 let (sn, cs) = r.angle.sin_cos();
                 let a = s(r.pivot);
@@ -8710,7 +8753,7 @@ app.open_canvas_dialog(d == "resolution")
                     painter.circle_stroke(c, 8.0, egui::Stroke::new(1.5_f32, col));
                 }
             }
-            ruler::Kind::Ellipse => {
+            ruler::Kind::Ellipse | ruler::Kind::Concentric => {
                 let z = self.zoom;
                 let inset = ruler::RING / 2.0 / z;
                 let n = 96;
