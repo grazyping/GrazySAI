@@ -797,6 +797,22 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
             p.circle_filled(ctr + Vec2::new(-k * 0.1, -k * 0.15), k * 0.4, c);
             glyph(p, r, c, "lasso");
         }
+        "scatter" => {
+            // россыпь точек разного размера
+            for (x, y, rr) in [(-0.6, 0.4, 0.22), (-0.1, -0.5, 0.16), (0.45, 0.1, 0.26), (0.1, 0.6, 0.12), (0.65, -0.55, 0.14), (-0.55, -0.2, 0.1)] {
+                p.circle_filled(ctr + Vec2::new(x * k, y * k), rr * k, c);
+            }
+        }
+        "effectpen" => {
+            // перо и звёздочка эффекта
+            glyph(p, Rect::from_min_size(r.min + r.size() * 0.25, r.size() * 0.75), c, "pen");
+            let o = ctr + Vec2::new(-k * 0.45, -k * 0.45);
+            for i in 0..4 {
+                let a = i as f32 * PI / 4.0;
+                let d = Vec2::new(a.cos(), a.sin()) * k * 0.3;
+                p.line_segment([o - d, o + d], s);
+            }
+        }
         // значки меню (новые пункты сверх SAI)
         "smudge" => {
             // палец: дуга и след

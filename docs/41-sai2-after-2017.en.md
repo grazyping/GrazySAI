@@ -39,6 +39,19 @@ not analysed; live checks only on official builds, hidden display, a separate Wi
   the stroke middle, ~¼ 10 px off, barely at the edge) with smearing. Ours: “shift under the dab by a share
   of the step + a carried reservoir” (0.87 of the size; 0.83 / 0.22 / 0.7), fitted by search; within ~30
   levels at the blob edge. “Coloring” not checked.
+- **Radial symmetry:** Division N with Line Symmetry gives N axes and 2N copies, without it N
+  rotations; the first axis is vertical through the centre.
+- **Scatter:** defaults 50 px, min size 50 %, hardness 100 %, spacing 25 %, Simple Circle shape,
+  one shape per step. Sheet of 8 mouse strokes (size 10, spacing 201 %): Scattering S shifts across
+  the stroke uniformly up to ±S·size (201 % → ±20 px, σ 11.5–11.8); All Direction adds an
+  independent shift along it (a square); Gaussian at 99 % gives σ 4.4 (≈ 0.44·S, tails to ±1.3·S);
+  Size Jitter 100 % multiplies by 1 − u (mean ink diameter 4.0 of 8.5); Count 2 with Cnt Jitter
+  100 % averages 1.5 shapes, at Count 1 the jitter does nothing; Hue Jitter 100 % covers the whole
+  wheel, Brightness Jitter 100 % is ±100 % clamped (half of the shapes of a white colour stay
+  white). Angle Control: None / Auto / Pen Direction.
+- **Effect Pen:** the mode comes from the layer blend mode list; Multiply red (252, 0, 0) over the
+  same red gives 249, over transparent pixels it paints normally. We use the layer blend formula
+  with the stroke coverage as opacity.
 - **Control step (item 1) done.** The Pencil sheet (5 hardness steps × sizes 1–100, a size-20 line,
   density 100, mouse) in 2026-07-02b against the same 2017 sheet: at mid hardness 2026 dabs carry
   20–35 % less paint and are 10–15 % smaller in diameter (50 % level); size-20 lines are nearly the same

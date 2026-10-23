@@ -2671,6 +2671,22 @@ app.open_canvas_dialog(d == "resolution")
         self.show_update = open && !close;
     }
 
+    /// Цвет мазка и случайности кисти-разброса: своё зерно у каждого мазка; цвет — с разбросом
+    /// на весь мазок или (флажок «К каждой форме») свой у каждой формы.
+    fn stroke_color(&self, stroke: &mut Stroke) -> [u8; 3] {
+        let c = self.color();
+        let fg = [c.r(), c.g(), c.b()];
+        let Some(sc) = stroke.params.scatter else { return fg };
+        stroke.seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64);
+        let bg = [self.back.r(), self.back.g(), self.back.b()];
+        if sc.each_shape {
+            stroke.shape_colors = Some((fg, bg));
+            fg
+        } else {
+            sc.color(fg, bg, stroke.seed)
+        }
+    }
+
     /// Поменять основной и фоновый цвет (X, стрелка у квадратов цвета).
     fn swap_colors(&mut self) {
         let fore = self.color();
@@ -4207,12 +4223,13 @@ app.open_canvas_dialog(d == "resolution")
             _ => None,
         };
         self.last_point = Some(p);
+        let rgb = self.stroke_color(&mut stroke);
         if self.line_from.is_some() {
-            self.live = Some(LiveStroke::new(self.selected.clone(), stroke, [c.r(), c.g(), c.b()]));
+            self.live = Some(LiveStroke::new(self.selected.clone(), stroke, rgb));
             self.straight_to(p);
             return;
         }
-        let mut live = LiveStroke::new(self.selected.clone(), stroke, [c.r(), c.g(), c.b()]);
+        let mut live = LiveStroke::new(self.selected.clone(), stroke, rgb);
         live.stroke.add_point(self.smoother.push(p));
         let keys = self.doc.live_update(&mut live);
         self.invalidate(keys);
@@ -4234,8 +4251,8 @@ app.open_canvas_dialog(d == "resolution")
         stroke.set_grain(self.grain_for(if eraser { self.eraser_index() } else { self.brush }));
         let tool_index = if eraser { self.eraser_index() } else { self.brush };
         self.attach_dynamics(&mut stroke, tool_index);
-        let c = self.color();
-        let mut live = LiveStroke::new(self.selected.clone(), stroke, [c.r(), c.g(), c.b()]);
+        let rgb = self.stroke_color(&mut stroke);
+        let mut live = LiveStroke::new(self.selected.clone(), stroke, rgb);
         live.stroke.add_point(a);
         if (p.x - a.x).hypot(p.y - a.y) > 0.01 {
             live.stroke.add_point(p);
@@ -6975,11 +6992,20 @@ app.open_canvas_dialog(d == "resolution")
         let tool = &mut self.brushes[self.brush];
         let tool = &mut tool.brush;
         let (brush, grain, dyns, dyn_plugin) = (&mut tool.params, &mut tool.grain, &mut tool.dynamics, &mut tool.dyn_plugin);
-        sai_ui::row(ui, tr("Режим"), lw, false, |ui| {
-            egui::ComboBox::from_id_salt("paintmode")
-                .selected_text(tr("Обычный"))
-                .width(w - 8.0)
-                .show_ui(ui, |_| {});
+        // режим наложения мазка — у пера эффектов и разброса (у остальных в SAI он неактивен)
+        let has_mode = brush.effect.is_some();
+        sai_ui::row(ui, tr("Режим"), lw, has_mode, |ui| {
+            let cur = brush.effect.unwrap_or(BlendMode::Normal);
+            let shown = MODES.iter().find(|(m, _)| *m == cur).map_or(tr("Обычный"), |(_, n)| tr(n));
+            ui.add_enabled_ui(has_mode, |ui| {
+                egui::ComboBox::from_id_salt("paintmode").selected_text(shown).width(w - 8.0).height(500.0).show_ui(ui, |ui| {
+                    for (m, n) in MODES {
+                        if ui.selectable_label(cur == m, tr(n)).clicked() {
+                            brush.effect = Some(m);
+                        }
+                    }
+                });
+            });
         });
         sai_ui::row(ui, tr("Жесткость"), lw, true, |ui| {
             ui.spacing_mut().item_spacing.x = 1.0;
@@ -7075,6 +7101,9 @@ app.open_canvas_dialog(d == "resolution")
             if mix.blend_by_pressure && !mix.blur_only && !mix.smudge {
                 pct(ui, tr("Порог размыт."), &mut mix.blur_pressure);
             }
+        }
+        if let Some(sc) = brush.scatter.as_mut() {
+            scatter_panel(ui, sc, lw, w);
         }
         // проценты и масштаб 10–500 % — полоской, как в SAI
         let pct_bar = |ui: &mut egui::Ui, label: &str, v: &mut f32, on: bool| {
@@ -10093,8 +10122,9 @@ impl PaintApp {
                     params.erase = true;
                     params.mix = None;
                 }
-                let c = self.color();
-                self.scratch.live = Some(LiveStroke::new(vec![0], Stroke::new(params), [c.r(), c.g(), c.b()]));
+                let mut stroke = Stroke::new(params);
+                let rgb = self.stroke_color(&mut stroke);
+                self.scratch.live = Some(LiveStroke::new(vec![0], stroke, rgb));
             }
             if self.scratch.live.is_some() {
                 // все движения пера за кадр, а не одно последнее — иначе мазок становится ломаной
@@ -11422,6 +11452,72 @@ fn main() -> eframe::Result {
     )
 }
 
+/// Раздел «Россыпь» в настройках кисти-россыпи (как в SAI 2 2018+: угол, размер, шаг, сдвиг,
+/// ширина : высота, число форм, цвет).
+fn scatter_panel(ui: &mut egui::Ui, sc: &mut paint_core::scatter::ScatterParams, lw: f32, w: f32) {
+    use paint_core::scatter::AngleControl;
+    if !sai_ui::section(ui, "sec_scatter", tr("Россыпь")) {
+        return;
+    }
+    let pct = |ui: &mut egui::Ui, label: &str, v: &mut f32, max: f32| {
+        sai_ui::row(ui, label, lw, true, |ui| {
+            let mut x = *v * 100.0;
+            let text = format!("{:.0}%", x);
+            if sai_ui::bar(ui, &mut x, 0.0, max * 100.0, text, w, true).changed() {
+                *v = (x.round() / 100.0).clamp(0.0, max);
+            }
+        });
+    };
+    sai_ui::row(ui, tr("   Угол по"), lw, true, |ui| {
+        let names = [(AngleControl::None, tr("Нет")), (AngleControl::Auto, tr("Авто")), (AngleControl::Direction, tr("Направление пера"))];
+        let shown = names.iter().find(|(a, _)| *a == sc.angle_control).map_or("", |(_, n)| n);
+        egui::ComboBox::from_id_salt("scat_angle").selected_text(shown).width(w - 8.0).show_ui(ui, |ui| {
+            for (a, n) in names {
+                ui.selectable_value(&mut sc.angle_control, a, n);
+            }
+        });
+    });
+    sai_ui::row(ui, tr("   Угол"), lw, true, |ui| {
+        let mut d = sc.angle.to_degrees();
+        let text = format!("{:+.0}°", d);
+        if sai_ui::bar(ui, &mut d, -180.0, 180.0, text, w, true).changed() {
+            sc.angle = d.round().to_radians();
+        }
+    });
+    pct(ui, tr("   Разброс угла"), &mut sc.angle_jitter, 1.0);
+    pct(ui, tr("   Масштаб формы"), &mut sc.scaling, 2.0);
+    pct(ui, tr("   Разброс размера"), &mut sc.size_jitter, 1.0);
+    pct(ui, tr("   Разлёт"), &mut sc.scattering, 2.0);
+    sai_ui::row(ui, tr("   Ш : В"), lw, true, |ui| {
+        // ширина : высота как в SAI — 100:100, сжатие по одной из сторон
+        let mut t = sc.ratio.ln();
+        let (wd, ht) = if sc.ratio <= 1.0 { ((sc.ratio * 100.0).round(), 100.0) } else { (100.0, (100.0 / sc.ratio).round()) };
+        if sai_ui::bar(ui, &mut t, 0.01f32.ln(), 100f32.ln(), format!("{wd:.0}:{ht:.0}"), w, true).changed() {
+            sc.ratio = t.exp().clamp(0.01, 100.0);
+        }
+    });
+    pct(ui, tr("   Разброс Ш : В"), &mut sc.ratio_jitter, 1.0);
+    sai_ui::row(ui, tr("   Число"), lw, true, |ui| {
+        let mut v = sc.count as f32;
+        if sai_ui::bar(ui, &mut v, 1.0, 20.0, format!("{}", sc.count), w, true).changed() {
+            sc.count = v.round().clamp(1.0, 20.0) as u8;
+        }
+    });
+    pct(ui, tr("   Разброс числа"), &mut sc.count_jitter, 1.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.checkbox(&mut sc.all_directions, tr("Во все стороны"));
+        ui.checkbox(&mut sc.gaussian, tr("По Гауссу"));
+        ui.checkbox(&mut sc.absolute_size, tr("Размер без нажима")).on_hover_text(tr("Размер форм не зависит от нажима пера"));
+        ui.checkbox(&mut sc.int_position, tr("В целых точках"));
+    });
+    ui.label(tr("   Цвет:"));
+    pct(ui, tr("   Основной → фоновый"), &mut sc.fg_bg_jitter, 1.0);
+    pct(ui, tr("   Разброс оттенка"), &mut sc.hue_jitter, 1.0);
+    pct(ui, tr("   Разброс насыщенности"), &mut sc.sat_jitter, 1.0);
+    pct(ui, tr("   Разброс яркости"), &mut sc.bri_jitter, 1.0);
+    ui.checkbox(&mut sc.each_shape, tr("К каждой форме")).on_hover_text(tr("Свой цвет у каждой формы; без флажка — один на весь мазок"));
+}
+
 #[cfg(test)]
 mod input_tests {
     use super::*;
@@ -11472,3 +11568,4 @@ mod input_tests {
         assert!(lag(&raw, 10) > 50.0, "без дополнения сглаживание сильнее: {}", lag(&raw, 10));
     }
 }
+

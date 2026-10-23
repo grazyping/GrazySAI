@@ -181,6 +181,37 @@ pub fn run(report: Option<PathBuf>) -> bool {
             }
             Ok("8 копий".into())
         })),
+        ("кисть «Россыпь» и перо эффектов", Box::new(|_| {
+            let mut doc = Document::new(300, 100);
+            let mut b = paint_brush::ToolKind::Scatter.new_brush();
+            b.params.size = 10.0;
+            let sc = b.params.scatter.as_mut().ok_or("нет настроек россыпи")?;
+            sc.scattering = 1.0;
+            sc.count = 3;
+            let mut st = b.stroke(None);
+            st.seed = 11;
+            for x in (20..=280).step_by(4) {
+                st.add_point(InputPoint { x: x as f32, y: 50.0, pressure: 1.0 });
+            }
+            doc.commit_stroke(0, &st, [0, 0, 0]);
+            let off = (0..300).filter(|&x| (30..=40).any(|y| paint_core::pixel::to_rgba8(doc.layers[0].pixels.get(x, y))[3] > 128)).count();
+            if off < 10 {
+                return Err(format!("формы не разлетелись: {off}").into());
+            }
+            let mut e = paint_brush::ToolKind::EffectPen.new_brush();
+            e.params.effect = Some(paint_core::blend::BlendMode::Screen);
+            let mut st = e.stroke(None);
+            for y in 0..=100 {
+                st.add_point(InputPoint { x: 150.0, y: y as f32, pressure: 1.0 });
+            }
+            doc.commit_stroke(0, &st, [255, 255, 255]);
+            // «Экран» белым по чёрному — белое
+            let p = paint_core::pixel::to_rgba8(doc.layers[0].pixels.get(150, 50));
+            if p[0] < 250 {
+                return Err(format!("режим не сработал: {p:?}").into());
+            }
+            Ok(format!("{off}"))
+        })),
         ("слой 3D: модель glTF и отрисовка", Box::new(|_| {
             let t = std::time::Instant::now();
             let files = vec![("scene.glb".to_string(), include_bytes!("../../paint-3d/tests/data/scene.glb").to_vec())];

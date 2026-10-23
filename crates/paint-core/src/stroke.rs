@@ -503,6 +503,8 @@ struct Pending {
     pressure: f32,
     shape: Shape,
     grain: Option<DabGrain>,
+    /// Своя краска отпечатка (кисть-разброс с цветом у каждой формы), с предумножением.
+    color: Option<[f64; 4]>,
 }
 
 
@@ -555,6 +557,10 @@ pub struct Stroke {
     travel: f32,
     at: f32,
     speed: f32,
+    /// Зерно случайностей мазка (кисть-разброс): у каждого мазка своё.
+    pub seed: u64,
+    /// Кисть-разброс с цветом у каждой формы: основной и фоновый цвета.
+    pub shape_colors: Option<([u8; 3], [u8; 3])>,
 }
 
 impl Stroke {
@@ -583,6 +589,8 @@ impl Stroke {
             at: 0.0,
             speed: 0.0,
             mirror: Mirror::default(),
+            seed: 0,
+            shape_colors: None,
         }
     }
 
@@ -655,7 +663,12 @@ impl Stroke {
 
     /// Краска смешивается с холстом: штрих рисуется прямо в слой ([`Stroke::paint_mixed`]).
     pub fn is_mixing(&self) -> bool {
-        self.params.mix.is_some() && !self.params.erase
+        (self.params.mix.is_some() || self.colored_shapes()) && !self.params.erase
+    }
+
+    /// Кисть-разброс кладёт каждую форму своим цветом.
+    fn colored_shapes(&self) -> bool {
+        self.shape_colors.is_some() && self.params.scatter.is_some_and(|s| s.each_shape && s.has_color_jitter())
     }
 
     /// Последняя принятая точка траектории.
@@ -875,19 +888,19 @@ impl Stroke {
             let hp = InputPoint { x: p.x + ox * cs - oy * sn, y: p.y + ox * sn + oy * cs, ..p };
             let shape = Shape::Sai(hard(self), o);
             let with_grain = self.grain.as_ref().is_some_and(|g| g.texture.is_some());
-            self.emit(hp, shape, density, hair_d, with_grain);
+            self.emit(hp, shape, density, hair_d, with_grain, None);
         }
     }
 
     /// Отпечаток — в маску штриха и в очередь; при симметрии — и его отражения (как один штрих,
     /// пересекающий сам себя: у оси покрытие не удваивается).
-    fn emit(&mut self, p: InputPoint, shape: Shape, density: f32, diameter: f32, with_grain: bool) {
+    fn emit(&mut self, p: InputPoint, shape: Shape, density: f32, diameter: f32, with_grain: bool, color: Option<[f64; 4]>) {
         for q in self.mirror.images(p, shape.outer() + 1.0) {
             add_to_hard_mask(&mut self.hard_mask, q.x, q.y, &shape);
             self.dab_count += 1;
             let grain = if with_grain { self.dab_grain(q, diameter, shape.outer() + 1.0) } else { None };
             if self.is_mixing() {
-                self.pending.push(Pending { x: q.x, y: q.y, pressure: q.pressure, shape: shape.clone(), grain });
+                self.pending.push(Pending { x: q.x, y: q.y, pressure: q.pressure, shape: shape.clone(), grain, color });
             } else {
                 self.queued.push(Placed::new(q, shape.clone(), density, grain));
             }
@@ -917,6 +930,9 @@ impl Stroke {
         if density <= 0.0 || diameter <= 0.05 {
             return;
         }
+        if let Some(sc) = self.params.scatter {
+            return self.scatter_dab(p, &sc, diameter, density, fx.angle);
+        }
         // разброс — поперёк мазка
         let p = if fx.scatter != 0.0 {
             let h = self.heading.unwrap_or(0.0);
@@ -945,7 +961,46 @@ impl Stroke {
         // маска штриха — сразу: у образца её строят по окну отпечатков вокруг пачки, включая
         // следующие, так что все известные отпечатки уже в ней
         let with_grain = self.grain.is_some();
-        self.emit(p, shape, density, diameter, with_grain);
+        self.emit(p, shape, density, diameter, with_grain, None);
+    }
+
+    /// Кисть-разброс: несколько форм на шаг со своими сдвигом, размером, углом, толщиной и
+    /// (если надо) цветом (`scatter.rs`).
+    fn scatter_dab(&mut self, p: InputPoint, sc: &crate::scatter::ScatterParams, diameter: f32, density: f32, turn: f32) {
+        let heading = self.heading.unwrap_or(0.0);
+        let base = if sc.absolute_size { self.params.size } else { diameter };
+        let shapes = sc.shapes(self.seed, self.dab_count as u64, base, heading);
+        let colors = if self.colored_shapes() { self.shape_colors } else { None };
+        let tip = self.grain.as_ref().and_then(|g| g.tip.clone());
+        let with_grain = self.grain.as_ref().is_some_and(|g| g.texture.is_some() || g.blot.is_some());
+        for f in shapes {
+            let d = base * sc.scaling.clamp(0.01, 10.0) * f.size;
+            if d <= 0.05 {
+                continue;
+            }
+            let (mut x, mut y) = (p.x + f.dx, p.y + f.dy);
+            if sc.int_position {
+                (x, y) = (x.floor() + 0.5, y.floor() + 0.5);
+            }
+            let q = InputPoint { x, y, ..p };
+            let shape = match &tip {
+                Some(t) => {
+                    let a = t.angle + f.angle + turn;
+                    Shape::Stamp(t.pick(self.dab_count as u64), (d / 2.0).max(0.5), a.cos(), a.sin(), (t.ratio * f.ratio).clamp(0.01, 1.0))
+                }
+                None => {
+                    let dab = self.sai_dab_sized(p.pressure, d);
+                    let o = dab.opacity(self.step_at(p.pressure));
+                    Shape::Sai(dab, o)
+                }
+            };
+            let color = colors.map(|(fg, bg)| {
+                let c = sc.color(fg, bg, f.color_seed);
+                let k = density as f64;
+                [c[0] as f64 / 255.0 * k, c[1] as f64 / 255.0 * k, c[2] as f64 / 255.0 * k, k]
+            });
+            self.emit(q, shape, density, d, with_grain, color);
+        }
     }
 
     /// Кладёт отложенные отпечатки в покрытие штриха. Каждая плитка получает свои отпечатки в
@@ -1012,7 +1067,16 @@ impl Stroke {
         originals: &mut HashMap<Key, Option<Tile<Px>>>,
         finish: bool,
     ) -> Vec<Key> {
-        let Some(mix) = self.params.mix else { return Vec::new() };
+        let Some(mix) = self.params.mix else {
+            // кисть-разброс с цветом у каждой формы: формы кладутся по очереди своей краской
+            let batch = std::mem::take(&mut self.pending);
+            let mut changed = HashSet::new();
+            lay_batch(pixels, &batch, &self.hard_mask, [0.0; 4], None, preserve_opacity, sel, originals, &mut changed);
+            let keys: Vec<Key> = changed.into_iter().collect();
+            self.touched.extend(keys.iter().copied());
+            let _ = (rgb, finish);
+            return keys;
+        };
         if mix.smudge {
             return self.paint_smudge(pixels, rgb, preserve_opacity, sel, originals);
         }
@@ -1268,7 +1332,7 @@ fn lay_batch(
                     let t = tile.get_or_insert_with(|| Tile::filled([0; 4]));
                     t.0[i] = match marker {
                         Some(brush) => lay_marker(t.0[i], paint, brush, (cov * opacity) as f64),
-                        None => lay(t.0[i], paint, (cov * opacity) as f64, preserve_opacity),
+                        None => lay(t.0[i], d.color.unwrap_or(paint), (cov * opacity) as f64, preserve_opacity),
                     };
                 }
             });

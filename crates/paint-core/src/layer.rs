@@ -158,9 +158,9 @@ impl Layer {
 
     /// Накладывает покрытие штриха на одну плитку слоя.
     /// `sel` — плитка выделения: покрытие штриха умножается на неё (`None` — выделения нет).
-    pub fn apply_mask_tile(&mut self, key: Key, mask: &Tile<u16>, erase: bool, rgb: [u8; 3], sel: Option<&Tile<u16>>) {
+    pub fn apply_mask_tile(&mut self, key: Key, mask: &Tile<u16>, erase: bool, rgb: [u8; 3], sel: Option<&Tile<u16>>, effect: Option<crate::blend::BlendMode>) {
         let preserve = self.preserve_opacity;
-        mask_into_tile(self.pixels.tile_mut(key), mask, erase, rgb, preserve, sel);
+        mask_into_tile(self.pixels.tile_mut(key), mask, erase, rgb, preserve, sel, effect);
     }
 
     /// Переносит готовый штрих на слой цветом `rgb`. Возвращает данные для отмены.
@@ -171,7 +171,7 @@ impl Layer {
                 continue;
             }
             backup.push((*key, self.pixels.tiles.get(key).cloned()));
-            self.apply_mask_tile(*key, mask, stroke.params.erase, rgb, sel.tile(*key).as_ref());
+            self.apply_mask_tile(*key, mask, stroke.params.erase, rgb, sel.tile(*key).as_ref(), stroke.params.effect);
         }
         backup
     }
@@ -190,9 +190,41 @@ impl Layer {
     }
 }
 
+/// Перо эффектов: покрытие `mask` — непрозрачность краски `rgb`, наложенной режимом `mode`.
+fn effect_into_tile(tile: &mut Tile<Px>, mask: &Tile<u16>, rgb: [u8; 3], preserve: bool, sel: Option<&Tile<u16>>, mode: crate::blend::BlendMode) {
+    let k = ONE as f32;
+    let src = [rgb[0] as f32 / 255.0, rgb[1] as f32 / 255.0, rgb[2] as f32 / 255.0, 1.0];
+    for (i, (px, &m)) in tile.0.iter_mut().zip(mask.0.iter()).enumerate() {
+        let m = match sel {
+            Some(s) => crate::selection::limit(m as u32, s.0[i]),
+            None => m as u32,
+        };
+        if m == 0 || (preserve && px[3] == 0) {
+            continue;
+        }
+        let dst = px.map(|c| c as f32 / k);
+        let mut out = crate::blend::composite(mode, dst, src, m as f32 / k);
+        if preserve {
+            // непрозрачность прежняя, меняется только цвет
+            let s = if out[3] > 1e-9 { dst[3] / out[3] } else { 0.0 };
+            for c in out.iter_mut().take(3) {
+                *c *= s;
+            }
+            out[3] = dst[3];
+        }
+        let a = (out[3].clamp(0.0, 1.0) * k + 0.5) as u16;
+        *px = [0, 1, 2, 3].map(|c| if c == 3 { a } else { ((out[c].clamp(0.0, 1.0) * k + 0.5) as u16).min(a) });
+    }
+}
+
 /// Покрытие штриха `mask` (с учётом выделения `sel`) — в плитку цветом `rgb` или ластиком;
-/// `preserve` — сохранять непрозрачность. Плитки независимы — их можно класть параллельно.
-pub fn mask_into_tile(tile: &mut Tile<Px>, mask: &Tile<u16>, erase: bool, rgb: [u8; 3], preserve: bool, sel: Option<&Tile<u16>>) {
+/// `preserve` — сохранять непрозрачность; `effect` — перо эффектов: краска ложится этим режимом
+/// наложения (сверено с SAI 2026: на прозрачном — как обычная краска, на краске — формула режима).
+/// Плитки независимы — их можно класть параллельно.
+pub fn mask_into_tile(tile: &mut Tile<Px>, mask: &Tile<u16>, erase: bool, rgb: [u8; 3], preserve: bool, sel: Option<&Tile<u16>>, effect: Option<crate::blend::BlendMode>) {
+    if let Some(mode) = effect.filter(|_| !erase) {
+        return effect_into_tile(tile, mask, rgb, preserve, sel, mode);
+    }
     let color = rgb.map(|c| (c as u32 * ONE + 127) / 255);
     for (i, (px, &m)) in tile.0.iter_mut().zip(mask.0.iter()).enumerate() {
         let m = match sel {

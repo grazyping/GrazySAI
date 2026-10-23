@@ -239,11 +239,11 @@ impl Document {
             .iter()
             .map(|key| (*key, live.originals.entry(*key).or_insert_with(|| layer.pixels.tiles.get(key).cloned()).clone()))
             .collect();
-        let (erase, rgb, preserve, mask) = (live.stroke.params.erase, live.rgb, layer.preserve_opacity, &live.stroke.mask);
+        let (erase, rgb, preserve, mask, effect) = (live.stroke.params.erase, live.rgb, layer.preserve_opacity, &live.stroke.mask, live.stroke.params.effect);
         let run = |job: &mut (Key, Option<Tile<Px>>)| {
             if let Some(m) = mask.tiles.get(&job.0) {
                 let t = job.1.get_or_insert_with(|| Tile::filled(Px::default()));
-                crate::layer::mask_into_tile(t, m, erase, rgb, preserve, sel[&job.0].as_ref());
+                crate::layer::mask_into_tile(t, m, erase, rgb, preserve, sel[&job.0].as_ref(), effect);
             }
         };
         let threads = crate::threads();

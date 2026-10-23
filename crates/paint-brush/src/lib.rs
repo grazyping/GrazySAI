@@ -109,11 +109,15 @@ pub enum ToolKind {
     /// Заливка лассо (SAI 2026): обвести — залить; с «замкнутыми областями» — только то, что
     /// замкнуто линиями внутри обводки (docs/41).
     LassoFill,
+    /// «Россыпь» — Scatter в SAI 2018+: несколько форм на шаг со случайными сдвигом, размером, углом и цветом.
+    Scatter,
+    /// «Перо эффектов» (SAI 2019+): мазок ложится выбранным режимом наложения.
+    EffectPen,
 }
 
 impl ToolKind {
     /// В порядке меню SAI.
-    pub const ALL: [ToolKind; 14] = [
+    pub const ALL: [ToolKind; 16] = [
         ToolKind::Pencil,
         ToolKind::AirBrush,
         ToolKind::Brush,
@@ -128,6 +132,8 @@ impl ToolKind {
         ToolKind::Blur,
         ToolKind::Smudge,
         ToolKind::LassoFill,
+        ToolKind::Scatter,
+        ToolKind::EffectPen,
     ];
 
     pub fn key(self) -> &'static str {
@@ -146,6 +152,8 @@ impl ToolKind {
             ToolKind::Blur => "blur",
             ToolKind::Smudge => "smudge",
             ToolKind::LassoFill => "lassofill",
+            ToolKind::Scatter => "scatter",
+            ToolKind::EffectPen => "effectpen",
         }
     }
 
@@ -170,6 +178,8 @@ impl ToolKind {
             ToolKind::Blur => "Размытие",
             ToolKind::Smudge => "Растушёвка",
             ToolKind::LassoFill => "Заливка лассо",
+            ToolKind::Scatter => "Россыпь",
+            ToolKind::EffectPen => "Перо эффектов",
         }
     }
 
@@ -234,6 +244,19 @@ impl ToolKind {
                 "Растуш.",
                 "smudge",
                 BrushParams { min_size: 0.0, density_by_pressure: true, mix: Some(MixParams { smudge: true, blend_by_pressure: false, ..MixParams::new(0.0, 0.0, 0.5) }), ..b(50.0, 0.0, 0.9) },
+            ),
+            // «Разброс» в SAI 2026: 50 px, мин. размер 50 %, жёсткость 100 %, шаг 25 %, форма —
+            // простой круг; разбросы выключены, одна форма на шаг
+            ToolKind::Scatter => (
+                "Россыпь",
+                "scatter",
+                BrushParams { min_size: 0.5, spacing: 0.25, scatter: Some(paint_core::scatter::ScatterParams::default()), effect: Some(paint_core::blend::BlendMode::Normal), ..b(50.0, 1.0, 1.0) },
+            ),
+            // «Перо эффектов» в SAI 2026: 50 px, мин. размер 50 %, самая жёсткая ступень, режим «Обычный»
+            ToolKind::EffectPen => (
+                "Эффекты",
+                "effectpen",
+                BrushParams { min_size: 0.5, effect: Some(paint_core::blend::BlendMode::Normal), ..b(50.0, 1.0, 1.0) },
             ),
             ToolKind::Blur => (
                 "Размытие",
@@ -341,6 +364,14 @@ pub fn read(b: &mut Brush, s: &Kv, prefix: &str) {
         m.smudge_uncolor = m.smudge_uncolor.clamp(0.0, 1.0);
         m.blur_width = m.blur_width.clamp(0.0, 1.0);
     }
+    if let Some(e) = p.effect.as_mut() {
+        if let Some(i) = s.f32(&k("effect")) {
+            *e = paint_core::blend::BlendMode::ALL.get(i as usize).copied().unwrap_or(paint_core::blend::BlendMode::Normal);
+        }
+    }
+    if let Some(sc) = p.scatter.as_mut() {
+        read_scatter(sc, s, prefix);
+    }
     p.size = p.size.clamp(0.1, 5000.0);
     let g = &mut b.grain;
     if let Some(v) = s.str(&k("bristle")) {
@@ -415,6 +446,12 @@ pub fn write(b: &Brush, s: &mut Kv, prefix: &str) {
             s.set(&k("smudge_uncolor"), m.smudge_uncolor);
         }
     }
+    if let Some(e) = p.effect {
+        s.set(&k("effect"), paint_core::blend::BlendMode::ALL.iter().position(|m| *m == e).unwrap_or(0));
+    }
+    if let Some(sc) = &p.scatter {
+        write_scatter(sc, s, prefix);
+    }
     let g = &b.grain;
     s.set(&k("form"), g.form.as_deref().unwrap_or(""));
     s.set(&k("bristle"), g.bristle.as_deref().unwrap_or(""));
@@ -438,6 +475,80 @@ pub fn write(b: &Brush, s: &mut Kv, prefix: &str) {
     s.set(&k("tex_strength"), g.tex_strength);
     s.set(&k("tex_scale"), g.tex_scale);
     s.set(&k("tex_min_density"), g.by_min_density as u8);
+}
+
+/// Настройки разброса (ключи `sc_…`); значения обрезаются до пределов SAI.
+fn read_scatter(sc: &mut paint_core::scatter::ScatterParams, s: &Kv, prefix: &str) {
+    use paint_core::scatter::AngleControl;
+    let k = |name: &str| format!("{prefix}sc_{name}");
+    if let Some(v) = s.f32(&k("angle_control")) {
+        sc.angle_control = match v as u8 {
+            0 => AngleControl::None,
+            2 => AngleControl::Direction,
+            _ => AngleControl::Auto,
+        };
+    }
+    let mut deg = sc.angle.to_degrees();
+    s.read_f32(&k("angle"), &mut deg);
+    sc.angle = deg.clamp(-180.0, 180.0).to_radians();
+    for (name, v, max) in [
+        ("angle_jitter", &mut sc.angle_jitter, 1.0),
+        ("scaling", &mut sc.scaling, 10.0),
+        ("size_jitter", &mut sc.size_jitter, 1.0),
+        ("scattering", &mut sc.scattering, 2.0),
+        ("ratio", &mut sc.ratio, 100.0),
+        ("ratio_jitter", &mut sc.ratio_jitter, 1.0),
+        ("count_jitter", &mut sc.count_jitter, 1.0),
+        ("fg_bg_jitter", &mut sc.fg_bg_jitter, 1.0),
+        ("hue_jitter", &mut sc.hue_jitter, 1.0),
+        ("sat_jitter", &mut sc.sat_jitter, 1.0),
+        ("bri_jitter", &mut sc.bri_jitter, 1.0),
+    ] {
+        s.read_f32(&k(name), v);
+        *v = v.clamp(0.0, max);
+    }
+    sc.scaling = sc.scaling.max(0.01);
+    sc.ratio = sc.ratio.max(0.01);
+    if let Some(v) = s.f32(&k("count")) {
+        sc.count = v.clamp(1.0, 20.0) as u8;
+    }
+    s.read_bool(&k("all_directions"), &mut sc.all_directions);
+    s.read_bool(&k("gaussian"), &mut sc.gaussian);
+    s.read_bool(&k("absolute_size"), &mut sc.absolute_size);
+    s.read_bool(&k("int_position"), &mut sc.int_position);
+    s.read_bool(&k("each_shape"), &mut sc.each_shape);
+}
+
+fn write_scatter(sc: &paint_core::scatter::ScatterParams, s: &mut Kv, prefix: &str) {
+    use paint_core::scatter::AngleControl;
+    let k = |name: &str| format!("{prefix}sc_{name}");
+    s.set(&k("angle_control"), match sc.angle_control {
+        AngleControl::None => 0,
+        AngleControl::Auto => 1,
+        AngleControl::Direction => 2,
+    });
+    s.set(&k("angle"), sc.angle.to_degrees());
+    for (name, v) in [
+        ("angle_jitter", sc.angle_jitter),
+        ("scaling", sc.scaling),
+        ("size_jitter", sc.size_jitter),
+        ("scattering", sc.scattering),
+        ("ratio", sc.ratio),
+        ("ratio_jitter", sc.ratio_jitter),
+        ("count_jitter", sc.count_jitter),
+        ("fg_bg_jitter", sc.fg_bg_jitter),
+        ("hue_jitter", sc.hue_jitter),
+        ("sat_jitter", sc.sat_jitter),
+        ("bri_jitter", sc.bri_jitter),
+    ] {
+        s.set(&k(name), v);
+    }
+    s.set(&k("count"), sc.count);
+    s.set(&k("all_directions"), sc.all_directions as u8);
+    s.set(&k("gaussian"), sc.gaussian as u8);
+    s.set(&k("absolute_size"), sc.absolute_size as u8);
+    s.set(&k("int_position"), sc.int_position as u8);
+    s.set(&k("each_shape"), sc.each_shape as u8);
 }
 
 /// Имя файла из названия: буквы, цифры, пробел и `-_().`, остальное — `_`.
@@ -471,7 +582,8 @@ impl Brush {
         // картинка или (у сплюснутой круглой кисти) круг с краем по жёсткости
         let mut cells = g.tip.as_deref().map(paint_core::paper::stamps_of).unwrap_or_default();
         let dyn_tip = self.dynamics.iter().any(|d| d.output.needs_tip());
-        if cells.is_empty() && (g.tip_ratio < 0.999 || g.tip_follow || dyn_tip) {
+        // у разброса формы поворачиваются и сжимаются — тоже кругом-картинкой
+        if cells.is_empty() && (g.tip_ratio < 0.999 || g.tip_follow || dyn_tip || self.params.scatter.is_some()) {
             cells.push(Arc::new(paint_core::Stamp::disc(self.params.hardness)));
         }
         let tip = (!cells.is_empty()).then(|| {

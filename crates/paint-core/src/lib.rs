@@ -18,6 +18,7 @@ pub mod history_disk;
 pub mod paper;
 pub mod pixel;
 pub mod resample;
+pub mod scatter;
 pub mod selection;
 pub mod stabilizer;
 pub mod stroke;

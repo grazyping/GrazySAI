@@ -34,6 +34,10 @@ pub struct BrushParams {
     /// Двоичное перо: отпечатки без сглаживания, плотность ровная (как Binary Pen в SAI;
     /// точное правило линий SAI не повторено, docs/31-gradient-selection.md).
     pub binary: bool,
+    /// Кисть-разброс (SAI 2 2018+): несколько форм на шаг со случайностями.
+    pub scatter: Option<crate::scatter::ScatterParams>,
+    /// Перо эффектов (SAI 2 2019+): мазок ложится режимом наложения, а не обычной краской.
+    pub effect: Option<crate::blend::BlendMode>,
 }
 
 impl Default for BrushParams {
@@ -54,6 +58,8 @@ impl Default for BrushParams {
             amplify: 0.0,
             mix: None,
             binary: false,
+            scatter: None,
+            effect: None,
         }
     }
 }
