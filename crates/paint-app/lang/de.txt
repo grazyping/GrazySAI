@@ -145,7 +145,6 @@ PSD (со слоями) = PSD (mit Ebenen)
 Разное = Erweitert
 Усил. плотн. = Dichte verst.
 Нажим на плотность как в версии 1 = Druck auf Dichte wie in Version 1
-Смеш. = Misch.
 
 # Mischmodi
 Умножение = Multiplizieren
@@ -1236,3 +1235,17 @@ Zip с паролем = Zip mit Passwort
 Перевести = Umwandeln
 Перевести в оттенки серого… = In Graustufen umwandeln…
 Холсты = Leinwände
+
+В группу = In Gruppe
+Группа {0} = Gruppe {0}
+Двоичные = Binär
+Новая группа = Neue Gruppe
+Основные = Basis
+Удалить группу = Gruppe löschen
+
+Диапазон размера = Größenbereich
+Нажим меняет плотность = Druck ändert die Dichte
+Нажим меняет размер = Druck ändert die Größe
+Нажим на смешивание = Druck auf Mischen
+Сила текстуры = Texturstärke
+Сила формы = Formstärke

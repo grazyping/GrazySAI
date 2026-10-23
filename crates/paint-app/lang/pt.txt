@@ -145,7 +145,6 @@ PSD (со слоями) = PSD (com camadas)
 Разное = Avançado
 Усил. плотн. = Ampl. densidade
 Нажим на плотность как в версии 1 = Pressão na densidade como na versão 1
-Смеш. = Mist.
 
 # Modos de mesclagem
 Умножение = Multiplicação
@@ -1236,3 +1235,17 @@ Zip с паролем = Zip com senha
 Перевести = Converter
 Перевести в оттенки серого… = Converter para tons de cinza…
 Холсты = Telas
+
+В группу = Para o grupo
+Группа {0} = Grupo {0}
+Двоичные = Binárias
+Новая группа = Novo grupo
+Основные = Básicas
+Удалить группу = Excluir grupo
+
+Диапазон размера = Faixa de tamanho
+Нажим меняет плотность = A pressão muda a densidade
+Нажим меняет размер = A pressão muda o tamanho
+Нажим на смешивание = Pressão na mistura
+Сила текстуры = Intensidade da textura
+Сила формы = Força da forma

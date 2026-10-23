@@ -263,6 +263,30 @@ pub fn section(ui: &mut Ui, id: &str, title: &str) -> bool {
     open
 }
 
+/// Раздел, у которого главное поле видно и в свёрнутом виде (как «[ Простой круг ]» и
+/// «[ Нет текстуры ]» в SAI 2): треугольник слева раскрывает подробности, справа — `add`.
+pub fn section_row(ui: &mut Ui, id: &str, add: impl FnOnce(&mut Ui)) -> bool {
+    let id = ui.make_persistent_id(id);
+    let mut open = ui.data_mut(|d| *d.get_persisted_mut_or(id, false));
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 3.0;
+        let (rect, response) = ui.allocate_exact_size(Vec2::new(12.0, 20.0), Sense::click());
+        if response.clicked() {
+            open = !open;
+            ui.data_mut(|d| d.insert_persisted(id, open));
+        }
+        let c = rect.center();
+        let tri = if open {
+            vec![c + Vec2::new(-4.0, -2.5), c + Vec2::new(4.0, -2.5), c + Vec2::new(0.0, 3.0)]
+        } else {
+            vec![c + Vec2::new(-2.5, -4.0), c + Vec2::new(3.0, 0.0), c + Vec2::new(-2.5, 4.0)]
+        };
+        ui.painter().add(Shape::convex_polygon(tri, header(), Stroke::NONE));
+        add(ui);
+    });
+    open
+}
+
 /// Кнопка-значок: рамка, сиреневый фон у выбранной, рисунок — замыканием.
 pub fn icon_button(
     ui: &mut Ui,
@@ -808,6 +832,13 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
             glyph(p, r, c, match name { "binerase" => "eraser", "binselpen" => "selpen", _ => "selers" });
             let q = k * 0.22;
             p.rect_filled(Rect::from_center_size(r.max - Vec2::splat(q), Vec2::splat(q * 1.4)), 0.0, c);
+        }
+        "save" => {
+            // дискета: корпус, окошко сверху, наклейка снизу
+            let q = Rect::from_center_size(ctr, Vec2::splat(k * 1.5));
+            p.rect_stroke(q, 1.0, s);
+            p.rect_filled(Rect::from_min_max(q.left_top() + Vec2::new(q.width() * 0.25, 0.0), q.left_top() + Vec2::new(q.width() * 0.7, q.height() * 0.35)), 0.0, c);
+            p.rect_stroke(Rect::from_min_max(q.left_top() + Vec2::new(q.width() * 0.2, q.height() * 0.55), q.right_bottom() - Vec2::new(q.width() * 0.2, 0.0)), 0.0, s);
         }
         "scatter" => {
             // россыпь точек разного размера

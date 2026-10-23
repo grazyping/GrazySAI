@@ -97,3 +97,8 @@ pub fn submenu<R>(ui: &mut egui::Ui, icon: &'static str, title: &str, add: impl 
     image(ui.ctx(), icon).paint_at(ui, at);
     r
 }
+
+/// Пункт меню со значком.
+pub fn item(ui: &mut egui::Ui, icon: &'static str, title: &str) -> egui::Response {
+    ui.add(egui::Button::image_and_text(image(ui.ctx(), icon), title))
+}

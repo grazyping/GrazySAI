@@ -146,7 +146,6 @@ PSD (со слоями) = PSD (with layers)
 Разное = Advanced Settings
 Усил. плотн. = Amplify Dens.
 Нажим на плотность как в версии 1 = Ver1 pressure on density
-Смеш. = Blend
 
 # Blend modes (SAI order)
 Умножение = Multiply
@@ -1237,3 +1236,17 @@ Zip с паролем = Password-protected zip
 Перевести = Convert
 Перевести в оттенки серого… = Convert to Grayscale…
 Холсты = Canvases
+
+В группу = Move to Group
+Группа {0} = Group {0}
+Двоичные = Binary
+Новая группа = New Group
+Основные = Basic
+Удалить группу = Delete Group
+
+Диапазон размера = Brush size range
+Нажим меняет плотность = Pressure changes density
+Нажим меняет размер = Pressure changes size
+Нажим на смешивание = Pressure affects blending
+Сила текстуры = Texture intensity
+Сила формы = Form strength

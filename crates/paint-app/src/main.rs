@@ -36,6 +36,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+/// Диапазоны полоски размера кисти, как в SAI 2: имя, наименьший и наибольший размер.
+const SIZE_RANGES: [(&str, f32, f32); 5] = [("×0.1", 0.1, 10.0), ("×1", 1.0, 100.0), ("×5", 5.0, 500.0), ("×10", 10.0, 1000.0), ("×50", 50.0, 5000.0)];
+
 /// Плитка показа: 256×256 точек, то есть 4×4 плитки ядра. Одна текстура на плитку.
 const DT: i32 = 256;
 
@@ -1042,6 +1045,8 @@ struct BrushTool {
     reserved: Option<paint_brush::Brush>,
     /// Настройки до последнего «Вернуть» — чтобы отменить возврат.
     before_restore: Option<paint_brush::Brush>,
+    /// Группа инструментов (вкладка над сеткой, как в SAI 2020+).
+    group: usize,
 }
 
 impl std::ops::Deref for BrushTool {
@@ -1064,7 +1069,7 @@ trait NewTool {
 
 impl NewTool for ToolKind {
     fn new_tool(self) -> BrushTool {
-        BrushTool { brush: self.new_brush(), key: None, reserved: None, before_restore: None }
+        BrushTool { brush: self.new_brush(), key: None, reserved: None, before_restore: None, group: 0 }
     }
 }
 
@@ -1102,7 +1107,19 @@ type GrainNames = (Vec<String>, Vec<String>, Vec<String>, Vec<String>);
 /// Сетка по умолчанию — как у нового SAI 2017, плюс градиент.
 fn brush_tools() -> Vec<BrushTool> {
     use ToolKind::*;
-    [Pencil, AirBrush, Brush, Water, Marker, Eraser, SelPen, SelErs, Gradient].map(ToolKind::new_tool).into()
+    let mut out: Vec<BrushTool> = [Pencil, AirBrush, Brush, Water, Marker, Eraser, SelPen, SelErs, Gradient].map(ToolKind::new_tool).into();
+    // вторая группа — двоичные, как вкладка Binary в SAI 2
+    for k in [Binary, PixelPen, BinEraser, BinSelPen, BinSelErs, Bucket] {
+        let mut t = k.new_tool();
+        t.group = 1;
+        out.push(t);
+    }
+    out
+}
+
+/// Группы инструментов по умолчанию.
+fn tool_groups() -> Vec<String> {
+    vec![String::from(tr("Основные")), String::from(tr("Двоичные"))]
 }
 
 /// Действие с ячейкой сетки инструментов (меню по правому щелчку).
@@ -1118,6 +1135,8 @@ enum GridAction {
     Reserve,
     Restore,
     UndoRestore,
+    /// Перенести в группу.
+    ToGroup(usize),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1247,6 +1266,15 @@ struct PaintApp {
     fit_pending: bool,
     tool: Tool,
     brushes: Vec<BrushTool>,
+    /// Группы инструментов (вкладки над сеткой) и открытая вкладка.
+    tool_groups: Vec<String>,
+    tool_group: usize,
+    /// Переименование группы: номер и новое имя.
+    group_rename: Option<(usize, String)>,
+    /// Инструмент при прошлом показе вкладок: выбран другой (клавишей) — открыть его группу.
+    tab_brush: usize,
+    /// Диапазон полоски размера кисти (номер в `SIZE_RANGES`).
+    size_range: u8,
     brush: usize,
     /// Основной цвет в HSV (тон хранится и у серых), фоновый — RGB.
     hsv: [f32; 3],
@@ -1551,6 +1579,11 @@ impl PaintApp {
             fit_pending: true,
             tool: Tool::Brush,
             brushes: brush_tools(),
+            tool_groups: tool_groups(),
+            tool_group: 0,
+            group_rename: None,
+            tab_brush: usize::MAX,
+            size_range: 1,
             // PAINT_BRUSH — номер кисти в сетке при запуске (для проверок виртуальным пером)
             brush: std::env::var("PAINT_BRUSH").ok().and_then(|v| v.parse().ok()).filter(|&i: &usize| i != 5 && i < 8).unwrap_or(0),
             hsv: [0.0, 0.0, 0.08],
@@ -1852,13 +1885,24 @@ app.open_canvas_dialog(d == "resolution")
                     t.custom = s.str(&format!("tool.{i}.name")).filter(|v| !v.is_empty()).map(str::to_string);
                     t.extra = s.str(&format!("tool.{i}.extra")).unwrap_or("").to_string();
                     t.key = s.str(&format!("tool.{i}.key")).and_then(keys::Binding::parse);
+                    t.group = s.f32(&format!("tool.{i}.group")).map_or(0, |v| v as usize);
                     Some(t)
                 })
                 .collect();
             if tools.len() == n {
                 self.brushes = tools;
+                // до групп (1.1) все инструменты — в одной группе
+                self.tool_groups = vec![String::from(tr("Основные"))];
             }
         }
+        if let Some(n) = s.f32("tool_groups.count").map(|v| v as usize).filter(|&n| (1..=64).contains(&n)) {
+            self.tool_groups = (0..n).map(|g| s.str(&format!("tool_groups.{g}")).unwrap_or("").to_string()).collect();
+        }
+        let ng = self.tool_groups.len();
+        for b in self.brushes.iter_mut() {
+            b.group = b.group.min(ng - 1);
+        }
+        self.tool_group = s.f32("tool_group").map_or(0, |v| v as usize).min(ng - 1);
         for (i, b) in self.brushes.iter_mut().enumerate() {
             read_tool(b, &s, &format!("brush.{i}."));
             if s.bool(&format!("brush.{i}.has_reserved")) == Some(true) {
@@ -2099,6 +2143,7 @@ app.open_canvas_dialog(d == "resolution")
             s.set(&format!("tool.{i}.name"), b.custom.as_deref().unwrap_or(""));
             s.set(&format!("tool.{i}.extra"), &b.extra);
             s.set(&format!("tool.{i}.key"), b.key.map_or(String::new(), |k| k.text()));
+            s.set(&format!("tool.{i}.group"), b.group);
         }
         for (i, b) in self.brushes.iter().enumerate() {
             write_tool(b, &mut s, &format!("brush.{i}."));
@@ -2108,6 +2153,11 @@ app.open_canvas_dialog(d == "resolution")
             }
         }
         s.set("brush", self.brush);
+        s.set("tool_groups.count", self.tool_groups.len());
+        for (g, n) in self.tool_groups.iter().enumerate() {
+            s.set(&format!("tool_groups.{g}"), n);
+        }
+        s.set("tool_group", self.tool_group);
         for c in 0..3 {
             s.set(&format!("color.{c}"), self.hsv[c]);
         }
@@ -2318,14 +2368,19 @@ app.open_canvas_dialog(d == "resolution")
     /// Правый щелчок по сетке инструментов: добавить, копия, удалить, свойства.
     fn grid_action(&mut self, i: usize, act: GridAction) {
         match act {
+            GridAction::ToGroup(g) => {
+                self.brushes[i].group = g;
+            }
             GridAction::Add(k) => {
-                self.brushes.push(k.new_tool());
+                let mut t = k.new_tool();
+                t.group = self.tool_group;
+                self.brushes.push(t);
                 self.brush = self.brushes.len() - 1;
                 self.tool = Tool::Brush;
             }
             GridAction::Duplicate => {
                 let src = &self.brushes[i];
-                let copy = BrushTool { brush: src.brush.clone(), key: None, reserved: src.reserved.clone(), before_restore: None };
+                let copy = BrushTool { brush: src.brush.clone(), key: None, reserved: src.reserved.clone(), before_restore: None, group: src.group };
                 self.brushes.insert(i + 1, copy);
                 if self.brush > i {
                     self.brush += 1;
@@ -2366,6 +2421,76 @@ app.open_canvas_dialog(d == "resolution")
             GridAction::Property => {
                 let t = &self.brushes[i];
                 self.tool_props = Some((i, t.title(), t.extra.clone(), t.key));
+            }
+        }
+    }
+
+    /// Вкладки групп инструментов над сеткой (SAI 2020+): выбор, правый щелчок — новая группа,
+    /// переименовать, удалить (инструменты удалённой группы переходят в первую).
+    fn tool_group_tabs(&mut self, ui: &mut egui::Ui) {
+        if self.tab_brush != self.brush {
+            self.tab_brush = self.brush;
+            if let Some(b) = self.brushes.get(self.brush) {
+                self.tool_group = b.group.min(self.tool_groups.len().saturating_sub(1));
+            }
+        }
+        let mut act: Option<(usize, u8)> = None;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for (g, name) in self.tool_groups.iter().enumerate() {
+                let r = ui.selectable_label(self.tool_group == g, egui::RichText::new(name).size(11.0));
+                if r.clicked() {
+                    act = Some((g, 0));
+                }
+                r.context_menu(|ui| {
+                    if ui.button(tr("Новая группа")).clicked() {
+                        act = Some((g, 1));
+                        ui.close_menu();
+                    }
+                    if ui.button(tr("Переименовать…")).clicked() {
+                        act = Some((g, 2));
+                        ui.close_menu();
+                    }
+                    if ui.add_enabled(self.tool_groups.len() > 1, egui::Button::new(tr("Удалить группу"))).clicked() {
+                        act = Some((g, 3));
+                        ui.close_menu();
+                    }
+                });
+            }
+        });
+        match act {
+            Some((g, 0)) => self.tool_group = g,
+            Some((_, 1)) => {
+                self.tool_groups.push(trf("Группа {0}", &[&(self.tool_groups.len() + 1)]));
+                self.tool_group = self.tool_groups.len() - 1;
+            }
+            Some((g, 2)) => self.group_rename = Some((g, self.tool_groups[g].clone())),
+            Some((g, 3)) if self.tool_groups.len() > 1 => {
+                self.tool_groups.remove(g);
+                for b in self.brushes.iter_mut() {
+                    if b.group == g {
+                        b.group = 0;
+                    } else if b.group > g {
+                        b.group -= 1;
+                    }
+                }
+                self.tool_group = self.tool_group.min(self.tool_groups.len() - 1);
+            }
+            _ => {}
+        }
+        if let Some((g, mut name)) = self.group_rename.take() {
+            let mut keep = true;
+            ui.horizontal(|ui| {
+                let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(120.0));
+                if ui.button("OK").clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
+                    if let (Some(n), false) = (self.tool_groups.get_mut(g), name.trim().is_empty()) {
+                        *n = name.trim().to_string();
+                    }
+                    keep = false;
+                }
+            });
+            if keep {
+                self.group_rename = Some((g, name));
             }
         }
     }
@@ -2910,7 +3035,17 @@ app.open_canvas_dialog(d == "resolution")
             // ластик, смешивание и сдвиг краски на пустом образце не видны — рисуются как кисть
             pb.params.erase = false;
             pb.params.mix = None;
-            let rgba = pb.preview_rgba(w, h);
+            // мазок на шашке прозрачности, как в SAI 2
+            let layer = pb.preview_layer_rgba(w, h);
+            let cell = (6.0 * self.ppp).max(4.0) as u32;
+            let mut rgba = Vec::with_capacity(layer.len());
+            for (i, p) in layer.as_chunks::<4>().0.iter().enumerate() {
+                let (x, y) = (i as u32 % w, i as u32 / w);
+                let bg = if (x / cell + y / cell) % 2 == 0 { 255u32 } else { 228 };
+                let a = p[3] as u32;
+                rgba.extend((0..3).map(|c| ((p[c] as u32 * a + bg * (255 - a)) / 255) as u8));
+                rgba.push(255);
+            }
             let img = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
             let tex = ui.ctx().load_texture("brush_preview", img, egui::TextureOptions::LINEAR);
             self.brush_preview = Some((key, tex));
@@ -3693,7 +3828,7 @@ app.open_canvas_dialog(d == "resolution")
                         self.brush = i;
                     }
                     None => {
-                        self.brushes.push(BrushTool { brush, key: None, reserved: None, before_restore: None });
+                        self.brushes.push(BrushTool { brush, key: None, reserved: None, before_restore: None, group: 0 });
                         self.brush = self.brushes.len() - 1;
                     }
                 }
@@ -3735,7 +3870,7 @@ app.open_canvas_dialog(d == "resolution")
             return;
         }
         let added = list.len();
-        self.brushes.extend(list.into_iter().map(|brush| BrushTool { brush, key: None, reserved: None, before_restore: None }));
+        self.brushes.extend(list.into_iter().map(|brush| BrushTool { brush, key: None, reserved: None, before_restore: None, group: 0 }));
         self.brush = self.brushes.len() - 1;
         self.tool = Tool::Brush;
         self.grain_names = None;
@@ -7479,6 +7614,10 @@ app.open_canvas_dialog(d == "resolution")
         // Кисти слоя: 4 в ряд, имя сверху, значок снизу справа. Как в SAI: правый щелчок по пустой
         // ячейке — новый инструмент выбранного вида, по инструменту — копия, удаление, свойства.
         let mut grid_action: Option<(usize, GridAction)> = None;
+        self.tool_group_tabs(ui);
+        // в сетке — инструменты открытой группы (номера — общие)
+        let shown: Vec<usize> = (0..self.brushes.len()).filter(|&i| self.brushes[i].group == self.tool_group).collect();
+        let groups = self.tool_groups.clone();
         egui::Frame::none()
             .stroke(egui::Stroke::new(1.0_f32, sai_ui::border()))
             .fill(sai_ui::gray(255))
@@ -7486,17 +7625,18 @@ app.open_canvas_dialog(d == "resolution")
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 let w = (ui.available_width() / 4.0).floor();
                 // пустые ячейки — до конца ряда, а если ряд полон — ещё ряд
-                let cells = (self.brushes.len() / 4 + 1) * 4;
+                let cells = (shown.len() / 4 + 1) * 4;
                 egui::ScrollArea::vertical().id_salt("tool_grid").max_height(36.0 * 3.0).auto_shrink([false, true]).show(ui, |ui| {
                     for row in 0..cells / 4 {
                         ui.horizontal(|ui| {
-                            for i in row * 4..row * 4 + 4 {
-                                let Some(tool) = self.brushes.get(i) else {
+                            for cell in row * 4..row * 4 + 4 {
+                                let Some((i, tool)) = shown.get(cell).map(|&i| (i, &self.brushes[i])) else {
                                     let r = sai_ui::icon_button(ui, Vec2::new(w, 36.0), false, true, tr("Правый щелчок — новый инструмент"), |_, _, _| {});
                                     r.context_menu(|ui| {
                                         for k in ToolKind::ALL {
-                                            if ui.button(tr(k.label())).clicked() {
-                                                grid_action = Some((i, GridAction::Add(k)));
+                                            let k_icon = k.new_brush().icon;
+                                            if icons::item(ui, k_icon, tr(k.label())).clicked() {
+                                                grid_action = Some((0, GridAction::Add(k)));
                                                 ui.close_menu();
                                             }
                                         }
@@ -7527,6 +7667,16 @@ app.open_canvas_dialog(d == "resolution")
                                             grid_action = Some((i, act));
                                             ui.close_menu();
                                         }
+                                    }
+                                    if groups.len() > 1 {
+                                        ui.menu_button(tr("В группу"), |ui| {
+                                            for (g, name) in groups.iter().enumerate() {
+                                                if ui.radio(tool.group == g, name).clicked() {
+                                                    grid_action = Some((i, GridAction::ToGroup(g)));
+                                                    ui.close_menu();
+                                                }
+                                            }
+                                        });
                                     }
                                     ui.separator();
                                     for (act, name, on) in [
@@ -7729,6 +7879,7 @@ app.open_canvas_dialog(d == "resolution")
         // своя динамика из плагинов: «id/имя» → подпись
         let plugin_dyns: Vec<(String, String)> = self.plugins.iter().flat_map(|p| p.plugin.dynamics.iter().map(move |(n, _)| (format!("{}/{n}", p.plugin.id), format!("{} — {n}", p.plugin.name)))).collect();
         self.brush_preview_ui(ui, lw + w);
+        let mut size_range = self.size_range as usize;
         let tool = &mut self.brushes[self.brush];
         let tool = &mut tool.brush;
         let (brush, grain, dyns, dyn_plugin, anti_hook) = (&mut tool.params, &mut tool.grain, &mut tool.dynamics, &mut tool.dyn_plugin, &mut tool.anti_hook);
@@ -7765,26 +7916,51 @@ app.open_canvas_dialog(d == "resolution")
                 }
             }
         });
+        // размер — в выбранном диапазоне (▼, как в SAI 2: ×0,1 … ×50), полоска линейная
+        let ranges = SIZE_RANGES;
+        let fits = |r: usize| brush.size >= ranges[r].1 - 1e-3 && brush.size <= ranges[r].2 + 1e-3;
+        if !fits(size_range) {
+            size_range = (0..ranges.len()).find(|&r| fits(r)).unwrap_or(ranges.len() - 1);
+        }
         sai_ui::row(ui, tr("Размер"), lw, true, |ui| {
-            let text = if brush.size < 10.0 {
-                format!("{:.1}", brush.size)
-            } else {
-                format!("{:.0}", brush.size)
-            };
-            let mut t = brush.size.ln();
-            if sai_ui::bar(ui, &mut t, 0.5f32.ln(), 500f32.ln(), text, w, true).changed() {
-                brush.size = (t.exp() * 10.0).round() / 10.0;
+            ui.spacing_mut().item_spacing.x = 2.0;
+            egui::ComboBox::from_id_salt("size_range").selected_text(ranges[size_range].0).width(38.0).show_ui(ui, |ui| {
+                for (r, (name, lo, hi)) in ranges.iter().enumerate() {
+                    if ui.selectable_label(size_range == r, format!("{name}   ({lo} … {hi})")).clicked() {
+                        size_range = r;
+                        brush.size = brush.size.clamp(*lo, *hi);
+                    }
+                }
+            })
+            .response
+            .on_hover_text(tr("Диапазон размера"));
+            let (_, lo, hi) = ranges[size_range];
+            let text = if brush.size < 10.0 { format!("{:.1}", brush.size) } else { format!("{:.0}", brush.size) };
+            let mut v = brush.size;
+            if sai_ui::bar(ui, &mut v, lo, hi, text, w - 52.0, true).changed() {
+                let step = if hi <= 10.0 { 0.1 } else if hi <= 100.0 { 0.5 } else { 1.0 };
+                brush.size = ((v / step).round() * step).clamp(lo, hi);
             }
         });
+        self.size_range = size_range as u8;
+        // нажим на размер и на плотность — значок пера у строки, как в SAI 2
+        let pen_toggle = |ui: &mut egui::Ui, on: &mut bool, tip: &str| {
+            if sai_ui::icon_button(ui, Vec2::new(16.0, 16.0), *on, true, tip, |p, r, c| sai_ui::glyph(p, r, c, "pen")).clicked() {
+                *on = !*on;
+            }
+        };
         sai_ui::row(
             ui,
             tr("Минимальный"),
             lw,
             brush.size_by_pressure,
             |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                pen_toggle(ui, &mut brush.size_by_pressure, tr("Нажим меняет размер"));
+                let on = brush.size_by_pressure;
                 let mut v = brush.min_size * 100.0;
                 let text = format!("{:.0}%", v);
-                if sai_ui::bar(ui, &mut v, 0.0, 100.0, text, w, brush.size_by_pressure).changed() {
+                if sai_ui::bar(ui, &mut v, 0.0, 100.0, text, w - 18.0, on).changed() {
                     brush.min_size = (v.round() / 100.0).clamp(0.0, 1.0);
                 }
             },
@@ -7802,9 +7978,12 @@ app.open_canvas_dialog(d == "resolution")
             lw,
             brush.density_by_pressure,
             |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                pen_toggle(ui, &mut brush.density_by_pressure, tr("Нажим меняет плотность"));
+                let on = brush.density_by_pressure;
                 let mut v = brush.min_density * 100.0;
                 let text = format!("{:.0}%", v);
-                if sai_ui::bar(ui, &mut v, 0.0, 100.0, text, w, brush.density_by_pressure).changed()
+                if sai_ui::bar(ui, &mut v, 0.0, 100.0, text, w - 18.0, on).changed()
                 {
                     brush.min_density = (v.round() / 100.0).clamp(0.0, 1.0);
                 }
@@ -7874,11 +8053,12 @@ app.open_canvas_dialog(d == "resolution")
                 }
             });
         };
-        if sai_ui::section(ui, "sec_form", tr("Форма")) {
-            let circle = tr("[ Простой круг ]");
-            sai_ui::row(ui, tr("   Форма"), lw, true, |ui| {
+        // форма и текстура — главное поле видно всегда, подробности — под треугольником (SAI 2)
+        let circle = tr("[ Простой круг ]");
+        let combo_w = ((lw + w) * 0.64).max(90.0);
+        let form_open = sai_ui::section_row(ui, "sec_form", |ui| {
                 let shown = grain.bristle.clone().or_else(|| grain.form.clone()).unwrap_or_else(|| circle.to_string());
-                egui::ComboBox::from_id_salt("form").selected_text(shown).width(w - 8.0).height(400.0).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("form").selected_text(shown).width(combo_w).height(400.0).show_ui(ui, |ui| {
                     if ui.selectable_label(grain.form.is_none() && grain.bristle.is_none(), circle).clicked() {
                         grain.form = None;
                         grain.bristle = None;
@@ -7900,7 +8080,14 @@ app.open_canvas_dialog(d == "resolution")
                         }
                     }
                 });
-            });
+                // сила формы — поле рядом, как в SAI
+                let on = grain.form.is_some();
+                let mut v = (grain.form_strength * 100.0).round();
+                if ui.add_enabled(on, egui::DragValue::new(&mut v).range(0.0..=100.0).speed(1.0)).on_hover_text(tr("Сила формы")).changed() {
+                    grain.form_strength = v / 100.0;
+                }
+        });
+        if form_open {
             sai_ui::row(ui, tr("   Отпечаток"), lw, true, |ui| {
                 let round = tr("[ Круг ]");
                 egui::ComboBox::from_id_salt("tip").selected_text(grain.tip.clone().unwrap_or_else(|| round.to_string())).width(w - 8.0).height(400.0).show_ui(ui, |ui| {
@@ -7945,7 +8132,6 @@ app.open_canvas_dialog(d == "resolution")
                 });
             } else {
                 let on = grain.form.is_some();
-                pct_bar(ui, tr("   Сила"), &mut grain.form_strength, on);
                 scale_bar(ui, &mut grain.form_scale, on);
             }
             if blot_names.is_empty() {
@@ -8022,15 +8208,14 @@ app.open_canvas_dialog(d == "resolution")
                 });
             }
         }
-        if sai_ui::section(ui, "sec_tex", tr("Текстура")) {
-            let (none, paper) = (tr("[ Нет текстуры ]"), tr("[ Бумага слоя ]"));
-            sai_ui::row(ui, tr("   Текстура"), lw, true, |ui| {
+        let (none, paper) = (tr("[ Нет текстуры ]"), tr("[ Бумага слоя ]"));
+        let tex_open = sai_ui::section_row(ui, "sec_tex", |ui| {
                 let shown = match &grain.tex {
                     TexChoice::None => none.to_string(),
                     TexChoice::Paper => paper.to_string(),
                     TexChoice::File(n) => n.clone(),
                 };
-                egui::ComboBox::from_id_salt("btex").selected_text(shown).width(w - 8.0).height(400.0).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("btex").selected_text(shown).width(combo_w).height(400.0).show_ui(ui, |ui| {
                     if ui.selectable_label(grain.tex == TexChoice::None, none).clicked() {
                         grain.tex = TexChoice::None;
                     }
@@ -8045,9 +8230,14 @@ app.open_canvas_dialog(d == "resolution")
                         }
                     }
                 });
-            });
+                let on = grain.tex != TexChoice::None;
+                let mut v = (grain.tex_strength * 100.0).round();
+                if ui.add_enabled(on, egui::DragValue::new(&mut v).range(0.0..=100.0).speed(1.0)).on_hover_text(tr("Сила текстуры")).changed() {
+                    grain.tex_strength = v / 100.0;
+                }
+        });
+        if tex_open {
             let on = grain.tex != TexChoice::None;
-            pct_bar(ui, tr("   Сила"), &mut grain.tex_strength, on);
             ui.horizontal(|ui| {
                 ui.add_space(12.0);
                 ui.add_enabled(on, egui::Checkbox::new(&mut grain.by_min_density, tr("Зависит от мин. плотн.")))
@@ -8059,7 +8249,21 @@ app.open_canvas_dialog(d == "resolution")
                 no_files(ui, &mut self.paper_dir, &mut set_dir);
             }
         }
-        if sai_ui::section(ui, "sec_misc", tr("Разное")) {
+        // «Разное»: справа — вернуть запомненные и запомнить настройки (значки, как в SAI 2)
+        let mut misc_act = None;
+        let misc_open = sai_ui::section_row(ui, "sec_misc", |ui| {
+            ui.label(egui::RichText::new(tr("Разное")).size(12.0).color(sai_ui::header()));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                if sai_ui::icon_button(ui, Vec2::splat(18.0), false, true, tr("Запомнить настройки"), |p, r, c| sai_ui::glyph(p, r, c, "save")).clicked() {
+                    misc_act = Some(GridAction::Reserve);
+                }
+                if sai_ui::icon_button(ui, Vec2::splat(18.0), false, true, tr("Вернуть запомненные"), |p, r, c| sai_ui::glyph(p, r, c, "undo")).clicked() {
+                    misc_act = Some(GridAction::Restore);
+                }
+            });
+        });
+        if misc_open {
             sai_ui::row(ui, tr("   Усил. плотн."), lw, true, |ui| {
                 let mut v = brush.amplify * 100.0;
                 let text = format!("{:.0}", v);
@@ -8083,13 +8287,9 @@ app.open_canvas_dialog(d == "resolution")
                 }
             });
         }
-        ui.horizontal(|ui| {
-            ui.checkbox(&mut brush.size_by_pressure, tr("Размер"));
-            ui.checkbox(&mut brush.density_by_pressure, tr("Плотн."));
-            if let Some(mix) = brush.mix.as_mut() {
-                ui.checkbox(&mut mix.blend_by_pressure, tr("Смеш."));
-            }
-        });
+        if let Some(mix) = brush.mix.as_mut() {
+            ui.checkbox(&mut mix.blend_by_pressure, tr("Нажим на смешивание"));
+        }
         // Сетка размеров: кружок и число, 5 в ряд.
         let mut pick = None;
         let current = brush.size;
@@ -8152,6 +8352,9 @@ app.open_canvas_dialog(d == "resolution")
             });
         if let Some(size) = pick {
             self.brushes[self.brush].params.size = size;
+        }
+        if let Some(a) = misc_act {
+            self.grid_action(self.brush, a);
         }
         if set_dir {
             self.set_paper_dir();
@@ -8459,16 +8662,20 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     /// Навигатор: уменьшенный холст из тех же текстур, что и на экране, и рамка видимой части.
+    /// Навигатор, как в SAI 2 (сверено на настоящей Windows): весь холст на сером поле, рамка вида
+    /// тёмной линией с чёрточкой от середины к верхнему краю (поворачивается с видом); протяжка из
+    /// любой точки двигает вид на столько же, щелчок ничего не делает.
     fn navigator(&mut self, ui: &mut egui::Ui) {
         let (rect, response) = ui.allocate_exact_size(
             Vec2::new(ui.available_width(), 150.0),
             egui::Sense::click_and_drag(),
         );
         let p = ui.painter_at(rect);
-        p.rect_filled(rect, 0.0, sai_ui::gray(255));
+        p.rect_filled(rect, 0.0, sai_ui::gray(176));
         let (w, h) = (self.doc.width as f32, self.doc.height as f32);
         let k = ((rect.width() - 6.0) / w).min((rect.height() - 6.0) / h);
         let origin = rect.center() - Vec2::new(w, h) * k / 2.0;
+        p.rect_filled(Rect::from_min_size(origin, Vec2::new(w, h) * k), 0.0, Color32::WHITE);
         for (&(dx, dy), tile) in &self.display {
             if let Some(t) = &tile.texture {
                 let min = origin + Vec2::new((dx * DT) as f32, (dy * DT) as f32) * k;
@@ -8488,24 +8695,21 @@ app.open_canvas_dialog(d == "resolution")
                 );
             }
         }
-        p.rect_stroke(
-            Rect::from_min_size(origin, Vec2::new(w, h) * k),
-            0.0,
-            egui::Stroke::new(1.0_f32, sai_ui::gray(150)),
-        );
         if self.view.is_positive() {
-            let seen =
-                Rect::from_min_size(origin + self.offset * k, self.view.size() / self.zoom * k);
-            p.rect_stroke(
-                seen,
-                0.0,
-                egui::Stroke::new(1.0_f32, Color32::from_rgb(220, 40, 40)),
-            );
+            // углы вида на холсте (с поворотом и зеркалом) → навигатор
+            let xf = ViewXf::new(self.view, self.zoom, self.offset, self.view_angle, self.view_flip);
+            let v = self.view;
+            let nav = |q: Pos2| origin + xf.to_canvas(q) * k;
+            let corners = [v.left_top(), v.right_top(), v.right_bottom(), v.left_bottom()].map(nav);
+            let frame = egui::Stroke::new(1.0_f32, sai_ui::gray(90));
+            p.add(egui::Shape::closed_line(corners.to_vec(), frame));
+            let top = Pos2::new(v.center().x, v.top());
+            p.line_segment([nav(v.center()), nav(top)], frame);
         }
-        if let Some(pos) = response.interact_pointer_pos() {
-            if response.is_pointer_button_down_on() {
-                let c = (pos - origin) / k;
-                self.offset = c - self.view.size() / self.zoom / 2.0;
+        if response.dragged() {
+            let d = response.drag_delta() / k;
+            if d != Vec2::ZERO {
+                self.offset += d;
             }
         }
         p.rect_stroke(rect, 0.0, egui::Stroke::new(1.0_f32, sai_ui::border()));

@@ -702,6 +702,25 @@ impl Brush {
         doc.flatten()
     }
 
+    /// Тот же образец без фона: RGBA слоя (без предумножения) — для показа на шашке.
+    pub fn preview_layer_rgba(&self, w: u32, h: u32) -> Vec<u8> {
+        let mut doc = paint_core::Document::new(w, h);
+        let mut b = self.clone();
+        b.params.size = b.params.size.min(h as f32 * 0.56);
+        b.params.erase = false;
+        b.params.mix = None;
+        let mut st = b.stroke(None);
+        let (fw, fh) = (w as f32, h as f32);
+        for k in 0..=60 {
+            let t = k as f32 / 60.0;
+            let pressure = (t * std::f32::consts::PI).sin().max(0.05);
+            st.add_point(paint_core::InputPoint { x: fw * 0.09 + t * fw * 0.82, y: fh / 2.0 + (t * std::f32::consts::TAU).sin() * fh * 0.22, pressure });
+        }
+        doc.commit_stroke(0, &st, [0, 0, 0]);
+        let px = &doc.layers[0].pixels;
+        (0..h as i32).flat_map(|y| (0..w as i32).map(move |x| (x, y))).flat_map(|(x, y)| paint_core::pixel::to_rgba8(px.get(x, y))).collect()
+    }
+
     /// Образец мазка 256×64 в PNG.
     pub fn preview_png(&self) -> Option<Vec<u8>> {
         paint_core::io::encode_png(256, 64, &self.preview_rgba(256, 64)).ok()
