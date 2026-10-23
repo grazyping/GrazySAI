@@ -1167,3 +1167,9 @@ Zip с паролем = Password-protected zip
 Двоичный ластик выделения = Binary Selection Eraser
 Пикс.перо = PixArt Pen
 Пиксельное перо = Pixel Art Pen
+
+# Мелочи кистей
+Длина загибов на концах мазка, которые срезаются (точки экрана) = Length of the bends at the stroke ends that are cut off (screen pixels)
+Минимальный нажим для мазка: = Minimum pressure for brush stroke:
+Слабее — перо не рисует (защита от случайных касаний); нажим отсчитывается от этого порога = Lighter pressure does not paint (guards against accidental touches); pressure is counted from this threshold
+Срезать крючки = Anti-Hook

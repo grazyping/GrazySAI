@@ -66,6 +66,11 @@ not analysed; live checks only on official builds, hidden display, a separate Wi
   the pixels whose centres lie inside the size circle, with the size rounded to an integer
   (2.3 → 2, 2.6 → 3, 3.5 → 4; 9 → 69 pixels, 20 → 316) — identical to our binary pen pixel for
   pixel. The Layer ARGB picker is not done here.
+- **Brush details (from SAI 2024 strings):** Minimum Pressure for Brush Stroke in Options ("suppresses
+  the sensitiveness of the pen pressure rising"); Anti-Hook in the brush Miscellaneous ("the removal
+  range of hooks at both ends of a stroke", in screen pixels); Anti-Ripple for Flatten Brush
+  ("suppress ripple like artifacts of a flattest large brush") — not done here: our flat brushes
+  show no ripple to measure against.
 - **Control step (item 1) done.** The Pencil sheet (5 hardness steps × sizes 1–100, a size-20 line,
   density 100, mouse) in 2026-07-02b against the same 2017 sheet: at mid hardness 2026 dabs carry
   20–35 % less paint and are 10–15 % smaller in diameter (50 % level); size-20 lines are nearly the same

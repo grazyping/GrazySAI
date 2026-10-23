@@ -45,3 +45,31 @@ fn pixel_pen_dots_match_sai() {
         assert_eq!(got, n, "размер {size}");
     }
 }
+
+/// «Срезать крючки»: загиб в конце прямого мазка срезается, прямой мазок не трогается.
+#[test]
+fn anti_hook_trims_end_hook() {
+    let mut pts: Vec<[f32; 2]> = (0..=40).map(|i| [i as f32 * 2.0, 0.0]).collect();
+    assert_eq!(paint_brush::hook_len(&pts, 8.0), 0);
+    pts.extend((1..=3).map(|i| [80.0 - i as f32, i as f32 * 2.0]));
+    assert_eq!(paint_brush::hook_len(&pts, 8.0), 3);
+    // длиннее предела — не крючок
+    assert_eq!(paint_brush::hook_len(&pts, 3.0), 0);
+}
+
+/// Крючок после сглаживания (стабилизатор 3, точки как от мыши): тоже находится.
+#[test]
+fn anti_hook_after_stabilizer() {
+    let mut st = paint_core::Stabilizer::new(3);
+    let mut pts = Vec::new();
+    let raw: Vec<(f32, f32)> = (0..=100).map(|i| (i as f32 * 5.4, 0.0)).chain((1..=3).map(|i| (540.0 - i as f32 * 2.7, -(i as f32) * 4.0))).collect();
+    for (x, y) in raw {
+        pts.push(st.push(paint_core::InputPoint { x, y, pressure: 1.0 }));
+    }
+    pts.extend(st.finish());
+    let xy: Vec<[f32; 2]> = pts.iter().map(|p| [p.x, p.y]).collect();
+    let k = paint_brush::hook_len(&xy, 20.0);
+    let rest = &xy[..xy.len() - k];
+    let worst = rest.iter().map(|p| p[1].abs()).fold(0.0, f32::max);
+    assert!(worst < 1.5, "осталось {worst} px крючка, срезано {k} из {}", xy.len());
+}

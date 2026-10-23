@@ -1166,3 +1166,9 @@ Zip с паролем = Zip com senha
 Двоичный ластик выделения = Borracha de seleção binária
 Пикс.перо = Caneta pixel
 Пиксельное перо = Caneta de pixel art
+
+# Мелочи кистей
+Длина загибов на концах мазка, которые срезаются (точки экрана) = Comprimento dos ganchos nas pontas do traço que são cortados (pixels de tela)
+Минимальный нажим для мазка: = Pressão mínima para o traço:
+Слабее — перо не рисует (защита от случайных касаний); нажим отсчитывается от этого порога = Com menos pressão não pinta (evita toques acidentais); a pressão é contada a partir deste limite
+Срезать крючки = Anti-gancho

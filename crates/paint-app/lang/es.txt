@@ -1166,3 +1166,9 @@ Zip с паролем = Zip con contraseña
 Двоичный ластик выделения = Borrador de selección binario
 Пикс.перо = Pluma píxel
 Пиксельное перо = Pluma de pixel art
+
+# Мелочи кистей
+Длина загибов на концах мазка, которые срезаются (точки экрана) = Longitud de los ganchos en los extremos del trazo que se recortan (píxeles de pantalla)
+Минимальный нажим для мазка: = Presión mínima para el trazo:
+Слабее — перо не рисует (защита от случайных касаний); нажим отсчитывается от этого порога = Con menos presión no pinta (evita toques accidentales); la presión se cuenta desde este umbral
+Срезать крючки = Antiganchos

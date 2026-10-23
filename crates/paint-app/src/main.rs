@@ -568,11 +568,14 @@ struct Options {
     psd16: bool,
     /// PSD и PSB: слои с режимами SAI (их нет в PSD) — обычными слоями с готовым видом.
     psd_exact: bool,
+    /// «Минимальный нажим для мазка» (SAI 2024+): слабее — перо не рисует, сильнее — нажим
+    /// отсчитывается от этого порога. 0..0.9.
+    min_pressure: f32,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false, psd16: false, psd_exact: false }
+        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false, psd16: false, psd_exact: false, min_pressure: 0.0 }
     }
 }
 
@@ -737,6 +740,21 @@ struct CanvasDialog {
     keep_ratio: bool,
     mode: paint_core::resample::Mode,
     anchor: (u8, u8),
+}
+
+/// «Срезать крючки» (Anti-Hook): точки мазка придерживаются на длину крючка — в начале, пока
+/// не ясно, был ли крючок, и в конце, чтобы при отрыве пера срезать загиб.
+struct HookBuf {
+    /// Длина крючка в точках холста.
+    range: f32,
+    start_done: bool,
+    buf: Vec<InputPoint>,
+    /// Уже отданные точки (последние ~2 длины крючка) — по ним видно основное направление.
+    done: Vec<InputPoint>,
+}
+
+fn path_len(pts: &[InputPoint]) -> f32 {
+    pts.windows(2).map(|w| (w[1].x - w[0].x).hypot(w[1].y - w[0].y)).sum()
 }
 
 /// Режим трансформации, как в панели SAI 2017: Freeform, Resize, Deform, Rotate.
@@ -1338,6 +1356,17 @@ struct PaintApp {
     /// Деление сетки деформации (столбцы, строки) и «Смешивание» складок.
     grid_div: [u8; 2],
     grid_blend: bool,
+    /// Нажим ниже «минимального нажима для мазка» (по последнему `pressure`).
+    below_min: bool,
+    /// Перо коснулось слабее порога: мазок начнётся, когда нажим его превысит (ластик ли).
+    pending_start: Option<bool>,
+    /// Shift после начала мазка: точка, от которой мазок идёт прямо, и ось (`true` — по
+    /// горизонтали), когда она выбрана.
+    shift_lock: Option<(InputPoint, Option<bool>)>,
+    /// «Срезать крючки»: придержанные точки мазка.
+    hook: Option<HookBuf>,
+    /// Образец мазка текущей кисти: ключ (настройки текстом) и картинка.
+    brush_preview: Option<(String, egui::TextureHandle)>,
     move_drag: Option<MoveDrag>,
     transform: Option<Transform>,
     /// Мазок пера или ластика выделения и его путь на холсте (для показа во время мазка).
@@ -1576,6 +1605,11 @@ impl PaintApp {
             transform_perspective: 0,
             grid_div: [2, 2],
             grid_blend: false,
+            below_min: false,
+            pending_start: None,
+            shift_lock: None,
+            hook: None,
+            brush_preview: None,
             move_drag: None,
             transform: None,
             sel_stroke: None,
@@ -1874,6 +1908,9 @@ app.open_canvas_dialog(d == "resolution")
                 *v = n;
             }
         }
+        if let Some(v) = s.f32("opt.min_pressure") {
+            o.min_pressure = v.clamp(0.0, 0.9);
+        }
         if let Some(v) = s.str("opt.pressure_curve") {
             let n: Vec<f32> = v.split(',').filter_map(|t| t.trim().parse().ok()).collect();
             if let [x1, y1, x2, y2] = n[..] {
@@ -2031,6 +2068,7 @@ app.open_canvas_dialog(d == "resolution")
         }
         let [[x1, y1], [x2, y2]] = o.pressure_curve.points;
         s.set("opt.pressure_curve", format!("{x1:.3},{y1:.3},{x2:.3},{y2:.3}"));
+        s.set("opt.min_pressure", o.min_pressure);
         s.set("layers_right", w.layers_right as u8);
         s.set("dot_cursor", w.dot_cursor as u8);
         s.set("brush_circle", w.brush_circle as u8);
@@ -2737,6 +2775,30 @@ app.open_canvas_dialog(d == "resolution")
                 }
             });
         self.show_update = open && !close;
+    }
+
+    /// Образец мазка текущей кисти над её настройками (как в SAI 2018+): пересчитывается, когда
+    /// меняются настройки.
+    fn brush_preview_ui(&mut self, ui: &mut egui::Ui, width: f32) {
+        let b = &self.brushes[self.brush].brush;
+        let mut kv = paint_brush::Kv::default();
+        paint_brush::write(b, &mut kv, "");
+        let key = format!("{}{}", b.kind.key(), kv.to_text());
+        let (w, h) = ((width.max(80.0) * self.ppp) as u32, (40.0 * self.ppp) as u32);
+        let key = format!("{key}{w}");
+        if self.brush_preview.as_ref().is_none_or(|(k, _)| *k != key) {
+            let mut pb = b.clone();
+            // ластик, смешивание и сдвиг краски на пустом образце не видны — рисуются как кисть
+            pb.params.erase = false;
+            pb.params.mix = None;
+            let rgba = pb.preview_rgba(w, h);
+            let img = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
+            let tex = ui.ctx().load_texture("brush_preview", img, egui::TextureOptions::LINEAR);
+            self.brush_preview = Some((key, tex));
+        }
+        if let Some((_, tex)) = &self.brush_preview {
+            ui.add(egui::Image::new((tex.id(), Vec2::new(w as f32 / self.ppp, h as f32 / self.ppp))));
+        }
     }
 
     /// Цвет мазка и случайности кисти-разброса: своё зерно у каждого мазка; цвет — с разбросом
@@ -4083,11 +4145,15 @@ app.open_canvas_dialog(d == "resolution")
             s.at.filter(|t| t.elapsed() < Duration::from_millis(250))
                 .map(|_| (s.pressure, s.eraser))
         });
-        let (pressure, eraser, source) = match (fresh, self.touch_force) {
-            (Some((p, e)), _) => (self.opts.pressure_curve.apply(p), e, tr("перо (XInput 2)")),
-            (None, Some(f)) if self.touch_down || (self.stroke_by_touch && (self.live.is_some() || self.line_stroke.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some())) => (self.opts.pressure_curve.apply(f), false, tr("перо (Windows Ink)")),
-            _ => (1.0, false, tr("мышь")),
+        let m = self.opts.min_pressure;
+        let gate = |p: f32| ((p - m) / (1.0 - m)).max(0.0);
+        let (raw, pressure, eraser, source) = match (fresh, self.touch_force) {
+            (Some((p, e)), _) => (p, gate(self.opts.pressure_curve.apply(p)), e, tr("перо (XInput 2)")),
+            (None, Some(f)) if self.touch_down || (self.stroke_by_touch && (self.live.is_some() || self.line_stroke.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some())) => (f, gate(self.opts.pressure_curve.apply(f)), false, tr("перо (Windows Ink)")),
+            _ => (1.0, 1.0, false, tr("мышь")),
         };
+        // нажим слабее порога — перо будто не касается (мышь не в счёт)
+        self.below_min = m > 0.0 && self.opts.pressure_curve.apply(raw) < m;
         self.last_pressure = pressure;
         self.last_source = source;
         let e = self.pen_stats.entry(source).or_insert((f32::MAX, f32::MIN, 0));
@@ -4298,7 +4364,15 @@ app.open_canvas_dialog(d == "resolution")
             return;
         }
         let mut live = LiveStroke::new(self.selected.clone(), stroke, rgb);
-        live.stroke.add_point(self.smoother.push(p));
+        let q = self.smoother.push(p);
+        self.shift_lock = None;
+        let anti = self.brushes[tool_index].anti_hook;
+        if anti > 0.0 {
+            self.hook = Some(HookBuf { range: anti / self.zoom, start_done: false, buf: vec![q], done: Vec::new() });
+        } else {
+            self.hook = None;
+            live.stroke.add_point(q);
+        }
         let keys = self.doc.live_update(&mut live);
         self.invalidate(keys);
         self.live = Some(live);
@@ -4369,9 +4443,70 @@ app.open_canvas_dialog(d == "resolution")
         if self.live.is_none() {
             return;
         }
+        // Shift после начала мазка (SAI 2026): дальше — прямо по горизонтали или вертикали
+        let shift = self.ctx.as_ref().is_some_and(|c| c.input(|i| i.modifiers.shift));
+        let p = if shift {
+            let (a, axis) = self.shift_lock.get_or_insert((p, None));
+            let (dx, dy) = (p.x - a.x, p.y - a.y);
+            if axis.is_none() && dx.hypot(dy) > 4.0 / self.zoom {
+                *axis = Some(dx.abs() >= dy.abs());
+            }
+            match *axis {
+                Some(true) => InputPoint { y: a.y, ..p },
+                Some(false) => InputPoint { x: a.x, ..p },
+                None => *a,
+            }
+        } else {
+            self.shift_lock = None;
+            p
+        };
         // точка — в очередь: рисуется в `drain_points` столько, сколько успевается за кадр
         let q = self.smoother.push(p);
-        self.pending_points.push_back(q);
+        self.hook_feed(q);
+    }
+
+    /// Точка мазка — в очередь рисования, а при «Срезать крючки» — сначала в придержку.
+    fn hook_feed(&mut self, q: InputPoint) {
+        let Some(h) = self.hook.as_mut() else {
+            self.pending_points.push_back(q);
+            return;
+        };
+        h.buf.push(q);
+        if !h.start_done {
+            if path_len(&h.buf) < 3.0 * h.range {
+                return;
+            }
+            // крючок в начале — тот же поиск с другого конца
+            let rev: Vec<[f32; 2]> = h.buf.iter().rev().map(|p| [p.x, p.y]).collect();
+            let k = paint_brush::hook_len(&rev, h.range);
+            h.buf.drain(..k);
+            h.start_done = true;
+        }
+        while h.buf.len() > 2 && path_len(&h.buf[1..]) > h.range {
+            let q = h.buf.remove(0);
+            h.done.push(q);
+            self.pending_points.push_back(q);
+        }
+        while h.done.len() > 2 && path_len(&h.done[1..]) > 2.5 * h.range {
+            h.done.remove(0);
+        }
+    }
+
+    /// Перо поднято: срезать крючки на концах и отдать придержанные точки.
+    fn hook_flush(&mut self) {
+        let Some(mut h) = self.hook.take() else { return };
+        h.buf.extend(self.smoother.finish());
+        let pts: Vec<[f32; 2]> = h.buf.iter().map(|p| [p.x, p.y]).collect();
+        if !h.start_done {
+            let rev: Vec<[f32; 2]> = pts.iter().rev().copied().collect();
+            let k = paint_brush::hook_len(&rev, h.range).min(h.buf.len().saturating_sub(1));
+            h.buf.drain(..k);
+        }
+        // крючок в конце: ищется по придержанным точкам вместе с уже отданными перед ними
+        let pts: Vec<[f32; 2]> = h.done.iter().chain(h.buf.iter()).map(|p| [p.x, p.y]).collect();
+        let k = paint_brush::hook_len(&pts, h.range).min(h.buf.len().saturating_sub(1));
+        h.buf.truncate(h.buf.len() - k);
+        self.pending_points.extend(h.buf);
     }
 
     /// Нарисовать точки из очереди штриха; `budget` — не дольше (окно не замирает на огромных
@@ -4445,6 +4580,11 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn end_stroke(&mut self) {
+        self.pending_start = None;
+        self.shift_lock = None;
+        if self.live.is_some() {
+            self.hook_flush();
+        }
         // перо поднято — остаток очереди дорисовать
         self.drain_points(None);
         self.report_frames();
@@ -7127,9 +7267,10 @@ app.open_canvas_dialog(d == "resolution")
         let mut add_tip = false;
         // своя динамика из плагинов: «id/имя» → подпись
         let plugin_dyns: Vec<(String, String)> = self.plugins.iter().flat_map(|p| p.plugin.dynamics.iter().map(move |(n, _)| (format!("{}/{n}", p.plugin.id), format!("{} — {n}", p.plugin.name)))).collect();
+        self.brush_preview_ui(ui, lw + w);
         let tool = &mut self.brushes[self.brush];
         let tool = &mut tool.brush;
-        let (brush, grain, dyns, dyn_plugin) = (&mut tool.params, &mut tool.grain, &mut tool.dynamics, &mut tool.dyn_plugin);
+        let (brush, grain, dyns, dyn_plugin, anti_hook) = (&mut tool.params, &mut tool.grain, &mut tool.dynamics, &mut tool.dyn_plugin, &mut tool.anti_hook);
         // режим наложения мазка — у пера эффектов и разброса (у остальных в SAI он неактивен)
         let has_mode = brush.effect.is_some();
         sai_ui::row(ui, tr("Режим"), lw, has_mode, |ui| {
@@ -7466,6 +7607,13 @@ app.open_canvas_dialog(d == "resolution")
                 }
             });
             ui.checkbox(&mut brush.ver1_density, tr("Нажим на плотность как в версии 1"));
+            sai_ui::row(ui, tr("   Срезать крючки"), lw, true, |ui| {
+                let mut v = *anti_hook;
+                let text = if v > 0.0 { format!("{v:.0} px") } else { tr("нет").to_string() };
+                if sai_ui::bar(ui, &mut v, 0.0, 30.0, text, w, true).on_hover_text(tr("Длина загибов на концах мазка, которые срезаются (точки экрана)")).changed() {
+                    *anti_hook = v.round().clamp(0.0, 30.0);
+                }
+            });
             sai_ui::row(ui, "   Sharpness", lw, true, |ui| {
                 let mut v = brush.sharpness * 100.0;
                 let text = format!("{:.0}", v);
@@ -8894,11 +9042,18 @@ app.open_canvas_dialog(d == "resolution")
                     pressure,
                 }
             };
-            if pressed && response.hovered() {
+            if pressed && response.hovered() && self.below_min {
+                // слабее «минимального нажима» — ждать, пока нажмут сильнее
+                self.pending_start = Some(eraser_end);
+            } else if pressed && response.hovered() {
                 if let Some(pos) = pointer {
                     self.raw_last = Some((pos, pressure));
                     self.begin_stroke(point(pos, self.zoom, self.offset), eraser_end);
                 }
+            } else if let (Some(er), false, Some(pos)) = (self.pending_start, self.below_min, pointer) {
+                self.pending_start = None;
+                self.raw_last = Some((pos, pressure));
+                self.begin_stroke(point(pos, self.zoom, self.offset), er);
             } else if self.live.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some() || self.line_stroke.is_some() || self.line_edit.is_some() || self.shape_drag.is_some() {
                 // Сглаживание SAI — среднее последних N точек пера, а планшет шлёт их с постоянной
                 // частотой. Windows склеивает движения, пока кадр занят (тяжёлые кисти), — точек
@@ -9192,6 +9347,12 @@ app.open_canvas_dialog(d == "resolution")
                         }
                         None => {
                             painter.circle_stroke(pos, (size * self.zoom / 2.0).max(1.0), egui::Stroke::new(1.0_f32, Color32::from_gray(90)));
+                            // при «минимальном нажиме» — ещё и кружок наименьшего размера (SAI 2024+)
+                            let bp = &self.brushes[self.brush].params;
+                            if self.opts.min_pressure > 0.0 && bp.size_by_pressure && bp.min_size < 0.999 {
+                                let r = (bp.diameter_at(0.0) * self.zoom / 2.0).max(1.0);
+                                painter.circle_stroke(pos, r, egui::Stroke::new(1.0_f32, Color32::from_gray(150)));
+                            }
                         }
                     }
                 }
@@ -10535,6 +10696,13 @@ impl PaintApp {
                     }
                 });
             });
+            ui.horizontal(|ui| {
+                ui.label(tr("Минимальный нажим для мазка:"));
+                let mut v = o.min_pressure * 100.0;
+                if ui.add(egui::DragValue::new(&mut v).range(0.0..=90.0).suffix("%")).changed() {
+                    o.min_pressure = (v / 100.0).clamp(0.0, 0.9);
+                }
+            }).response.on_hover_text(tr("Слабее — перо не рисует (защита от случайных касаний); нажим отсчитывается от этого порога"));
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ok = ui.button("OK").clicked();

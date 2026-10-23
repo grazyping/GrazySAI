@@ -86,6 +86,9 @@ pub struct Brush {
     pub dynamics: Vec<paint_core::dynamics::Dynamic>,
     /// Своя динамика из плагина: «id плагина/имя динамики».
     pub dyn_plugin: Option<String>,
+    /// «Срезать крючки» (Anti-Hook, SAI 2018+): длина крючка на концах мазка, точки экрана;
+    /// 0 — выключено.
+    pub anti_hook: f32,
 }
 
 /// Вид инструмента сетки — как в меню SAI 2017 по правому щелчку на пустой ячейке.
@@ -289,7 +292,7 @@ impl ToolKind {
                 BrushParams { size_by_pressure: false, density_by_pressure: true, sharpness: 0.5, mix: Some(MixParams { blur: true, blur_only: true, ..MixParams::new(0.0, 0.0, 0.5) }), ..b(50.0, 0.0, 1.0) },
             ),
         };
-        Brush { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), dynamics: Vec::new(), dyn_plugin: None }
+        Brush { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), dynamics: Vec::new(), dyn_plugin: None, anti_hook: 0.0 }
     }
 }
 
@@ -364,6 +367,8 @@ pub fn read(b: &mut Brush, s: &Kv, prefix: &str) {
     if let Some(n) = s.f32(&k("dyn.count")) {
         b.dynamics = (0..(n as usize).min(32)).filter_map(|i| s.str(&k(&format!("dyn.{i}"))).and_then(paint_core::dynamics::Dynamic::from_text)).collect();
     }
+    s.read_f32(&k("anti_hook"), &mut b.anti_hook);
+    b.anti_hook = b.anti_hook.clamp(0.0, 100.0);
     let p = &mut b.params;
     s.read_f32(&k("size"), &mut p.size);
     s.read_f32(&k("min_size"), &mut p.min_size);
@@ -445,6 +450,7 @@ pub fn write(b: &Brush, s: &mut Kv, prefix: &str) {
     for (n, d) in b.dynamics.iter().enumerate() {
         s.set(&k(&format!("dyn.{n}")), d.to_text());
     }
+    s.set(&k("anti_hook"), b.anti_hook);
     let p = &b.params;
     s.set(&k("size"), p.size);
     s.set(&k("min_size"), p.min_size);
@@ -574,6 +580,46 @@ fn write_scatter(sc: &paint_core::scatter::ScatterParams, s: &mut Kv, prefix: &s
     s.set(&k("absolute_size"), sc.absolute_size as u8);
     s.set(&k("int_position"), sc.int_position as u8);
     s.set(&k("each_shape"), sc.each_shape as u8);
+}
+
+/// «Срезать крючки»: сколько точек с конца `pts` (x, y) — крючок длиной до `range`: короткий
+/// хвост, повёрнутый к основному направлению мазка больше чем на 60°. 0 — крючка нет.
+pub fn hook_len(pts: &[[f32; 2]], range: f32) -> usize {
+    let n = pts.len();
+    if n < 3 || range <= 0.0 {
+        return 0;
+    }
+    let dist = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).hypot(a[1] - b[1]);
+    let end = pts[n - 1];
+    let mut best = 0;
+    let mut tail = 0.0;
+    for k in (1..n - 1).rev() {
+        tail += dist(pts[k + 1], pts[k]);
+        if tail > range {
+            break;
+        }
+        // основное направление — от точки на 2·range раньше до вершины k
+        let mut back = 0.0;
+        let mut j = k;
+        while j > 0 && back < 2.0 * range {
+            back += dist(pts[j], pts[j - 1]);
+            j -= 1;
+        }
+        if back < range {
+            continue;
+        }
+        let main = [pts[k][0] - pts[j][0], pts[k][1] - pts[j][1]];
+        let hook = [end[0] - pts[k][0], end[1] - pts[k][1]];
+        let (lm, lh) = (main[0].hypot(main[1]), hook[0].hypot(hook[1]));
+        if lm < 1e-3 || lh < 1e-3 {
+            continue;
+        }
+        let cos = (main[0] * hook[0] + main[1] * hook[1]) / (lm * lh);
+        if cos < 0.5 {
+            best = n - 1 - k;
+        }
+    }
+    best
 }
 
 /// Имя файла из названия: буквы, цифры, пробел и `-_().`, остальное — `_`.

@@ -1166,3 +1166,9 @@ Zip с паролем = Zip mit Passwort
 Двоичный ластик выделения = Binärer Auswahlradierer
 Пикс.перо = Pixelstift
 Пиксельное перо = Pixel-Art-Stift
+
+# Мелочи кистей
+Длина загибов на концах мазка, которые срезаются (точки экрана) = Länge der Knicke an den Strichenden, die abgeschnitten werden (Bildschirmpixel)
+Минимальный нажим для мазка: = Mindestdruck für Pinselstrich:
+Слабее — перо не рисует (защита от случайных касаний); нажим отсчитывается от этого порога = Leichterer Druck malt nicht (Schutz vor versehentlichen Berührungen); der Druck zählt ab dieser Schwelle
+Срезать крючки = Anti-Haken
