@@ -152,7 +152,7 @@ Everything people use in PaintTool SAI 2017 for everyday work is there and check
 - [x] “Save changes?” question on exit (0.8.48)
 - [x] Own file viewer with thumbnails, as in SAI (0.9.4)
 
-### 1.1 — new in SAI 2 after 2017 (current version 1.1.0)
+### 1.1 — new in SAI 2 after 2017
 
 Plan, analysis and measurements — `docs/41-sai2-after-2017.en.md`. New tools are separate kinds;
 brushes calibrated against SAI 2017 stay unchanged; files still open in SAI 2017.
@@ -171,6 +171,18 @@ brushes calibrated against SAI 2017 stay unchanged; files still open in SAI 2017
 - [x] Rulers: parallel lines, concentric ellipses, vanishing point (1.1.0)
 - [x] Asset Manager: swatch sets, scratch pads, papers, forms, textures and tips, groups, asset from a layer (1.1.0)
 - [x] 2026 details: lasso stabilizer, grayscale, canvas list in View, clearing Recent (1.1.0)
+
+### 1.2 — interface as in SAI 2 (current version 1.2.0)
+
+Checked on real Windows next to the official SAI 2 2026.
+
+- [x] Navigator as in SAI: the whole canvas as a small copy, the view frame with an “up” line (turns with the view), dragging moves the view, a click does not jump (1.2.0)
+- [x] Navigator and layers at the window edge, color and tools next to the canvas (SAI's default) (1.2.0)
+- [x] Tool groups — “Basic”, “Binary” and your own tabs (1.2.0)
+- [x] Brush panel: size range ×0.1…×50, pressure icons in the rows, form and texture always shown, reserve / restore in Misc, stroke preview on a checkerboard (1.2.0)
+- [x] Size list as numbers only and above the settings; open canvases at the bottom of the View menu (1.2.0)
+- [x] “Drive Usage” in the status bar (1.2.0)
+- [x] Icons in the new-tool list and on new menu items; labels fit in all 10 languages (1.2.0)
 
 ### Beyond the plan
 - [x] Dark interface theme: “Window → Dark theme” (the canvas and drawing colors stay as they are)

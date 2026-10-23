@@ -50,13 +50,23 @@ Linux).
 
 ## Window
 
-The layout follows SAI 2:
+The layout follows SAI 2 (checked on Windows next to SAI 2026):
 
-- **Left**: color wheel, common tools (selection, lasso, magic wand, bucket, move, zoom, hand,
-  color picker), main and background color, brush grid, current brush settings, size grid.
+- **At the left edge**: navigator, layer properties (blend mode, opacity, locks, “Clipping
+  Group”, “Selection Source”), layer buttons, layer list with thumbnails.
+- **Next to the canvas**: color wheel, tool group tabs, common tools (selection, lasso, magic wand,
+  bucket, move, zoom, hand, color picker), main and background color, brush grid, stroke preview,
+  current brush settings, size grid.
 - **Top**: menus and the quick bar (undo, selection, zoom, view rotation and flip, stabilizer).
-- **Right**: navigator, layer properties (blend mode, opacity, locks, “Clipping Group”,
-  “Selection Source”), layer buttons, layer list with thumbnails.
+  **Bottom** — the status bar: messages, pen and pressure, “Drive Usage” (the drive holding the
+  undo history) and memory use.
+
+Either column can move right: “Window → Show Navigator and Layer Panels on Right Side” and “Show
+Color and Tool Panels on Right Side”.
+
+The **navigator**, as in SAI: the whole canvas as a small copy, a dark frame for what the window
+shows, with a line from its centre to the top of the view (it turns with the view). Dragging from
+any point moves the view by the same amount; a click does not jump the view.
 
 Shortcut keys in menu items and tooltips can be hidden: “Window → Show shortcut keys”.
 
@@ -87,18 +97,27 @@ tool in SAI.
 
 As in SAI, the grid can be changed: right-click an empty cell for a new tool of the kind you need
 (including the **Binary Pen** — lines without anti-aliasing — and the **Bucket**); right-click a
-tool for “Duplicate”, “Delete” and “Property…” (its own name and a second line under it). The grid
-is kept between runs.
+tool for “Duplicate”, “Delete”, “Property…” (its own name and a second line under it) and “Move to
+Group”. The new-tool list shows icons. The grid is kept between runs.
+
+**Tool groups** are tabs above the common tools, as in SAI 2: “Basic” and “Binary” (binary and pixel
+art pens, binary erasers, bucket). Right-click a tab for “New Group”, “Rename…”, “Delete Group” (its
+tools move to the first group). Picking a tool by its key opens its group.
 
 | Setting | What it does |
 |---|---|
 | Hardness | Five edge steps, from the softest to the hardest |
-| Size | Diameter in pixels; `[` and `]` — previous or next size from the size grid |
-| Minimum | Size at the lightest pressure (if pressure on size is on) |
-| Density, Min Density | Stroke opacity and its value at light pressure |
-| Pressure: Size, Density, Blend | What pen pressure changes |
+| Size | Diameter in pixels; `[` and `]` — previous or next size from the size grid. The list left of the bar is the bar range, as in SAI: ×0.1 (0.1–10), ×1 (1–100), ×5 (5–500), ×10 (10–1000), ×50 (50–5000) |
+| Minimum | Size at the lightest pressure; the pen icon in the row turns pressure on size on |
+| Density, Min Density | Stroke opacity and its value at light pressure; the pen icon — pressure on density |
+| “Pressure affects blending” | Mixing brushes: pressure changes blending |
+| Form, Texture | The list and strength are always shown; the triangle on the left opens the rest |
 | Blending, Dilution, Persistence | Brush, Water and Marker only (see below) |
-| Advanced Settings: Sharpness, Amplify Dens., “Ver1 pressure on density” | Fine tuning of edge and density, as in SAI |
+| Advanced Settings: Sharpness, Amplify Dens., “Ver1 pressure on density” | Fine tuning of edge and density, as in SAI; the icons on the right of the header are “Restore Reserved Settings” and “Reserve Current Settings” |
+
+The size grid can show numbers only and sit above the brush settings: “Window → Show Brush Size List
+Items in Numerals Only” and “Show Brush Size List on Upper Side”. The bottom of the View menu lists
+the open canvases with their zoom, as in SAI.
 
 **Stabilizer** (quick bar): 0–15 and S-1…S-7 — the higher, the smoother the line and the more
 it lags behind the pen.
@@ -312,7 +331,7 @@ Normal layers only (not folders).
   - “Convert to Grayscale…” — all layers become gray (with a warning; only Undo brings colour back).
 - “File → New” has size presets: pick one from the list, “+” adds the current size, “Edit” gives the
   preset the current size, ↑ ↓ reorder, “Delete”; the preset name is edited below.
-- “View → Canvases” lists the open canvases to switch to. “File → Recent → Clear List”.
+- The bottom of the View menu lists the open canvases to switch to. “File → Recent → Clear List”.
 - **View**:
   - mouse wheel — zoom at the cursor; Space or the middle button + drag — pan;
   - Shift+PageUp / Shift+PageDown — rotate by 15°, Shift+Home — reset the angle;
