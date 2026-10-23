@@ -1118,3 +1118,10 @@ Zip с паролем = Password-protected zip
 Окрашивание = Coloring
 Растуш. = Smudge
 Растушёвка = Smudge
+
+# симметрия по кругу
+С отражением = Mirrored
+С отражением — столько осей, сколько частей; без — копии поворотом вокруг центра = Mirrored — as many axes as parts; without — copies rotated around the center
+Центр = Center
+Центр — середина холста = Center — middle of the canvas
+Частей = Parts

@@ -157,6 +157,30 @@ pub fn run(report: Option<PathBuf>) -> bool {
             }
             Ok("ок".into())
         })),
+        ("симметрия по кругу: 4 части с отражением", Box::new(|_| {
+            let mut doc = Document::new(200, 200);
+            let mut s = Stroke::new(BrushParams { size: 6.0, hardness: 1.0, size_by_pressure: false, ..Default::default() });
+            s.mirror.radial = Some(paint_core::Radial { cx: 100.0, cy: 100.0, angle: 0.0, n: 4, mirror: true });
+            for i in 0..4 {
+                s.add_point(InputPoint { x: 120.0 + i as f32, y: 40.0, pressure: 1.0 });
+            }
+            doc.commit_stroke(0, &s, [0, 0, 0]);
+            // 8 копий короткого штриха на окружности радиуса √(20² + 60²) — по одной в каждом восьмом круга
+            let mut sectors = [false; 8];
+            for y in 0..200 {
+                for x in 0..200 {
+                    if paint_core::pixel::to_rgba8(doc.layers[0].pixels.get(x, y))[3] > 128 {
+                        let a = (y as f32 - 100.0).atan2(x as f32 - 100.0).rem_euclid(std::f32::consts::TAU);
+                        sectors[(a / std::f32::consts::FRAC_PI_4) as usize % 8] = true;
+                    }
+                }
+            }
+            let n = sectors.iter().filter(|s| **s).count();
+            if n != 8 {
+                return Err(format!("копий по секторам: {n} из 8").into());
+            }
+            Ok("8 копий".into())
+        })),
         ("слой 3D: модель glTF и отрисовка", Box::new(|_| {
             let t = std::time::Instant::now();
             let files = vec![("scene.glb".to_string(), include_bytes!("../../paint-3d/tests/data/scene.glb").to_vec())];

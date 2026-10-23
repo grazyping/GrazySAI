@@ -1117,3 +1117,10 @@ Zip с паролем = Zip protégé par mot de passe
 Окрашивание = Coloration
 Растуш. = Estomp.
 Растушёвка = Estompe
+
+# симметрия по кругу
+С отражением = En miroir
+С отражением — столько осей, сколько частей; без — копии поворотом вокруг центра = En miroir — autant d’axes que de parties ; sans — copies tournées autour du centre
+Центр = Centre
+Центр — середина холста = Centre — milieu de la toile
+Частей = Parties

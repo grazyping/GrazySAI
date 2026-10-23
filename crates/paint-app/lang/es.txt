@@ -1117,3 +1117,10 @@ Zip с паролем = Zip con contraseña
 Окрашивание = Coloreado
 Растуш. = Difumin.
 Растушёвка = Difuminar
+
+# симметрия по кругу
+С отражением = Con reflejo
+С отражением — столько осей, сколько частей; без — копии поворотом вокруг центра = Con reflejo — tantos ejes como partes; sin él — copias giradas alrededor del centro
+Центр = Centro
+Центр — середина холста = Centro — mitad del lienzo
+Частей = Partes

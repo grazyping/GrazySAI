@@ -30,7 +30,7 @@ pub use brush::BrushParams;
 pub use document::{Change, Document, LiveStroke, StepInfo, StepKind};
 pub use layer::Layer;
 pub use stabilizer::Stabilizer;
-pub use stroke::{InputPoint, Mirror, Stamp, Stroke, Tip};
+pub use stroke::{InputPoint, Mirror, Radial, Stamp, Stroke, Tip};
 
 /// Число потоков для параллельного счёта (ядра машины). Запоминается при первом вызове:
 /// `available_parallelism` в Linux читает cgroup при каждом вызове — это десятки микросекунд,

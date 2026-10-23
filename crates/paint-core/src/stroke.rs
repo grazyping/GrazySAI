@@ -17,6 +17,45 @@ pub struct Mirror {
     /// Бесшовный режим: размер холста (ширина, высота). Отпечаток переносится внутрь холста, а у
     /// края повторяется с другой стороны.
     pub wrap: Option<(f32, f32)>,
+    /// Симметрия по кругу (симметричная линейка SAI 2019+): вместо осей `x`/`y`.
+    pub radial: Option<Radial>,
+}
+
+/// Симметрия по кругу: центр, угол первой оси (радианы, 0 — вертикальная, по часовой), число
+/// частей `n` (1–20) и отражение. С отражением — `n` осей и `2n` копий, без — `n` копий поворотом.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Radial {
+    pub cx: f32,
+    pub cy: f32,
+    pub angle: f32,
+    pub n: u8,
+    pub mirror: bool,
+}
+
+impl Radial {
+    /// Копии точки (сама точка — первой).
+    pub fn copies(&self, x: f32, y: f32) -> Vec<(f32, f32)> {
+        let n = self.n.clamp(1, 20) as usize;
+        let (vx, vy) = (x - self.cx, y - self.cy);
+        // отражение относительно первой оси (направление (sin a, −cos a) — вверх от центра)
+        let (dx, dy) = (self.angle.sin(), -self.angle.cos());
+        let dot = vx * dx + vy * dy;
+        let (mxv, myv) = (2.0 * dot * dx - vx, 2.0 * dot * dy - vy);
+        let mut out = Vec::with_capacity(n * 2);
+        for k in 0..n {
+            let t = std::f32::consts::TAU * k as f32 / n as f32;
+            let (s, c) = t.sin_cos();
+            out.push((self.cx + vx * c - vy * s, self.cy + vx * s + vy * c));
+        }
+        if self.mirror {
+            for k in 0..n {
+                let t = std::f32::consts::TAU * k as f32 / n as f32;
+                let (s, c) = t.sin_cos();
+                out.push((self.cx + mxv * c - myv * s, self.cy + mxv * s + myv * c));
+            }
+        }
+        out
+    }
 }
 
 impl Mirror {
@@ -42,6 +81,9 @@ impl Mirror {
     }
 
     fn reflections(&self, p: InputPoint) -> Vec<InputPoint> {
+        if let Some(r) = self.radial {
+            return r.copies(p.x, p.y).into_iter().map(|(x, y)| InputPoint { x, y, ..p }).collect();
+        }
         let mut out = vec![p];
         if let Some(ax) = self.x {
             out.push(InputPoint { x: 2.0 * ax - p.x, ..p });
@@ -1709,4 +1751,27 @@ fn lay(px: Px, paint: [f64; 4], a: f64, preserve_opacity: bool) -> Px {
     let q = |v: f64| (v.clamp(0.0, 1.0) * k + 0.5) as u16;
     let a = q(out[3]);
     [q(out[0]).min(a), q(out[1]).min(a), q(out[2]).min(a), a]
+}
+
+#[cfg(test)]
+mod radial_tests {
+    use super::*;
+
+    /// Симметрия по кругу: 3 части с отражением — 6 копий на одном расстоянии от центра, первая —
+    /// сама точка, отражение первой оси — вертикаль.
+    #[test]
+    fn radial_symmetry_copies() {
+        let r = Radial { cx: 100.0, cy: 100.0, angle: 0.0, n: 3, mirror: true };
+        let c = r.copies(130.0, 60.0);
+        assert_eq!(c.len(), 6);
+        for (x, y) in &c {
+            assert!((((x - 100.0).powi(2) + (y - 100.0).powi(2)).sqrt() - 50.0).abs() < 1e-3);
+        }
+        assert!((c[0].0 - 130.0).abs() < 1e-4 && (c[0].1 - 60.0).abs() < 1e-4);
+        // отражение через вертикальную ось: (70, 60)
+        assert!((c[3].0 - 70.0).abs() < 1e-3 && (c[3].1 - 60.0).abs() < 1e-3);
+        // без отражения — только повороты; 1 часть без отражения — сама точка
+        assert_eq!(Radial { mirror: false, ..r }.copies(130.0, 60.0).len(), 3);
+        assert_eq!(Radial { n: 1, mirror: false, ..r }.copies(130.0, 60.0), vec![(130.0, 60.0)]);
+    }
 }

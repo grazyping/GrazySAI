@@ -1117,3 +1117,10 @@ Zip с паролем = Zip com senha
 Окрашивание = Coloração
 Растуш. = Esfum.
 Растушёвка = Esfumar
+
+# симметрия по кругу
+С отражением = Espelhado
+С отражением — столько осей, сколько частей; без — копии поворотом вокруг центра = Espelhado — tantos eixos quanto partes; sem — cópias giradas em torno do centro
+Центр = Centro
+Центр — середина холста = Centro — meio da tela
+Частей = Partes

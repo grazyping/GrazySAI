@@ -1117,3 +1117,10 @@ Zip с паролем = Zip mit Passwort
 Окрашивание = Einfärben
 Растуш. = Wischen
 Растушёвка = Wischfinger
+
+# симметрия по кругу
+С отражением = Gespiegelt
+С отражением — столько осей, сколько частей; без — копии поворотом вокруг центра = Gespiegelt — so viele Achsen wie Teile; ohne — Kopien gedreht um die Mitte
+Центр = Mitte
+Центр — середина холста = Mitte — Leinwandmitte
+Частей = Teile

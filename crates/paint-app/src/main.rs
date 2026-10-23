@@ -1364,6 +1364,12 @@ struct PaintApp {
     popup_frame: u64,
     /// Симметрия: 0 — нет, 1 — ось по вертикали (лево ↔ право), 2 — по горизонтали, 3 — обе.
     symmetry: u8,
+    /// Симметрия по кругу (`symmetry == 4`): частей 1–20, с отражением, угол первой оси (°),
+    /// центр (`None` — середина холста).
+    sym_n: u8,
+    sym_mirror: bool,
+    sym_angle: f32,
+    sym_center: Option<[f32; 2]>,
 }
 
 impl PaintApp {
@@ -1565,6 +1571,10 @@ impl PaintApp {
             popup_at: None,
             popup_frame: 0,
             symmetry: 0,
+            sym_n: 6,
+            sym_mirror: true,
+            sym_angle: 0.0,
+            sym_center: None,
         };
         app.load_settings();
         app.recovery_found = recovery_files().filter(|(f, _)| f.exists()).map(|(f, info)| {
@@ -1768,7 +1778,16 @@ app.open_canvas_dialog(d == "resolution")
             }
         }
         if let Some(v) = s.f32("symmetry") {
-            self.symmetry = (v as u8).min(3);
+            self.symmetry = (v as u8).min(4);
+        }
+        if let Some(v) = s.f32("sym_n") {
+            self.sym_n = (v as u8).clamp(1, 20);
+        }
+        if let Some(v) = s.f32("sym_mirror") {
+            self.sym_mirror = v != 0.0;
+        }
+        if let Some(v) = s.f32("sym_angle") {
+            self.sym_angle = v.clamp(-360.0, 360.0);
         }
         sai_ui::set_dark(self.dark_theme);
         if let Some(v) = s.bool("key_hints") {
@@ -1979,6 +1998,9 @@ app.open_canvas_dialog(d == "resolution")
             s.set("wm.place", wm.place.key());
         }
         s.set("symmetry", self.symmetry);
+        s.set("sym_n", self.sym_n);
+        s.set("sym_mirror", self.sym_mirror as u8);
+        s.set("sym_angle", self.sym_angle);
         for (a, id, _, _) in keys::ALL {
             let v = self.keymap.get(&a).copied().flatten().map_or_else(|| "none".to_string(), |b| b.text());
             s.set(&format!("key.{id}"), v);
@@ -2660,9 +2682,14 @@ app.open_canvas_dialog(d == "resolution")
     /// Оси симметрии — по середине холста.
     fn mirror(&self) -> paint_core::Mirror {
         let (cx, cy) = (self.doc.width as f32 / 2.0, self.doc.height as f32 / 2.0);
+        let radial = (self.symmetry == 4).then(|| {
+            let [x, y] = self.sym_center.unwrap_or([cx, cy]);
+            paint_core::Radial { cx: x, cy: y, angle: self.sym_angle.to_radians(), n: self.sym_n, mirror: self.sym_mirror }
+        });
         paint_core::Mirror {
-            x: (self.symmetry & 1 != 0).then_some(cx),
-            y: (self.symmetry & 2 != 0).then_some(cy),
+            radial,
+            x: (self.symmetry < 4 && self.symmetry & 1 != 0).then_some(cx),
+            y: (self.symmetry < 4 && self.symmetry & 2 != 0).then_some(cy),
             wrap: self.wrap_around.then_some((self.doc.width as f32, self.doc.height as f32)),
         }
     }
@@ -5932,12 +5959,44 @@ app.open_canvas_dialog(d == "resolution")
                     ui.close_menu();
                 }
                 ui.menu_button(tr("Симметрия"), |ui| {
-                    for (v, name) in [(0u8, tr("Выключена")), (1, tr("Лево ↔ право")), (2, tr("Верх ↔ низ")), (3, tr("Обе оси"))] {
+                    for (v, name) in [(0u8, tr("Выключена")), (1, tr("Лево ↔ право")), (2, tr("Верх ↔ низ")), (3, tr("Обе оси")), (4, tr("По кругу"))] {
                         if ui.radio(self.symmetry == v, name).clicked() {
                             self.symmetry = v;
-                            ui.close_menu();
+                            self.save_settings();
+                            if v != 4 {
+                                ui.close_menu();
+                            }
                         }
                     }
+                    // по кругу (как симметричная линейка SAI 2019+): части, отражение, угол, центр
+                    ui.add_enabled_ui(self.symmetry == 4, |ui| {
+                        let mut changed = false;
+                        ui.horizontal(|ui| {
+                            ui.label(tr("Частей"));
+                            changed |= ui.add(egui::DragValue::new(&mut self.sym_n).range(1..=20)).changed();
+                        });
+                        changed |= ui.checkbox(&mut self.sym_mirror, tr("С отражением")).on_hover_text(tr("С отражением — столько осей, сколько частей; без — копии поворотом вокруг центра")).changed();
+                        ui.horizontal(|ui| {
+                            ui.label(tr("Угол"));
+                            changed |= ui.add(egui::DragValue::new(&mut self.sym_angle).speed(0.5).range(-180.0..=180.0).suffix("°")).changed();
+                        });
+                        let (w, h) = (self.doc.width as f32, self.doc.height as f32);
+                        let mut c = self.sym_center.unwrap_or([w / 2.0, h / 2.0]);
+                        ui.horizontal(|ui| {
+                            ui.label(tr("Центр"));
+                            let a = ui.add(egui::DragValue::new(&mut c[0]).speed(1.0).range(0.0..=w));
+                            let b = ui.add(egui::DragValue::new(&mut c[1]).speed(1.0).range(0.0..=h));
+                            if a.changed() || b.changed() {
+                                self.sym_center = Some(c);
+                            }
+                        });
+                        if ui.button(tr("Центр — середина холста")).clicked() {
+                            self.sym_center = None;
+                        }
+                        if changed {
+                            self.save_settings();
+                        }
+                    });
                 });
                 ui.separator();
                 for (kind, label) in [
@@ -8805,10 +8864,23 @@ app.open_canvas_dialog(d == "resolution")
         }
         // оси симметрии — пунктиром
         let axis = egui::Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(60, 140, 230, 200));
-        if self.symmetry & 1 != 0 {
+        if self.symmetry == 4 {
+            // по кругу: оси (с отражением) или границы частей (без) — от центра до края холста
+            let [cx, cy] = self.sym_center.unwrap_or([w / 2.0, h / 2.0]);
+            let reach = w.max(h) * 1.5;
+            let n = self.sym_n.clamp(1, 20) as usize;
+            let rays = if self.sym_mirror { 2 * n } else { n };
+            for k in 0..rays {
+                let t = self.sym_angle.to_radians() + std::f32::consts::TAU * k as f32 / rays as f32;
+                let end = Vec2::new(cx + t.sin() * reach, cy - t.cos() * reach);
+                painter.extend(egui::Shape::dashed_line(&[xf.to_screen(Vec2::new(cx, cy)), xf.to_screen(end)], axis, 6.0, 4.0));
+            }
+            painter.circle_stroke(xf.to_screen(Vec2::new(cx, cy)), 4.0, axis);
+        }
+        if self.symmetry < 4 && self.symmetry & 1 != 0 {
             painter.extend(egui::Shape::dashed_line(&[xf.to_screen(Vec2::new(w / 2.0, 0.0)), xf.to_screen(Vec2::new(w / 2.0, h))], axis, 6.0, 4.0));
         }
-        if self.symmetry & 2 != 0 {
+        if self.symmetry < 4 && self.symmetry & 2 != 0 {
             painter.extend(egui::Shape::dashed_line(&[xf.to_screen(Vec2::new(0.0, h / 2.0)), xf.to_screen(Vec2::new(w, h / 2.0))], axis, 6.0, 4.0));
         }
         self.draw_ruler(&painter, xf, ctrl);
