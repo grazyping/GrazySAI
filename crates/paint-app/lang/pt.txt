@@ -1234,7 +1234,6 @@ Zip с паролем = Zip com senha
 Очистить список = Limpar a lista
 Перевести = Converter
 Перевести в оттенки серого… = Converter para tons de cinza…
-Холсты = Telas
 
 В группу = Para o grupo
 Группа {0} = Grupo {0}
@@ -1252,3 +1251,6 @@ Zip с паролем = Zip com senha
 
 Диск, куда уходит история отмены = Disco que guarda o histórico de desfazer
 Диск занят = Disco usado
+
+Список размеров — над настройками кисти = Lista de tamanhos acima das configurações
+Список размеров — только числа = Lista de tamanhos só com números

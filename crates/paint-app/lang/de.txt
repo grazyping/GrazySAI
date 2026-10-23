@@ -1234,7 +1234,6 @@ Zip с паролем = Zip mit Passwort
 Очистить список = Liste leeren
 Перевести = Umwandeln
 Перевести в оттенки серого… = In Graustufen umwandeln…
-Холсты = Leinwände
 
 В группу = In Gruppe
 Группа {0} = Gruppe {0}
@@ -1252,3 +1251,6 @@ Zip с паролем = Zip mit Passwort
 
 Диск, куда уходит история отмены = Laufwerk für den Rückgängig-Verlauf
 Диск занят = Laufwerk belegt
+
+Список размеров — над настройками кисти = Größenliste oberhalb der Pinseleinstellungen
+Список размеров — только числа = Größenliste nur als Zahlen

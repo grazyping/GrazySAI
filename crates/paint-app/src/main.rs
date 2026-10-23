@@ -668,6 +668,9 @@ struct WindowOpts {
     panels_hidden: bool,
     dot_cursor: bool,
     brush_circle: bool,
+    /// Список размеров кисти: только числа (без кружков) и над настройками кисти (SAI 2).
+    size_numbers: bool,
+    size_list_top: bool,
     /// Режим ползунков HSV: 0 — V-HSV (как SAI по умолчанию), 1 — HSL, 2 — HSV.
     hsv_mode: u8,
     /// Размер образцов: 0 — маленький (10 px), 1 — средний (12), 2 — большой (14, по умолчанию).
@@ -682,7 +685,7 @@ struct WindowOpts {
 
 impl Default for WindowOpts {
     fn default() -> Self {
-        Self { ui_scale: 1.0, tools_right: false, layers_right: true, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true, hsv_mode: 0, swatch_size: 2, show: [true; 7], separate: [false; 4] }
+        Self { ui_scale: 1.0, tools_right: false, layers_right: false, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true, size_numbers: false, size_list_top: false, hsv_mode: 0, swatch_size: 2, show: [true; 7], separate: [false; 4] }
     }
 }
 
@@ -2023,6 +2026,8 @@ app.open_canvas_dialog(d == "resolution")
         s.read_bool("layers_right", &mut self.win.layers_right);
         s.read_bool("dot_cursor", &mut self.win.dot_cursor);
         s.read_bool("brush_circle", &mut self.win.brush_circle);
+        s.read_bool("size_numbers", &mut self.win.size_numbers);
+        s.read_bool("size_list_top", &mut self.win.size_list_top);
         if let Some(v) = s.f32("hsv_mode") {
             self.win.hsv_mode = (v as u8).min(2);
         }
@@ -2210,6 +2215,8 @@ app.open_canvas_dialog(d == "resolution")
         s.set("layers_right", w.layers_right as u8);
         s.set("dot_cursor", w.dot_cursor as u8);
         s.set("brush_circle", w.brush_circle as u8);
+        s.set("size_numbers", w.size_numbers as u8);
+        s.set("size_list_top", w.size_list_top as u8);
         s.set("hsv_mode", w.hsv_mode);
         s.set("swatch_size", w.swatch_size);
         s.set("canvas_preset.count", self.canvas_presets.len());
@@ -3050,7 +3057,7 @@ app.open_canvas_dialog(d == "resolution")
             let mut rgba = Vec::with_capacity(layer.len());
             for (i, p) in layer.as_chunks::<4>().0.iter().enumerate() {
                 let (x, y) = (i as u32 % w, i as u32 / w);
-                let bg = if (x / cell + y / cell) % 2 == 0 { 255u32 } else { 228 };
+                let bg = if (x / cell + y / cell).is_multiple_of(2) { 255u32 } else { 228 };
                 let a = p[3] as u32;
                 rgba.extend((0..3).map(|c| ((p[c] as u32 * a + bg * (255 - a)) / 255) as u8));
                 rgba.push(255);
@@ -6948,20 +6955,6 @@ app.open_canvas_dialog(d == "resolution")
                 self.plugins_menu(ui);
             });
             ui.menu_button(keys::hint(tr("Вид(V)")), |ui| {
-                // список открытых холстов (SAI 2026) — перейти к любому
-                let names: Vec<String> = (0..self.tabs.len()).map(|i| match self.tabs.get(i) {
-                    Some(Some(t)) => t.title(),
-                    _ => self.file_name(),
-                }).collect();
-                icons::submenu(ui, "view_tab", tr("Холсты"), |ui| {
-                    for (i, n) in names.iter().enumerate() {
-                        if ui.radio(i == self.active_tab, n).clicked() {
-                            self.switch_tab(i);
-                            ui.close_menu();
-                        }
-                    }
-                });
-                ui.separator();
                 if ui.add(menu_item("Увеличить", "Ctrl++")).clicked() {
                     self.set_zoom(self.zoom * 1.25);
                     ui.close_menu();
@@ -7027,6 +7020,20 @@ app.open_canvas_dialog(d == "resolution")
                 if ui.checkbox(&mut flip, tr("Зеркало вида")).on_hover_text("H").clicked() {
                     self.view_flip = flip;
                     ui.close_menu();
+                }
+                // открытые холсты внизу меню, как в SAI: «1 Имя (масштаб)»
+                ui.separator();
+                let names: Vec<String> = (0..self.tabs.len())
+                    .map(|i| match self.tabs.get(i) {
+                        Some(Some(t)) => format!("{} {} ({:.0}%)", i + 1, t.title(), t.zoom * self.ppp * 100.0),
+                        _ => format!("{} {} ({:.0}%)", i + 1, self.file_name(), self.zoom * self.ppp * 100.0),
+                    })
+                    .collect();
+                for (i, n) in names.iter().enumerate() {
+                    if ui.radio(i == self.active_tab, n).clicked() {
+                        self.switch_tab(i);
+                        ui.close_menu();
+                    }
                 }
             });
             ui.menu_button(keys::hint(tr("Окно(W)")), |ui| {
@@ -7133,6 +7140,8 @@ app.open_canvas_dialog(d == "resolution")
                 }
                 ui.checkbox(&mut w.dot_cursor, tr("Курсор-точка у кистей"));
                 ui.checkbox(&mut w.brush_circle, tr("Кружок размера кисти"));
+                ui.checkbox(&mut w.size_numbers, tr("Список размеров — только числа"));
+                ui.checkbox(&mut w.size_list_top, tr("Список размеров — над настройками кисти"));
             });
             ui.menu_button(keys::hint(tr("Помощь(H)")), |ui| {
                 if ui.button(tr("Клавиши…")).clicked() {
@@ -7888,6 +7897,12 @@ app.open_canvas_dialog(d == "resolution")
         let mut add_tip = false;
         // своя динамика из плагинов: «id/имя» → подпись
         let plugin_dyns: Vec<(String, String)> = self.plugins.iter().flat_map(|p| p.plugin.dynamics.iter().map(move |(n, _)| (format!("{}/{n}", p.plugin.id), format!("{} — {n}", p.plugin.name)))).collect();
+        let (size_top, size_numbers) = (self.win.size_list_top, self.win.size_numbers);
+        let current_size = self.brushes[self.brush].params.size;
+        let mut pick = None;
+        if size_top {
+            pick = size_grid(ui, current_size, size_numbers, true);
+        }
         self.brush_preview_ui(ui, lw + w);
         let mut size_range = self.size_range as usize;
         let tool = &mut self.brushes[self.brush];
@@ -8300,66 +8315,10 @@ app.open_canvas_dialog(d == "resolution")
         if let Some(mix) = brush.mix.as_mut() {
             ui.checkbox(&mut mix.blend_by_pressure, tr("Нажим на смешивание"));
         }
-        // Сетка размеров: кружок и число, 5 в ряд.
-        let mut pick = None;
-        let current = brush.size;
-        egui::Frame::none()
-            .stroke(egui::Stroke::new(1.0_f32, sai_ui::border()))
-            .fill(sai_ui::gray(255))
-            .show(ui, |ui| {
-                // как у SAI: своя полоса прокрутки сбоку, ячейки её не перекрывают; не меньше 3 рядов
-                ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
-                let v = ui.visuals_mut();
-                v.extreme_bg_color = sai_ui::gray(240);
-                v.widgets.inactive.bg_fill = sai_ui::gray(185);
-                v.widgets.hovered.bg_fill = sai_ui::gray(160);
-                v.widgets.active.bg_fill = sai_ui::gray(140);
-                egui::ScrollArea::vertical()
-                    .id_salt("size_grid")
-                    .auto_shrink([false, false])
-                    .min_scrolled_height(40.0 * 3.0)
-                    .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing = Vec2::ZERO;
-                        let cw = (ui.available_width() / 5.0).floor();
-                        for row in SIZES.chunks(5) {
-                            ui.horizontal(|ui| {
-                                for &size in row {
-                                    let sel = (current - size).abs() < 0.01;
-                                    let r = sai_ui::icon_button(
-                                        ui,
-                                        Vec2::new(cw, 40.0),
-                                        sel,
-                                        true,
-                                        "",
-                                        |p, r, c| {
-                                            let d = (size.sqrt() * 2.6).clamp(1.0, 22.0);
-                                            p.circle_filled(
-                                                r.center_top() + Vec2::new(0.0, 13.0),
-                                                d / 2.0,
-                                                c,
-                                            );
-                                            let text = if size < 10.0 && size.fract() != 0.0 {
-                                                format!("{size:.1}")
-                                            } else {
-                                                format!("{size:.0}")
-                                            };
-                                            p.text(
-                                                r.center_bottom(),
-                                                egui::Align2::CENTER_BOTTOM,
-                                                text,
-                                                egui::FontId::proportional(10.0),
-                                                c,
-                                            );
-                                        },
-                                    );
-                                    if r.clicked() {
-                                        pick = Some(size);
-                                    }
-                                }
-                            });
-                        }
-                    });
-            });
+        // Сетка размеров: кружок и число, 5 в ряд (или над настройками — см. выше).
+        if !size_top {
+            pick = size_grid(ui, current_size, size_numbers, false);
+        }
         if let Some(size) = pick {
             self.brushes[self.brush].params.size = size;
         }
@@ -12514,11 +12473,12 @@ impl eframe::App for PaintApp {
                 *v &= !sep;
             }
             self.win.show = sh;
-            if sh[2] || sh[3] {
-                side(self.win.tools_right, "tools").exact_width(236.0).resizable(false).show(ctx, |ui| self.left_panel(ui));
-            }
+            // как в SAI: навигатор и слои — с краю окна, цвет и инструменты — ближе к холсту
             if sh[0] || sh[1] {
                 side(self.win.layers_right, "layers").exact_width(186.0).resizable(false).show(ctx, |ui| self.right_panel(ui));
+            }
+            if sh[2] || sh[3] {
+                side(self.win.tools_right, "tools").exact_width(236.0).resizable(false).show(ctx, |ui| self.left_panel(ui));
             }
             self.win.show[..4].copy_from_slice(&full[..4]);
             if sh[4] {
@@ -12686,6 +12646,73 @@ fn main() -> eframe::Result {
             Ok(Box::new(app))
         }),
     )
+}
+
+/// Сетка размеров кисти, как в SAI: кружок и число, 5 в ряд; `numbers` — только числа. Возвращает
+/// выбранный размер.
+fn size_grid(ui: &mut egui::Ui, current: f32, numbers: bool, top: bool) -> Option<f32> {
+    let mut pick = None;
+    egui::Frame::none()
+        .stroke(egui::Stroke::new(1.0_f32, sai_ui::border()))
+        .fill(sai_ui::gray(255))
+        .show(ui, |ui| {
+            // как у SAI: своя полоса прокрутки сбоку, ячейки её не перекрывают; не меньше 3 рядов
+            ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
+            let v = ui.visuals_mut();
+            v.extreme_bg_color = sai_ui::gray(240);
+            v.widgets.inactive.bg_fill = sai_ui::gray(185);
+            v.widgets.hovered.bg_fill = sai_ui::gray(160);
+            v.widgets.active.bg_fill = sai_ui::gray(140);
+            egui::ScrollArea::vertical()
+                .id_salt("size_grid")
+                .auto_shrink([false, top])
+                .min_scrolled_height(if top && numbers { 24.0 * 4.0 } else { 40.0 * 3.0 })
+                .max_height(if top { if numbers { 24.0 * 4.0 } else { 40.0 * 3.0 } } else { f32::INFINITY })
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+                    let cw = (ui.available_width() / 5.0).floor();
+                    for row in SIZES.chunks(5) {
+                        ui.horizontal(|ui| {
+                            for &size in row {
+                                let sel = (current - size).abs() < 0.01;
+                                let r = sai_ui::icon_button(
+                                    ui,
+                                    Vec2::new(cw, if numbers { 24.0 } else { 40.0 }),
+                                    sel,
+                                    true,
+                                    "",
+                                    |p, r, c| {
+                                        if !numbers {
+                                            let d = (size.sqrt() * 2.6).clamp(1.0, 22.0);
+                                            p.circle_filled(
+                                                r.center_top() + Vec2::new(0.0, 13.0),
+                                                d / 2.0,
+                                                c,
+                                            );
+                                        }
+                                        let text = if size < 10.0 && size.fract() != 0.0 {
+                                            format!("{size:.1}")
+                                        } else {
+                                            format!("{size:.0}")
+                                        };
+                                        p.text(
+                                            if numbers { r.center() } else { r.center_bottom() },
+                                            if numbers { egui::Align2::CENTER_CENTER } else { egui::Align2::CENTER_BOTTOM },
+                                            text,
+                                            egui::FontId::proportional(if numbers { 12.0 } else { 10.0 }),
+                                            c,
+                                        );
+                                    },
+                                );
+                                if r.clicked() {
+                                    pick = Some(size);
+                                }
+                            }
+                        });
+                    }
+                });
+        });
+    pick
 }
 
 /// Раздел «Россыпь» в настройках кисти-россыпи (как в SAI 2 2018+: угол, размер, шаг, сдвиг,

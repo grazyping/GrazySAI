@@ -1235,7 +1235,6 @@ Zip с паролем = Password-protected zip
 Очистить список = Clear List
 Перевести = Convert
 Перевести в оттенки серого… = Convert to Grayscale…
-Холсты = Canvases
 
 В группу = Move to Group
 Группа {0} = Group {0}
@@ -1253,3 +1252,6 @@ Zip с паролем = Password-protected zip
 
 Диск, куда уходит история отмены = The drive that holds the undo history
 Диск занят = Drive Usage
+
+Список размеров — над настройками кисти = Show Brush Size List on Upper Side
+Список размеров — только числа = Show Brush Size List Items in Numerals Only
