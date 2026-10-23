@@ -1249,3 +1249,6 @@ Zip с паролем = Zip mit Passwort
 Нажим на смешивание = Druck auf Mischen
 Сила текстуры = Texturstärke
 Сила формы = Formstärke
+
+Диск, куда уходит история отмены = Laufwerk für den Rückgängig-Verlauf
+Диск занят = Laufwerk belegt

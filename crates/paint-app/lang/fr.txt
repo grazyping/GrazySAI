@@ -1249,3 +1249,6 @@ Zip с паролем = Zip protégé par mot de passe
 Нажим на смешивание = Pression sur le mélange
 Сила текстуры = Intensité de la texture
 Сила формы = Force de la forme
+
+Диск, куда уходит история отмены = Disque qui reçoit l'historique d'annulation
+Диск занят = Disque utilisé

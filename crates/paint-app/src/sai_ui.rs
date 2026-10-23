@@ -833,6 +833,22 @@ pub fn glyph(p: &Painter, r: Rect, c: Color32, name: &str) {
             let q = k * 0.22;
             p.rect_filled(Rect::from_center_size(r.max - Vec2::splat(q), Vec2::splat(q * 1.4)), 0.0, c);
         }
+        "gray" => {
+            // круг: половина тёмная, половина светлая
+            p.circle_stroke(ctr, k * 0.75, s);
+            let pts: Vec<Pos2> = (0..=16).map(|i| ctr + Vec2::angled(PI / 2.0 + PI * i as f32 / 16.0) * k * 0.75).collect();
+            p.add(Shape::convex_polygon(pts, c, Stroke::NONE));
+        }
+        "assets" => {
+            // коробка с тремя ячейками
+            let q = Rect::from_center_size(ctr, Vec2::new(k * 1.6, k * 1.3));
+            p.rect_stroke(q, 1.0, s);
+            for i in 1..3 {
+                let x = q.left() + q.width() * i as f32 / 3.0;
+                p.line_segment([Pos2::new(x, q.top()), Pos2::new(x, q.bottom())], s);
+            }
+            p.line_segment([Pos2::new(q.left(), q.center().y), Pos2::new(q.right(), q.center().y)], s);
+        }
         "save" => {
             // дискета: корпус, окошко сверху, наклейка снизу
             let q = Rect::from_center_size(ctr, Vec2::splat(k * 1.5));

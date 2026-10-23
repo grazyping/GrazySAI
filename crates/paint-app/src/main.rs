@@ -1275,6 +1275,8 @@ struct PaintApp {
     tab_brush: usize,
     /// Диапазон полоски размера кисти (номер в `SIZE_RANGES`).
     size_range: u8,
+    /// Когда смотрели занятость диска и что увидели.
+    disk_seen: Option<(Instant, Option<(u64, u64)>)>,
     brush: usize,
     /// Основной цвет в HSV (тон хранится и у серых), фоновый — RGB.
     hsv: [f32; 3],
@@ -1584,6 +1586,7 @@ impl PaintApp {
             group_rename: None,
             tab_brush: usize::MAX,
             size_range: 1,
+            disk_seen: None,
             // PAINT_BRUSH — номер кисти в сетке при запуске (для проверок виртуальным пером)
             brush: std::env::var("PAINT_BRUSH").ok().and_then(|v| v.parse().ok()).filter(|&i: &usize| i != 5 && i < 8).unwrap_or(0),
             hsv: [0.0, 0.0, 0.08],
@@ -6428,7 +6431,7 @@ app.open_canvas_dialog(d == "resolution")
                             }
                         }
                         ui.separator();
-                        if ui.button(tr("Очистить список")).clicked() {
+                        if icons::item(ui, "clear", tr("Очистить список")).clicked() {
                             clear_recent = true;
                             ui.close_menu();
                         }
@@ -6506,7 +6509,7 @@ app.open_canvas_dialog(d == "resolution")
                         ui.close_menu();
                     }
                 }
-                if ui.button(tr("Перевести в оттенки серого…")).clicked() {
+                if icons::item(ui, "gray", tr("Перевести в оттенки серого…")).clicked() {
                     self.ask_gray = true;
                     ui.close_menu();
                 }
@@ -6943,7 +6946,7 @@ app.open_canvas_dialog(d == "resolution")
                     Some(Some(t)) => t.title(),
                     _ => self.file_name(),
                 }).collect();
-                ui.menu_button(tr("Холсты"), |ui| {
+                icons::submenu(ui, "view_tab", tr("Холсты"), |ui| {
                     for (i, n) in names.iter().enumerate() {
                         if ui.radio(i == self.active_tab, n).clicked() {
                             self.switch_tab(i);
@@ -7020,7 +7023,7 @@ app.open_canvas_dialog(d == "resolution")
                 }
             });
             ui.menu_button(keys::hint(tr("Окно(W)")), |ui| {
-                if ui.button(tr("Менеджер ресурсов…")).clicked() {
+                if icons::item(ui, "assets", tr("Менеджер ресурсов…")).clicked() {
                     self.assets = Some(AssetsWindow::default());
                     ui.close_menu();
                 }
@@ -11689,6 +11692,62 @@ fn count_layers(layers: &[Layer]) -> usize {
         .sum()
 }
 
+/// Занято и всего на диске с папкой `dir`, байт (как «Drive Usage» в SAI — диск, куда уходит
+/// история). `None` — узнать не удалось.
+fn disk_use(dir: &std::path::Path) -> Option<(u64, u64)> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetDiskFreeSpaceExW(dir: *const u16, avail: *mut u64, total: *mut u64, free: *mut u64) -> i32;
+        }
+        let wide: Vec<u16> = dir.as_os_str().encode_wide().chain(Some(0)).collect();
+        let (mut avail, mut total, mut free) = (0u64, 0u64, 0u64);
+        // SAFETY: строка с нулём в конце, указатели — на свои переменные
+        let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut avail, &mut total, &mut free) };
+        (ok != 0 && total > 0).then(|| (total - free, total))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        #[repr(C)]
+        struct StatVfs {
+            bsize: u64,
+            frsize: u64,
+            blocks: u64,
+            bfree: u64,
+            bavail: u64,
+            files: u64,
+            ffree: u64,
+            favail: u64,
+            fsid: u64,
+            flag: u64,
+            namemax: u64,
+            spare: [i32; 6],
+        }
+        extern "C" {
+            fn statvfs(path: *const std::ffi::c_char, buf: *mut StatVfs) -> i32;
+        }
+        let c = std::ffi::CString::new(dir.as_os_str().as_bytes()).ok()?;
+        let mut st = std::mem::MaybeUninit::<StatVfs>::zeroed();
+        // SAFETY: путь с нулём в конце, буфер — размера struct statvfs (glibc, 64 бита)
+        let st = unsafe {
+            if statvfs(c.as_ptr(), st.as_mut_ptr()) != 0 {
+                return None;
+            }
+            st.assume_init()
+        };
+        let total = st.blocks * st.frsize;
+        (total > 0).then(|| (total - st.bfree * st.frsize, total))
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        let _ = dir;
+        None
+    }
+}
+
 /// Занятая память процесса и вся память, байт (Linux; на других системах — нули).
 fn memory_use() -> (u64, u64) {
     #[cfg(target_os = "linux")]
@@ -12357,6 +12416,17 @@ impl eframe::App for PaintApp {
                     sai_ui::bar(ui, &mut v, 0.0, 100.0, text, 110.0, false);
                     ui.label(tr("Памяти занято"));
                     ui.separator();
+                    // диск истории — раз в 5 секунд, не каждый кадр
+                    if self.disk_seen.is_none_or(|(t, _)| t.elapsed() > Duration::from_secs(5)) {
+                        self.disk_seen = Some((Instant::now(), disk_use(&std::env::temp_dir())));
+                    }
+                    if let Some((_, Some((used, total)))) = self.disk_seen {
+                        let mut v = used as f32 / total as f32 * 100.0;
+                        let text = format!("{:.0}%", v);
+                        sai_ui::bar(ui, &mut v, 0.0, 100.0, text, 80.0, false).on_hover_text(tr("Диск, куда уходит история отмены"));
+                        ui.label(tr("Диск занят"));
+                        ui.separator();
+                    }
                     if !self.queue.is_empty() {
                         ui.weak(trf("пересчёт: {0} плиток", &[&self.queue.len()]));
                         ui.separator();
@@ -12566,6 +12636,15 @@ fn scatter_panel(ui: &mut egui::Ui, sc: &mut paint_core::scatter::ScatterParams,
     if !sai_ui::section(ui, "sec_scatter", tr("Россыпь")) {
         return;
     }
+    // подписи раздела длиннее общих — своя ширина колонки (в немецком и французском иначе режутся)
+    let total = lw + w;
+    let lw = sai_ui::label_w(
+        ui,
+        lw,
+        &[tr("   Угол по"), tr("   Угол"), tr("   Разброс угла"), tr("   Масштаб формы"), tr("   Разброс размера"), tr("   Разлёт"), tr("   Ш : В"), tr("   Разброс Ш : В"), tr("   Число"), tr("   Разброс числа"), tr("   Основной → фоновый"), tr("   Разброс оттенка"), tr("   Разброс насыщенности"), tr("   Разброс яркости")],
+    )
+    .min(total * 0.62);
+    let w = total - lw;
     let pct = |ui: &mut egui::Ui, label: &str, v: &mut f32, max: f32| {
         sai_ui::row(ui, label, lw, true, |ui| {
             let mut x = *v * 100.0;
