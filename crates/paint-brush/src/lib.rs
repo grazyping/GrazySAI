@@ -49,6 +49,11 @@ impl Kv {
         self.map.remove(key);
     }
 
+    /// Пары с ключом, начинающимся на `prefix` (ключ — без приставки).
+    pub fn prefixed(&self, prefix: &str) -> Vec<(String, String)> {
+        self.map.range(prefix.to_string()..).take_while(|(k, _)| k.starts_with(prefix)).map(|(k, v)| (k[prefix.len()..].to_string(), v.clone())).collect()
+    }
+
     pub fn str(&self, key: &str) -> Option<&str> {
         self.map.get(key).map(|s| s.as_str())
     }

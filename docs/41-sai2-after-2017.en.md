@@ -80,6 +80,10 @@ not analysed; live checks only on official builds, hidden display, a separate Wi
   to the ruler, from its start point; Concentric Ellipse — along the ellipse with the same centre
   and shape through the start point; Vanishing Point — along the ray to the point. To be checked on
   real Windows.
+- **Asset Manager (from SAI 2024 strings):** swatch sets, scratch pads, layer paper, brush forms,
+  scattering shapes, brush textures, custom tools per layer type; groups with "[ Unorganized ]"; a
+  new asset is made from Black on White BG, White on Black BG, Layer Image (A only) or Layer Image
+  (ARGB). We have all of it except per-layer-type custom tools and ARGB.
 - **Control step (item 1) done.** The Pencil sheet (5 hardness steps × sizes 1–100, a size-20 line,
   density 100, mouse) in 2026-07-02b against the same 2017 sheet: at mid hardness 2026 dabs carry
   20–35 % less paint and are 10–15 % smaller in diameter (50 % level); size-20 lines are nearly the same

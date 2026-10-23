@@ -2,6 +2,7 @@
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod assets;
 mod i18n;
 mod file_viewer;
 mod icons;
@@ -742,6 +743,17 @@ struct CanvasDialog {
     anchor: (u8, u8),
 }
 
+/// Окно «Менеджер ресурсов»: раздел (`None` — наборы образцов), выбранный ресурс, поля ввода.
+#[derive(Default)]
+struct AssetsWindow {
+    kind: Option<assets::Kind>,
+    sel: Option<String>,
+    name: String,
+    group: String,
+    image: Option<assets::ImageType>,
+    confirm_delete: bool,
+}
+
 /// «Срезать крючки» (Anti-Hook): точки мазка придерживаются на длину крючка — в начале, пока
 /// не ясно, был ли крючок, и в конце, чтобы при отрыве пера срезать загиб.
 struct HookBuf {
@@ -1216,6 +1228,13 @@ struct PaintApp {
     mixer_pos: [Option<f32>; 4],
     /// Образцы цвета и выбранная ячейка.
     swatches: Vec<Option<Color32>>,
+    /// Наборы образцов (SAI 2020+): имя и цвета; текущий набор — в `swatches`.
+    swatch_sets: Vec<(String, Vec<Option<Color32>>)>,
+    swatch_set: usize,
+    /// Окно «Менеджер ресурсов».
+    assets: Option<AssetsWindow>,
+    /// Группы ресурсов: «вид/имя» → группа.
+    asset_groups: std::collections::BTreeMap<String, String>,
     /// Недавние цвета мазков, новые первыми.
     recent_colors: Vec<Color32>,
     swatch_sel: usize,
@@ -1514,6 +1533,10 @@ impl PaintApp {
             mixer: [[Color32::WHITE; 2]; 4],
             mixer_pos: [None; 4],
             swatches: vec![None; SWATCHES],
+            swatch_sets: vec![(String::from(tr("Образцы")), vec![None; SWATCHES])],
+            swatch_set: 0,
+            assets: None,
+            asset_groups: Default::default(),
             recent_colors: Vec::new(),
             swatch_sel: 0,
             mask_edit: false,
@@ -2010,6 +2033,21 @@ app.open_canvas_dialog(d == "resolution")
         for (i, c) in self.swatches.iter_mut().enumerate() {
             *c = s.str(&format!("swatch.{i}")).and_then(hex);
         }
+        if let Some(n) = s.f32("swatch_set.count").map(|v| v as usize).filter(|&n| (1..=100).contains(&n)) {
+            self.swatch_sets = (0..n)
+                .map(|k| {
+                    let name = s.str(&format!("swatch_set.{k}.name")).unwrap_or("").to_string();
+                    let mut cols: Vec<Option<Color32>> = s.str(&format!("swatch_set.{k}.colors")).unwrap_or("").split(',').map(hex).collect();
+                    cols.resize(SWATCHES, None);
+                    (name, cols)
+                })
+                .collect();
+            self.swatch_set = s.f32("swatch_set.cur").map_or(0, |v| v as usize).min(n - 1);
+        }
+        self.swatch_sets[self.swatch_set].1 = self.swatches.clone();
+        for (k, v) in s.prefixed("asset_group.") {
+            self.asset_groups.insert(k, v);
+        }
         if let Some(p) = s.str("paper_dir") {
             self.paper_dir = p.to_string();
             self.set_paper_dir();
@@ -2173,6 +2211,19 @@ app.open_canvas_dialog(d == "resolution")
                 Some(c) => s.set(&format!("swatch.{i}"), hex(*c)),
                 None => s.remove(&format!("swatch.{i}")),
             }
+        }
+        let mut sets = self.swatch_sets.clone();
+        if let Some(cur) = sets.get_mut(self.swatch_set) {
+            cur.1 = self.swatches.clone();
+        }
+        s.set("swatch_set.count", sets.len());
+        s.set("swatch_set.cur", self.swatch_set);
+        for (k, (name, cols)) in sets.iter().enumerate() {
+            s.set(&format!("swatch_set.{k}.name"), name);
+            s.set(&format!("swatch_set.{k}.colors"), cols.iter().map(|c| c.map_or(String::new(), hex)).collect::<Vec<_>>().join(","));
+        }
+        for (k, g) in &self.asset_groups {
+            s.set(&format!("asset_group.{k}"), g);
         }
         s.save();
     }
@@ -2879,6 +2930,286 @@ app.open_canvas_dialog(d == "resolution")
             fg
         } else {
             sc.color(fg, bg, stroke.seed)
+        }
+    }
+
+    /// Сделать текущим набор образцов `k` (цвета прежнего набора запоминаются).
+    fn switch_swatch_set(&mut self, k: usize) {
+        if k >= self.swatch_sets.len() {
+            return;
+        }
+        self.swatch_sets[self.swatch_set].1 = self.swatches.clone();
+        self.swatch_set = k;
+        self.swatches = self.swatch_sets[k].1.clone();
+        self.swatches.resize(SWATCHES, None);
+        self.save_settings();
+    }
+
+    /// Окно «Менеджер ресурсов» (SAI 2020+): наборы образцов, бумаги, формы и текстуры кисти,
+    /// отпечатки, черновики; группы; новый ресурс из слоя.
+    fn assets_window(&mut self, ctx: &egui::Context) {
+        let Some(mut w) = self.assets.take() else { return };
+        let mut open = true;
+        let mut status: Option<String> = None;
+        egui::Window::new(tr("Менеджер ресурсов")).open(&mut open).resizable(true).default_width(560.0).show(ctx, |ui| {
+            ui.horizontal_top(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(170.0);
+                    if ui.selectable_label(w.kind.is_none(), tr("Наборы образцов")).clicked() {
+                        w = AssetsWindow::default();
+                    }
+                    for k in assets::Kind::ALL {
+                        if ui.selectable_label(w.kind == Some(k), tr(k.label())).clicked() {
+                            w = AssetsWindow { kind: Some(k), ..Default::default() };
+                        }
+                    }
+                });
+                ui.separator();
+                ui.vertical(|ui| {
+                    match w.kind {
+                        None => self.swatch_sets_ui(ui, &mut w),
+                        Some(k) => {
+                            if let Some(s) = self.asset_files_ui(ui, &mut w, k) {
+                                status = Some(s);
+                            }
+                        }
+                    }
+                });
+            });
+        });
+        if let Some(s) = status {
+            self.status = s;
+        }
+        if open {
+            self.assets = Some(w);
+        }
+    }
+
+    /// Наборы образцов в менеджере ресурсов.
+    fn swatch_sets_ui(&mut self, ui: &mut egui::Ui, w: &mut AssetsWindow) {
+        let mut pick = None;
+        egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+            for (k, (name, cols)) in self.swatch_sets.iter().enumerate() {
+                let n = if k == self.swatch_set { self.swatches.iter().flatten().count() } else { cols.iter().flatten().count() };
+                let label = format!("{}{name} ({n})", if k == self.swatch_set { "● " } else { "" });
+                if ui.selectable_label(w.sel.as_deref() == Some(&k.to_string()), label).clicked() {
+                    w.sel = Some(k.to_string());
+                    w.name = name.clone();
+                }
+                let _ = &mut pick;
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui.button(tr("Новый набор")).clicked() {
+                self.swatch_sets.push((trf("Набор {0}", &[&(self.swatch_sets.len() + 1)]), vec![None; SWATCHES]));
+                pick = Some(self.swatch_sets.len() - 1);
+            }
+            let sel = w.sel.as_deref().and_then(|v| v.parse::<usize>().ok()).filter(|&k| k < self.swatch_sets.len());
+            if let Some(k) = sel {
+                if ui.button(tr("Сделать текущим")).clicked() {
+                    pick = Some(k);
+                }
+                if ui.add_enabled(self.swatch_sets.len() > 1, egui::Button::new(tr("Удалить"))).clicked() {
+                    if k == self.swatch_set {
+                        self.swatch_set = 0;
+                    } else if k < self.swatch_set {
+                        self.swatch_set -= 1;
+                    }
+                    let cur = if k == self.swatch_set && k == 0 { 1 } else { self.swatch_set };
+                    self.swatch_sets.remove(k);
+                    self.swatch_set = cur.min(self.swatch_sets.len() - 1);
+                    self.swatches = self.swatch_sets[self.swatch_set].1.clone();
+                    self.swatches.resize(SWATCHES, None);
+                    w.sel = None;
+                    self.save_settings();
+                }
+            }
+        });
+        if let Some(k) = w.sel.as_deref().and_then(|v| v.parse::<usize>().ok()).filter(|&k| k < self.swatch_sets.len()) {
+            ui.horizontal(|ui| {
+                ui.label(tr("Название:"));
+                ui.add(egui::TextEdit::singleline(&mut w.name).desired_width(200.0));
+                if ui.button(tr("Переименовать")).clicked() && !w.name.trim().is_empty() {
+                    self.swatch_sets[k].0 = w.name.trim().to_string();
+                    self.save_settings();
+                }
+            });
+        }
+        if let Some(k) = pick {
+            self.switch_swatch_set(k);
+            w.sel = Some(k.to_string());
+        }
+    }
+
+    /// Ресурсы-файлы вида `k` в менеджере ресурсов; возвращает сообщение для строки состояния.
+    fn asset_files_ui(&mut self, ui: &mut egui::Ui, w: &mut AssetsWindow, k: assets::Kind) -> Option<String> {
+        let mut msg = None;
+        let items = k.items();
+        let group_of = |n: &str| self.asset_groups.get(&format!("{}/{n}", k.dir())).cloned().unwrap_or_default();
+        let mut groups: Vec<String> = items.iter().map(|n| group_of(n)).collect();
+        groups.sort();
+        groups.dedup();
+        egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+            if items.is_empty() {
+                ui.weak(tr("Своих ресурсов этого вида пока нет"));
+            }
+            for g in &groups {
+                ui.strong(if g.is_empty() { tr("[ Без группы ]").to_string() } else { g.clone() });
+                for n in items.iter().filter(|n| group_of(n) == *g) {
+                    if ui.selectable_label(w.sel.as_deref() == Some(n.as_str()), format!("   {n}")).clicked() {
+                        w.sel = Some(n.clone());
+                        w.name = n.clone();
+                        w.group = g.clone();
+                        w.confirm_delete = false;
+                    }
+                }
+            }
+        });
+        if let Some(sel) = w.sel.clone().filter(|n| items.contains(n)) {
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.label(tr("Название:"));
+                ui.add(egui::TextEdit::singleline(&mut w.name).desired_width(200.0));
+                if ui.button(tr("Переименовать")).clicked() {
+                    match assets::rename(k, &sel, &w.name) {
+                        Ok(n) => {
+                            if let Some(g) = self.asset_groups.remove(&format!("{}/{sel}", k.dir())) {
+                                self.asset_groups.insert(format!("{}/{n}", k.dir()), g);
+                            }
+                            w.sel = Some(n);
+                            self.grain_names = None;
+                            self.save_settings();
+                        }
+                        Err(e) => msg = Some(e),
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label(tr("Группа:"));
+                ui.add(egui::TextEdit::singleline(&mut w.group).desired_width(200.0));
+                if ui.button(tr("Перенести")).clicked() {
+                    let key = format!("{}/{sel}", k.dir());
+                    if w.group.trim().is_empty() {
+                        self.asset_groups.remove(&key);
+                    } else {
+                        self.asset_groups.insert(key, w.group.trim().to_string());
+                    }
+                    self.save_settings();
+                }
+            });
+            ui.horizontal(|ui| {
+                if k == assets::Kind::Scratch && ui.button(tr("Открыть в черновике")).clicked() {
+                    msg = Some(self.load_scratch(&sel));
+                }
+                if !w.confirm_delete {
+                    if ui.button(tr("Удалить…")).clicked() {
+                        w.confirm_delete = true;
+                    }
+                } else {
+                    ui.colored_label(Color32::from_rgb(190, 50, 30), trf("Удалить «{0}» с диска?", &[&sel]));
+                    if ui.button(tr("Да")).clicked() {
+                        msg = Some(match assets::delete(k, &sel) {
+                            Ok(()) => trf("«{0}» удалён", &[&sel]),
+                            Err(e) => e,
+                        });
+                        self.asset_groups.remove(&format!("{}/{sel}", k.dir()));
+                        w.sel = None;
+                        w.confirm_delete = false;
+                        self.grain_names = None;
+                        self.save_settings();
+                    }
+                    if ui.button(tr("Нет")).clicked() {
+                        w.confirm_delete = false;
+                    }
+                }
+            });
+        }
+        ui.separator();
+        // новый ресурс: черновик — из черновика, остальное — из текущего слоя
+        if k == assets::Kind::Scratch {
+            ui.horizontal(|ui| {
+                ui.label(tr("Название:"));
+                ui.add(egui::TextEdit::singleline(&mut w.name).desired_width(200.0));
+                if ui.button(tr("Сохранить текущий черновик")).clicked() {
+                    let d = &self.scratch.doc;
+                    msg = Some(match assets::create(k, &w.name, d.width as usize, d.height as usize, &d.flatten(), assets::ImageType::Alpha) {
+                        Ok(n) => trf("Черновик сохранён: «{0}»", &[&n]),
+                        Err(e) => e,
+                    });
+                }
+            });
+            return msg;
+        }
+        ui.label(tr("Новый из текущего слоя (выделенная часть или всё нарисованное):"));
+        ui.horizontal(|ui| {
+            use assets::ImageType as T;
+            let cur = w.image.unwrap_or(T::BlackOnWhite);
+            for (t, name) in [(T::BlackOnWhite, tr("Чёрное на белом")), (T::WhiteOnBlack, tr("Белое на чёрном")), (T::Alpha, tr("По прозрачности"))] {
+                if ui.radio(cur == t, name).clicked() {
+                    w.image = Some(t);
+                }
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label(tr("Название:"));
+            ui.add(egui::TextEdit::singleline(&mut w.name).desired_width(200.0));
+            if ui.button(tr("Создать")).clicked() {
+                msg = Some(match self.layer_rgba() {
+                    Some((lw, lh, rgba)) => match assets::create(k, &w.name, lw, lh, &rgba, w.image.unwrap_or(assets::ImageType::BlackOnWhite)) {
+                        Ok(n) => {
+                            self.grain_names = None;
+                            w.sel = Some(n.clone());
+                            trf("Ресурс создан: «{0}»", &[&n])
+                        }
+                        Err(e) => e,
+                    },
+                    None => tr("На слое нечего взять").to_string(),
+                });
+            }
+        });
+        msg
+    }
+
+    /// Пиксели текущего слоя (8 бит, без предумножения) в границах выделения или нарисованного.
+    fn layer_rgba(&self) -> Option<(usize, usize, Vec<u8>)> {
+        let layer = self.doc.layer(&self.selected)?;
+        let sel = &self.doc.selection;
+        let (x0, y0, x1, y1) = if sel.mask.tiles.is_empty() { paint_core::selection::content_bounds(&layer.pixels)? } else { sel.bounds()? };
+        let (w, h) = ((x1 - x0) as usize, (y1 - y0) as usize);
+        if w == 0 || h == 0 || w > 4096 || h > 4096 {
+            return None;
+        }
+        let mut out = Vec::with_capacity(w * h * 4);
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let mut p = paint_core::pixel::to_rgba8(layer.pixels.get(x, y));
+                if !sel.mask.tiles.is_empty() {
+                    p[3] = ((p[3] as u32 * sel.amount(x, y)) / paint_core::pixel::ONE) as u8;
+                }
+                out.extend_from_slice(&p);
+            }
+        }
+        Some((w, h, out))
+    }
+
+    /// Открыть сохранённый черновик (вписать в размер черновика).
+    fn load_scratch(&mut self, name: &str) -> String {
+        let Some(p) = assets::Kind::Scratch.path(name) else { return tr("нет папки настроек").to_string() };
+        match paint_core::io::load_image(&p) {
+            Ok((iw, ih, rgba)) => {
+                let d = &mut self.scratch.doc;
+                d.layers[0].pixels = paint_core::tile::ColorMap::new();
+                for y in 0..ih.min(d.height) {
+                    for x in 0..iw.min(d.width) {
+                        let i = ((y * iw + x) * 4) as usize;
+                        let c = [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]];
+                        d.layers[0].pixels.set(x as i32, y as i32, paint_core::pixel::from_rgba8(c));
+                    }
+                }
+                self.scratch.dirty = true;
+                trf("Черновик «{0}» открыт", &[&name])
+            }
+            Err(e) => e.to_string(),
         }
     }
 
@@ -6523,6 +6854,10 @@ app.open_canvas_dialog(d == "resolution")
                 }
             });
             ui.menu_button(keys::hint(tr("Окно(W)")), |ui| {
+                if ui.button(tr("Менеджер ресурсов…")).clicked() {
+                    self.assets = Some(AssetsWindow::default());
+                    ui.close_menu();
+                }
                 ui.menu_button(tr("Показать"), |ui| {
                     for (i, name) in SHOW_NAMES.iter().enumerate() {
                         if ui.checkbox(&mut self.win.show[i], tr(name)).changed() {
@@ -6974,6 +7309,19 @@ app.open_canvas_dialog(d == "resolution")
             }
         }
         if self.color_views[4] {
+            if self.swatch_sets.len() > 1 {
+                let mut pick = None;
+                egui::ComboBox::from_id_salt("swatch_set").selected_text(self.swatch_sets[self.swatch_set].0.clone()).width(ui.available_width() - 8.0).show_ui(ui, |ui| {
+                    for (k, (name, _)) in self.swatch_sets.iter().enumerate() {
+                        if ui.selectable_label(k == self.swatch_set, name).clicked() {
+                            pick = Some(k);
+                        }
+                    }
+                });
+                if let Some(k) = pick {
+                    self.switch_swatch_set(k);
+                }
+            }
             let labels = [tr("Зарегистрировать цвет"), tr("Удалить цвет")];
             match sai_ui::swatches(ui, &self.swatches, &mut self.swatch_sel, labels, [10.0, 12.0, 14.0][self.win.swatch_size.min(2) as usize]) {
                 Some(sai_ui::SwatchAction::Pick(c)) => self.set_color(c),
@@ -10398,6 +10746,7 @@ impl PaintApp {
                 });
             self.show_open &= open;
         }
+        self.assets_window(ctx);
         if self.show_new {
             let mut open = true;
             egui::Window::new(tr("Новый холст"))
