@@ -746,6 +746,9 @@ pub fn warp_pixels(src: &ColorMap, sel: &Selection, warp: Warp, mode: crate::res
     warp_core(src, sel, (x0, y0, x1, y1), (dx0, dy0, dx1, dy1), mode, &[&inverse])
 }
 
+/// Обратное отображение: точка результата → точка источника.
+pub(crate) type BackMap<'a> = dyn Fn(f64, f64) -> Option<(f64, f64)> + 'a;
+
 /// Общая часть трансформаций: источник — прямоугольник `bounds` (с выделением — его часть),
 /// результат — в прямоугольнике `dest`; `layers` — обратные отображения по слоям наложения
 /// (первый — снизу; у деформации сеткой со «Смешиванием» складки ложатся вторым слоем).
@@ -755,7 +758,7 @@ pub(crate) fn warp_core(
     (x0, y0, x1, y1): (i32, i32, i32, i32),
     (dx0, dy0, dx1, dy1): (i32, i32, i32, i32),
     mode: crate::resample::Mode,
-    layers: &[&dyn Fn(f64, f64) -> Option<(f64, f64)>],
+    layers: &[&BackMap<'_>],
 ) -> (ColorMap, MaskMap) {
     let whole = sel.mask.tiles.is_empty();
     let (sw, sh) = ((x1 - x0) as usize, (y1 - y0) as usize);

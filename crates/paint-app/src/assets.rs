@@ -115,7 +115,7 @@ pub fn create(kind: Kind, name: &str, w: usize, h: usize, rgba: &[u8], t: ImageT
         i += 1;
     }
     let path = dir.join(format!("{n}.{}", kind.ext()));
-    let inks: Vec<u8> = rgba.chunks_exact(4).map(|p| ink([p[0], p[1], p[2], p[3]], t)).collect();
+    let inks: Vec<u8> = rgba.as_chunks::<4>().0.iter().map(|p| ink(*p, t)).collect();
     let res = match kind {
         Kind::Scratch => paint_core::io::save_image(&path, w as u32, h as u32, rgba).map_err(|e| e.to_string()),
         Kind::Tip => {

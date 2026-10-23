@@ -4568,7 +4568,7 @@ app.open_canvas_dialog(d == "resolution")
         }
         let [x, y] = if matches!(self.ruler.kind, ruler::Kind::Perspective(_)) {
             self.ruler.snap_perspective([p.x, p.y], first, self.zoom)
-        } else if self.ruler.from_start() {
+        } else if self.ruler.starts_from_stroke() {
             self.ruler.snap_from([p.x, p.y], first)
         } else {
             self.ruler.snap([p.x, p.y])

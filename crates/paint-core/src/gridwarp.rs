@@ -229,7 +229,7 @@ pub fn warp_pixels(src: &ColorMap, sel: &Selection, g: &GridWarp, mode: crate::r
     let a = |x: f64, y: f64| lookup(&first, x, y);
     let b = |x: f64, y: f64| lookup(&second, x, y);
     let sb = (x0.floor() as i32, y0.floor() as i32, x1.ceil() as i32, y1.ceil() as i32);
-    let layers: Vec<&dyn Fn(f64, f64) -> Option<(f64, f64)>> = if g.blend { vec![&a, &b] } else { vec![&a] };
+    let layers: Vec<&crate::selection::BackMap<'_>> = if g.blend { vec![&a, &b] } else { vec![&a] };
     crate::selection::warp_core(src, sel, sb, (dx0, dy0, dx1, dy1), mode, &layers)
 }
 

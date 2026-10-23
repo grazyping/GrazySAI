@@ -199,7 +199,7 @@ impl Ruler {
     }
 
     /// Линейка ведёт штрих от точки его начала (параллельные, концентрические, точка схода).
-    pub fn from_start(&self) -> bool {
+    pub fn starts_from_stroke(&self) -> bool {
         matches!(self.kind, Kind::Parallel | Kind::Concentric | Kind::Radial)
     }
 
