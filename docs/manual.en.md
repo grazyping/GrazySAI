@@ -205,6 +205,8 @@ installed plugin (a function per dab, docs/36-plugins.en.md). Dynamics are saved
 - **Close gaps** (bucket and wand): the fill does not leak through breaks in the line art up to twice
   that width; **Under line** — the fill goes that many pixels under the line edge so no light rim is
   left. On very large canvases filling with these options is slower.
+- **Reduce small omissions** (together with “Close gaps”, as in SAI 2026): the fill reaches into the
+  very tips of tapering lines and faint stroke tails, where unfilled pixels stay without it.
 - **Alt+Delete** fills the selection (without a selection — the whole layer).
 
 ### Gradation

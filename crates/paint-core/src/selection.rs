@@ -327,6 +327,11 @@ pub struct WandOptions {
     pub tolerance: u8,
     pub gap: u32,
     pub expand: u32,
+    /// «Уменьшить мелкие пропуски» (SAI 2 2026-08-31, Reduce Small Omissions): у кончиков
+    /// сужающихся линий заливка не оставляет светлых точек — заходит на 2 px в полупрозрачное
+    /// (непрозрачность до 80 %) рядом с залитым. Сверено с живой SAI Alpha 2026-10-11: в режимах
+    /// по прозрачности заливаются точки у острия и у хвоста мазка, сплошная линия — нет.
+    pub omissions: bool,
 }
 
 /// Заливка с закрытием щелей: как волшебная палочка, но щели в контуре до `2·gap` px не дают
@@ -334,8 +339,8 @@ pub struct WandOptions {
 /// возвращается к краю линии на те же `gap` px), а `expand` px — запас под линию, чтобы у края
 /// не оставалось каймы. `gap = 0` и `expand = 0` — обычная палочка.
 pub fn magic_wand_closing(pixels: &ColorMap, width: u32, height: u32, x: i32, y: i32, o: WandOptions) -> MaskMap {
-    let WandOptions { tolerance, gap, expand } = o;
-    if gap == 0 && expand == 0 {
+    let WandOptions { tolerance, gap, expand, omissions } = o;
+    if gap == 0 && expand == 0 && !omissions {
         return magic_wand(pixels, width, height, x, y, tolerance);
     }
     let (w, h) = (width as i32, height as i32);
@@ -395,6 +400,11 @@ pub fn magic_wand_closing(pixels: &ColorMap, width: u32, height: u32, x: i32, y:
     // 3. назад к краю линии — только по заливаемым точкам
     if start_ok {
         grow(&mut region, gap, &|i| fillable[i]);
+    }
+    // 3½. мелкие пропуски у кончиков: полупрозрачное рядом с залитым, не дальше 2 px
+    if omissions {
+        let light: Vec<bool> = (0..n).map(|i| to_rgba8(pixels.get(i as i32 % w, i as i32 / w))[3] <= 204).collect();
+        grow(&mut region, 2, &|i| light[i]);
     }
     // 4. запас под линию
     grow(&mut region, expand, &|_| true);
@@ -1005,14 +1015,33 @@ mod closing_tests {
         let count = |mask: &MaskMap| mask.tiles.values().map(|t| t.0.iter().filter(|&&v| v > 0).count()).sum::<usize>();
         let leak = magic_wand(&m, w, h, 20, 20, 10);
         assert!(leak.get(2, 2) > 0, "без закрытия заливка вытекает");
-        let shut = magic_wand_closing(&m, w, h, 20, 20, WandOptions { tolerance: 10, gap: 2, expand: 0 });
+        let shut = magic_wand_closing(&m, w, h, 20, 20, WandOptions { tolerance: 10, gap: 2, expand: 0, omissions: false });
         assert_eq!(shut.get(2, 2), 0, "с закрытием наружу не вытекает");
         assert!(shut.get(11, 11) > 0 && shut.get(28, 28) > 0, "углы внутри залиты до линии");
         // внутри рамки 18×18 залито целиком; в щель и за неё — не дальше gap
         assert!((11..29).all(|y| (11..29).all(|x| shut.get(x, y) > 0)));
         assert!((18 * 18..=18 * 18 + 3 * 2 + 4).contains(&count(&shut)), "лишнее: {}", count(&shut) - 18 * 18);
-        let grown = magic_wand_closing(&m, w, h, 20, 20, WandOptions { tolerance: 10, gap: 2, expand: 1 });
+        let grown = magic_wand_closing(&m, w, h, 20, 20, WandOptions { tolerance: 10, gap: 2, expand: 1, omissions: false });
         assert!(grown.get(10, 15) > 0 && count(&grown) > count(&shut), "запас уходит под линию");
     }
-}
 
+    /// «Уменьшить мелкие пропуски»: полупрозрачный хвост мазка (непрозрачность ≤ 80 %) у залитой
+    /// области заливается, сплошная линия — нет.
+    #[test]
+    fn omissions_fill_faint_tips() {
+        let (w, h) = (20u32, 20u32);
+        let mut m = ColorMap::new();
+        // сплошная линия x = 10 и бледный хвост у её конца: (11..13, 5)
+        for y in 5..20 {
+            m.set(10, y, from_rgba8([0, 0, 0, 255]));
+        }
+        for x in 11..13 {
+            m.set(x, 5, from_rgba8([0, 0, 0, 90]));
+        }
+        let plain = magic_wand_closing(&m, w, h, 2, 2, WandOptions { tolerance: 0, gap: 0, expand: 0, omissions: false });
+        let reduced = magic_wand_closing(&m, w, h, 2, 2, WandOptions { tolerance: 0, gap: 0, expand: 0, omissions: true });
+        assert_eq!(plain.get(11, 5), 0);
+        assert!(reduced.get(11, 5) > 0 && reduced.get(12, 5) > 0, "бледный хвост залит");
+        assert_eq!(reduced.get(10, 10), 0, "сплошная линия не залита");
+    }
+}

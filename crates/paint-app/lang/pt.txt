@@ -1354,3 +1354,6 @@ WinTab даёт нажим, наклон и поворот пера, если д
 отменить = desfazer
 Нижняя кнопка пера (средняя кнопка мыши): = Botão inferior da caneta (botão do meio):
 Верхняя кнопка пера (правая кнопка мыши): = Botão superior da caneta (botão direito):
+
+Уменьшить мелкие пропуски = Reduzir pequenas omissões
+У кончиков сужающихся линий и хвостов мазков заливка не оставляет светлых точек = Nas pontas de linhas afuniladas e caudas de traços o preenchimento não deixa pontos claros

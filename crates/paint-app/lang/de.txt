@@ -1354,3 +1354,6 @@ WinTab даёт нажим, наклон и поворот пера, если д
 отменить = rückgängig
 Нижняя кнопка пера (средняя кнопка мыши): = Untere Stifttaste (mittlere Maustaste):
 Верхняя кнопка пера (правая кнопка мыши): = Obere Stifttaste (rechte Maustaste):
+
+Уменьшить мелкие пропуски = Kleine Auslassungen verringern
+У кончиков сужающихся линий и хвостов мазков заливка не оставляет светлых точек = An den Spitzen sich verjüngender Linien und Strichenden lässt die Füllung keine hellen Punkte

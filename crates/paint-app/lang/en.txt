@@ -1355,3 +1355,6 @@ WinTab даёт нажим, наклон и поворот пера, если д
 отменить = undo
 Нижняя кнопка пера (средняя кнопка мыши): = Lower pen button (middle mouse button):
 Верхняя кнопка пера (правая кнопка мыши): = Upper pen button (right mouse button):
+
+Уменьшить мелкие пропуски = Reduce small omissions
+У кончиков сужающихся линий и хвостов мазков заливка не оставляет светлых точек = At the tips of tapering lines and stroke tails the fill leaves no light specks

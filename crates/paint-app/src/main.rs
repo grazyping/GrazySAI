@@ -1533,6 +1533,8 @@ struct PaintApp {
     wand_tolerance: u8,
     /// Палочка и заливка: закрывать щели контура до 2·N px; расширять под линию на N px.
     fill_gap: u32,
+    /// «Уменьшить мелкие пропуски» у палочки и заливки (SAI 2 2026).
+    fill_omissions: bool,
     fill_expand: u32,
     /// Настройки заливки лассо.
     lassofill: lassofill::Settings,
@@ -1779,6 +1781,7 @@ impl PaintApp {
             show_selection: true,
             wand_tolerance: 10,
             fill_gap: 0,
+            fill_omissions: false,
             fill_expand: 0,
             lassofill: Default::default(),
             update: std::sync::Arc::new(std::sync::Mutex::new(update::State::Idle)),
@@ -2125,6 +2128,9 @@ app.open_canvas_dialog(d == "resolution")
         s.read_bool("gradient_reverse", &mut self.grad_opts.reverse);
         s.read_bool("gradient_s_curve", &mut self.grad_opts.s_curve);
         self.lassofill.load(&s);
+        if let Some(v) = s.bool("fill_omissions") {
+            self.fill_omissions = v;
+        }
         if let Some(t) = s.f32("fill_gap") {
             self.fill_gap = t.clamp(0.0, 20.0) as u32;
         }
@@ -2244,6 +2250,7 @@ app.open_canvas_dialog(d == "resolution")
         s.set("wand_tolerance", self.wand_tolerance);
         self.lassofill.save(&mut s);
         s.set("fill_gap", self.fill_gap);
+        s.set("fill_omissions", self.fill_omissions as u8);
         s.set("fill_expand", self.fill_expand);
         s.set("transform_perspective", self.transform_perspective);
         s.set("grid_cols", self.grid_div[0]);
@@ -6727,11 +6734,12 @@ app.open_canvas_dialog(d == "resolution")
                 }
             });
         }
+        ui.checkbox(&mut self.fill_omissions, tr("Уменьшить мелкие пропуски")).on_hover_text(tr("У кончиков сужающихся линий и хвостов мазков заливка не оставляет светлых точек"));
     }
 
     fn fill_at(&mut self, x: f32, y: f32) {
         let src = self.doc.pick_source(&self.selected);
-        let area = paint_core::selection::magic_wand_closing(&src, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, paint_core::selection::WandOptions { tolerance: self.wand_tolerance, gap: self.fill_gap, expand: self.fill_expand });
+        let area = paint_core::selection::magic_wand_closing(&src, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, paint_core::selection::WandOptions { tolerance: self.wand_tolerance, gap: self.fill_gap, expand: self.fill_expand, omissions: self.fill_omissions });
         self.fill_area(&area);
     }
 
@@ -6754,7 +6762,7 @@ app.open_canvas_dialog(d == "resolution")
     /// Волшебная палочка по текущему слою.
     fn wand_at(&mut self, x: f32, y: f32, mode: Combine) {
         let src = self.doc.pick_source(&self.selected);
-        let area = paint_core::selection::magic_wand_closing(&src, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, paint_core::selection::WandOptions { tolerance: self.wand_tolerance, gap: self.fill_gap, expand: self.fill_expand });
+        let area = paint_core::selection::magic_wand_closing(&src, self.doc.width, self.doc.height, x.floor() as i32, y.floor() as i32, paint_core::selection::WandOptions { tolerance: self.wand_tolerance, gap: self.fill_gap, expand: self.fill_expand, omissions: self.fill_omissions });
         self.apply_selection(&area, mode);
     }
 
