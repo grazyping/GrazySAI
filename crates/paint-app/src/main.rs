@@ -22,6 +22,7 @@ mod plugins;
 mod recording;
 mod scene3d;
 mod actions;
+mod customize;
 mod lassofill;
 mod layer_style;
 
@@ -1304,6 +1305,8 @@ struct PaintApp {
     /// Окно «Автодействия» и его наборы.
     show_actions: bool,
     actions: actions::ActionsUi,
+    /// Поиск команд, быстрый доступ, рабочие пространства.
+    custom: customize::CustomUi,
     s3d_mode: scene3d::MouseMode,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
@@ -1651,6 +1654,7 @@ impl PaintApp {
             show_style: false,
             show_actions: false,
             actions: Default::default(),
+            custom: Default::default(),
             s3d_mode: scene3d::MouseMode::Camera,
             layer_drag: None,
             ruler: ruler::Ruler::default(),
@@ -2048,6 +2052,7 @@ app.open_canvas_dialog(d == "resolution")
             }
         }
         s.read_bool("check_updates", &mut self.check_updates);
+        self.custom.load(&s);
         s.read_bool("dark_theme", &mut self.dark_theme);
         s.read_bool("pixel_grid", &mut self.pixel_grid);
         s.read_bool("wrap_around", &mut self.wrap_around);
@@ -2363,6 +2368,7 @@ app.open_canvas_dialog(d == "resolution")
         s.set("gradient_s_curve", self.grad_opts.s_curve);
         s.set("check_updates", self.check_updates as u8);
         s.set("dark_theme", self.dark_theme as u8);
+        self.custom.save(&mut s);
         s.set("pixel_grid", self.pixel_grid as u8);
         s.set("wrap_around", self.wrap_around as u8);
         {
@@ -7721,6 +7727,15 @@ app.open_canvas_dialog(d == "resolution")
                     self.show_actions = true;
                     ui.close_menu();
                 }
+                if ui.add(menu_icons::button("Поиск команд…")).clicked() {
+                    self.custom.palette = Some((String::new(), 0, false));
+                    ui.close_menu();
+                }
+                if ui.checkbox(&mut self.custom.show_quick, tr("Быстрый доступ")).changed() {
+                    self.save_settings();
+                    ui.close_menu();
+                }
+                self.workspace_menu(ui);
                 if ui.add(menu_icons::button("Менеджер ресурсов…")).clicked() {
                     self.assets = Some(AssetsWindow::default());
                     ui.close_menu();
@@ -11920,6 +11935,7 @@ impl PaintApp {
         self.s3d_window(ctx);
         self.style_window(ctx);
         self.actions_window(ctx);
+        self.customize_windows(ctx);
         if self.show_watermark {
             self.watermark_window(ctx);
         }
@@ -12739,7 +12755,9 @@ impl eframe::App for PaintApp {
             break 'shortcuts;
         }
         let km = self.keymap.clone();
-        let hit = |a: keys::Action| ctx.input(|i| km.get(&a).copied().flatten().is_some_and(|b| b.pressed(i)));
+        // команда клавиш, выбранная в поиске или быстром доступе, — как нажатие
+        let forced = self.custom.forced.take();
+        let hit = |a: keys::Action| forced == Some(a) || ctx.input(|i| km.get(&a).copied().flatten().is_some_and(|b| b.pressed(i)));
         use keys::Action as A;
         // нажатая в этом кадре клавиша (для временного переключения) и время сочетаний с Ctrl/Alt
         let pressed_key = ctx.input(|i| {
@@ -12794,6 +12812,12 @@ impl eframe::App for PaintApp {
         let copy = hit(A::Copy) || (ev_copy && is_default(A::Copy, "Ctrl+C"));
         let cut = hit(A::Cut) || (ev_cut && is_default(A::Cut, "Ctrl+X"));
         if !typing && self.live.is_none() {
+            if hit(A::Commands) {
+                self.custom.palette = Some((String::new(), 0, false));
+            }
+            if hit(A::QuickAccess) {
+                self.custom.show_quick = !self.custom.show_quick;
+            }
             if hit(A::Close) {
                 self.request_close_view(self.active_view);
             }

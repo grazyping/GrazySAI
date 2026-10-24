@@ -1422,3 +1422,21 @@ WinTab даёт нажим, наклон и поворот пера, если д
 Удалить набор = Supprimer le jeu
 Удалить шаг = Supprimer l'étape
 Фильтр: {0} = Filtre : {0}
+
+Быстрый доступ = Accès rapide
+Действие: {0} = Action : {0}
+Действие «{0}» не найдено = Action « {0} » introuvable
+Добавить в быстрый доступ = Ajouter à l'accès rapide
+Добавить команду = Ajouter une commande
+Имя набора: = Nom du jeu :
+Левее = Vers la gauche
+Начните вводить название команды = Tapez le nom d'une commande
+Основной = Principal
+Поиск команд = Recherche de commandes
+Поиск команд… = Recherche de commandes…
+Правее = Vers la droite
+Пространство {0} = Espace {0}
+Пусто: «+» добавляет любую команду = Vide : « + » ajoute une commande
+Рабочее пространство = Espace de travail
+Сохранить рабочее пространство = Enregistrer l'espace de travail
+Сохранить текущее… = Enregistrer l'actuel…

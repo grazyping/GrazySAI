@@ -1423,3 +1423,21 @@ WinTab даёт нажим, наклон и поворот пера, если д
 Удалить набор = Delete set
 Удалить шаг = Delete step
 Фильтр: {0} = Filter: {0}
+
+Быстрый доступ = Quick access
+Действие: {0} = Action: {0}
+Действие «{0}» не найдено = Action “{0}” not found
+Добавить в быстрый доступ = Add to quick access
+Добавить команду = Add command
+Имя набора: = Set name:
+Левее = Move left
+Начните вводить название команды = Start typing a command name
+Основной = Main
+Поиск команд = Command search
+Поиск команд… = Command search…
+Правее = Move right
+Пространство {0} = Workspace {0}
+Пусто: «+» добавляет любую команду = Empty: “+” adds any command
+Рабочее пространство = Workspace
+Сохранить рабочее пространство = Save workspace
+Сохранить текущее… = Save current…

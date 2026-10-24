@@ -32,7 +32,7 @@ pub enum Step {
     Fill,
 }
 
-const FILTERS: [FilterKind; 33] = [
+pub(crate) const FILTERS: [FilterKind; 33] = [
     FilterKind::HueSaturation,
     FilterKind::BrightnessContrast,
     FilterKind::GaussianBlur,

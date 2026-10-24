@@ -125,11 +125,13 @@ pub enum Action {
     Density100,
     Picker,
     ZoomTool,
+    Commands,
+    QuickAccess,
 }
 
 /// Действие, имя для настроек, подпись в окне, клавиша по умолчанию.
 /// Пустая клавиша — по умолчанию не назначена (в SAI её нет).
-pub const ALL: [(Action, &str, &str, &str); 95] = [
+pub const ALL: [(Action, &str, &str, &str); 97] = [
     (Action::Undo, "undo", "Отменить", "Ctrl+Z"),
     (Action::Redo, "redo", "Повторить", "Ctrl+Y"),
     (Action::Open, "open", "Открыть", "Ctrl+O"),
@@ -226,6 +228,8 @@ pub const ALL: [(Action, &str, &str, &str); 95] = [
     (Action::Density100, "density_100", "Плотность кисти 100", ""),
     (Action::Picker, "picker", "Пипетка", ""),
     (Action::ZoomTool, "zoom_tool", "Масштаб (инструмент)", ""),
+    (Action::Commands, "commands", "Поиск команд", "Ctrl+Shift+P"),
+    (Action::QuickAccess, "quick_access", "Быстрый доступ", ""),
 ];
 
 /// Клавиша с модификаторами (Ctrl — это Cmd на macOS).

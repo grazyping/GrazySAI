@@ -609,6 +609,19 @@ paint without them.
   smallest-size circle.
 - Right-click a tool cell: “Reserve Current Settings”, “Restore Reserved Settings”, “Undo Restore”.
 
+### Command search, quick access, workspaces
+
+- **Command search** — Ctrl+Shift+P or “Window → Command search…”: type part of a name (shortcut
+  commands, filters, correction layers, windows, your auto actions), Enter or a click runs it, arrows
+  select.
+- **Quick access** — “Window → Quick access”: a floating panel of buttons for any commands. “+” adds a
+  command through the search, a right-click on a button gives “Move left”, “Move right”, “Remove”; “…” —
+  new set, delete, set name. There can be several sets, picked from the list.
+- **Workspace** — “Window → Workspace → Save current…” remembers the layout: which panels are shown and
+  where, separate panels, interface scale, dark theme, quick access; picking a workspace in the same menu
+  restores it.
+- Your own shortcuts — “Window → Shortcuts…”; pen buttons — in the settings (“Tablets”).
+
 ### Auto actions
 
 “Window → Auto actions…” (like Clip Studio's Auto Actions and Photoshop's Actions): “New action” starts

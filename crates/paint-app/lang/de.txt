@@ -1422,3 +1422,21 @@ WinTab даёт нажим, наклон и поворот пера, если д
 Удалить набор = Satz löschen
 Удалить шаг = Schritt löschen
 Фильтр: {0} = Filter: {0}
+
+Быстрый доступ = Schnellzugriff
+Действие: {0} = Aktion: {0}
+Действие «{0}» не найдено = Aktion „{0}“ nicht gefunden
+Добавить в быстрый доступ = Zum Schnellzugriff hinzufügen
+Добавить команду = Befehl hinzufügen
+Имя набора: = Name des Satzes:
+Левее = Nach links
+Начните вводить название команды = Befehlsnamen eingeben
+Основной = Haupt
+Поиск команд = Befehlssuche
+Поиск команд… = Befehlssuche…
+Правее = Nach rechts
+Пространство {0} = Arbeitsbereich {0}
+Пусто: «+» добавляет любую команду = Leer: „+“ fügt einen Befehl hinzu
+Рабочее пространство = Arbeitsbereich
+Сохранить рабочее пространство = Arbeitsbereich speichern
+Сохранить текущее… = Aktuellen speichern…
