@@ -767,7 +767,7 @@ impl FileViewer {
         }
         if let Some(path) = self.delete_ask.clone() {
             egui::Window::new(tr("Удалить")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
-                let msg = if cfg!(target_os = "linux") { tr("Переместить в корзину:") } else { tr("Удалить навсегда:") };
+                let msg = if cfg!(xdg) { tr("Переместить в корзину:") } else { tr("Удалить навсегда:") };
                 ui.label(msg);
                 ui.label(path.display().to_string());
                 ui.horizontal(|ui| {
@@ -856,7 +856,7 @@ fn civil(z: i64) -> (i64, u32, u32) {
 
 /// Удалить: в Linux — в корзину рабочего стола (freedesktop.org Trash), иначе — насовсем.
 fn delete(path: &Path) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
+    #[cfg(xdg)]
     {
         let base = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).unwrap_or_else(|| home().join(".local/share")).join("Trash");
         let (files, info) = (base.join("files"), base.join("info"));
@@ -880,7 +880,7 @@ fn delete(path: &Path) -> Result<(), String> {
         }
         Ok(())
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(xdg))]
     {
         let r = if path.is_dir() { std::fs::remove_dir_all(path) } else { std::fs::remove_file(path) };
         r.map_err(|e| e.to_string())
@@ -892,7 +892,7 @@ mod tests {
     use super::*;
 
     /// В Linux удаление — в корзину по freedesktop.org: файл в `Trash/files`, рядом `.trashinfo`.
-    #[cfg(target_os = "linux")]
+    #[cfg(xdg)]
     #[test]
     fn deleting_moves_to_the_trash() {
         let d = std::env::temp_dir().join(format!("grazysai-trash-{}", std::process::id()));

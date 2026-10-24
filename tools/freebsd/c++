@@ -1,0 +1,2 @@
+#!/bin/sh
+exec "${LLVM_MINGW:-$HOME/.local/opt/llvm-mingw}/bin/clang++" --target=x86_64-unknown-freebsd15.1 --sysroot="${FREEBSD_SYSROOT:-$HOME/.local/share/vms/freebsd/sysroot}" -fuse-ld=lld -stdlib=libc++ "$@"

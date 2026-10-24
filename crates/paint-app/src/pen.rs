@@ -14,7 +14,7 @@
 //! «Поворот пера»).
 
 use crate::i18n::tr;
-#[cfg(target_os = "linux")]
+#[cfg(xdg)]
 use crate::i18n::trf;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -53,7 +53,7 @@ pub fn new_feed() -> PenFeed {
     }))
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(xdg)]
 pub fn spawn(feed: PenFeed, ctx: eframe::egui::Context) {
     std::thread::spawn(move || {
         if let Err(e) = run(&feed, &ctx) {
@@ -74,7 +74,7 @@ pub fn spawn(feed: PenFeed, ctx: eframe::egui::Context, hwnd: isize, wintab: boo
     }
 }
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(not(any(xdg, windows)))]
 pub fn spawn(feed: PenFeed, _ctx: eframe::egui::Context) {
     if let Ok(mut s) = feed.lock() {
         s.info = String::from(tr("перо: источник не подключён"));
@@ -82,7 +82,7 @@ pub fn spawn(feed: PenFeed, _ctx: eframe::egui::Context) {
 }
 
 /// Наклон по двум осям (градусы, x вправо, y к себе) — доля 0..1 (60° и больше — 1) и направление.
-#[cfg(target_os = "linux")]
+#[cfg(xdg)]
 pub fn tilt_of(tx: f32, ty: f32) -> (f32, f32) {
     ((tx.hypot(ty) / 60.0).clamp(0.0, 1.0), ty.atan2(tx))
 }
@@ -240,7 +240,7 @@ mod wintab {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(xdg)]
 fn run(feed: &PenFeed, ctx: &eframe::egui::Context) -> Result<(), Box<dyn std::error::Error>> {
     use std::collections::HashMap;
     use x11rb::connection::Connection;

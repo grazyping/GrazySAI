@@ -56,9 +56,9 @@ impl Clip {
 
 struct PasteKey {
     was: bool,
-    #[cfg(target_os = "linux")]
+    #[cfg(xdg)]
     x11: Option<(x11rb::rust_connection::RustConnection, u8)>,
-    #[cfg(target_os = "linux")]
+    #[cfg(xdg)]
     tried: bool,
 }
 
@@ -66,15 +66,15 @@ impl PasteKey {
     fn new() -> Self {
         Self {
             was: false,
-            #[cfg(target_os = "linux")]
+            #[cfg(xdg)]
             x11: None,
-            #[cfg(target_os = "linux")]
+            #[cfg(xdg)]
             tried: false,
         }
     }
 
     /// Зажата ли V (при зажатом Ctrl); `None` — опросить нельзя.
-    #[cfg(target_os = "linux")]
+    #[cfg(xdg)]
     fn down(&mut self, ctrl: bool) -> Option<bool> {
         use x11rb::connection::Connection;
         use x11rb::protocol::xproto::ConnectionExt as _;
@@ -112,7 +112,7 @@ impl PasteKey {
         Some(ctrl && unsafe { GetAsyncKeyState(0x56) } as u16 & 0x8000 != 0)
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    #[cfg(not(any(xdg, target_os = "windows")))]
     fn down(&mut self, _ctrl: bool) -> Option<bool> {
         None
     }

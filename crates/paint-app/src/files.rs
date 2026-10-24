@@ -157,7 +157,7 @@ impl Pending {
             Some(mut v) if !v.is_empty() => Answer::Path(v.swap_remove(0)),
             Some(_) => Answer::Cancelled,
             // мгновенный пустой ответ — окна не было (portal не отвечает)
-            None if cfg!(target_os = "linux") && self.started.elapsed() < Duration::from_millis(250) => Answer::Unavailable,
+            None if cfg!(xdg) && self.started.elapsed() < Duration::from_millis(250) => Answer::Unavailable,
             None => Answer::Cancelled,
         })
     }

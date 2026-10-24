@@ -12275,7 +12275,7 @@ fn disk_use(dir: &std::path::Path) -> Option<(u64, u64)> {
         let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut avail, &mut total, &mut free) };
         (ok != 0 && total > 0).then(|| (total - free, total))
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(xdg)]
     {
         use std::os::unix::ffi::OsStrExt;
         #[repr(C)]
@@ -12308,7 +12308,7 @@ fn disk_use(dir: &std::path::Path) -> Option<(u64, u64)> {
         let total = st.blocks * st.frsize;
         (total > 0).then(|| (total - st.bfree * st.frsize, total))
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(not(any(windows, xdg)))]
     {
         let _ = dir;
         None
@@ -12317,7 +12317,7 @@ fn disk_use(dir: &std::path::Path) -> Option<(u64, u64)> {
 
 /// Занятая память процесса и вся память, байт (Linux; на других системах — нули).
 fn memory_use() -> (u64, u64) {
-    #[cfg(target_os = "linux")]
+    #[cfg(xdg)]
     {
         let rss = std::fs::read_to_string("/proc/self/statm")
             .ok()
@@ -12341,7 +12341,7 @@ fn memory_use() -> (u64, u64) {
             * 1024;
         (rss, total)
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(xdg))]
     {
         (0, 0)
     }
@@ -13150,7 +13150,7 @@ fn menu_item(label: &'static str, shortcut: &str) -> egui::Button<'static> {
 fn main() -> eframe::Result {
     // На Wayland перо доходит до окна только через XWayland (см. pen.rs), поэтому открываемся там.
     // PAINT_RS_WAYLAND=1 оставляет родной Wayland — без нажима пера.
-    #[cfg(target_os = "linux")]
+    #[cfg(xdg)]
     if std::env::var_os("DISPLAY").is_some() && std::env::var_os("PAINT_RS_WAYLAND").is_none() {
         std::env::remove_var("WAYLAND_DISPLAY");
         std::env::remove_var("WAYLAND_SOCKET");
