@@ -13154,7 +13154,7 @@ fn imported_brush(b: &paint_formats::brush_tip::ImportedBrush, from: &str, set: 
             hardness: step,
             spacing: b.spacing.unwrap_or(0.0),
             mix: b.mix.map(|(blend, dilute)| MixParams::new(blend, dilute, 0.5)),
-            scatter: if kind == ToolKind::Scatter { b.scatter.clone() } else { t.params.scatter.clone() },
+            scatter: if kind == ToolKind::Scatter { b.scatter } else { t.params.scatter },
             ..t.params
         };
         t.custom = Some(b.name.clone());
