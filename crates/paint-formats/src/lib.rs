@@ -3,6 +3,7 @@
 
 pub mod brush_tip;
 pub mod csp;
+pub mod descriptor;
 pub mod jssf;
 pub mod krita;
 pub mod linework;

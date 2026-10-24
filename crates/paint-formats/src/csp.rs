@@ -140,6 +140,7 @@ impl Variant {
             texture_scale: self.num("TextureScale").unwrap_or(100.0).clamp(1.0, 1000.0) as u16,
             erase: false,
             smudge: false,
+            scatter: None,
             skipped,
         }
     }

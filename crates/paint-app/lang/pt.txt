@@ -1290,3 +1290,7 @@ Zip с паролем = Zip com senha
 Щелчок по карточке — выбрать; двойной щелчок — взять в сетку (группа «Библиотека») = Clique no cartão — selecionar; clique duplo — pôr na grade (grupo “Biblioteca”)
 Щелчок — выбрать, двойной щелчок — взять в сетку = Clique — selecionar, clique duplo — pôr na grade
 через запятую = separadas por vírgulas
+
+шум = ruído
+отражение кончика = espelhamento da ponta
+разброс непрозрачности = variação de opacidade

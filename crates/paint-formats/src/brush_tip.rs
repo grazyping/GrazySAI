@@ -42,8 +42,39 @@ pub struct ImportedBrush {
     pub erase: bool,
     /// Размазывающая кисть (смешивание с холстом без своего цвета).
     pub smudge: bool,
+    /// Россыпь и разброс (кисть «Россыпь»).
+    pub scatter: Option<paint_core::scatter::ScatterParams>,
     /// Настройки, которых у GrazySAI нет (имена — для сообщения).
     pub skipped: Vec<&'static str>,
+}
+
+impl ImportedBrush {
+    /// Простая кисть: круглая, жёсткая, без нажима.
+    pub fn new(name: &str, size: f32) -> Self {
+        Self {
+            name: name.to_string(),
+            size,
+            density: 1.0,
+            hardness: 1.0,
+            spacing: None,
+            size_pressure: None,
+            density_pressure: None,
+            mix: None,
+            texture: None,
+            tip: None,
+            tip_angle: 0.0,
+            tip_more: Vec::new(),
+            tip_random: false,
+            tip_ratio: 1.0,
+            tip_follow: false,
+            texture_density: 1.0,
+            texture_scale: 100,
+            erase: false,
+            smudge: false,
+            scatter: None,
+            skipped: Vec::new(),
+        }
+    }
 }
 
 
@@ -122,11 +153,19 @@ pub fn gbr(d: &[u8]) -> Res<(String, Stamp)> {
     Ok((name, Stamp { width: w, height: h, alpha }))
 }
 
-/// Кисти Photoshop `.abr`: картинки отпечатков (настройки кистей из раздела `desc` не читаются).
-/// Версии 1 и 2 — список кистей (у «вычисляемых» картинки нет, они пропускаются), 6 — раздел
-/// `8BIM samp` с картинками. Значение точки — количество краски (255 — полная), 8 или 16 бит,
-/// без сжатия или PackBits по строкам.
+/// Кисти Photoshop `.abr`: картинки отпечатков. Версии 1 и 2 — список кистей (у «вычисляемых»
+/// картинки нет, они пропускаются), 6 — раздел `8BIM samp` с картинками. Значение точки —
+/// количество краски (255 — полная), 8 или 16 бит, без сжатия или PackBits по строкам.
 pub fn abr(d: &[u8]) -> Res<Vec<(String, Stamp)>> {
+    let out: Vec<_> = abr_parts(d)?.0.into_iter().map(|(n, _, st)| (n, st)).collect();
+    if out.is_empty() {
+        return Err("ABR: в файле нет картинок кистей".into());
+    }
+    Ok(out)
+}
+
+/// Картинки `.abr` (имя, ключ картинки у версии 6, картинка) и раздел `desc` с настройками.
+fn abr_parts(d: &[u8]) -> Res<(Vec<(String, String, Stamp)>, Option<&[u8]>)> {
     struct R<'a> {
         d: &'a [u8],
         p: usize,
@@ -182,6 +221,7 @@ pub fn abr(d: &[u8]) -> Res<Vec<(String, Stamp)>> {
     let mut r = R { d, p: 0 };
     let version = r.u16()?;
     let mut out = Vec::new();
+    let mut desc = None;
     match version {
         1 | 2 => {
             let count = r.u16()?.min(1000);
@@ -199,7 +239,7 @@ pub fn abr(d: &[u8]) -> Res<Vec<(String, Stamp)>> {
                     }
                     r.take(9)?; // сглаживание и короткий прямоугольник
                     let st = r.image()?;
-                    out.push((if name.is_empty() { format!("{}", i + 1) } else { name }, st));
+                    out.push((if name.is_empty() { format!("{}", i + 1) } else { name }, String::new(), st));
                 }
                 r.p = next;
             }
@@ -214,6 +254,9 @@ pub fn abr(d: &[u8]) -> Res<Vec<(String, Stamp)>> {
                 let key = r.take(4)?.to_vec();
                 let size = r.u32()? as usize;
                 let end = r.p.saturating_add(size).min(d.len());
+                if key == b"desc" {
+                    desc = d.get(r.p..end);
+                }
                 if key != b"samp" {
                     r.p = end;
                     continue;
@@ -221,23 +264,140 @@ pub fn abr(d: &[u8]) -> Res<Vec<(String, Stamp)>> {
                 while r.p + 4 <= end && out.len() < 1000 {
                     let len = r.u32()? as usize;
                     let next = r.p.saturating_add(len.div_ceil(4) * 4);
-                    // ключ кисти (37 байт), затем 10 (подверсия 1) или 264 байта прочего
-                    r.take(37)?;
+                    // ключ кисти: длина и строка (UUID, по нему на картинку ссылается `desc`) в 37
+                    // байтах, затем 10 (подверсия 1) или 264 байта прочего
+                    let k = r.take(37)?;
+                    let id = String::from_utf8_lossy(&k[1..1 + (k[0] as usize).min(36)]).into_owned();
                     r.take(if sub == 1 { 10 } else { 264 })?;
                     match r.image() {
-                        Ok(st) => out.push((format!("{}", out.len() + 1), st)),
+                        Ok(st) => out.push((format!("{}", out.len() + 1), id, st)),
                         Err(e) if out.is_empty() => return Err(e),
                         Err(_) => {}
                     }
                     r.p = next;
                 }
-                break;
+                r.p = end;
             }
         }
         v => return Err(format!("ABR: версия {v} не поддерживается").into()),
     }
-    if out.is_empty() {
+    if out.is_empty() && desc.is_none() {
         return Err("ABR: в файле нет картинок кистей".into());
+    }
+    Ok((out, desc))
+}
+
+/// Кисти Photoshop `.abr` с настройками из раздела `desc` (версия 6 и новее): размер, шаг,
+/// жёсткость, угол и сплюснутость кончика, нажим на размер и непрозрачность, россыпь и разброс
+/// (кисть «Россыпь»), смена цвета. Без `desc` (версии 1, 2) — картинки с обычными настройками.
+pub fn abr_brushes(d: &[u8]) -> Res<Vec<ImportedBrush>> {
+    use crate::descriptor::Value;
+    let (images, desc) = abr_parts(d)?;
+    let plain = |name: String, tip: Stamp| ImportedBrush { name, tip: Some(tip), ..ImportedBrush::new("", 40.0) };
+    let Some(desc) = desc.and_then(|d| crate::descriptor::read(d).ok()) else {
+        let out: Vec<_> = images.into_iter().map(|(n, _, st)| ImportedBrush { spacing: Some(0.1), ..plain(n, st) }).collect();
+        return if out.is_empty() { Err("ABR: в файле нет картинок кистей".into()) } else { Ok(out) };
+    };
+    let num = |v: &Value, k: &str| v.get(k).and_then(Value::num);
+    let on = |v: &Value, k: &str| v.get(k).and_then(Value::bool).unwrap_or(false);
+    // разброс 0..1 и управление (0 — нет, 2 — нажим, 6 и 7 — направление) у «brVr»
+    let var = |v: &Value, k: &str| v.get(k).map_or((0.0, 0), |b| ((num(b, "jitter").unwrap_or(0.0) / 100.0).clamp(0.0, 1.0) as f32, num(b, "bVTy").unwrap_or(0.0) as i32));
+    let mut out = Vec::new();
+    for p in desc.get("Brsh").map_or(&[][..], Value::list) {
+        let Some(tip) = p.get("Brsh") else { continue };
+        let name = p.get("Nm  ").or(tip.get("Nm  ")).and_then(Value::text).unwrap_or("").to_string();
+        let name = if name.is_empty() { format!("{}", out.len() + 1) } else { name };
+        let mut b = ImportedBrush::new(&name, num(tip, "Dmtr").unwrap_or(40.0).clamp(1.0, 5000.0) as f32);
+        match tip.class() {
+            Some("sampledBrush") => {
+                let id = tip.get("sampledData").and_then(Value::text).unwrap_or("");
+                let Some((_, _, st)) = images.iter().find(|(_, k, _)| k == id) else { continue };
+                b.tip = Some(st.clone());
+            }
+            Some("computedBrush") => b.hardness = (num(tip, "Hrdn").unwrap_or(100.0) / 100.0).clamp(0.0, 1.0) as f32,
+            _ => continue,
+        }
+        // шаг — у формы кончика (у пресета бывает свой, Photoshop его не показывает); выключен —
+        // отпечатки по скорости, как авто
+        let spacing = num(tip, "Spcn").or(num(p, "Spcn")).unwrap_or(25.0);
+        b.spacing = (on(tip, "Intr") || tip.get("Intr").is_none()).then_some((spacing / 100.0).clamp(0.01, 10.0) as f32);
+        b.tip_angle = num(tip, "Angl").unwrap_or(0.0) as f32;
+        b.tip_ratio = (num(tip, "Rndn").unwrap_or(100.0) / 100.0).clamp(0.01, 1.0) as f32;
+        if on(tip, "flipX") || on(tip, "flipY") || on(p, "flipX") || on(p, "flipY") {
+            b.skipped.push("отражение кончика");
+        }
+        let mut sc = paint_core::scatter::ScatterParams::default();
+        let mut scatter = false;
+        if on(p, "useTipDynamics") {
+            let (size_j, size_c) = var(p, "szVr");
+            let min = (num(p, "minimumDiameter").unwrap_or(0.0) / 100.0).clamp(0.0, 1.0) as f32;
+            if size_c == 2 && min < 0.999 {
+                b.size_pressure = Some(min);
+            }
+            let (angle_j, angle_c) = var(p, "angleDynamics");
+            b.tip_follow = angle_c == 6 || angle_c == 7;
+            let (ratio_j, _) = var(p, "roundnessDynamics");
+            sc.size_jitter = size_j;
+            sc.angle_jitter = angle_j;
+            sc.ratio_jitter = ratio_j * (1.0 - (num(p, "minimumRoundness").unwrap_or(0.0) / 100.0).clamp(0.0, 1.0) as f32);
+            scatter |= size_j > 0.0 || angle_j > 0.0 || sc.ratio_jitter > 0.0;
+        }
+        if on(p, "useScatter") {
+            // россыпь в Photoshop — разброс «scatterDynamics», до 1000 % диаметра; у «Россыпи» —
+            // до 200 %
+            let amount = p.get("scatterDynamics").and_then(|v| num(v, "jitter")).or(num(p, "Scat")).unwrap_or(0.0);
+            sc.scattering = (amount / 100.0).clamp(0.0, 2.0) as f32;
+            sc.all_directions = on(p, "bothAxes");
+            sc.count = num(p, "Cnt ").unwrap_or(1.0).round().clamp(1.0, 20.0) as u8;
+            sc.count_jitter = var(p, "countDynamics").0;
+            scatter |= sc.scattering > 0.0 || sc.count > 1 || sc.count_jitter > 0.0;
+        }
+        if on(p, "usePaintDynamics") {
+            if var(p, "opVr").1 == 2 || var(p, "prVr").1 == 2 {
+                b.density_pressure = Some(0.0);
+            }
+            if var(p, "opVr").0 > 0.0 || var(p, "prVr").0 > 0.0 {
+                b.skipped.push("разброс непрозрачности");
+            }
+        }
+        if on(p, "useColorDynamics") {
+            sc.fg_bg_jitter = var(p, "clVr").0;
+            let pct = |k: &str| (num(p, k).unwrap_or(0.0) / 100.0).clamp(0.0, 1.0) as f32;
+            sc.hue_jitter = pct("H   ");
+            sc.sat_jitter = pct("Strt");
+            sc.bri_jitter = pct("Brgh");
+            sc.each_shape = on(p, "colorDynamicsPerTip") || p.get("colorDynamicsPerTip").is_none();
+            scatter |= sc.fg_bg_jitter > 0.0 || sc.hue_jitter > 0.0 || sc.sat_jitter > 0.0 || sc.bri_jitter > 0.0;
+        }
+        if scatter {
+            // угол и толщина кончика — у самого отпечатка; формы поворачиваются по мазку, только
+            // если так задано
+            sc.angle_control = if b.tip_follow { paint_core::scatter::AngleControl::Auto } else { paint_core::scatter::AngleControl::None };
+            b.scatter = Some(sc);
+        }
+        if on(p, "useTexture") {
+            b.skipped.push("текстура");
+        }
+        if p.get("dualBrush").is_some_and(|v| on(v, "useDualBrush")) {
+            b.skipped.push("двойная кисть");
+        }
+        if on(p, "Wtdg") {
+            b.skipped.push("кайма акварели");
+        }
+        if on(p, "Nose") {
+            b.skipped.push("шум");
+        }
+        if let Some(o) = p.get("toolOptions") {
+            b.density = ((num(o, "Opct").unwrap_or(100.0) / 100.0) * (num(o, "flow").unwrap_or(100.0) / 100.0)).clamp(0.01, 1.0) as f32;
+        }
+        out.push(b);
+    }
+    // в `desc` нет пресетов — картинки с обычными настройками
+    if out.is_empty() {
+        out = images.into_iter().map(|(n, _, st)| ImportedBrush { spacing: Some(0.1), ..plain(n, st) }).collect();
+    }
+    if out.is_empty() {
+        return Err("ABR: в файле нет кистей".into());
     }
     Ok(out)
 }
@@ -336,6 +496,110 @@ mod tests {
     }
 
     #[test]
+    fn reads_photoshop_brush_settings() {
+        fn key(out: &mut Vec<u8>, k: &str) {
+            out.extend((if k.len() == 4 { 0 } else { k.len() as u32 }).to_be_bytes());
+            out.extend(k.as_bytes());
+        }
+        fn obj(out: &mut Vec<u8>, class: &str, n: u32) {
+            out.extend([0, 0, 0, 1, 0, 0]);
+            key(out, class);
+            out.extend(n.to_be_bytes());
+        }
+        fn unit(out: &mut Vec<u8>, k: &str, u: &str, v: f64) {
+            key(out, k);
+            out.extend(b"UntF");
+            out.extend(u.as_bytes());
+            out.extend(v.to_be_bytes());
+        }
+        fn flag(out: &mut Vec<u8>, k: &str, v: bool) {
+            key(out, k);
+            out.extend(b"bool");
+            out.push(v as u8);
+        }
+        fn var(out: &mut Vec<u8>, k: &str, control: i32, jitter: f64) {
+            key(out, k);
+            out.extend(b"Objc");
+            obj(out, "brVr", 2);
+            key(out, "bVTy");
+            out.extend(b"long");
+            out.extend(control.to_be_bytes());
+            unit(out, "jitter", "#Prc", jitter);
+        }
+        let uuid = "fe8cf204-72e3-11e8-99ab-ca24cbfea154";
+        // картинка 2×2 без сжатия
+        let mut item = vec![36u8];
+        item.extend(uuid.as_bytes());
+        item.extend([0u8; 264]);
+        for v in [0i32, 0, 2, 2] {
+            item.extend(v.to_be_bytes());
+        }
+        item.extend(8u16.to_be_bytes());
+        item.push(0);
+        item.extend([255, 128, 64, 0]);
+        let mut samp = (item.len() as u32).to_be_bytes().to_vec();
+        samp.extend(&item);
+        while samp.len() % 4 != 0 {
+            samp.push(0);
+        }
+        // описание: один пресет с россыпью и нажимом на размер
+        let mut desc = 16u32.to_be_bytes().to_vec();
+        obj(&mut desc, "null", 1);
+        key(&mut desc, "Brsh");
+        desc.extend(b"VlLs");
+        desc.extend(1u32.to_be_bytes());
+        desc.extend(b"Objc");
+        obj(&mut desc, "brushPreset", 8);
+        key(&mut desc, "Nm  ");
+        desc.extend(b"TEXT");
+        desc.extend(4u32.to_be_bytes());
+        desc.extend([0, b'M', 0, b'a', 0, b'r', 0, 0]);
+        key(&mut desc, "Brsh");
+        desc.extend(b"Objc");
+        obj(&mut desc, "sampledBrush", 4);
+        unit(&mut desc, "Dmtr", "#Pxl", 30.0);
+        unit(&mut desc, "Spcn", "#Prc", 50.0);
+        unit(&mut desc, "Rndn", "#Prc", 40.0);
+        key(&mut desc, "sampledData");
+        desc.extend(b"TEXT");
+        desc.extend((uuid.len() as u32 + 1).to_be_bytes());
+        for c in uuid.encode_utf16().chain([0]) {
+            desc.extend(c.to_be_bytes());
+        }
+        flag(&mut desc, "useTipDynamics", true);
+        var(&mut desc, "szVr", 2, 20.0);
+        unit(&mut desc, "minimumDiameter", "#Prc", 30.0);
+        flag(&mut desc, "useScatter", true);
+        var(&mut desc, "scatterDynamics", 0, 150.0);
+        key(&mut desc, "Cnt ");
+        desc.extend(b"doub");
+        desc.extend(3.0f64.to_be_bytes());
+        let mut d = vec![0, 6, 0, 2];
+        for (k, body) in [(b"samp", &samp), (b"desc", &desc)] {
+            d.extend(b"8BIM");
+            d.extend(k);
+            d.extend((body.len() as u32).to_be_bytes());
+            d.extend(body.iter());
+        }
+        let v = abr_brushes(&d).unwrap();
+        assert_eq!(v.len(), 1);
+        let b = &v[0];
+        assert_eq!(b.name, "Mar");
+        assert_eq!(b.size, 30.0);
+        assert_eq!(b.spacing, Some(0.5));
+        assert!((b.tip_ratio - 0.4).abs() < 1e-6);
+        assert_eq!(b.size_pressure, Some(0.3));
+        assert_eq!(b.tip.as_ref().map(|t| t.alpha.clone()), Some(vec![255, 128, 64, 0]));
+        let sc = b.scatter.as_ref().unwrap();
+        assert_eq!((sc.scattering, sc.count), (1.5, 3));
+        assert!((sc.size_jitter - 0.2).abs() < 1e-6);
+        // обрезанный файл — ошибка, не паника
+        for n in 0..d.len() {
+            let _ = abr_brushes(&d[..n]);
+        }
+    }
+
+    #[test]
     fn large_tips_are_shrunk() {
         let s = shrink(Stamp { width: 1024, height: 512, alpha: vec![200; 1024 * 512] }, 512);
         assert_eq!((s.width, s.height), (512, 256));
@@ -354,6 +618,15 @@ mod tests {
                 if p.is_dir() {
                     stack.push(p);
                 } else if p.extension().is_some_and(|x| x == "abr") {
+                    if let Ok(v) = abr_brushes(&std::fs::read(&p).unwrap()) {
+                        for b in v.iter().take(40) {
+                            println!(
+                                "  «{}» {:.0}px шаг {:?} жёсткость {:.2} угол {:.0} Ш:В {:.2} нажим {:?}/{:?} кончик {} россыпь {:?} пропущено {:?}",
+                                b.name, b.size, b.spacing, b.hardness, b.tip_angle, b.tip_ratio, b.size_pressure, b.density_pressure, b.tip.is_some(),
+                                b.scatter.as_ref().map(|s| (s.scattering, s.count, s.size_jitter, s.angle_jitter)), b.skipped
+                            );
+                        }
+                    }
                     match abr(&std::fs::read(&p).unwrap()) {
                         Ok(v) => {
                             println!("OK {} кистей {} первая {}x{}", p.display(), v.len(), v[0].1.width, v[0].1.height);

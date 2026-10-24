@@ -1291,3 +1291,7 @@ Zip с паролем = Password-protected zip
 Щелчок по карточке — выбрать; двойной щелчок — взять в сетку (группа «Библиотека») = Click a card to select it; double-click to put it into the grid (the “Library” group)
 Щелчок — выбрать, двойной щелчок — взять в сетку = Click to select, double-click to put into the grid
 через запятую = comma-separated
+
+шум = noise
+отражение кончика = tip flip
+разброс непрозрачности = opacity jitter

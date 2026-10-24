@@ -1290,3 +1290,7 @@ Zip с паролем = Zip protégé par mot de passe
 Щелчок по карточке — выбрать; двойной щелчок — взять в сетку (группа «Библиотека») = Clic sur une carte — sélectionner ; double-clic — mettre dans la grille (groupe « Bibliothèque »)
 Щелчок — выбрать, двойной щелчок — взять в сетку = Clic — sélectionner, double-clic — mettre dans la grille
 через запятую = séparées par des virgules
+
+шум = bruit
+отражение кончика = retournement de la pointe
+разброс непрозрачности = variation d'opacité

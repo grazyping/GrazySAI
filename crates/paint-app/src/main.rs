@@ -3952,7 +3952,7 @@ app.open_canvas_dialog(d == "resolution")
     fn add_imported(&mut self, brushes: &[paint_formats::brush_tip::ImportedBrush], from: &str) {
         let mut skipped: Vec<&str> = Vec::new();
         for b in brushes {
-            let t = imported_brush(b, from);
+            let t = imported_brush(b, from, "");
             for s in &b.skipped {
                 if !skipped.contains(s) {
                     skipped.push(s);
@@ -4066,22 +4066,17 @@ app.open_canvas_dialog(d == "resolution")
                 "sut" | "bfps" => {
                     let list = paint_formats::csp::load(path).map_err(|e| e.to_string())?;
                     skipped = list.iter().flat_map(|b| b.skipped.clone()).collect();
-                    (list.iter().map(|b| (imported_brush(b, "CSP"), b.name.clone())).collect(), "Clip Studio", skipped)
+                    (list.iter().map(|b| (imported_brush(b, "CSP", &set), b.name.clone())).collect(), "Clip Studio", skipped)
                 }
                 "kpp" | "bundle" => {
                     let list = if ext == "bundle" { paint_formats::krita::load_bundle(path) } else { paint_formats::krita::load_kpp(path).map(|b| vec![b]) }.map_err(|e| e.to_string())?;
                     skipped = list.iter().flat_map(|b| b.skipped.clone()).collect();
-                    (list.iter().map(|b| (imported_brush(b, "Krita"), b.name.clone())).collect(), "Krita", skipped)
+                    (list.iter().map(|b| (imported_brush(b, "Krita", &set), b.name.clone())).collect(), "Krita", skipped)
                 }
                 "abr" => {
-                    let list = std::fs::read(path).map_err(|e| e.to_string()).and_then(|d| paint_formats::brush_tip::abr(&d).map_err(|e| e.to_string()))?;
-                    let mut out = Vec::new();
-                    for (name, st) in &list {
-                        if let Ok(saved) = paint_core::paper::save_tip(&format!("{set} {name}"), st) {
-                            out.push((tip_brush(saved, false), name.clone()));
-                        }
-                    }
-                    (out, "Photoshop", skipped)
+                    let list = std::fs::read(path).map_err(|e| e.to_string()).and_then(|d| paint_formats::brush_tip::abr_brushes(&d).map_err(|e| e.to_string()))?;
+                    skipped = list.iter().flat_map(|b| b.skipped.clone()).collect();
+                    (list.iter().map(|b| (imported_brush(b, "Photoshop", &set), b.name.clone())).collect(), "Photoshop", skipped)
                 }
                 "gbr" | "gih" => {
                     let (name, cells, random) = paint_formats::brush_tip::load_all(path).map_err(|e| e.to_string())?;
@@ -13124,6 +13119,9 @@ fn tr_skipped(s: &str) -> &str {
         "кончик (файла нет рядом с пресетом и в папках Krita)" => tr("кончик (файла нет рядом с пресетом и в папках Krita)"),
         "вид кончика (векторный или текстовый)" => tr("вид кончика (векторный или текстовый)"),
         "текстура" => tr("текстура"),
+        "отражение кончика" => tr("отражение кончика"),
+        "разброс непрозрачности" => tr("разброс непрозрачности"),
+        "шум" => tr("шум"),
         _ => s,
     }
 }
@@ -13131,11 +13129,14 @@ fn tr_skipped(s: &str) -> &str {
 /// Кисти одного файла для библиотеки: кисти с именами, откуда, что пропущено при переносе.
 type Imported = (Vec<(paint_brush::Brush, String)>, &'static str, Vec<&'static str>);
 
-/// Кисть другой программы (CSP, Krita) — кисть GrazySAI: картинки и текстура — в свою папку
-/// программы; `from` — подпись во второй строке ячейки.
-fn imported_brush(b: &paint_formats::brush_tip::ImportedBrush, from: &str) -> paint_brush::Brush {
+/// Кисть другой программы (CSP, Krita, Photoshop) — кисть GrazySAI: картинки и текстура — в свою
+/// папку программы под именем «откуда набор кисть»; `from` — подпись во второй строке ячейки.
+fn imported_brush(b: &paint_formats::brush_tip::ImportedBrush, from: &str, set: &str) -> paint_brush::Brush {
+        let file = if set.is_empty() { format!("{from} {}", b.name) } else { format!("{from} {set} {}", b.name) };
         let kind = if b.erase {
             ToolKind::Eraser
+        } else if b.scatter.is_some() {
+            ToolKind::Scatter
         } else if b.mix.is_some() {
             ToolKind::Brush
         } else {
@@ -13153,12 +13154,13 @@ fn imported_brush(b: &paint_formats::brush_tip::ImportedBrush, from: &str) -> pa
             hardness: step,
             spacing: b.spacing.unwrap_or(0.0),
             mix: b.mix.map(|(blend, dilute)| MixParams::new(blend, dilute, 0.5)),
+            scatter: if kind == ToolKind::Scatter { b.scatter.clone() } else { t.params.scatter.clone() },
             ..t.params
         };
         t.custom = Some(b.name.clone());
         t.extra = from.to_string();
         if let (Some(tex), Some(dir)) = (&b.texture, paint_core::paper::user_dir("brushtex")) {
-            let name: String = format!("{from} {}", b.name).chars().map(|c| if c.is_alphanumeric() || " -_().".contains(c) { c } else { '_' }).collect();
+            let name: String = file.chars().map(|c| if c.is_alphanumeric() || " -_().".contains(c) { c } else { '_' }).collect();
             if std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(format!("{name}.bmp")), tex.to_bmp())).is_ok() {
                 t.grain.tex = TexChoice::File(name);
                 t.grain.tex_strength = b.texture_density;
@@ -13167,7 +13169,7 @@ fn imported_brush(b: &paint_formats::brush_tip::ImportedBrush, from: &str) -> pa
         }
         if let Some(tip) = &b.tip {
             let cells: Vec<paint_core::Stamp> = std::iter::once(tip.clone()).chain(b.tip_more.iter().cloned()).collect();
-            if let Ok(name) = paint_core::paper::save_tips(&format!("{from} {}", b.name), &cells) {
+            if let Ok(name) = paint_core::paper::save_tips(&file, &cells) {
                 t.grain.tip = Some(name);
                 t.grain.tip_random = b.tip_random;
             }

@@ -1290,3 +1290,7 @@ Zip с паролем = Zip mit Passwort
 Щелчок по карточке — выбрать; двойной щелчок — взять в сетку (группа «Библиотека») = Karte anklicken — auswählen; Doppelklick — in das Raster (Gruppe „Bibliothek“)
 Щелчок — выбрать, двойной щелчок — взять в сетку = Klick — auswählen, Doppelklick — in das Raster
 через запятую = durch Komma getrennt
+
+шум = Rauschen
+отражение кончика = Spitze spiegeln
+разброс непрозрачности = Deckkraft-Jitter

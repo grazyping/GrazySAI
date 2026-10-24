@@ -1290,3 +1290,7 @@ Zip с паролем = Zip con contraseña
 Щелчок по карточке — выбрать; двойной щелчок — взять в сетку (группа «Библиотека») = Clic en una tarjeta: seleccionar; doble clic: ponerla en la cuadrícula (grupo «Biblioteca»)
 Щелчок — выбрать, двойной щелчок — взять в сетку = Clic: seleccionar; doble clic: poner en la cuadrícula
 через запятую = separadas por comas
+
+шум = ruido
+отражение кончика = volteo de la punta
+разброс непрозрачности = variación de opacidad

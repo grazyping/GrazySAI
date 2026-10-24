@@ -228,6 +228,7 @@ fn parse(xml: &str, fallback_name: &str, find: impl Fn(&str) -> Option<Vec<u8>>)
         texture_scale: 100,
         erase: param(xml, "EraserMode") == Some("true") || param(xml, "CompositeOp") == Some("erase"),
         smudge,
+        scatter: None,
         skipped,
     })
 }
