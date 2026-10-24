@@ -10,7 +10,7 @@ third number.
 On 16 October 2026 **1.0.0** was released: everything on the 1.0 list is done. Next come
 feedback, Clip Studio Paint-like filters and ideas from Krita.
 
-On 23 October 2026 **1.1.0** was released: new features from SAI 2 after 2017. From this version on, releases come by sections: a section is done in full, tested and released as one version with the next second number: 1.2.0 — interface as in SAI 2 (checked on Windows), 1.3.0 — brush library.
+On 23 October 2026 **1.1.0** was released: new features from SAI 2 after 2017. From this version on, releases come by sections: a section is done in full, tested and released as one version with the next second number: 1.2.0 — interface as in SAI 2 (checked on Windows), 1.3.0 — in progress: the brush library, everything left in the roadmap, menu icons, graphics tablets and new systems.
 
 On GitHub every stage is a milestone with a progress bar
 ([Milestones](https://github.com/grazyping/GrazySAI/milestones)) and every item is an issue
@@ -184,16 +184,6 @@ Checked on real Windows next to the official SAI 2 2026.
 - [x] “Drive Usage” in the status bar (1.2.0)
 - [x] Icons in the new-tool list and on new menu items; labels fit in all 10 languages (1.2.0)
 
-### 1.3 — brush library (current version 1.3.0)
-
-Like Krita's preset docker, Clip Studio's material palette and Photoshop's brushes panel.
-
-- [x] A library of brushes from other programs in the program's own folder: Clip Studio, Krita, Photoshop, GIMP, GrazySAI; the originals are copied (1.3.0)
-- [x] Adding in bulk: many files or a whole folder by drag and drop, “Open”, “Add…”; duplicates are skipped (1.3.0)
-- [x] Library window: “All”, “Favorites”, “New”, by program, set and tag; search; cards with a stroke sample or a list (1.3.0)
-- [x] A separate system window (another monitor, always on top) or inside the program (1.3.0)
-- [x] Double-click puts a brush into the grid, in the “Library” tab (1.3.0)
-
 ### Filters as in Clip Studio Paint
 
 A Filter menu with CSP's submenus; windows with a preview, like our current filters. They only change layer pixels, so `.sai2` compatibility is kept. CSP is closed source: built from its manual's descriptions, checked against Krita and GIMP where they have a match.
@@ -276,6 +266,18 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 - [x] Shortcut keys in menus and tooltips can be hidden (“Window → Show shortcut keys”)
 
 ## Ahead
+
+Everything below goes into **1.3.0** together with the brush library: whatever can be done is released as one version after testing.
+
+### 1.3 — brush library (in progress, coming in 1.3.0)
+
+Like Krita's preset docker, Clip Studio's material palette and Photoshop's brushes panel.
+
+- [x] A library of brushes from other programs in the program's own folder: Clip Studio, Krita, Photoshop, GIMP, GrazySAI; the originals are copied (1.3.0)
+- [x] Adding in bulk: many files or a whole folder by drag and drop, “Open”, “Add…”; duplicates are skipped (1.3.0)
+- [x] Library window: “All”, “Favorites”, “New”, by program, set and tag; search; cards with a stroke sample or a list (1.3.0)
+- [x] A separate system window (another monitor, always on top) or inside the program (1.3.0)
+- [x] Double-click puts a brush into the grid, in the “Library” tab (1.3.0)
 
 ### Other programs' brushes — what is left
 
