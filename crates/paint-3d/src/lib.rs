@@ -5,6 +5,7 @@ pub mod model;
 pub mod pose;
 pub mod render;
 pub mod scene;
+pub mod vp;
 
 pub use model::{Error, Model};
 pub use scene::{Camera, Display, Object, Scene};

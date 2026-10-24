@@ -1309,3 +1309,8 @@ Zip с паролем = Zip protégé par mot de passe
 Поза не запомнена: {0} = Pose non enregistrée : {0}
 поворачивать сустав = tourner l'articulation
 тянуть за конец = tirer l'extrémité
+
+По перспективной линейке = Selon la règle de perspective
+Горизонт и точки схода линейки — наклон, поворот и угол обзора камеры (две точки — оси X и Z, одна — ось Z) = L'horizon et les points de fuite de la règle donnent l'inclinaison, la rotation et l'angle de vue de la caméra (deux points — axes X et Z, un — axe Z)
+Покажите перспективную линейку: «Линейка → Перспектива: 2 точки» = Affichez la règle de perspective : « Règle → Perspective : 2 points »
+Точки схода не годятся: они должны быть по разные стороны от середины холста = Les points de fuite ne conviennent pas : ils doivent être de part et d'autre du centre de la toile

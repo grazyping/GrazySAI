@@ -1310,3 +1310,8 @@ Zip с паролем = Password-protected zip
 Поза не запомнена: {0} = Pose not saved: {0}
 поворачивать сустав = rotate joint
 тянуть за конец = drag the end
+
+По перспективной линейке = From perspective ruler
+Горизонт и точки схода линейки — наклон, поворот и угол обзора камеры (две точки — оси X и Z, одна — ось Z) = The ruler's horizon and vanishing points set the camera's tilt, turn and field of view (two points — X and Z axes, one — Z axis)
+Покажите перспективную линейку: «Линейка → Перспектива: 2 точки» = Show the perspective ruler: “Ruler → Perspective: 2 points”
+Точки схода не годятся: они должны быть по разные стороны от середины холста = The vanishing points do not fit: they must be on opposite sides of the canvas centre

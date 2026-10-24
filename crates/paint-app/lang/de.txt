@@ -1309,3 +1309,8 @@ Zip с паролем = Zip mit Passwort
 Поза не запомнена: {0} = Pose nicht gespeichert: {0}
 поворачивать сустав = Gelenk drehen
 тянуть за конец = am Ende ziehen
+
+По перспективной линейке = Nach Perspektivlineal
+Горизонт и точки схода линейки — наклон, поворот и угол обзора камеры (две точки — оси X и Z, одна — ось Z) = Horizont und Fluchtpunkte des Lineals ergeben Neigung, Drehung und Blickwinkel der Kamera (zwei Punkte — X- und Z-Achse, einer — Z-Achse)
+Покажите перспективную линейку: «Линейка → Перспектива: 2 точки» = Perspektivlineal einblenden: „Lineal → Perspektive: 2 Punkte“
+Точки схода не годятся: они должны быть по разные стороны от середины холста = Die Fluchtpunkte passen nicht: Sie müssen auf verschiedenen Seiten der Leinwandmitte liegen

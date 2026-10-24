@@ -1309,3 +1309,8 @@ Zip с паролем = Zip com senha
 Поза не запомнена: {0} = Pose não salva: {0}
 поворачивать сустав = girar articulação
 тянуть за конец = arrastar a ponta
+
+По перспективной линейке = Pela régua de perspectiva
+Горизонт и точки схода линейки — наклон, поворот и угол обзора камеры (две точки — оси X и Z, одна — ось Z) = O horizonte e os pontos de fuga da régua definem a inclinação, o giro e o ângulo de visão da câmera (dois pontos — eixos X e Z, um — eixo Z)
+Покажите перспективную линейку: «Линейка → Перспектива: 2 точки» = Mostre a régua de perspectiva: “Régua → Perspectiva: 2 pontos”
+Точки схода не годятся: они должны быть по разные стороны от середины холста = Os pontos de fuga não servem: devem ficar em lados opostos do centro da tela

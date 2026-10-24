@@ -487,6 +487,9 @@ impl PaintApp {
         let mut frame_all = false;
         let layer_name = self.doc.layer(&self.s3d.as_ref().unwrap().path).map(|l| l.name.clone()).unwrap_or_default();
         let mut mode = self.s3d_mode;
+        // точки схода показанной перспективной линейки — для камеры
+        let vps: Option<Vec<[f32; 2]>> = (self.ruler.visible && matches!(self.ruler.kind, crate::ruler::Kind::Perspective(_))).then(|| self.ruler.vp[..self.ruler.vps().min(2)].to_vec());
+        let (dw, dh) = (self.doc.width, self.doc.height);
         let e = self.s3d.as_mut().unwrap();
         let mut changed = false;
         let mut msg: Option<String> = None;
@@ -518,9 +521,23 @@ impl PaintApp {
                 changed |= ui.add(egui::Slider::new(&mut c.distance, (d0 * 0.2).max(1e-3)..=(d0 * 5.0)).logarithmic(true).text(tr("Расстояние"))).changed();
                 changed |= ui.add(egui::Slider::new(&mut c.fov, 5.0..=120.0).suffix("°").text(tr("Угол обзора"))).on_hover_text(tr("Меньше — «телеобъектив», плоская перспектива; больше — «широкий угол»")).changed();
                 changed |= ui.add(egui::Slider::new(&mut c.roll, -45.0..=45.0).suffix("°").text(tr("Горизонт"))).changed();
-                if ui.button(tr("Вписать в кадр")).clicked() {
-                    frame_all = true;
-                }
+                ui.horizontal(|ui| {
+                    if ui.button(tr("Вписать в кадр")).clicked() {
+                        frame_all = true;
+                    }
+                    let r = ui.add_enabled(vps.is_some(), egui::Button::new(tr("По перспективной линейке")));
+                    let r = r.on_hover_text(tr("Горизонт и точки схода линейки — наклон, поворот и угол обзора камеры (две точки — оси X и Z, одна — ось Z)"));
+                    let r = r.on_disabled_hover_text(tr("Покажите перспективную линейку: «Линейка → Перспектива: 2 точки»"));
+                    if r.clicked() {
+                        match vps.as_deref().and_then(|v| paint_3d::vp::camera_from_vps(c, dw, dh, v)) {
+                            Some(n) => {
+                                *c = n;
+                                changed = true;
+                            }
+                            None => msg = Some(tr("Точки схода не годятся: они должны быть по разные стороны от середины холста").to_string()),
+                        }
+                    }
+                });
             });
             egui::CollapsingHeader::new(tr("Вид")).default_open(true).show(ui, |ui| {
                 let name = |d: Display| match d {
