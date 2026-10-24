@@ -10,7 +10,7 @@ third number.
 On 16 October 2026 **1.0.0** was released: everything on the 1.0 list is done. Next come
 feedback, Clip Studio Paint-like filters and ideas from Krita.
 
-On 23 October 2026 **1.1.0** was released: new features from SAI 2 after 2017. From this version on, releases come by sections: a section is done in full, tested and released as one version with the next second number.
+On 23 October 2026 **1.1.0** was released: new features from SAI 2 after 2017. From this version on, releases come by sections: a section is done in full, tested and released as one version with the next second number: 1.2.0 — interface as in SAI 2 (checked on Windows), 1.3.0 — brush library.
 
 On GitHub every stage is a milestone with a progress bar
 ([Milestones](https://github.com/grazyping/GrazySAI/milestones)) and every item is an issue
@@ -194,27 +194,7 @@ Like Krita's preset docker, Clip Studio's material palette and Photoshop's brush
 - [x] A separate system window (another monitor, always on top) or inside the program (1.3.0)
 - [x] Double-click puts a brush into the grid, in the “Library” tab (1.3.0)
 
-### Beyond the plan
-- [x] Dark interface theme: “Window → Dark theme” (the canvas and drawing colors stay as they are)
-- [x] Filters: hue and saturation, brightness and contrast, Gaussian blur — by SAI's rules, compared with live SAI; the other filters do not work in SAI itself
-- [x] Brush, color and stabilizer settings kept between runs
-- [x] Custom shortcuts: “Help → Shortcut Keys…”, 34 actions, SAI's defaults
-- [x] PSD (with layers) and JPEG export; opening PSD, PNG and JPEG
-- [x] Work recovery after a crash (a copy every 3 minutes)
-- [x] Undo history: 100 steps, as in SAI; beyond 1 GB — on disk
-- [x] Fast on large canvases: 2300×4096 with 191 layers — reading 0.3 s, display 0.3 s
-- [x] User manual (`docs/manual.en.md`, updated with every version)
-- [x] RGB and HSV color sliders, dragging layers in the list
-- [x] Large brushes 4–40 times faster with identical results
-- [x] Layer dragging with clear feedback: the layer fades in place, a label at the cursor, an insertion bar, folder highlight, scrolling at the edges, Esc
-- [x] Interface in 10 languages (English, Russian, Ukrainian, German, French, Spanish, Portuguese, Japanese, Chinese, Korean), system language by default, switchable without a restart; labels and columns adapt to the length of each translation, a light CJK font
-- [x] Updating from the program: GitHub releases are checked at startup, a “Version is out” notice in the menu bar, download with SHA-256 check and file replacement, restart; a GitHub link in the menu bar
-- [x] System “Open”, “Save As” and “Export” windows (File Explorer on Windows, the desktop dialog on Linux), Ctrl+O
-- [x] Shortcut keys in menus and tooltips can be hidden (“Window → Show shortcut keys”)
-
-## Ahead
-
-### First after 1.0 — filters as in Clip Studio Paint
+### Filters as in Clip Studio Paint
 
 A Filter menu with CSP's submenus; windows with a preview, like our current filters. They only change layer pixels, so `.sai2` compatibility is kept. CSP is closed source: built from its manual's descriptions, checked against Krita and GIMP where they have a match.
 
@@ -230,16 +210,14 @@ A Filter menu with CSP's submenus; windows with a preview, like our current filt
 
 - [x] PSB: export and opening of large Photoshop files (side over 30,000 px) (1.0.5)
 
-### Beyond SAI — ideas from Krita (after 1.0)
+### Beyond SAI — ideas from Krita, other programs' brushes
 
 Everything SAI has comes first; these come later. They do not hurt compatibility: in `.sai2` everything lands as plain pixels, the rest goes to the program settings. The window keeps SAI's look: new things live in menus and windows, not on the panels. No Krita code (GPL) is copied — only ideas and formulas, checked against SAI or Krita.
 
-- [ ] Third-party SAI 2 brushes: the `settings2.ssd` tool set (encrypted differently from SAI 1 — decode from SAI 2's code). Blot, brush, bristle and paper textures (`blotmap`, `brushtex`, `bristle`, `papertex`) are already picked up from the SAI folder
 - [x] Clip Studio Paint brushes (`.sut`, `.bfps`): main settings and texture (1.0.14)
 - [x] Image tip for any brush (PNG etc., GIMP brushes `.gbr`); for Clip Studio Paint brushes — from the material thumbnail (1.0.20)
 - [x] Krita brushes: `.kpp` presets and `.bundle` packs, `.png`, `.gbr`, `.gih` tips (1.0.21)
 - [x] Photoshop `.abr` brushes — brush pictures as tips (1.0.26)
-- [ ] `.svg` tips (Krita) and Photoshop brush settings from the `desc` section
 - [x] Mirror painting (symmetry) (1.0.9)
 - [x] Fill: closing gaps in line art and growing the edge under the line (1.0.10)
 - [x] Recent colours; GIMP (`.gpl`) and Krita (`.kpl`) palettes (1.0.6)
@@ -278,6 +256,34 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 - [x] Watermark on export (text or picture, position, opacity) (1.0.37)
 - [x] Drawing process recording: sped-up video, without chosen layers, with a password (AES zip) (1.0.38)
 - [x] 3D layer: glTF/GLB and OBJ models (your own — none bundled), camera, display (color, clay figure, silhouette, outline), posing by joints with the mouse and sliders, morphs, hiding and moving parts, several models in a scene; stored in `.sai2`, SAI sees an ordinary layer (1.0.39; plan — `docs/39-3d-reference.md`)
+
+### Beyond the plan
+- [x] Dark interface theme: “Window → Dark theme” (the canvas and drawing colors stay as they are)
+- [x] Filters: hue and saturation, brightness and contrast, Gaussian blur — by SAI's rules, compared with live SAI; the other filters do not work in SAI itself
+- [x] Brush, color and stabilizer settings kept between runs
+- [x] Custom shortcuts: “Help → Shortcut Keys…”, 34 actions, SAI's defaults
+- [x] PSD (with layers) and JPEG export; opening PSD, PNG and JPEG
+- [x] Work recovery after a crash (a copy every 3 minutes)
+- [x] Undo history: 100 steps, as in SAI; beyond 1 GB — on disk
+- [x] Fast on large canvases: 2300×4096 with 191 layers — reading 0.3 s, display 0.3 s
+- [x] User manual (`docs/manual.en.md`, updated with every version)
+- [x] RGB and HSV color sliders, dragging layers in the list
+- [x] Large brushes 4–40 times faster with identical results
+- [x] Layer dragging with clear feedback: the layer fades in place, a label at the cursor, an insertion bar, folder highlight, scrolling at the edges, Esc
+- [x] Interface in 10 languages (English, Russian, Ukrainian, German, French, Spanish, Portuguese, Japanese, Chinese, Korean), system language by default, switchable without a restart; labels and columns adapt to the length of each translation, a light CJK font
+- [x] Updating from the program: GitHub releases are checked at startup, a “Version is out” notice in the menu bar, download with SHA-256 check and file replacement, restart; a GitHub link in the menu bar
+- [x] System “Open”, “Save As” and “Export” windows (File Explorer on Windows, the desktop dialog on Linux), Ctrl+O
+- [x] Shortcut keys in menus and tooltips can be hidden (“Window → Show shortcut keys”)
+
+## Ahead
+
+### Other programs' brushes — what is left
+
+- [ ] Third-party SAI 2 brushes: the `settings2.ssd` tool set (encrypted differently from SAI 1 — decode from SAI 2's code). Blot, brush, bristle and paper textures (`blotmap`, `brushtex`, `bristle`, `papertex`) are already picked up from the SAI folder
+- [ ] `.svg` tips (Krita) and Photoshop brush settings from the `desc` section
+
+### 3D layer
+
 - [ ] 3D: poses — save, open, mirror (left ↔ right)
 - [ ] 3D: “drag the hand or foot” (inverse kinematics)
 - [ ] 3D: camera from the perspective ruler
@@ -290,4 +296,5 @@ Not done in section 1.1 — needs a live check or compatible storage.
 - [ ] Anti-Ripple for the flattest large brushes
 - [ ] “Reduce gaps at tips” for the wand and bucket
 - [ ] Layer ARGB colour picker for the Pixel Art Pen; colour (ARGB) assets from a layer; custom tools per layer type
+- [ ] Ready-made “Ver.1” and “Artistic” tool groups, as in SAI 2 (their brushes are needed)
 - [ ] Binary linework tools — if compatible storage is found
