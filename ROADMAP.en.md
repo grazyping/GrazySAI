@@ -298,14 +298,16 @@ Not done in section 1.1 — needs a live check or compatible storage.
 
 - [ ] Anti-Ripple for the flattest large brushes
 - [ ] “Reduce gaps at tips” for the wand and bucket
-- [ ] Layer ARGB colour picker for the Pixel Art Pen; colour (ARGB) assets from a layer; custom tools per layer type
+- [x] Layer ARGB colour picker for the Pixel Art Pen: a transparent pixel makes the pen erase *(coming in the next version)*
+- [x] SAI 2 scatter shapes (`.ini` and `.bmp` from `settings/scatter`) go into the library as Scatter brushes *(coming in the next version)*
+- [ ] Colour (ARGB) assets from a layer; custom tools per layer type (linework, shapes)
 - [x] Ready-made “Ver.1” and “Artistic” tool groups, as in SAI 2 (right-click a group tab → “Group as in SAI 2”) *(coming in the next version)*
 - [ ] Binary linework tools — if compatible storage is found
 
 ### Menu icons
 
-- [ ] An icon on every item of drop-down and context menus (open, save, new folder, new 3D layer, etc.) — in the style of familiar icons from other programs, one set with the tool icons
-- [ ] Check the menus in every language: icons do not shift labels, long labels and shortcuts are not cut off
+- [x] An icon on every item of drop-down and context menus (open, save, new folder, new 3D layer, etc.) — the Phosphor set, as in familiar programs *(coming in the next version)*
+- [x] Menus checked in English, German, French, Ukrainian, Japanese and Korean: labels line up, nothing is cut off *(coming in the next version)*
 
 ### Graphics tablets
 
