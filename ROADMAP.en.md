@@ -337,4 +337,5 @@ From what was left after 1.3.0:
 - [ ] Pen directly on Wayland, without XWayland — if the window library allows it
 - [ ] Anti-Ripple for Flatten Brush and the wand/bucket “Reduce small omissions” — checked against live SAI 2026 under Wine
 - [ ] Colour (ARGB) assets: coloured tips and scatter shapes, colour assets from a layer
-- [ ] FreeBSD: a `pkg` package with every release, then a port
+- [x] FreeBSD: a `pkg` package with every release (`tools/freebsd/mkpkg.sh`; added to 1.3.0) *(coming in the next version)*
+- [ ] FreeBSD: a port in the ports tree
