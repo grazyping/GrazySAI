@@ -330,6 +330,7 @@ Not in 1.3.0 and not planned for now.
 - [ ] Import from other programs: 3D models from Cinema 4D and other packages (FBX, Collada, USD, Alembic, etc.) — find out what else is worth accepting
 - [ ] User customisation, as in Clip Studio and other programs: panels, command sets, custom icons and shortcuts, workspaces
 - [ ] Timeline and animation as in Clip Studio Paint: cels (animation folders), timeline, onion skin, playback, export to GIF/video/frames
+- [ ] Puppet animation as in After Effects: a triangle mesh over the layer outline, pins (move, rotate, starch — stiffness, overlap — what is in front), the picture follows the mesh; pins keyed on the timeline
 
 From what was left after 1.3.0:
 
