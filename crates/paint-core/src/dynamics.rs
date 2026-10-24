@@ -15,6 +15,12 @@ pub enum DynInput {
     Distance,
     /// Случайное число на каждый отпечаток.
     Random,
+    /// Наклон пера: 0 — стоит прямо, 1 — наклонён на 60° и больше.
+    Tilt,
+    /// Куда наклонено перо: 0 — вправо, 0,25 — вниз (к себе), 0,5 — влево, 0,75 — вверх.
+    TiltDirection,
+    /// Поворот пера вокруг своей оси (у перьев с датчиком поворота), доля оборота.
+    Rotation,
 }
 
 /// Что меняется.
@@ -33,7 +39,7 @@ pub enum DynOutput {
 }
 
 impl DynInput {
-    pub const ALL: [DynInput; 5] = [DynInput::Pressure, DynInput::Speed, DynInput::Direction, DynInput::Distance, DynInput::Random];
+    pub const ALL: [DynInput; 8] = [DynInput::Pressure, DynInput::Speed, DynInput::Direction, DynInput::Distance, DynInput::Random, DynInput::Tilt, DynInput::TiltDirection, DynInput::Rotation];
 
     pub fn key(self) -> &'static str {
         match self {
@@ -42,6 +48,9 @@ impl DynInput {
             DynInput::Direction => "direction",
             DynInput::Distance => "distance",
             DynInput::Random => "random",
+            DynInput::Tilt => "tilt",
+            DynInput::TiltDirection => "tilt_direction",
+            DynInput::Rotation => "rotation",
         }
     }
 
@@ -150,6 +159,11 @@ pub struct DynInputs {
     pub distance: f32,
     /// Два случайных числа 0..1 (второе — сторона разброса).
     pub random: [f32; 2],
+    /// Наклон пера 0..1 (1 — 60° и больше), его направление (радианы, `atan2`) и поворот пера
+    /// вокруг оси (доля оборота); без датчиков — 0.
+    pub tilt: f32,
+    pub tilt_heading: f32,
+    pub rotation: f32,
 }
 
 /// Итог динамики для отпечатка.
@@ -188,6 +202,9 @@ pub fn apply(dyns: &[Dynamic], i: &DynInputs) -> DynEffect {
             DynInput::Direction => (i.heading / std::f32::consts::TAU).rem_euclid(1.0),
             DynInput::Distance => i.distance / d.scale.max(1.0),
             DynInput::Random => i.random[0],
+            DynInput::Tilt => i.tilt,
+            DynInput::TiltDirection => (i.tilt_heading / std::f32::consts::TAU).rem_euclid(1.0),
+            DynInput::Rotation => i.rotation.rem_euclid(1.0),
         };
         let y = d.value(x);
         match d.output {

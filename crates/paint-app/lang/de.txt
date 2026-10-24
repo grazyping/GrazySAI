@@ -1335,3 +1335,12 @@ Zip с паролем = Zip mit Passwort
 
 Не форма россыпи SAI 2 = Keine SAI-2-Streuform
 Картинка формы не прочитана = Das Formbild ließ sich nicht lesen
+
+Windows: перо через WinTab (нужен перезапуск) = Windows: Stift über WinTab (Neustart nötig)
+WinTab даёт нажим, наклон и поворот пера, если драйвер планшета его поддерживает; выключено или без WinTab — Windows Ink = WinTab liefert Druck, Neigung und Drehung des Stifts, wenn der Tablettreiber es unterstützt; aus oder ohne WinTab — Windows Ink
+Куда наклонено перо = Neigungsrichtung
+Наклон пера = Stiftneigung
+перо (WinTab) = Stift (WinTab)
+перо: WinTab, {0} = Stift: WinTab, {0}
+перо: WinTab не открылся, Windows Ink = Stift: WinTab ließ sich nicht öffnen, Windows Ink
+Поворот пера = Stiftdrehung

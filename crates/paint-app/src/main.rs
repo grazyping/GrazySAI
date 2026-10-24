@@ -577,11 +577,13 @@ struct Options {
     /// «Минимальный нажим для мазка» (SAI 2024+): слабее — перо не рисует, сильнее — нажим
     /// отсчитывается от этого порога. 0..0.9.
     min_pressure: f32,
+    /// Windows: брать перо через WinTab, если драйвер его даёт (иначе — Windows Ink).
+    wintab: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false, psd16: false, psd_exact: false, min_pressure: 0.0 }
+        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false, psd16: false, psd_exact: false, min_pressure: 0.0, wintab: true }
     }
 }
 
@@ -2048,6 +2050,9 @@ app.open_canvas_dialog(d == "resolution")
                 *v = n;
             }
         }
+        if let Some(v) = s.bool("opt.wintab") {
+            o.wintab = v;
+        }
         if let Some(v) = s.f32("opt.min_pressure") {
             o.min_pressure = v.clamp(0.0, 0.9);
         }
@@ -2254,6 +2259,7 @@ app.open_canvas_dialog(d == "resolution")
         let [[x1, y1], [x2, y2]] = o.pressure_curve.points;
         s.set("opt.pressure_curve", format!("{x1:.3},{y1:.3},{x2:.3},{y2:.3}"));
         s.set("opt.min_pressure", o.min_pressure);
+        s.set("opt.wintab", o.wintab as u8);
         s.set("layers_right", w.layers_right as u8);
         s.set("dot_cursor", w.dot_cursor as u8);
         s.set("brush_circle", w.brush_circle as u8);
@@ -5195,14 +5201,18 @@ app.open_canvas_dialog(d == "resolution")
 
     /// Текущий нажим и признак «ластик на обратном конце пера».
     fn pressure(&mut self) -> (f32, bool) {
-        let fresh = self.pen.lock().ok().and_then(|s| {
-            s.at.filter(|t| t.elapsed() < Duration::from_millis(250))
-                .map(|_| (s.pressure, s.eraser))
+        let (fresh, pose, api) = self.pen.lock().ok().map_or((None, [0.0; 3], ""), |s| {
+            let fresh = s.at.filter(|t| t.elapsed() < Duration::from_millis(250)).map(|_| (s.pressure, s.eraser));
+            (fresh, [s.tilt, s.tilt_heading, s.rotation], s.api)
         });
+        // наклон и поворот пера — для динамики кисти
+        if let Some(live) = self.live.as_mut() {
+            live.stroke.pen = if fresh.is_some() { pose } else { [0.0; 3] };
+        }
         let m = self.opts.min_pressure;
         let gate = |p: f32| ((p - m) / (1.0 - m)).max(0.0);
         let (raw, pressure, eraser, source) = match (fresh, self.touch_force) {
-            (Some((p, e)), _) => (p, gate(self.opts.pressure_curve.apply(p)), e, tr("перо (XInput 2)")),
+            (Some((p, e)), _) => (p, gate(self.opts.pressure_curve.apply(p)), e, if api == "WinTab" { tr("перо (WinTab)") } else { tr("перо (XInput 2)") }),
             (None, Some(f)) if self.touch_down || (self.stroke_by_touch && (self.live.is_some() || self.line_stroke.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some())) => (f, gate(self.opts.pressure_curve.apply(f)), false, tr("перо (Windows Ink)")),
             _ => (1.0, 1.0, false, tr("мышь")),
         };
@@ -8705,6 +8715,9 @@ app.open_canvas_dialog(d == "resolution")
                 DynInput::Direction => tr("Направление"),
                 DynInput::Distance => tr("Путь"),
                 DynInput::Random => tr("Случайно"),
+                DynInput::Tilt => tr("Наклон пера"),
+                DynInput::TiltDirection => tr("Куда наклонено перо"),
+                DynInput::Rotation => tr("Поворот пера"),
             };
             let output_name = |o: DynOutput| match o {
                 DynOutput::Size => tr("Размер"),
@@ -12052,6 +12065,7 @@ impl PaintApp {
                     o.min_pressure = (v / 100.0).clamp(0.0, 0.9);
                 }
             }).response.on_hover_text(tr("Слабее — перо не рисует (защита от случайных касаний); нажим отсчитывается от этого порога"));
+            ui.checkbox(&mut o.wintab, tr("Windows: перо через WinTab (нужен перезапуск)")).on_hover_text(tr("WinTab даёт нажим, наклон и поворот пера, если драйвер планшета его поддерживает; выключено или без WinTab — Windows Ink"));
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ok = ui.button("OK").clicked();
@@ -13183,8 +13197,18 @@ fn main() -> eframe::Result {
         Box::new(move |cc| {
             i18n::install_fonts(&cc.egui_ctx);
             let feed = pen::new_feed();
-            pen::spawn(feed.clone(), cc.egui_ctx.clone());
-            let app = PaintApp::new(path, feed);
+            let app = PaintApp::new(path, feed.clone());
+            #[cfg(windows)]
+            {
+                use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+                let hwnd = match cc.window_handle().map(|h| h.as_raw()) {
+                    Ok(RawWindowHandle::Win32(h)) => h.hwnd.get(),
+                    _ => 0,
+                };
+                pen::spawn(feed, cc.egui_ctx.clone(), hwnd, app.opts.wintab);
+            }
+            #[cfg(not(windows))]
+            pen::spawn(feed, cc.egui_ctx.clone());
             // после настроек: тема берётся из них
             sai_ui::apply_style(&cc.egui_ctx);
             update::cleanup();

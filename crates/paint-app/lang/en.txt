@@ -1336,3 +1336,12 @@ Zip с паролем = Password-protected zip
 
 Не форма россыпи SAI 2 = Not a SAI 2 scatter shape
 Картинка формы не прочитана = The shape picture could not be read
+
+Windows: перо через WinTab (нужен перезапуск) = Windows: pen via WinTab (restart needed)
+WinTab даёт нажим, наклон и поворот пера, если драйвер планшета его поддерживает; выключено или без WinTab — Windows Ink = WinTab gives pen pressure, tilt and rotation if the tablet driver supports it; off or without WinTab — Windows Ink
+Куда наклонено перо = Tilt direction
+Наклон пера = Pen tilt
+перо (WinTab) = pen (WinTab)
+перо: WinTab, {0} = pen: WinTab, {0}
+перо: WinTab не открылся, Windows Ink = pen: WinTab did not open, Windows Ink
+Поворот пера = Pen rotation

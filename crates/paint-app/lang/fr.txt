@@ -1335,3 +1335,12 @@ Zip с паролем = Zip protégé par mot de passe
 
 Не форма россыпи SAI 2 = Pas une forme de dispersion SAI 2
 Картинка формы не прочитана = L'image de la forme n'a pas pu être lue
+
+Windows: перо через WinTab (нужен перезапуск) = Windows : stylet via WinTab (redémarrage requis)
+WinTab даёт нажим, наклон и поворот пера, если драйвер планшета его поддерживает; выключено или без WinTab — Windows Ink = WinTab fournit la pression, l'inclinaison et la rotation du stylet si le pilote de la tablette le prend en charge ; désactivé ou sans WinTab — Windows Ink
+Куда наклонено перо = Direction d'inclinaison
+Наклон пера = Inclinaison du stylet
+перо (WinTab) = stylet (WinTab)
+перо: WinTab, {0} = stylet : WinTab, {0}
+перо: WinTab не открылся, Windows Ink = stylet : WinTab ne s'est pas ouvert, Windows Ink
+Поворот пера = Rotation du stylet

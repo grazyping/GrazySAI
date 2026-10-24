@@ -348,6 +348,9 @@ pub fn dynamics_hook(plugin: &Plugin, name: &str) -> Result<(paint_core::dynamic
             t.set("distance", i.distance)?;
             t.set("random", i.random[0])?;
             t.set("random2", i.random[1])?;
+            t.set("tilt", i.tilt)?;
+            t.set("tilt_direction", (i.tilt_heading / std::f32::consts::TAU).rem_euclid(1.0))?;
+            t.set("rotation", i.rotation)?;
             let out: mlua::Table = f.call(t)?;
             let num = |k: &str, d: f32| -> f32 { out.get::<Option<f64>>(k).ok().flatten().map(|v| v as f32).filter(|v| v.is_finite()).unwrap_or(d) };
             Ok(paint_core::dynamics::DynEffect {

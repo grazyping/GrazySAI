@@ -400,6 +400,9 @@ impl Studio {
                 DynInput::Direction => tr("Направление"),
                 DynInput::Distance => tr("Путь"),
                 DynInput::Random => tr("Случайно"),
+                DynInput::Tilt => tr("Наклон пера"),
+                DynInput::TiltDirection => tr("Куда наклонено перо"),
+                DynInput::Rotation => tr("Поворот пера"),
             };
             let output_name = |o: DynOutput| match o {
                 DynOutput::Size => tr("Размер"),

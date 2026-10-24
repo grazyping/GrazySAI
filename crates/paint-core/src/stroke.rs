@@ -553,6 +553,9 @@ pub struct Stroke {
     pub dynamics: Vec<crate::dynamics::Dynamic>,
     /// Своя динамика из плагина (вызывается на каждый отпечаток).
     pub dyn_hook: Option<crate::dynamics::DynHook>,
+    /// Положение пера для динамики: наклон 0..1, направление наклона (радианы), поворот (доля
+    /// оборота). Ставит программа перед точками (`set_pen`).
+    pub pen: [f32; 3],
     /// Путь от начала штриха до текущего отпечатка, px; скорость — путь за событие ввода.
     travel: f32,
     at: f32,
@@ -585,6 +588,7 @@ impl Stroke {
             heading: None,
             dynamics: Vec::new(),
             dyn_hook: None,
+            pen: [0.0; 3],
             travel: 0.0,
             at: 0.0,
             speed: 0.0,
@@ -918,6 +922,9 @@ impl Stroke {
                 heading: self.heading.unwrap_or(0.0),
                 distance: self.at,
                 random: [crate::dynamics::hash01(n * 2), crate::dynamics::hash01(n * 2 + 1)],
+                tilt: self.pen[0],
+                tilt_heading: self.pen[1],
+                rotation: self.pen[2],
             };
             let fx = crate::dynamics::apply(&self.dynamics, &inputs);
             match self.dyn_hook.as_mut() {
