@@ -2,7 +2,7 @@
 
 [English](README.md) | **Русский**
 
-Редактор для рисования на Rust по образцу PaintTool SAI 2 — личный проект. Версия 1.3.0.
+Редактор для рисования на Rust по образцу PaintTool SAI 2 — личный проект. Версия 1.4.0.
 Раньше назывался **SOsai** (переименован в 0.8.42; старые версии сами обновляются до GrazySAI).
 Как пользоваться — в [руководстве](docs/manual.md); что готово и что впереди — в [ROADMAP.md](ROADMAP.md) и на вкладке
 [Milestones](https://github.com/grazyping/GrazySAI/milestones); готовые сборки — в разделе Releases. Linux и Windows,
