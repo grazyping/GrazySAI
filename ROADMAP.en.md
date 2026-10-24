@@ -327,7 +327,7 @@ Not in 1.3.0 and not planned for now.
 
 - [ ] Auto Actions: record steps and replay them with one button, action sets
 - [ ] Layer styles (stroke, shadow, glow, etc.) and Gradient Map
-- [ ] Import from other programs: 3D models from Cinema 4D and other packages (FBX, Collada, USD, Alembic, etc.) — find out what else is worth accepting
+- [x] Import from other programs: FBX 3D models (Cinema 4D, Maya, 3ds Max, Mixamo, Daz), VRM (VRoid), PMX (MikuMikuDance), COLLADA `.dae` (SketchUp); USD and Alembic via export to glTF/FBX *(coming in the next version)*
 - [ ] User customisation, as in Clip Studio and other programs: panels, command sets, custom icons and shortcuts, workspaces
 - [ ] Timeline and animation as in Clip Studio Paint: cels (animation folders), timeline, onion skin, playback, export to GIF/video/frames
 - [ ] Puppet animation as in After Effects: a triangle mesh over the layer outline, pins (move, rotate, starch — stiffness, overlap — what is in front), the picture follows the mesh; pins keyed on the timeline
