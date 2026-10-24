@@ -32,9 +32,12 @@ The startup check can be turned off: “Help → Check for updates at startup”
 
 ### Tablet
 
-- **Windows**: pressure comes through Windows Ink. It must be enabled in the tablet driver
-  settings (for XPPen — “Windows Ink”).
-- **Linux**: pressure is read directly (XInput 2), nothing to set up.
+- **Windows**: the pen comes through WinTab (pressure, tilt, rotation) when the tablet driver
+  provides it, otherwise through Windows Ink (enable it in the driver; for XPPen — “Windows
+  Ink”). WinTab can be turned off: “Settings → Windows: pen via WinTab”.
+- **Linux**: pressure, tilt and rotation are read directly (XInput 2), nothing to set up.
+- Pen tilt and rotation are brush dynamics inputs (“Pen tilt”, “Tilt direction”, “Pen
+  rotation”). Brands, drivers and checked models — `docs/42-tablets.en.md`.
 - The back end of the pen is an eraser.
 - The status bar at the bottom shows where pressure currently comes from (“pen” or “mouse”) and
   its value.

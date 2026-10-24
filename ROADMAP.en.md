@@ -313,11 +313,12 @@ Not done in section 1.1 — needs a live check or compatible storage.
 
 Pressure now comes from XInput 2 (Linux, X11/XWayland) and Windows Ink (Windows).
 
-- [ ] List the popular brands and lines: Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs, Parblo, Artisul and others
+- [x] Popular brands and lines, their drivers and input methods (Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs, Parblo, Artisul…) — `docs/42-tablets.en.md` *(coming in the next version)*
 - [ ] Download drivers for the main models and check what they give programs: Windows Ink, WinTab, XInput 2, libinput/Wayland (`zwp_tablet_v2`)
-- [ ] WinTab support on Windows (for drivers and modes without Windows Ink), API choice in the settings
+- [x] WinTab support on Windows (for drivers and modes without Windows Ink), a switch in the settings *(coming in the next version)*
 - [ ] Pen directly on Wayland, without XWayland
-- [ ] Pen tilt and rotation, eraser end, pen buttons and tablet express keys; a table of checked models in the manual
+- [x] Pen tilt and rotation (WinTab, XInput 2) as brush dynamics inputs; eraser end; a table of checked models *(coming in the next version)*
+- [ ] Pen buttons and tablet express keys (assign actions)
 
 ### Systems
 
