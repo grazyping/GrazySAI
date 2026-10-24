@@ -273,23 +273,24 @@ Everything below goes into **1.3.0** together with the brush library: whatever c
 
 Like Krita's preset docker, Clip Studio's material palette and Photoshop's brushes panel.
 
-- [x] A library of brushes from other programs in the program's own folder: Clip Studio, Krita, Photoshop, GIMP, GrazySAI; the originals are copied (1.3.0)
-- [x] Adding in bulk: many files or a whole folder by drag and drop, “Open”, “Add…”; duplicates are skipped (1.3.0)
-- [x] Library window: “All”, “Favorites”, “New”, by program, set and tag; search; cards with a stroke sample or a list (1.3.0)
-- [x] A separate system window (another monitor, always on top) or inside the program (1.3.0)
-- [x] Double-click puts a brush into the grid, in the “Library” tab (1.3.0)
+- [x] A library of brushes from other programs in the program's own folder: SAI 2, Clip Studio, Krita, Photoshop, GIMP, GrazySAI; the originals are copied *(coming in the next version)*
+- [x] Adding in bulk: many files or a whole folder by drag and drop, “Open”, “Add…”; duplicates are skipped *(coming in the next version)*
+- [x] Library window: “All”, “Favorites”, “New”, by program, set and tag; search; cards with a stroke sample or a list *(coming in the next version)*
+- [x] A separate system window (another monitor, always on top) or inside the program *(coming in the next version)*
+- [x] Double-click puts a brush into the grid, in the “Library” tab *(coming in the next version)*
 
 ### Other programs' brushes — what is left
 
-- [ ] Third-party SAI 2 brushes: the `settings2.ssd` tool set (encrypted differently from SAI 1 — decode from SAI 2's code). Blot, brush, bristle and paper textures (`blotmap`, `brushtex`, `bristle`, `papertex`) are already picked up from the SAI folder
-- [ ] `.svg` tips (Krita) and Photoshop brush settings from the `desc` section
+- [x] SAI 2 custom tools (`custool` folder: `.saitdat`, `.saitgrp` groups) go into the library; forms, bristles and textures by name from the SAI 2 folder, including `brushfom`. Linework and shape layer tools are not converted yet *(coming in the next version)*
+- [x] `.svg` tips (Krita and any SVG picture) *(coming in the next version)*
+- [x] Photoshop brush settings from the `desc` section: size, spacing, hardness, angle and roundness, pressure, scatter and jitter (Scatter brush), colour dynamics *(coming in the next version)*
 
 ### 3D layer
 
-- [ ] 3D: poses — save, open, mirror (left ↔ right)
-- [ ] 3D: “drag the hand or foot” (inverse kinematics)
-- [ ] 3D: camera from the perspective ruler
-- [ ] 3D: turning the model into lines (crease outline)
+- [x] 3D: poses — save, apply (by joint names, works with another model), mirror (left ↔ right) *(coming in the next version)*
+- [x] 3D: “drag the hand or foot” (inverse kinematics) *(coming in the next version)*
+- [x] 3D: camera from the perspective ruler *(coming in the next version)*
+- [x] 3D: turning the model into lines — outline and creases as a new linework layer *(coming in the next version)*
 
 ### Leftovers of new SAI 2 features
 
@@ -298,7 +299,7 @@ Not done in section 1.1 — needs a live check or compatible storage.
 - [ ] Anti-Ripple for the flattest large brushes
 - [ ] “Reduce gaps at tips” for the wand and bucket
 - [ ] Layer ARGB colour picker for the Pixel Art Pen; colour (ARGB) assets from a layer; custom tools per layer type
-- [ ] Ready-made “Ver.1” and “Artistic” tool groups, as in SAI 2 (their brushes are needed)
+- [x] Ready-made “Ver.1” and “Artistic” tool groups, as in SAI 2 (right-click a group tab → “Group as in SAI 2”) *(coming in the next version)*
 - [ ] Binary linework tools — if compatible storage is found
 
 ### Menu icons
