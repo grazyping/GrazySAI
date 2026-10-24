@@ -392,7 +392,15 @@ fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4], mask_id: Option<u
         d.extend((body.len() as u32).to_le_bytes());
         d.extend(body);
     }
-    for (tag, body) in effect.iter().chain(&l.extra) {
+    // свои блоки: стили слоя и слой коррекции (текст)
+    let mut own: Vec<([u8; 4], Vec<u8>)> = Vec::new();
+    if let Some(st) = l.styles.as_deref().filter(|s| !s.is_empty()) {
+        own.push((*b"gsst", st.to_text().into_bytes()));
+    }
+    if let Some(a) = &l.adjust {
+        own.push((*b"gsad", a.to_text().into_bytes()));
+    }
+    for (tag, body) in effect.iter().chain(&own).chain(&l.extra) {
         d.extend(tag);
         d.extend((body.len() as u32).to_le_bytes());
         d.extend(body);

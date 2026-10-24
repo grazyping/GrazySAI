@@ -1171,6 +1171,52 @@ impl Document {
         self.perform(vec![Op::Canvas { width: self.width, height: self.height, layers, selection }])
     }
 
+    /// «Применить стиль»: обводка, тень, свечение и наложение цвета становятся пикселями слоя
+    /// (для SAI и PSD, которые стилей не знают); стиль снимается. Одна запись истории.
+    pub fn bake_styles(&mut self, path: &[usize]) -> Vec<Key> {
+        let Some(l) = self.layer(path) else { return Vec::new() };
+        let Some(st) = l.styles.as_deref() else { return Vec::new() };
+        if l.children.is_some() || l.adjust.is_some() {
+            return Vec::new();
+        }
+        let n = (st.reach() + TILE - 1) / TILE;
+        let mut keys: Vec<Key> = l.pixels.tiles.keys().flat_map(|k| (-n..=n).flat_map(move |dy| (-n..=n).map(move |dx| (k.0 + dx, k.1 + dy)))).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        let mut solo = l.clone();
+        solo.opacity = 1.0;
+        solo.mode = crate::blend::BlendMode::Normal;
+        solo.visible = true;
+        solo.clipping = false;
+        solo.mask = None;
+        let solo = [solo];
+        let mut tiles: TileBackup = Vec::with_capacity(keys.len());
+        for key in &keys {
+            let mut buf = vec![[0f32; 4]; TILE_LEN];
+            render_group(&solo, *key, &mut buf, self.size(), self.fx());
+            let tile: Vec<Px> = buf.iter().map(|c| from_f32(*c)).collect();
+            tiles.push((*key, (!tile.iter().all(|p| p[3] == 0)).then(|| Tile(tile.into_boxed_slice()))));
+        }
+        let mut layer = self.layer(path).cloned().unwrap_or_else(|| Layer::new(""));
+        layer.styles = None;
+        for (k, t) in tiles {
+            match t {
+                Some(t) => {
+                    layer.pixels.tiles.insert(k, t);
+                }
+                None => {
+                    layer.pixels.tiles.remove(&k);
+                }
+            }
+        }
+        // слой целиком: стиль и пиксели возвращаются одной отменой
+        let mut at = path.to_vec();
+        let ops = vec![Op::Remove { path: at.clone() }, Op::Insert { path: std::mem::take(&mut at), layer: Box::new(layer) }];
+        let mut k = self.perform(ops);
+        k.extend(keys);
+        k
+    }
+
     /// «Свести всё»: все слои в один обычный слой (фон холста не входит).
     pub fn flatten_layers(&mut self) -> Vec<Key> {
         let mut layer = Layer::new("Слой 1");
@@ -1362,7 +1408,7 @@ impl Document {
         let upper = self.layer(path)?;
         let lower = self.layer(&below)?;
         // слой 3D рисует сам себя: в него не сливают, и «перенести» его нельзя (сцена осталась бы)
-        if upper.children.is_some() || lower.children.is_some() || lower.scene3d.is_some() || (keep_upper && upper.scene3d.is_some()) {
+        if upper.children.is_some() || lower.children.is_some() || lower.scene3d.is_some() || lower.adjust.is_some() || (keep_upper && (upper.scene3d.is_some() || upper.adjust.is_some())) {
             return None;
         }
         // У нижнего слоя с маской маска сначала применяется (как «Применить маску»), иначе она
@@ -1375,12 +1421,20 @@ impl Document {
         base.opacity = 1.0;
         base.visible = true;
         base.clipping = false;
+        // стиль нижнего остаётся на слое (теперь и на рисунке верхнего), в пиксели не входит
+        base.styles = None;
         let mut top = upper.clone();
         top.visible = true;
         let pair = [base, top];
         let mut keys: Vec<Key> = lower.pixels.tiles.keys().chain(upper.pixels.tiles.keys()).copied().collect();
         if let Some(m) = &lower.mask {
             keys.extend(m.hide.tiles.keys().copied());
+        }
+        // стиль верхнего выходит за его рисунок
+        let n = upper.styles.as_deref().map_or(0, |s| (s.reach() + TILE - 1) / TILE);
+        if n > 0 {
+            let near: Vec<Key> = upper.pixels.tiles.keys().flat_map(|k| (-n..=n).flat_map(move |dy| (-n..=n).map(move |dx| (k.0 + dx, k.1 + dy)))).collect();
+            keys.extend(near);
         }
         keys.sort_unstable();
         keys.dedup();
@@ -1602,7 +1656,49 @@ fn layer_keys(layer: &Layer) -> Vec<Key> {
 fn touches(layer: &Layer, key: Key) -> bool {
     match &layer.children {
         Some(children) => children.iter().any(|c| c.visible && touches(c, key)),
-        None => layer.pixels.tiles.contains_key(&key),
+        // слой коррекции действует везде
+        None if layer.adjust.is_some() => true,
+        None => layer.pixels.tiles.contains_key(&key) || styled_near(layer, key),
+    }
+}
+
+/// У слоя со стилем рядом с плиткой `key` (в пределах выхода стиля) есть рисунок.
+fn styled_near(layer: &Layer, key: Key) -> bool {
+    let Some(st) = layer.styles.as_deref() else { return false };
+    let n = (st.reach() + TILE - 1) / TILE;
+    n > 0 && (-n..=n).any(|dy| (-n..=n).any(|dx| layer.pixels.tiles.contains_key(&(key.0 + dx, key.1 + dy))))
+}
+
+/// Насколько плиток вокруг выходят стили слоёв документа (0 — стилей нет).
+pub fn style_ring(layers: &[Layer]) -> i32 {
+    layers
+        .iter()
+        .map(|l| match &l.children {
+            Some(c) => style_ring(c),
+            None => l.styles.as_deref().map_or(0, |s| (s.reach() + TILE - 1) / TILE),
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// Слой коррекции на точки `buf` (`key` — для маски): цвет — по коррекции, режимом и
+/// непрозрачностью слоя, альфа прежняя.
+fn adjust_into(layer: &Layer, a: &crate::adjust::Adjust, key: Key, buf: &mut [[f32; 4]]) {
+    let mask = layer.mask.as_ref().and_then(|m| m.hide.tiles.get(&key));
+    for (i, b) in buf.iter_mut().enumerate() {
+        if b[3] <= 0.0 {
+            continue;
+        }
+        let k = mask.map_or(1.0, |t| 1.0 - t.0[i].min(0x4000) as f32 / 16384.0) * layer.opacity;
+        if k <= 0.0 {
+            continue;
+        }
+        let al = b[3];
+        let adj = crate::pixel::to_f32(a.apply(crate::pixel::from_f32(*b)));
+        let opaque = [b[0] / al, b[1] / al, b[2] / al, 1.0];
+        let top = [adj[0] / al, adj[1] / al, adj[2] / al, 1.0];
+        let mixed = composite(layer.mode, opaque, top, k);
+        *b = [mixed[0] * al, mixed[1] * al, mixed[2] * al, al];
     }
 }
 
@@ -1702,11 +1798,22 @@ fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]], size: (i3
             }
             continue;
         }
-        let Some(mut src) = layer_source(base, key, size, fx) else { continue };
+        if let (Some(a), None) = (&base.adjust, &base.children) {
+            adjust_into(base, a, key, backdrop);
+            continue;
+        }
+        let src = layer_source(base, key, size, fx).or_else(|| styled_near(base, key).then(|| vec![[0.0f32; 4]; TILE_LEN]));
+        let Some(mut src) = src else { continue };
         // эффект и бумага — до прикреплённых слоёв (бумага сверена со сведённой картинкой образца)
         crate::effects::apply(base, key, &mut src, size, fx);
         apply_paper(base, key, &mut src, fx);
+        crate::style::overlay(base, &mut src);
         for clip in clips.iter().filter(|c| c.visible && c.opacity > 0.0) {
+            if let (Some(a), None) = (&clip.adjust, &clip.children) {
+                // коррекция с обтравкой — только рисунок слоя под ней
+                adjust_into(clip, a, key, &mut src);
+                continue;
+            }
             let Some(mut top) = layer_source(clip, key, size, fx) else { continue };
             crate::effects::apply(clip, key, &mut top, size, fx);
             apply_paper(clip, key, &mut top, fx);
@@ -1721,6 +1828,8 @@ fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]], size: (i3
                 *b = [mixed[0] * a, mixed[1] * a, mixed[2] * a, a];
             }
         }
+        // обводка, тень, свечение — под рисунком вместе с прикреплёнными слоями
+        crate::style::outer(base, key, &mut src);
         for (dst, s) in backdrop.iter_mut().zip(src.iter()) {
             if s[3] > 0.0 {
                 *dst = composite(base.mode, *dst, *s, base.opacity);

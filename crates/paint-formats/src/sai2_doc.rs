@@ -74,6 +74,16 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
             notes.insert(format!("текстура бумаги «{}» не найдена — укажите папку papertex из SAI (свойства слоя → «Текстура»)", p.name));
         }
         for (tag, body) in &li.extra {
+            // свои блоки GrazySAI: стили слоя и слой коррекции (SAI их пропускает)
+            if tag == b"gsst" {
+                let st = paint_core::style::Styles::from_text(&String::from_utf8_lossy(body));
+                layer.styles = (!st.is_empty()).then(|| Box::new(st));
+                continue;
+            }
+            if tag == b"gsad" {
+                layer.adjust = paint_core::adjust::Adjust::from_text(&String::from_utf8_lossy(body));
+                continue;
+            }
             match paint_core::effects::Effect::from_block(tag, body) {
                 Some(e) => layer.effect = Some(e),
                 None => layer.extra.push((*tag, body.clone())),

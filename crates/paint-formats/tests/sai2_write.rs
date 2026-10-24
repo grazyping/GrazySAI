@@ -139,3 +139,46 @@ fn canvas_background_survives_save() {
     }
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// Стили слоя и слой коррекции сохраняются своими блоками и читаются обратно.
+#[test]
+fn styles_and_correction_round_trip() {
+    use paint_core::adjust::{Adjust, Stop};
+    use paint_core::style::{Paint, Styles};
+    let mut doc = paint_core::Document::new(64, 64);
+    doc.layers[0].pixels.set(3, 3, [100, 0, 0, 32768]);
+    doc.layers[0].styles = Some(Box::new(Styles { stroke: Some((3, Paint { color: [1, 2, 3], opacity: 90 })), shadow: Some((2, -2, 4, Paint { color: [0, 0, 0], opacity: 40 })), ..Default::default() }));
+    let mut g = paint_core::layer::Layer::new("карта");
+    g.adjust = Some(Adjust::GradientMap(vec![Stop { at: 0.0, color: [10, 20, 30] }, Stop { at: 0.5, color: [200, 0, 0] }, Stop { at: 1.0, color: [255, 255, 255] }]));
+    doc.layers.push(g);
+    let dir = std::env::temp_dir().join(format!("grazysai-style-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = dir.join("s.sai2");
+    paint_formats::sai2_write::save(&doc, &p).unwrap();
+    let back = paint_formats::sai2_doc::load(&p).unwrap().document;
+    std::fs::remove_dir_all(dir).ok();
+    assert_eq!(back.layers[0].styles, doc.layers[0].styles);
+    assert_eq!(back.layers[1].adjust, doc.layers[1].adjust);
+    assert!(back.layers.iter().all(|l| l.extra.iter().all(|(t, _)| t != b"gsst" && t != b"gsad")));
+}
+
+/// Файл для проверки на глаз: `STYLE_OUT=путь cargo test … style_sample -- --ignored`.
+#[test]
+#[ignore]
+fn style_sample() {
+    use paint_core::adjust::Adjust;
+    use paint_core::style::{Paint, Styles};
+    let mut doc = paint_core::Document::new(400, 300);
+    for y in 80..180 {
+        for x in 60..200 {
+            let t = (x - 60) as f32 / 140.0;
+            doc.layers[0].pixels.set(x, y, paint_core::pixel::from_rgba8([(255.0 * t) as u8, 80, (255.0 * (1.0 - t)) as u8, 255]));
+        }
+    }
+    doc.layers[0].styles = Some(Box::new(Styles { stroke: Some((4, Paint { color: [20, 20, 20], opacity: 100 })), shadow: Some((12, 12, 8, Paint { color: [0, 0, 0], opacity: 50 })), glow: None, overlay: None }));
+    let mut g = paint_core::layer::Layer::new("Карта градиента");
+    g.adjust = Some(Adjust::gradient_default());
+    g.visible = false;
+    doc.layers.push(g);
+    paint_formats::sai2_write::save(&doc, std::path::Path::new(&std::env::var("STYLE_OUT").unwrap())).unwrap();
+}

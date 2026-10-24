@@ -285,6 +285,26 @@ Layer properties, the “Layer Effects” section:
 
 Normal layers only (not folders).
 
+### Layer styles
+
+“Layer → Layer style and correction…” (like Clip Studio's “Layer Property” and Photoshop's “Layer
+Styles”): an **outside stroke** (width 1–64, colour, opacity), a **drop shadow** (offset, blur), an outer
+**glow** and a **colour overlay**. The layer's pixels do not change — the style is computed for display
+and when flattening; a styled layer shows “fx” in the list. Normal layers only (not folders, linework or
+3D layers). SAI and PSD do not know these styles: before handing the file over press “Apply style to
+pixels” — the style becomes the layer's picture (undoable).
+
+### Correction layers
+
+“Layer → New correction layer”: **gradient map** (brightness → colour by stops; presets, “Reverse”),
+**levels**, **hue/saturation**, **brightness/contrast**, **invert**, **posterize**, **threshold**. Such a
+layer has no pixels: it recolours everything below it in its folder (at the top level also the white
+canvas paper, as in Clip Studio); with clipping — only the layer under it. Opacity, blend mode and mask
+work as for a normal layer; you can paint only in its mask. Settings are in the same “Layer style and
+correction” window. “Merge Down” applies the correction to the pixels of the layer below. In `.sai2`
+correction layers and styles are kept in GrazySAI's own blocks: SAI shows an empty layer and the
+picture without the style, the file's flattened image includes them.
+
 ## Selection
 
 | Tool | How |

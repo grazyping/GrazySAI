@@ -1466,3 +1466,90 @@ fn colored_tip_paints_its_own_colors() {
     // обычная картинка с прозрачностью (без метки ARGB) — не цветная
     assert!(paint_core::Stamp::from_rgba(n, n, &rgba).color.is_none());
 }
+
+/// Квадрат 20×20 цвета `rgb` в точках 60..80 (через границу плиток 64).
+fn square_layer(name: &str, rgb: [u8; 3]) -> layer::Layer {
+    let mut l = layer::Layer::new(name);
+    for y in 60..80 {
+        for x in 60..80 {
+            l.pixels.set(x, y, from_rgba8([rgb[0], rgb[1], rgb[2], 255]));
+        }
+    }
+    l
+}
+
+/// Стили слоя: обводка снаружи, тень со сдвигом (и на соседних плитках, где у слоя нет
+/// рисунка), наложение цвета; слияние вниз сохраняет вид.
+#[test]
+fn layer_styles_draw_around_the_picture() {
+    use paint_core::style::{Paint, Styles};
+    let mut doc = Document::new(200, 200);
+    let mut l = square_layer("кв", [255, 0, 0]);
+    l.styles = Some(Box::new(Styles {
+        stroke: Some((4, Paint { color: [0, 0, 255], opacity: 100 })),
+        shadow: Some((30, 30, 0, Paint { color: [0, 255, 0], opacity: 100 })),
+        glow: None,
+        overlay: None,
+    }));
+    doc.layers[0] = l;
+    // рисунок — красный, обводка — синяя на 2 точки снаружи, тень — зелёная со сдвигом 30
+    assert_eq!(pixel(&doc, 70, 70), [255, 0, 0, 255]);
+    assert_eq!(pixel(&doc, 58, 70), [0, 0, 255, 255]);
+    assert_eq!(pixel(&doc, 54, 70), [255; 4], "обводка толще 4");
+    // тень (плитка (1,1) у слоя пустая)
+    assert_eq!(pixel(&doc, 105, 105), [0, 255, 0, 255]);
+    assert_eq!(pixel(&doc, 120, 120), [255; 4]);
+    // наложение цвета
+    doc.layers[0].styles.as_mut().unwrap().overlay = Some(Paint { color: [255, 255, 255], opacity: 100 });
+    assert_eq!(pixel(&doc, 70, 70), [255, 255, 255, 255]);
+    // слияние вниз: стиль верхнего — в пикселях нижнего
+    let before = doc.flatten();
+    doc.add_layer("низ");
+    let n = doc.layers.len();
+    doc.layers.swap(n - 1, n - 2);
+    let (below, _) = doc.merge_down(&[n - 1]).unwrap();
+    assert_eq!(below, vec![n - 2]);
+    assert!(doc.layers[n - 2].styles.is_none());
+    assert_eq!(doc.flatten(), before);
+}
+
+/// Слой коррекции: карта градиента перекрашивает всё ниже; с обтравкой — только слой под собой;
+/// слияние вниз применяет коррекцию к пикселям.
+#[test]
+fn correction_layers() {
+    use paint_core::adjust::{Adjust, Stop};
+    let mut doc = Document::new(200, 200);
+    doc.layers[0] = square_layer("чёрный", [0, 0, 0]);
+    let mut white = square_layer("белый", [255, 255, 255]);
+    white.pixels = paint_core::tile::ColorMap::new();
+    for y in 100..120 {
+        for x in 100..120 {
+            white.pixels.set(x, y, from_rgba8([255, 255, 255, 255]));
+        }
+    }
+    doc.layers.push(white);
+    let mut g = layer::Layer::new("карта");
+    g.adjust = Some(Adjust::GradientMap(vec![Stop { at: 0.0, color: [0, 0, 255] }, Stop { at: 1.0, color: [255, 255, 0] }]));
+    doc.layers.push(g);
+    assert_eq!(pixel(&doc, 70, 70), [0, 0, 255, 255]);
+    assert_eq!(pixel(&doc, 110, 110), [255, 255, 0, 255]);
+    // белая бумага холста — тоже под коррекцией (как бумага в Clip Studio)
+    assert_eq!(pixel(&doc, 10, 10), [255, 255, 0, 255]);
+    assert_eq!(doc.merged_pixels().get(10, 10)[3], 0, "пустое остаётся пустым");
+    // половина непрозрачности слоя — половина коррекции
+    doc.layers[2].opacity = 0.5;
+    let p = pixel(&doc, 70, 70);
+    assert!((p[2] as i32 - 128).abs() <= 1 && p[0] < 2, "{p:?}");
+    doc.layers[2].opacity = 1.0;
+    // с обтравкой — только белый квадрат под ней
+    doc.layers[2].clipping = true;
+    assert_eq!(pixel(&doc, 70, 70), [0, 0, 0, 255]);
+    assert_eq!(pixel(&doc, 110, 110), [255, 255, 0, 255]);
+    doc.layers[2].clipping = false;
+    let before = doc.flatten();
+    doc.merge_down(&[2]).unwrap();
+    assert_eq!(doc.layers.len(), 2);
+    assert_eq!(doc.flatten().len(), before.len());
+    assert_eq!(pixel(&doc, 110, 110), [255, 255, 0, 255]);
+    assert_eq!(pixel(&doc, 70, 70), [0, 0, 0, 255], "коррекция легла только на слой под ней");
+}

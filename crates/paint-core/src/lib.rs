@@ -1,6 +1,7 @@
 //! Ядро редактора: пиксели, плитки, слои, наложение, кисть, штрих, документ.
 //! От интерфейса и планшета не зависит — всё проверяется тестами и рендером в файл.
 
+pub mod adjust;
 pub mod colorize;
 pub mod curve;
 pub mod dynamics;
@@ -23,6 +24,7 @@ pub mod scatter;
 pub mod selection;
 pub mod stabilizer;
 pub mod stroke;
+pub mod style;
 pub mod tile;
 pub mod vector;
 pub mod vectorize;

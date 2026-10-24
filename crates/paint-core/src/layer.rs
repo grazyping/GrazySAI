@@ -72,6 +72,10 @@ pub struct Layer {
     pub paper: Option<crate::paper::Paper>,
     /// Эффект слоя: кайма или двухцветный.
     pub effect: Option<crate::effects::Effect>,
+    /// Стили слоя: обводка, тень, свечение, наложение цвета (`style.rs`).
+    pub styles: Option<Box<crate::style::Styles>>,
+    /// Слой коррекции: вместо пикселей — коррекция цвета всего, что ниже (`adjust.rs`).
+    pub adjust: Option<crate::adjust::Adjust>,
     /// Маска слоя.
     pub mask: Option<LayerMask>,
     /// Папка отмечена для команд видимости (Ctrl + щелчок по глазу, как в SAI); в файл не пишется.
@@ -137,6 +141,8 @@ impl Layer {
             pass_through: false,
             paper: None,
             effect: None,
+            styles: None,
+            adjust: None,
             mask: None,
             extra: Vec::new(),
         }

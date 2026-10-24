@@ -22,6 +22,7 @@ mod plugins;
 mod recording;
 mod scene3d;
 mod lassofill;
+mod layer_style;
 
 use i18n::{tr, trf};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
@@ -1253,6 +1254,8 @@ struct PaintApp {
     /// Правка выбранного слоя 3D и видно ли окно «3D».
     s3d: Option<scene3d::Edit3d>,
     show_3d: bool,
+    /// Окно «Стиль и коррекция слоя».
+    show_style: bool,
     s3d_mode: scene3d::MouseMode,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
@@ -1597,6 +1600,7 @@ impl PaintApp {
             rec_job: None,
             s3d: None,
             show_3d: false,
+            show_style: false,
             s3d_mode: scene3d::MouseMode::Camera,
             layer_drag: None,
             ruler: ruler::Ruler::default(),
@@ -5180,9 +5184,16 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn invalidate(&mut self, keys: impl IntoIterator<Item = Key>) {
+        // стиль слоя (тень, обводка) выходит за изменённые плитки — пересчитать и соседние
+        let n = paint_core::document::style_ring(&self.doc.layers);
         for key in keys {
-            if self.queued.insert(key) {
-                self.queue.push_front(key); // свежие правки показываем первыми
+            for dy in -n..=n {
+                for dx in -n..=n {
+                    let k = (key.0 + dx, key.1 + dy);
+                    if self.queued.insert(k) {
+                        self.queue.push_front(k); // свежие правки показываем первыми
+                    }
+                }
             }
         }
     }
@@ -5394,6 +5405,10 @@ app.open_canvas_dialog(d == "resolution")
         }
         if self.filter.is_some() {
             self.status = String::from(tr("Сначала закройте окно фильтра (OK или «Отмена»)"));
+            return;
+        }
+        if !self.mask_edit && !self.sel_tool() && self.doc.layer(&self.selected).is_some_and(|l| l.adjust.is_some()) {
+            self.status = String::from(tr("Слой коррекции: рисовать можно только в его маске"));
             return;
         }
         if self.mask_edit && !self.sel_tool() {
@@ -7203,6 +7218,18 @@ app.open_canvas_dialog(d == "resolution")
                 }
                 if ui.add_enabled(self.s3d.is_some(), menu_icons::button("Окно 3D")).clicked() {
                     self.show_3d = true;
+                    ui.close_menu();
+                }
+                ui.menu_button(menu_icons::label("Новый слой коррекции"), |ui| {
+                    for a in layer_style::kinds() {
+                        if ui.button(layer_style::adjust_name(&a)).clicked() {
+                            self.add_adjust_layer(a);
+                            ui.close_menu();
+                        }
+                    }
+                });
+                if ui.add(menu_icons::button("Стиль и коррекция слоя…")).clicked() {
+                    self.show_style = true;
                     ui.close_menu();
                 }
                 ui.separator();
@@ -9031,6 +9058,7 @@ app.open_canvas_dialog(d == "resolution")
                 continue;
             };
             let is_folder = layer.children.is_some();
+            let has_style = layer.styles.is_some();
             let (name, visible, clipping) = (layer.name.clone(), layer.visible, layer.clipping);
             let mode = MODES
                 .iter()
@@ -9099,6 +9127,21 @@ app.open_canvas_dialog(d == "resolution")
                     egui::FontId::proportional(12.0),
                     sai_ui::ink(),
                 );
+            } else if layer.adjust.is_some() {
+                // слой коррекции: круг наполовину тёмный
+                p.rect_filled(thumb, 0.0, Color32::WHITE);
+                let c = thumb.center();
+                let r = thumb.width() * 0.32;
+                p.circle_filled(c, r, Color32::WHITE);
+                let half: Vec<Pos2> = (0..=16)
+                    .map(|i| {
+                        let a = std::f32::consts::FRAC_PI_2 + std::f32::consts::PI * i as f32 / 16.0;
+                        c + Vec2::new(a.cos(), a.sin()) * r
+                    })
+                    .collect();
+                p.add(egui::Shape::convex_polygon(half, sai_ui::gray(60), egui::Stroke::NONE));
+                p.circle_stroke(c, r, egui::Stroke::new(1.0_f32, sai_ui::gray(60)));
+                p.rect_stroke(thumb, 0.0, egui::Stroke::new(1.0_f32, sai_ui::gray(190)));
             } else {
                 p.rect_filled(thumb, 0.0, Color32::WHITE);
                 if !self.thumbs.contains_key(path.as_slice()) {
@@ -9170,6 +9213,10 @@ app.open_canvas_dialog(d == "resolution")
                 egui::FontId::proportional(10.0),
                 sai_ui::ink(),
             );
+            if has_style {
+                // у слоя есть стиль: «fx» справа внизу
+                p.text(rect.right_bottom() - Vec2::new(4.0, 3.0), egui::Align2::RIGHT_BOTTOM, "fx", egui::FontId::proportional(11.0), sai_ui::gray(80));
+            }
             if response.clicked() {
                 let at = response.interact_pointer_pos().unwrap_or_default();
                 if eye.contains(at) && is_folder && ui.input(|i| i.modifiers.command) {
@@ -9690,6 +9737,17 @@ app.open_canvas_dialog(d == "resolution")
         let thumb = Rect::from_min_size(rect.min + Vec2::new(3.0, 2.0), Vec2::splat(24.0));
         if layer.children.is_some() {
             sai_ui::glyph(&p, thumb.shrink(3.0), sai_ui::gray(90), "new_folder");
+        } else if layer.adjust.is_some() {
+            // слой коррекции: круг наполовину тёмный
+            let c = thumb.center();
+            let r = thumb.width() * 0.38;
+            p.circle_filled(c, r, Color32::WHITE);
+            let half: Vec<Pos2> = (0..=16).map(|i| {
+                let a = std::f32::consts::FRAC_PI_2 + std::f32::consts::PI * i as f32 / 16.0;
+                c + Vec2::new(a.cos(), a.sin()) * r
+            }).collect();
+            p.add(egui::Shape::convex_polygon(half, sai_ui::gray(60), egui::Stroke::NONE));
+            p.circle_stroke(c, r, egui::Stroke::new(1.0_f32, sai_ui::gray(60)));
         } else {
             p.rect_filled(thumb, 0.0, Color32::WHITE);
             if let Some(t) = self.thumbs.get(d.path.as_slice()) {
@@ -9697,7 +9755,12 @@ app.open_canvas_dialog(d == "resolution")
             }
             p.rect_stroke(thumb, 0.0, egui::Stroke::new(1.0_f32, sai_ui::gray(170)));
         }
-        let clip = Rect::from_min_max(Pos2::new(thumb.right() + 6.0, rect.top()), rect.max - Vec2::new(4.0, 0.0));
+        let mut clip = Rect::from_min_max(Pos2::new(thumb.right() + 6.0, rect.top()), rect.max - Vec2::new(4.0, 0.0));
+        if layer.styles.is_some() {
+            // у слоя есть стиль
+            p.text(Pos2::new(clip.right(), rect.center().y), egui::Align2::RIGHT_CENTER, "fx", font.clone(), sai_ui::gray(90));
+            clip.max.x -= 16.0;
+        }
         p.with_clip_rect(clip).text(Pos2::new(clip.left(), rect.center().y), egui::Align2::LEFT_CENTER, &layer.name, font, sai_ui::ink());
     }
 
@@ -11824,6 +11887,7 @@ impl PaintApp {
         }
         self.record_export_window(ctx);
         self.s3d_window(ctx);
+        self.style_window(ctx);
         if self.show_watermark {
             self.watermark_window(ctx);
         }

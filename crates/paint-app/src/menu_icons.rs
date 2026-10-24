@@ -58,6 +58,8 @@ pub fn icon(key: &str) -> Option<&'static str> {
         "Новый слой фигур" => ph::SHAPES,
         "Новая папка" => ph::FOLDER_PLUS,
         "Новый слой 3D…" => ph::CUBE,
+        "Новый слой коррекции" => ph::CIRCLE_HALF_TILT,
+        "Стиль и коррекция слоя…" => ph::DROP_HALF,
         "Окно 3D" => ph::CUBE_FOCUS,
         "Копировать слой" | "Копия" => ph::COPY,
         "Удалить слой" | "Удалить" | "Удалить группу" => ph::TRASH,
