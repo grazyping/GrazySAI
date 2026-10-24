@@ -94,6 +94,25 @@ pub fn load_all(path: &Path) -> Res<(String, Vec<Stamp>, bool)> {
     load(path).map(|(n, s)| (n, vec![s], false))
 }
 
+/// Кончик-картинка SVG (как у Krita): рисуется на белом шириной до `MAX_SIDE`, серое
+/// становится краской — чёрное полная, белое нет.
+pub fn svg(d: &[u8]) -> Res<Stamp> {
+    let tree = resvg::usvg::Tree::from_data(d, &resvg::usvg::Options::default())?;
+    let size = tree.size();
+    let (w, h) = (size.width(), size.height());
+    if !(w > 0.0 && h > 0.0) {
+        return Err("SVG: пустой размер".into());
+    }
+    let k = MAX_SIDE as f32 / w.max(h);
+    let (pw, ph) = (((w * k).round() as u32).max(1), ((h * k).round() as u32).max(1));
+    let mut pix = resvg::tiny_skia::Pixmap::new(pw, ph).ok_or("SVG: неверный размер")?;
+    pix.fill(resvg::tiny_skia::Color::WHITE);
+    resvg::render(&tree, resvg::tiny_skia::Transform::from_scale(k, k), &mut pix.as_mut());
+    // на белом фоне точки непрозрачны: цвет — уже итог наложения
+    let alpha = pix.data().as_chunks::<4>().0.iter().map(|p| 255 - ((p[0] as u32 * 77 + p[1] as u32 * 150 + p[2] as u32 * 29 + 128) >> 8) as u8).collect();
+    Ok(Stamp { width: pw as usize, height: ph as usize, alpha })
+}
+
 /// Все клетки набора GIMP и смена вразнобой (`sel0:random` в строке параметров).
 pub fn gih_all(d: &[u8]) -> Res<(String, Vec<Stamp>, bool)> {
     let mut lines = d.splitn(3, |&b| b == b'\n');
@@ -124,6 +143,8 @@ pub fn load(path: &Path) -> Res<(String, Stamp)> {
         gbr(&std::fs::read(path)?).map(|(n, s)| (if n.trim().is_empty() { stem } else { n }, s))?
     } else if ext == "gih" {
         gih(&std::fs::read(path)?).map(|(n, s)| (if n.trim().is_empty() { stem } else { n }, s))?
+    } else if ext == "svg" {
+        (stem, svg(&std::fs::read(path)?)?)
     } else {
         let (w, h, rgba) = paint_core::io::load_image(path)?;
         (stem, Stamp::from_rgba(w as usize, h as usize, &rgba))
@@ -603,6 +624,17 @@ mod tests {
     }
 
     #[test]
+    fn reads_svg_tip() {
+        let d = br#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect x="0" y="0" width="50" height="50" fill="black"/></svg>"#;
+        let st = svg(d).unwrap();
+        assert_eq!((st.width, st.height), (MAX_SIDE, MAX_SIDE / 2));
+        // левая половина — краска, правая — нет
+        assert_eq!(st.alpha[st.width / 4], 255);
+        assert_eq!(st.alpha[st.width * 3 / 4], 0);
+        assert!(svg(b"<svg").is_err());
+    }
+
+    #[test]
     fn large_tips_are_shrunk() {
         let s = shrink(Stamp { width: 1024, height: 512, alpha: vec![200; 1024 * 512] }, 512);
         assert_eq!((s.width, s.height), (512, 256));
@@ -653,7 +685,7 @@ mod tests {
                         }
                         Err(e) => println!("ERR {} {e}", p.display()),
                     }
-                } else if p.extension().is_some_and(|x| x == "gbr" || x == "gih") {
+                } else if p.extension().is_some_and(|x| x == "gbr" || x == "gih" || x == "svg") {
                     match load_all(&p) {
                         Ok((n, c, r)) => println!("OK {} «{n}» {}x{} клеток {} вразнобой {r}", p.display(), c[0].width, c[0].height, c.len()),
                         Err(e) => println!("ERR {} {e}", p.display()),

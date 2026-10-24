@@ -88,7 +88,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
         ),
         Ask::Tip => (
             tr("Отпечаток кисти"),
-            vec![(tr("Картинки и кисти GIMP").to_string(), vec!["png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi", "gbr", "gih", "abr"])],
+            vec![(tr("Картинки и кисти GIMP").to_string(), vec!["png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi", "svg", "gbr", "gih", "abr"])],
         ),
         Ask::Reference => (
             tr("Опорная картинка"),

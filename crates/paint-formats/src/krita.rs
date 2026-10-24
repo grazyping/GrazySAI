@@ -181,7 +181,7 @@ fn parse(xml: &str, fallback_name: &str, find: impl Fn(&str) -> Option<Vec<u8>>)
             hardness = fade.clamp(0.0, 1.0);
             ratio = attr(def, "<MaskGenerator", "ratio").and_then(|v| v.parse::<f32>().ok()).unwrap_or(1.0).clamp(0.01, 1.0);
         }
-        "png_brush" | "gbr_brush" | "abr_brush" => {
+        "png_brush" | "gbr_brush" | "abr_brush" | "svg_brush" => {
             let file = attr(def, "<Brush", "filename").unwrap_or_default();
             let scale: f32 = attr(def, "<Brush", "scale").and_then(|v| v.parse().ok()).unwrap_or(1.0);
             let cells = find(&file).and_then(|d| tip_from(&file, &d));
@@ -241,6 +241,8 @@ fn tip_from(name: &str, d: &[u8]) -> Option<(Vec<Stamp>, bool)> {
         crate::brush_tip::gbr(d).ok().map(|(_, s)| (vec![s], false))
     } else if lower.ends_with(".gih") {
         crate::brush_tip::gih_all(d).ok().map(|(_, c, r)| (c, r))
+    } else if lower.ends_with(".svg") {
+        crate::brush_tip::svg(d).ok().map(|s| (vec![s], false))
     } else if lower.ends_with(".png") {
         paint_core::io::decode_png(d).ok().map(|(w, h, rgba)| (vec![Stamp::from_rgba(w as usize, h as usize, &rgba)], false))
     } else {
