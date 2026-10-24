@@ -768,11 +768,14 @@ struct LibWindow {
     on_top: bool,
     rename: Option<String>,
     tag: String,
+    /// Когда окно открылось: первые полторы секунды оно поднимается наверх (главное окно при
+    /// запуске появляется позже и иначе закрывает его).
+    shown: Option<std::time::Instant>,
 }
 
 impl Default for LibWindow {
     fn default() -> Self {
-        Self { open: false, filter: library::Filter::All, search: String::new(), card: 150.0, list: false, sel: None, separate: true, on_top: false, rename: None, tag: String::new() }
+        Self { open: false, filter: library::Filter::All, search: String::new(), card: 150.0, list: false, sel: None, separate: true, on_top: false, rename: None, tag: String::new(), shown: None }
     }
 }
 
@@ -4188,26 +4191,41 @@ app.open_canvas_dialog(d == "resolution")
     fn library_window(&mut self, ctx: &egui::Context) {
         if !self.lib_win.open || self.lib.as_ref().is_none_or(|l| l.entries.is_empty()) {
             self.lib_win.open = false;
+            self.lib_win.shown = None;
             return;
+        }
+        // открытое при запуске (файлы кистей в командной строке) — после того, как появится
+        // главное окно: иначе оно ляжет поверх
+        if self.started.elapsed() < Duration::from_millis(1500) {
+            ctx.request_repaint_after(Duration::from_millis(200));
+            return;
+        }
+        // только что открытое отдельное окно — поверх главного (иначе система ставит его под ним)
+        let raise = self.lib_win.shown.get_or_insert_with(std::time::Instant::now).elapsed() < Duration::from_millis(1500);
+        if raise {
+            ctx.request_repaint_after(Duration::from_millis(100));
         }
         let title = format!("{} — GrazySAI", tr("Библиотека кистей"));
         let mut closed = false;
         if self.lib_win.separate {
             let level = if self.lib_win.on_top { egui::WindowLevel::AlwaysOnTop } else { egui::WindowLevel::Normal };
-            let builder = egui::ViewportBuilder::default().with_title(title.clone()).with_inner_size([720.0, 480.0]).with_min_inner_size([360.0, 240.0]).with_window_level(level);
+            let builder = egui::ViewportBuilder::default().with_title(title.clone()).with_inner_size([900.0, 560.0]).with_min_inner_size([360.0, 240.0]).with_window_level(level);
             ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("brush_library"), builder, |ctx, class| {
                 if class == egui::ViewportClass::Embedded {
                     let mut open = true;
-                    egui::Window::new(&title).id(egui::Id::new("lib_win")).open(&mut open).default_size([720.0, 480.0]).show(ctx, |ui| self.library_ui(ui));
+                    egui::Window::new(&title).id(egui::Id::new("lib_win")).open(&mut open).default_size([900.0, 560.0]).show(ctx, |ui| self.library_ui(ui));
                     closed = !open;
                 } else {
+                    if raise {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                    }
                     egui::CentralPanel::default().show(ctx, |ui| self.library_ui(ui));
                     closed = ctx.input(|i| i.viewport().close_requested());
                 }
             });
         } else {
             let mut open = true;
-            egui::Window::new(&title).id(egui::Id::new("lib_win")).open(&mut open).default_size([720.0, 480.0]).show(ctx, |ui| self.library_ui(ui));
+            egui::Window::new(&title).id(egui::Id::new("lib_win")).open(&mut open).default_size([900.0, 560.0]).show(ctx, |ui| self.library_ui(ui));
             closed = !open;
         }
         if closed {
@@ -4239,7 +4257,8 @@ app.open_canvas_dialog(d == "resolution")
         let count = |f: &Filter| entries.iter().filter(|e| f.matches(e, "")).count();
         // верхняя строка
         let mut add = false;
-        ui.horizontal(|ui| {
+        // строка переносится: в узком окне карточки не уходят за край
+        ui.horizontal_wrapped(|ui| {
             if ui.add(menu_icons::button("Добавить…")).on_hover_text(tr("Добавить файлы кистей; можно и перетащить файлы или папку в окно программы")).clicked() {
                 add = true;
             }
@@ -4300,7 +4319,7 @@ app.open_canvas_dialog(d == "resolution")
                 let card = self.lib_win.card;
                 let list = self.lib_win.list;
                 let sel = self.lib_win.sel.clone();
-                egui::ScrollArea::vertical().id_salt("lib_cards").max_height(ui.available_height() - 64.0).auto_shrink([false, false]).show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("lib_cards").max_height(ui.available_height() - 64.0).max_width(ui.available_width()).auto_shrink([false, false]).show(ui, |ui| {
                     let per_row = if list { 1 } else { ((ui.available_width() + 6.0) / (card + 6.0)).floor().max(1.0) as usize };
                     for row in shown.chunks(per_row) {
                         ui.horizontal(|ui| {
