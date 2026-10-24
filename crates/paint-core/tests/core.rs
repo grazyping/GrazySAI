@@ -1553,3 +1553,21 @@ fn correction_layers() {
     assert_eq!(pixel(&doc, 110, 110), [255, 255, 0, 255]);
     assert_eq!(pixel(&doc, 70, 70), [0, 0, 0, 255], "коррекция легла только на слой под ней");
 }
+
+/// Шаги после метки сливаются в один: одна отмена возвращает всё (автодействия).
+#[test]
+fn squash_history_since_mark() {
+    let mut doc = Document::new(64, 64);
+    doc.insert_layer(&[1], layer::Layer::new("a"));
+    let mark = doc.history_mark();
+    doc.insert_layer(&[2], layer::Layer::new("b"));
+    doc.insert_layer(&[3], layer::Layer::new("c"));
+    doc.flip_canvas(true);
+    assert_eq!(doc.layers.len(), 4);
+    doc.squash_since(mark);
+    doc.undo().unwrap();
+    assert_eq!(doc.layers.len(), 2);
+    assert_eq!(doc.layers[1].name, "a");
+    doc.redo().unwrap();
+    assert_eq!(doc.layers.len(), 4);
+}

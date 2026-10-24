@@ -1401,3 +1401,25 @@ WinTab даёт нажим, наклон и поворот пера, если д
 Карта градиента = Gradient map
 Инверсия = Invert
 Постеризация = Posterize
+
+{0} (копия) = {0} (copy)
+Автодействия = Auto actions
+Автодействия… = Auto actions…
+Выполнено действие «{0}» = Action “{0}” done
+Действие {0} = Action {0}
+Запись = Record
+Копировать действие = Duplicate action
+Копировать шаг = Duplicate step
+Мои действия = My actions
+Новое действие = New action
+Пуск = Play
+Пусто: нажмите «Запись» и выполните команды меню = Empty: press “Record” and use menu commands
+Расширить выделение на {0} px = Expand selection by {0} px
+С выбранного шага или с начала; отменяется одним шагом = From the selected step or from the start; undone in one step
+Слой коррекции: {0} = Correction layer: {0}
+Стоп = Stop
+Сузить выделение на {0} px = Shrink selection by {0} px
+Удалить действие = Delete action
+Удалить набор = Delete set
+Удалить шаг = Delete step
+Фильтр: {0} = Filter: {0}

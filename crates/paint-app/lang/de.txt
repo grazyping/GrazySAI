@@ -1400,3 +1400,25 @@ WinTab даёт нажим, наклон и поворот пера, если д
 Карта градиента = Verlaufsumsetzung
 Инверсия = Umkehren
 Постеризация = Tontrennung
+
+{0} (копия) = {0} (Kopie)
+Автодействия = Automatische Aktionen
+Автодействия… = Automatische Aktionen…
+Выполнено действие «{0}» = Aktion „{0}“ ausgeführt
+Действие {0} = Aktion {0}
+Запись = Aufnahme
+Копировать действие = Aktion duplizieren
+Копировать шаг = Schritt duplizieren
+Мои действия = Meine Aktionen
+Новое действие = Neue Aktion
+Пуск = Abspielen
+Пусто: нажмите «Запись» и выполните команды меню = Leer: „Aufnahme“ drücken und Menübefehle ausführen
+Расширить выделение на {0} px = Auswahl um {0} px erweitern
+С выбранного шага или с начала; отменяется одним шагом = Ab dem gewählten Schritt oder von vorn; in einem Schritt rückgängig
+Слой коррекции: {0} = Korrekturebene: {0}
+Стоп = Stopp
+Сузить выделение на {0} px = Auswahl um {0} px verkleinern
+Удалить действие = Aktion löschen
+Удалить набор = Satz löschen
+Удалить шаг = Schritt löschen
+Фильтр: {0} = Filter: {0}

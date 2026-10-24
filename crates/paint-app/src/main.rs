@@ -21,6 +21,7 @@ mod self_test;
 mod plugins;
 mod recording;
 mod scene3d;
+mod actions;
 mod lassofill;
 mod layer_style;
 
@@ -305,7 +306,7 @@ struct RefImage {
 }
 
 /// Какой фильтр открыт.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum FilterKind {
     HueSaturation,
     BrightnessContrast,
@@ -343,6 +344,50 @@ enum FilterKind {
     Levels,
     Curves,
     Median,
+}
+
+/// Название фильтра на языке интерфейса.
+fn filter_title(k: FilterKind) -> &'static str {
+    match k {
+        FilterKind::HueSaturation => tr("Тон и насыщенность"),
+        FilterKind::BrightnessContrast => tr("Яркость и контраст"),
+        FilterKind::GaussianBlur => tr("Размытие по Гауссу"),
+        FilterKind::Sharpen => tr("Резкость"),
+        FilterKind::SharpenMore => tr("Сильная резкость"),
+        FilterKind::Unsharp => tr("Нерезкая маска"),
+        FilterKind::LineWidth => tr("Изменение толщины линий"),
+        FilterKind::Dust => tr("Удаление пыли"),
+        FilterKind::Levels => tr("Уровни"),
+        FilterKind::Curves => tr("Кривые"),
+        FilterKind::Median => tr("Медиана"),
+        FilterKind::Aberration => tr("Хроматическая аберрация"),
+        FilterKind::Noise => tr("Шум"),
+        FilterKind::Mosaic => tr("Мозаика"),
+        FilterKind::Crystallize => tr("Кристаллизация"),
+        FilterKind::RetroFilm => tr("Ретро-плёнка"),
+        FilterKind::Perlin => tr("Шум Перлина"),
+        FilterKind::Average => tr("Среднее"),
+        FilterKind::Blur => tr("Размытие"),
+        FilterKind::BlurStrong => tr("Сильное размытие"),
+        FilterKind::Motion => tr("Размытие в движении"),
+        FilterKind::Radial => tr("Радиальное размытие"),
+        FilterKind::Spin => tr("Размытие вращением"),
+        FilterKind::Smoothing => tr("Сглаживание краёв"),
+        FilterKind::Lens => tr("Размытие линзы"),
+        FilterKind::Pencil => tr("Карандашный рисунок"),
+        FilterKind::Artistic => tr("Художественный"),
+        FilterKind::Distort(k) => {
+            use paint_core::filters::DistortKind as D;
+            tr(match k {
+                D::Pinch => "Щипок",
+                D::Ripple => "Рябь",
+                D::Fisheye => "Рыбий глаз",
+                D::Polar => "Полярные координаты",
+                D::Wave => "Волна",
+                D::Twirl => "Скручивание",
+            })
+        }
+    }
 }
 
 /// Пиксели слоя после фильтра (с учётом выделения); `color` — основной цвет (для «Удаления пыли»).
@@ -1181,7 +1226,7 @@ enum GridAction {
     ToGroup(usize),
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum LayerAction {
     Duplicate,
     Delete,
@@ -1256,6 +1301,9 @@ struct PaintApp {
     show_3d: bool,
     /// Окно «Стиль и коррекция слоя».
     show_style: bool,
+    /// Окно «Автодействия» и его наборы.
+    show_actions: bool,
+    actions: actions::ActionsUi,
     s3d_mode: scene3d::MouseMode,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
@@ -1601,6 +1649,8 @@ impl PaintApp {
             s3d: None,
             show_3d: false,
             show_style: false,
+            show_actions: false,
+            actions: Default::default(),
             s3d_mode: scene3d::MouseMode::Camera,
             layer_drag: None,
             ruler: ruler::Ruler::default(),
@@ -5942,6 +5992,7 @@ app.open_canvas_dialog(d == "resolution")
 
     /// Новый слой фигур над текущим.
     fn add_shape_layer(&mut self) {
+        self.rec(actions::Step::NewLayer(3));
         let mut path = self.selected.clone();
         let index = path.pop().map_or(0, |i| i + 1);
         let n = count_layers(&self.doc.layers) + 1;
@@ -6041,6 +6092,7 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn deselect(&mut self) {
+        self.rec(actions::Step::Deselect);
         self.doc.deselect();
         self.sel_dirty = true;
     }
@@ -6184,6 +6236,7 @@ app.open_canvas_dialog(d == "resolution")
 
     /// Повернуть слой на 90° (`cw`) или отразить (`horizontal`) — из меню «Слой» и с панели.
     fn layer_turn(&mut self, cw: Option<bool>, horizontal: Option<bool>) {
+        self.rec(actions::Step::LayerTurn(cw, horizontal));
         if self.transform.is_some() {
             self.finish_transform(true);
         }
@@ -6284,11 +6337,13 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn select_all(&mut self) {
+        self.rec(actions::Step::SelectAll);
         self.doc.select_all();
         self.sel_dirty = true;
     }
 
     fn invert_selection(&mut self) {
+        self.rec(actions::Step::InvertSelection);
         self.doc.invert_selection();
         self.sel_dirty = true;
     }
@@ -6602,6 +6657,7 @@ app.open_canvas_dialog(d == "resolution")
         let original = Arc::try_unwrap(std::mem::take(&mut f.original)).unwrap_or_else(|a| (*a).clone());
         f.sel = Default::default();
         if apply {
+            self.rec(actions::Step::Filter(f.kind, actions::filter_params(&f)));
             let sel = self.doc.selection.clone();
             self.doc.move_commit(&f.path, original, None, sel);
             self.dirty = true;
@@ -6774,6 +6830,7 @@ app.open_canvas_dialog(d == "resolution")
 
     /// Alt+Delete: залить выделенное (без выделения — весь слой).
     fn fill_selection(&mut self) {
+        self.rec(actions::Step::Fill);
         let all = paint_core::selection::Selection::all(self.doc.width, self.doc.height);
         self.fill_area(&all);
     }
@@ -6829,6 +6886,7 @@ app.open_canvas_dialog(d == "resolution")
 
     /// Новый слой контура над текущим: рисовать пером — получаются кривые, как в SAI.
     fn add_linework_layer(&mut self) {
+        self.rec(actions::Step::NewLayer(2));
         let mut path = self.selected.clone();
         let index = path.pop().map_or(0, |i| i + 1);
         let n = count_layers(&self.doc.layers) + 1;
@@ -6841,6 +6899,7 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn add_layer(&mut self, folder: bool) {
+        self.rec(actions::Step::NewLayer(folder as u8));
         let mut path = self.selected.clone();
         let index = path.pop().map_or(0, |i| i + 1);
         let n = count_layers(&self.doc.layers) + 1;
@@ -6874,6 +6933,7 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn layer_action(&mut self, action: LayerAction) {
+        self.rec(actions::Step::Layer(action));
         if self.filter.is_some() {
             self.finish_filter(true);
         }
@@ -7133,6 +7193,7 @@ app.open_canvas_dialog(d == "resolution")
                     ("Повернуть на 90° по часовой", 3),
                 ] {
                     if ui.add(menu_icons::button(item)).clicked() {
+                        self.rec(actions::Step::Canvas(op));
                         self.canvas_op(|d| match op {
                             0 => d.flip_canvas(true),
                             1 => d.flip_canvas(false),
@@ -7143,6 +7204,7 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 }
                 if ui.add_enabled(!self.doc.selection.is_empty(), menu_icons::button("Обрезать по выделению")).clicked() {
+                    self.rec(actions::Step::Trim);
                     self.canvas_op(|d| d.trim_to_selection());
                     self.sel_dirty = true;
                     ui.close_menu();
@@ -7332,6 +7394,7 @@ app.open_canvas_dialog(d == "resolution")
                     ui.close_menu();
                 }
                 if ui.add(menu_icons::button("Свести всё")).clicked() {
+                    self.rec(actions::Step::Flatten);
                     self.canvas_op(|d| d.flatten_layers());
                     self.selected = vec![0];
                     ui.close_menu();
@@ -7368,11 +7431,13 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 }
                 if ui.add_enabled(has, menu_icons::button("Расширить на 1 px")).clicked() {
+                    self.rec(actions::Step::Grow(1, true));
                     self.doc.grow_selection(true);
                     self.sel_dirty = true;
                     ui.close_menu();
                 }
                 if ui.add_enabled(has, menu_icons::button("Сузить на 1 px")).clicked() {
+                    self.rec(actions::Step::Grow(1, false));
                     self.doc.grow_selection(false);
                     self.sel_dirty = true;
                     ui.close_menu();
@@ -7650,6 +7715,10 @@ app.open_canvas_dialog(d == "resolution")
                 let has_lib = self.lib.as_ref().is_some_and(|l| !l.entries.is_empty());
                 if ui.add_enabled(has_lib, egui::Button::image_and_text(icons::image(ui.ctx(), "brush"), tr("Библиотека кистей…"))).on_disabled_hover_text(tr("Библиотека пуста: перетащите в окно файлы кистей (.sut, .kpp, .bundle, .abr, .gbr, .gih, .gsbrush) или папку с ними")).clicked() {
                     self.lib_win.open = true;
+                    ui.close_menu();
+                }
+                if ui.add(menu_icons::button("Автодействия…")).clicked() {
+                    self.show_actions = true;
                     ui.close_menu();
                 }
                 if ui.add(menu_icons::button("Менеджер ресурсов…")).clicked() {
@@ -11139,6 +11208,7 @@ impl PaintApp {
             self.grow_last = d.n;
             self.doc.selection = d.original;
             if apply {
+                self.rec(actions::Step::Grow(d.n, d.grow));
                 self.doc.grow_selection_by(d.n, d.grow);
             }
             self.sel_dirty = true;
@@ -11155,46 +11225,7 @@ impl PaintApp {
         let mut reset = false;
         let busy = self.filter_job.is_some();
         if let Some(f) = self.filter.as_mut() {
-            let title = match f.kind {
-                FilterKind::HueSaturation => tr("Тон и насыщенность"),
-                FilterKind::BrightnessContrast => tr("Яркость и контраст"),
-                FilterKind::GaussianBlur => tr("Размытие по Гауссу"),
-                FilterKind::Sharpen => tr("Резкость"),
-                FilterKind::SharpenMore => tr("Сильная резкость"),
-                FilterKind::Unsharp => tr("Нерезкая маска"),
-                FilterKind::LineWidth => tr("Изменение толщины линий"),
-                FilterKind::Dust => tr("Удаление пыли"),
-                FilterKind::Levels => tr("Уровни"),
-                FilterKind::Curves => tr("Кривые"),
-                FilterKind::Median => tr("Медиана"),
-                FilterKind::Aberration => tr("Хроматическая аберрация"),
-                FilterKind::Noise => tr("Шум"),
-                FilterKind::Mosaic => tr("Мозаика"),
-                FilterKind::Crystallize => tr("Кристаллизация"),
-                FilterKind::RetroFilm => tr("Ретро-плёнка"),
-                FilterKind::Perlin => tr("Шум Перлина"),
-                FilterKind::Average => tr("Среднее"),
-                FilterKind::Blur => tr("Размытие"),
-                FilterKind::BlurStrong => tr("Сильное размытие"),
-                FilterKind::Motion => tr("Размытие в движении"),
-                FilterKind::Radial => tr("Радиальное размытие"),
-                FilterKind::Spin => tr("Размытие вращением"),
-                FilterKind::Smoothing => tr("Сглаживание краёв"),
-                FilterKind::Lens => tr("Размытие линзы"),
-                FilterKind::Pencil => tr("Карандашный рисунок"),
-                FilterKind::Artistic => tr("Художественный"),
-                FilterKind::Distort(k) => {
-                    use paint_core::filters::DistortKind as D;
-                    tr(match k {
-                        D::Pinch => "Щипок",
-                        D::Ripple => "Рябь",
-                        D::Fisheye => "Рыбий глаз",
-                        D::Polar => "Полярные координаты",
-                        D::Wave => "Волна",
-                        D::Twirl => "Скручивание",
-                    })
-                }
-            };
+            let title = filter_title(f.kind);
             let mut open = true;
             egui::Window::new(title).open(&mut open).collapsible(false).resizable(false).show(ctx, |ui| {
                 let before = (f.hs, f.bc, f.radius, f.preview, f.amount, f.threshold, (f.width_px, f.thicken, f.dust_size, f.dust_mode));
@@ -11888,6 +11919,7 @@ impl PaintApp {
         self.record_export_window(ctx);
         self.s3d_window(ctx);
         self.style_window(ctx);
+        self.actions_window(ctx);
         if self.show_watermark {
             self.watermark_window(ctx);
         }

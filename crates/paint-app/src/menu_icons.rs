@@ -122,6 +122,7 @@ pub fn icon(key: &str) -> Option<&'static str> {
         // Окно
         "Библиотека кистей…" => ph::BOOKS,
         "Менеджер ресурсов…" => ph::ARCHIVE,
+        "Автодействия…" => ph::PLAY_CIRCLE,
         "Показать" => ph::SIDEBAR,
         "Язык (Language)" => ph::TRANSLATE,
         "История" => ph::CLOCK_COUNTER_CLOCKWISE,

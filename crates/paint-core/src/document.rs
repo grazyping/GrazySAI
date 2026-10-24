@@ -132,6 +132,8 @@ pub struct Document {
     /// Выделение; пустое — рисовать можно везде.
     pub selection: Selection,
     undo: Vec<HistoryEntry>,
+    /// Сколько шагов записано в историю с начала (метки автодействий).
+    pushes: u64,
     redo: Vec<HistoryEntry>,
 }
 
@@ -149,6 +151,7 @@ impl Document {
             resolution: (96.0f64 / 2.54 * 65536.0).round() as u32,
             selection: Selection::default(),
             undo: Vec::new(),
+            pushes: 0,
             redo: Vec::new(),
         }
     }
@@ -167,6 +170,7 @@ impl Document {
             resolution: self.resolution,
             selection: self.selection.clone(),
             undo: Vec::new(),
+            pushes: 0,
             redo: Vec::new(),
         }
     }
@@ -390,6 +394,7 @@ impl Document {
     }
 
     fn push_raw(&mut self, ops: Vec<Op>) {
+        self.pushes += 1;
         self.undo.push(HistoryEntry(ops));
         self.redo.clear();
         // как в SAI: не больше 100 шагов
@@ -528,6 +533,23 @@ impl Document {
             self.push_raw(back);
         }
         keys
+    }
+
+    /// Метка истории: сколько шагов записано с начала (для [`Document::squash_since`]).
+    pub fn history_mark(&self) -> u64 {
+        self.pushes
+    }
+
+    /// Слить шаги истории, записанные после метки `mark`, в один (автодействие отменяется целиком).
+    pub fn squash_since(&mut self, mark: u64) {
+        let k = (self.pushes.saturating_sub(mark) as usize).min(self.undo.len());
+        if k < 2 {
+            return;
+        }
+        let tail = self.undo.split_off(self.undo.len() - k);
+        // обратные шаги — от последнего к первому
+        let ops: Vec<Op> = tail.into_iter().rev().flat_map(|e| e.0).collect();
+        self.undo.push(HistoryEntry(ops));
     }
 
     /// Отменяет последнее действие; возвращает плитки, которые изменились.

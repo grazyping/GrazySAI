@@ -609,6 +609,16 @@ paint without them.
   smallest-size circle.
 - Right-click a tool cell: “Reserve Current Settings”, “Restore Reserved Settings”, “Undo Restore”.
 
+### Auto actions
+
+“Window → Auto actions…” (like Clip Studio's Auto Actions and Photoshop's Actions): “New action” starts
+recording at once — use menu commands (filters with their settings, layer, canvas and selection
+commands, new layers and correction layers, fill), then “Stop”. “Play” (or a double-click on the
+action) repeats the steps — from the selected step or from the start; the whole action is undone in one
+step. Steps can be switched off with their checkbox, moved, duplicated, deleted; actions can be
+duplicated and renamed. Painting, tool changes and undo are not recorded. Action sets are `.gsact` files
+in the `actions` folder of the program settings — you can pass them to someone else.
+
 ### Asset Manager
 
 “Window → Asset Manager…” (from SAI 2 2020+):

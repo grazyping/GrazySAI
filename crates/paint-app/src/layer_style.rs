@@ -58,6 +58,7 @@ fn paint_row(ui: &mut egui::Ui, p: &mut Paint) -> bool {
 impl PaintApp {
     /// Новый слой коррекции над выбранным; окно настроек открывается сразу.
     pub(crate) fn add_adjust_layer(&mut self, a: Adjust) {
+        self.rec(crate::actions::Step::Adjust(a.to_text()));
         let mut path = self.selected.clone();
         let index = path.pop().map_or(0, |i| i + 1);
         let mut layer = paint_core::layer::Layer::new(adjust_name(&a));
