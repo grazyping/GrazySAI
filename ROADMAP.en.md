@@ -316,26 +316,12 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 
 ## Ahead
 
-Not in 1.3.0 — to do later.
+Not in 1.3.0 and not planned for now.
 
 ### Leftovers of new SAI 2 features
 
-- [ ] Anti-Ripple for the flattest large brushes
-- [ ] “Reduce gaps at tips” for the wand and bucket
-- [ ] Colour (ARGB) assets from a layer; custom tools per layer type (linework, shapes)
+- [ ] SAI 2 custom tools for linework and shape layers
 - [ ] Binary linework tools — if compatible storage is found
-
-### Graphics tablets
-
-- [ ] Download drivers for the main models and check what they give programs: Windows Ink, WinTab, XInput 2, libinput/Wayland (`zwp_tablet_v2`)
-- [ ] Pen directly on Wayland, without XWayland
-- [ ] Pen buttons and tablet express keys (assign actions)
-
-### Systems
-
-- [ ] FreeBSD: a port or `pkg` package
-- [ ] Linux: GNOME, Xfce, Cinnamon, MATE, awesome, Sway, Hyprland as full sessions
-- [ ] Windows 7 — check on a real system
 
 ## 1.4.0 — from Clip Studio Paint (plan; research — `docs/44-plan-1.4.en.md`)
 
@@ -343,3 +329,12 @@ Not in 1.3.0 — to do later.
 - [ ] Layer styles (stroke, shadow, glow, etc.) and Gradient Map
 - [ ] Import from other programs: 3D models from Cinema 4D and other packages (FBX, Collada, USD, Alembic, etc.) — find out what else is worth accepting
 - [ ] User customisation, as in Clip Studio and other programs: panels, command sets, custom icons and shortcuts, workspaces
+
+From what was left after 1.3.0:
+
+- [ ] Tablet drivers: download drivers of the main models (Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs) for Windows and Linux, see what they install and how they name the pen axes; adjust the pen reading; check WinTab with real drivers on the test PC
+- [ ] Pen buttons (assign actions: picker, hand, eraser, right click) and tablet express keys
+- [ ] Pen directly on Wayland, without XWayland — if the window library allows it
+- [ ] Anti-Ripple for Flatten Brush and the wand/bucket “Reduce small omissions” — checked against live SAI 2026 under Wine
+- [ ] Colour (ARGB) assets: coloured tips and scatter shapes, colour assets from a layer
+- [ ] FreeBSD: a `pkg` package with every release, then a port
