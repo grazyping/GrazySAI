@@ -1315,3 +1315,10 @@ Zip с паролем = Password-protected zip
 Горизонт и точки схода линейки — наклон, поворот и угол обзора камеры (две точки — оси X и Z, одна — ось Z) = The ruler's horizon and vanishing points set the camera's tilt, turn and field of view (two points — X and Z axes, one — Z axis)
 Покажите перспективную линейку: «Линейка → Перспектива: 2 точки» = Show the perspective ruler: “Ruler → Perspective: 2 points”
 Точки схода не годятся: они должны быть по разные стороны от середины холста = The vanishing points do not fit: they must be on opposite sides of the canvas centre
+
+В линии = To lines
+Новый слой контура над слоем 3D: очертания и сгибы модели кривыми, их можно править пером контура = A new linework layer above the 3D layer: the model's outline and creases as curves you can edit with the linework pen
+Сгиб от = Crease from
+Линий не вышло: модели не видно в кадре = No lines: the model is not in view
+линии = lines
+Слой контура из модели: кривых {0} = Linework layer from the model: {0} curves

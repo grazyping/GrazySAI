@@ -33,65 +33,75 @@ fn scol(rgb: [u8; 3]) -> [u8; 8] {
 
 /// Добавить путь штриха новым объектом поверх остальных. Возвращает новый блок.
 pub fn append(raw: &[u8], nodes: &[PathNode], closed: bool, st: &LineStyle) -> io::Result<Vec<u8>> {
+    append_many(raw, &[(nodes.to_vec(), closed)], st)
+}
+
+/// Добавить много путей (каждый — своим объектом) за один разбор блока.
+pub fn append_many(raw: &[u8], paths: &[(Vec<PathNode>, bool)], st: &LineStyle) -> io::Result<Vec<u8>> {
     let mut shapes = sai2_vector::parse(raw, true)?;
-    let next_shape = shapes.iter().map(|s| s.id).max().unwrap_or(0) + 1;
-    let next_path = shapes.iter().flat_map(|s| &s.paths).map(|p| p.id).max().unwrap_or(0) + 1;
+    let mut next_shape = shapes.iter().map(|s| s.id).max().unwrap_or(0) + 1;
+    let mut next_path = shapes.iter().flat_map(|s| &s.paths).map(|p| p.id).max().unwrap_or(0) + 1;
     let mut next_cp = shapes.iter().flat_map(|s| &s.paths).flat_map(|p| &p.points).map(|c| c.id).max().unwrap_or(0) + 1;
     let mut next_pp = shapes.iter().flat_map(|s| &s.paths).flat_map(|p| &p.points).flat_map(|c| &c.pressure).map(|q| q.id).max().unwrap_or(0) + 1;
-    // новый объект — последний в порядке наложения
-    for s in shapes.iter_mut() {
-        if s.next == 0 {
-            s.next = next_shape;
-        }
-        for p in s.paths.iter_mut() {
-            if p.next_in_layer == 0 {
-                p.next_in_layer = next_path;
+    for (nodes, closed) in paths {
+        let closed = *closed;
+        let Some(first) = nodes.first() else { continue };
+        // новый объект — последний в порядке наложения
+        for s in shapes.iter_mut() {
+            if s.next == 0 {
+                s.next = next_shape;
+            }
+            for p in s.paths.iter_mut() {
+                if p.next_in_layer == 0 {
+                    p.next_in_layer = next_path;
+                }
             }
         }
+        let off = first.node.point;
+        let rel = |q: [f64; 2]| [q[0] - off[0], q[1] - off[1]];
+        let points = nodes
+            .iter()
+            .map(|n| {
+                let id = next_cp;
+                next_cp += 1;
+                ControlPoint {
+                    id,
+                    point: rel(n.node.point),
+                    handle_in: rel(n.node.handle_in),
+                    handle_out: rel(n.node.handle_out),
+                    weight: n.weight as f32,
+                    second: 1.0,
+                    pointed: n.pointed,
+                    rest: [0; 3],
+                    pressure: n
+                        .pressure
+                        .iter()
+                        .map(|&(pos, w)| {
+                            let id = next_pp;
+                            next_pp += 1;
+                            PressurePoint { id, pos, weight: w as f32, second: 1.0, rest: [0; 4] }
+                        })
+                        .collect(),
+                }
+            })
+            .collect();
+        shapes.push(Shape {
+            id: next_shape,
+            next: 0,
+            style: Style::Linework {
+                color: scol(st.rgb),
+                size: st.size,
+                density: st.density,
+                params: [0.0, 1.0, 0.0],
+                hardness: st.hardness.min(4),
+                amplify: 0.0,
+                flags: [true, false],
+            },
+            paths: vec![Path { id: next_path, next_in_layer: 0, offset: off, curve: CurveType::Normal, closed, rest: [0; 2], points }],
+        });
+        next_shape += 1;
+        next_path += 1;
     }
-    let Some(first) = nodes.first() else { return Ok(raw.to_vec()) };
-    let off = first.node.point;
-    let rel = |q: [f64; 2]| [q[0] - off[0], q[1] - off[1]];
-    let points = nodes
-        .iter()
-        .map(|n| {
-            let id = next_cp;
-            next_cp += 1;
-            ControlPoint {
-                id,
-                point: rel(n.node.point),
-                handle_in: rel(n.node.handle_in),
-                handle_out: rel(n.node.handle_out),
-                weight: n.weight as f32,
-                second: 1.0,
-                pointed: n.pointed,
-                rest: [0; 3],
-                pressure: n
-                    .pressure
-                    .iter()
-                    .map(|&(pos, w)| {
-                        let id = next_pp;
-                        next_pp += 1;
-                        PressurePoint { id, pos, weight: w as f32, second: 1.0, rest: [0; 4] }
-                    })
-                    .collect(),
-            }
-        })
-        .collect();
-    shapes.push(Shape {
-        id: next_shape,
-        next: 0,
-        style: Style::Linework {
-            color: scol(st.rgb),
-            size: st.size,
-            density: st.density,
-            params: [0.0, 1.0, 0.0],
-            hardness: st.hardness.min(4),
-            amplify: 0.0,
-            flags: [true, false],
-        },
-        paths: vec![Path { id: next_path, next_in_layer: 0, offset: off, curve: CurveType::Normal, closed, rest: [0; 2], points }],
-    });
     Ok(sai2_vector::write(&shapes, true))
 }
 

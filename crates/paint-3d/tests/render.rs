@@ -131,3 +131,42 @@ fn separate_gltf_is_gathered() {
     let m = model::load(&files).unwrap();
     assert_eq!(m.triangles, model::load(&data("scene.glb")).unwrap().triangles);
 }
+
+/// «В линии»: у фигуры есть очертание, все точки — на холсте и в рамке её силуэта; сгибы
+/// прибавляют линий; на 1500×2000 — быстро.
+#[test]
+fn figure_to_lines() {
+    let (s, models) = figure();
+    let (w, h) = (1500u32, 2000u32);
+    let t = std::time::Instant::now();
+    let outline = paint_3d::lines::lines(&s, &models, w, h, 180.0);
+    let ms = t.elapsed().as_millis();
+    let creases = paint_3d::lines::lines(&s, &models, w, h, 30.0);
+    let img = paint_3d::render::render(&s, &models, w, h, 1);
+    let (x0, y0, x1, y1, _) = bounds(&img, w as usize);
+    let pts: Vec<[f32; 2]> = outline.iter().flatten().copied().collect();
+    assert!(pts.len() > 20, "{}", pts.len());
+    for p in &pts {
+        assert!(p[0] >= x0 as f32 - 3.0 && p[0] <= x1 as f32 + 3.0 && p[1] >= y0 as f32 - 3.0 && p[1] <= y1 as f32 + 3.0, "{p:?}");
+    }
+    let len = |l: &Vec<Vec<[f32; 2]>>| l.iter().map(|p| p.windows(2).map(|w| (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1])).sum::<f32>()).sum::<f32>();
+    assert!(len(&creases) > len(&outline));
+    println!("линий {} / {}, {ms} мс", outline.len(), creases.len());
+    if let Some(out) = std::env::var_os("GS_LINES_PNG") {
+        let mut im = img.clone();
+        for l in &creases {
+            for s in l.windows(2) {
+                let n = ((s[1][0] - s[0][0]).hypot(s[1][1] - s[0][1]).ceil() as usize).max(1);
+                for k in 0..=n {
+                    let t = k as f32 / n as f32;
+                    let (x, y) = ((s[0][0] + (s[1][0] - s[0][0]) * t) as usize, (s[0][1] + (s[1][1] - s[0][1]) * t) as usize);
+                    if x < w as usize && y < h as usize {
+                        im[(y * w as usize + x) * 4..][..4].copy_from_slice(&[255, 0, 0, 255]);
+                    }
+                }
+            }
+        }
+        paint_core::io::save_image(std::path::Path::new(&out), w, h, &im).unwrap();
+    }
+    assert!(ms < 3000, "{ms} мс");
+}

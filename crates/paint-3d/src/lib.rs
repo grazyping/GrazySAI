@@ -4,6 +4,7 @@
 pub mod model;
 pub mod pose;
 pub mod render;
+pub mod lines;
 pub mod scene;
 pub mod vp;
 

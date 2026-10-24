@@ -21,13 +21,13 @@ struct Mat {
 
 /// Треугольники сцены в мире.
 #[derive(Default)]
-struct Geo {
-    pos: Vec<Vec3>,
+pub(crate) struct Geo {
+    pub(crate) pos: Vec<Vec3>,
     nrm: Vec<Vec3>,
     uv: Vec<Vec2>,
     /// Вершины, у которых нет своих нормалей, — тогда нормаль грани.
     has_nrm: Vec<bool>,
-    tris: Vec<[u32; 3]>,
+    pub(crate) tris: Vec<[u32; 3]>,
     mat_of: Vec<u32>,
     mats: Vec<Mat>,
     /// Номер части (сетки) — для контура между частями.
@@ -35,7 +35,7 @@ struct Geo {
 }
 
 /// Вершины сцены в мире (поза, скелет, морфы).
-fn geometry(scene: &Scene, models: &[Arc<Model>]) -> Geo {
+pub(crate) fn geometry(scene: &Scene, models: &[Arc<Model>]) -> Geo {
     let mut g = Geo::default();
     let mut part = 0u32;
     for (oi, o) in scene.objects.iter().enumerate() {

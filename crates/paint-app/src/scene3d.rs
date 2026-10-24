@@ -63,6 +63,8 @@ pub struct Edit3d {
     pub reach: bool,
     /// Имя позы, которую сейчас запоминают (поле ввода открыто).
     pose_name: Option<String>,
+    /// «В линии»: сгиб — грани под углом больше этого, градусы.
+    pub crease: f32,
 }
 
 impl Edit3d {
@@ -172,6 +174,7 @@ impl PaintApp {
             last_ms: 0.0,
             reach: false,
             pose_name: None,
+            crease: 40.0,
         });
     }
 
@@ -336,6 +339,64 @@ impl PaintApp {
     }
 
     /// Мышь управляет сценой: начать можно, если включён режим и нажата кнопка над холстом.
+    /// «В линии»: очертания и сгибы модели — новый слой контура над слоем 3D (цвет и толщина —
+    /// как у контура в «Виде»).
+    fn s3d_to_lines(&mut self) {
+        let Some(e) = self.s3d.as_ref() else { return };
+        let (w, h) = (self.doc.width, self.doc.height);
+        let lines = paint_3d::lines::lines(&e.scene, &e.models, w, h, e.crease);
+        // каждая ломаная — точками не реже 2 px, чтобы кривая легла по ней
+        let paths: Vec<(Vec<paint_core::vectorize::PathNode>, bool)> = lines
+            .iter()
+            .filter_map(|l| {
+                let mut pts = Vec::new();
+                for s in l.windows(2) {
+                    let (a, b) = (s[0], s[1]);
+                    let n = ((b[0] - a[0]).hypot(b[1] - a[1]) / 2.0).ceil().max(1.0) as usize;
+                    for k in 0..n {
+                        let t = k as f32 / n as f32;
+                        pts.push(paint_core::vectorize::StrokePoint { at: [(a[0] + (b[0] - a[0]) * t) as f64, (a[1] + (b[1] - a[1]) * t) as f64], pressure: 1.0 });
+                    }
+                }
+                let last = *l.last()?;
+                pts.push(paint_core::vectorize::StrokePoint { at: [last[0] as f64, last[1] as f64], pressure: 1.0 });
+                paint_core::vectorize::vectorize(&pts, 0.5)
+            })
+            .collect();
+        if paths.is_empty() {
+            self.status = tr("Линий не вышло: модели не видно в кадре").to_string();
+            return;
+        }
+        let ink = e.scene.ink;
+        let st = paint_formats::linework::LineStyle { rgb: ink, size: e.scene.line.max(1.0), density: 1.0, hardness: 4 };
+        let mut layer = paint_core::Layer::new(&format!("{} — {}", self.doc.layer(&e.path).map(|l| l.name.clone()).unwrap_or_default(), tr("линии")));
+        let raw = match paint_formats::linework::append_many(&paint_formats::linework::empty().raw, &paths, &st) {
+            Ok(r) => r,
+            Err(err) => {
+                self.status = trf("Не удалось добавить кривую: {0}", &[&err]);
+                return;
+            }
+        };
+        layer.vector = Some(paint_core::layer::VectorData { kind: *b"liwk", raw });
+        match paint_formats::linework::render(&layer) {
+            Ok(px) => layer.pixels = px,
+            Err(err) => {
+                self.status = trf("Не удалось нарисовать кривую: {0}", &[&err]);
+                return;
+            }
+        }
+        let mut path = e.path.clone();
+        let n = paths.len();
+        self.s3d_finish();
+        if let Some(i) = path.last_mut() {
+            *i += 1;
+        }
+        let keys = self.doc.insert_layer(&path, layer);
+        self.selected = path;
+        self.after_structure(keys);
+        self.status = trf("Слой контура из модели: кривых {0}", &[&n]);
+    }
+
     pub(crate) fn s3d_takes_mouse(&self, start: bool) -> bool {
         self.s3d_mode != MouseMode::Off && self.s3d.as_ref().is_some_and(|e| e.drag.is_some() || start)
     }
@@ -485,6 +546,7 @@ impl PaintApp {
         let mut open = true;
         let mut add = false;
         let mut frame_all = false;
+        let mut to_lines = false;
         let layer_name = self.doc.layer(&self.s3d.as_ref().unwrap().path).map(|l| l.name.clone()).unwrap_or_default();
         let mut mode = self.s3d_mode;
         // точки схода показанной перспективной линейки — для камеры
@@ -561,6 +623,12 @@ impl PaintApp {
                         }
                     });
                 }
+                ui.horizontal(|ui| {
+                    if ui.button(tr("В линии")).on_hover_text(tr("Новый слой контура над слоем 3D: очертания и сгибы модели кривыми, их можно править пером контура")).clicked() {
+                        to_lines = true;
+                    }
+                    ui.add(egui::Slider::new(&mut e.crease, 10.0..=120.0).suffix("°").text(tr("Сгиб от")));
+                });
                 if e.scene.display == Display::Outline {
                     changed |= ui.add(egui::Slider::new(&mut e.scene.line, 0.5..=8.0).suffix(" px").text(tr("Толщина"))).changed();
                 } else if e.scene.display != Display::Silhouette {
@@ -739,6 +807,9 @@ impl PaintApp {
         self.s3d_mode = mode;
         if !open {
             self.show_3d = false;
+        }
+        if to_lines {
+            self.s3d_to_lines();
         }
     }
 }

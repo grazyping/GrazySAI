@@ -1314,3 +1314,10 @@ Zip с паролем = Zip con contraseña
 Горизонт и точки схода линейки — наклон, поворот и угол обзора камеры (две точки — оси X и Z, одна — ось Z) = El horizonte y los puntos de fuga de la regla fijan la inclinación, el giro y el ángulo de visión de la cámara (dos puntos — ejes X y Z, uno — eje Z)
 Покажите перспективную линейку: «Линейка → Перспектива: 2 точки» = Muestra la regla de perspectiva: «Regla → Perspectiva: 2 puntos»
 Точки схода не годятся: они должны быть по разные стороны от середины холста = Los puntos de fuga no sirven: deben estar a lados opuestos del centro del lienzo
+
+В линии = A líneas
+Новый слой контура над слоем 3D: очертания и сгибы модели кривыми, их можно править пером контура = Nueva capa de trazo sobre la capa 3D: contorno y pliegues del modelo como curvas, editables con la pluma de trazo
+Сгиб от = Pliegue desde
+Линий не вышло: модели не видно в кадре = No hay líneas: el modelo no está en el encuadre
+линии = líneas
+Слой контура из модели: кривых {0} = Capa de trazo del modelo: {0} curvas
