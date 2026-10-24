@@ -39,6 +39,9 @@ The startup check can be turned off: “Help → Check for updates at startup”
 - Pen tilt and rotation are brush dynamics inputs (“Pen tilt”, “Tilt direction”, “Pen
   rotation”). Brands, drivers and checked models — `docs/42-tablets.en.md`.
 - The back end of the pen is an eraser.
+- Pen buttons are the middle and right mouse buttons: “Settings → Lower / Upper pen button” — hand,
+  picker, palette at cursor, undo or nothing. Tablet express keys are turned into keyboard keys by
+  the driver — assign GrazySAI shortcuts to them in the driver.
 - The status bar at the bottom shows where pressure currently comes from (“pen” or “mouse”) and
   its value.
 

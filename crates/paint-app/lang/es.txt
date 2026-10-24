@@ -1346,3 +1346,11 @@ WinTab даёт нажим, наклон и поворот пера, если д
 Поворот пера = Giro del lápiz
 
 перо: WinTab есть, но планшет не найден — Windows Ink = lápiz: WinTab está, pero no se encontró tableta — Windows Ink
+
+ничего = nada
+рука = mano
+пипетка = cuentagotas
+палитра у курсора = paleta en el cursor
+отменить = deshacer
+Нижняя кнопка пера (средняя кнопка мыши): = Botón inferior del lápiz (botón central):
+Верхняя кнопка пера (правая кнопка мыши): = Botón superior del lápiz (botón derecho):

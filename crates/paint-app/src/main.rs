@@ -577,6 +577,11 @@ struct Options {
     /// «Минимальный нажим для мазка» (SAI 2024+): слабее — перо не рисует, сильнее — нажим
     /// отсчитывается от этого порога. 0..0.9.
     min_pressure: f32,
+    /// Средняя и правая кнопки над холстом — у пера это обычно две его кнопки:
+    /// 0 — ничего (правая: палитра, если она включена), 1 — рука, 2 — пипетка, 3 — палитра у
+    /// курсора, 4 — отменить.
+    btn_middle: u8,
+    btn_right: u8,
     /// Windows: брать перо через WinTab, если драйвер его даёт (иначе — Windows Ink). Пока
     /// выключено по умолчанию: на настоящем планшете ещё не проверено.
     wintab: bool,
@@ -584,7 +589,7 @@ struct Options {
 
 impl Default for Options {
     fn default() -> Self {
-        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false, psd16: false, psd_exact: false, min_pressure: 0.0, wintab: false }
+        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false, psd16: false, psd_exact: false, min_pressure: 0.0, wintab: false, btn_middle: 1, btn_right: 0 }
     }
 }
 
@@ -2054,6 +2059,12 @@ app.open_canvas_dialog(d == "resolution")
                 *v = n;
             }
         }
+        if let Some(v) = s.f32("opt.btn_middle") {
+            o.btn_middle = (v as u8).min(4);
+        }
+        if let Some(v) = s.f32("opt.btn_right") {
+            o.btn_right = (v as u8).min(4);
+        }
         if let Some(v) = s.bool("opt.wintab") {
             o.wintab = v;
         }
@@ -2264,6 +2275,8 @@ app.open_canvas_dialog(d == "resolution")
         s.set("opt.pressure_curve", format!("{x1:.3},{y1:.3},{x2:.3},{y2:.3}"));
         s.set("opt.min_pressure", o.min_pressure);
         s.set("opt.wintab", o.wintab as u8);
+        s.set("opt.btn_middle", o.btn_middle);
+        s.set("opt.btn_right", o.btn_right);
         s.set("layers_right", w.layers_right as u8);
         s.set("dot_cursor", w.dot_cursor as u8);
         s.set("brush_circle", w.brush_circle as u8);
@@ -9958,7 +9971,30 @@ app.open_canvas_dialog(d == "resolution")
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         self.view = rect;
-        if self.opts.popup_palette && response.secondary_clicked() {
+        // кнопки пера (средняя и правая кнопки мыши): пипетка, палитра, отмена — по настройкам
+        let (mid_click, right_click) = (response.middle_clicked(), response.secondary_clicked());
+        let click_pos = response.interact_pointer_pos();
+        for (clicked, action) in [(mid_click, self.opts.btn_middle), (right_click, self.opts.btn_right)] {
+            if !clicked {
+                continue;
+            }
+            match action {
+                2 => {
+                    if let Some(p) = click_pos {
+                        let c = ViewXf::new(rect, self.zoom, self.offset, self.view_angle, self.view_flip).to_canvas(p);
+                        self.pick_color(c.x, c.y);
+                    }
+                }
+                3 => {
+                    self.popup_at = click_pos;
+                    self.popup_frame = ui.ctx().cumulative_pass_nr();
+                    ui.ctx().request_repaint();
+                }
+                4 => self.undo(),
+                _ => {}
+            }
+        }
+        if self.opts.popup_palette && self.opts.btn_right == 0 && right_click {
             self.popup_at = response.interact_pointer_pos();
             self.popup_frame = ui.ctx().cumulative_pass_nr();
             ui.ctx().request_repaint();
@@ -10005,7 +10041,7 @@ app.open_canvas_dialog(d == "resolution")
                 (
                     i.smooth_scroll_delta.y,
                     i.zoom_delta(),
-                    i.pointer.middle_down(),
+                    (i.pointer.middle_down() && self.opts.btn_middle == 1) || (i.pointer.secondary_down() && self.opts.btn_right == 1),
                     i.key_down(egui::Key::Space),
                     i.pointer.latest_pos(),
                     moves,
@@ -12050,6 +12086,18 @@ impl PaintApp {
                 ui.add(egui::DragValue::new(&mut o.spring_ms).range(50..=2000));
             });
             ui.checkbox(&mut o.popup_palette, tr("Правый щелчок по холсту открывает палитру: цвета и кисти"));
+            // кнопки пера — у планшетов это средняя и правая кнопки мыши
+            let names = [tr("ничего"), tr("рука"), tr("пипетка"), tr("палитра у курсора"), tr("отменить")];
+            for (label, v, id) in [(tr("Нижняя кнопка пера (средняя кнопка мыши):"), &mut o.btn_middle, "btn_mid"), (tr("Верхняя кнопка пера (правая кнопка мыши):"), &mut o.btn_right, "btn_right")] {
+                ui.horizontal(|ui| {
+                    ui.label(label);
+                    egui::ComboBox::from_id_salt(id).selected_text(names[(*v as usize).min(4)]).show_ui(ui, |ui| {
+                        for (k, n) in names.iter().enumerate() {
+                            ui.selectable_value(v, k as u8, *n);
+                        }
+                    });
+                });
+            }
             ui.checkbox(&mut o.psd16, tr("PSD и PSB — 16 бит на канал (точнее, файл больше)"));
             ui.checkbox(&mut o.psd_exact, tr("PSD и PSB: сохранить вид точно — слои с режимами SAI пишутся готовым видом"));
             ui.checkbox(&mut o.duplex_revert, tr("Повторное нажатие клавиши инструмента возвращает прежний"));

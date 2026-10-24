@@ -1346,3 +1346,11 @@ WinTab даёт нажим, наклон и поворот пера, если д
 Поворот пера = Rotação da caneta
 
 перо: WinTab есть, но планшет не найден — Windows Ink = caneta: WinTab presente, mas nenhuma mesa encontrada — Windows Ink
+
+ничего = nada
+рука = mão
+пипетка = conta-gotas
+палитра у курсора = paleta no cursor
+отменить = desfazer
+Нижняя кнопка пера (средняя кнопка мыши): = Botão inferior da caneta (botão do meio):
+Верхняя кнопка пера (правая кнопка мыши): = Botão superior da caneta (botão direito):
