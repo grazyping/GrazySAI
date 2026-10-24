@@ -37,6 +37,18 @@ Tilt and rotation feed the brush dynamics: inputs “Pen tilt”, “Tilt direct
 Windows tip: if there is no pressure, toggle “Windows Ink” in the driver and restart the driver
 and GrazySAI; WinTab can be turned off in GrazySAI's settings.
 
+## What the drivers install (checked on the drivers themselves, October 2026)
+
+Official Linux drivers were downloaded and taken apart: XP-Pen 4.0.15, Huion 15.0.0.162, UGEE
+4.3.4, Veikk 3.5.10, Xencelabs 1.3.0 (the Gaomon 16.0.0.49 link returned no file). All of them read
+the tablet themselves and create a virtual pen through `/dev/uinput`; in X11 its axes are named
+“Abs Pressure”, “Abs Tilt X”, “Abs Tilt Y” — exactly what GrazySAI reads. So pressure and tilt
+arrive the same way with or without the vendor driver (kernel `wacom` / `hid-uclogic`).
+
+Windows: the XP-Pen 4.0.19 driver was installed on the test PC — it puts `Wintab32.dll` in place;
+GrazySAI with WinTab on loads it and, with no tablet attached, says “WinTab is there but no tablet
+found — Windows Ink”.
+
 ## Checked models
 
 | Model | System | Method | Checked |

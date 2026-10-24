@@ -334,7 +334,8 @@ Not in 1.3.0 and not planned for now.
 
 From what was left after 1.3.0:
 
-- [ ] Tablet drivers: download drivers of the main models (Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs) for Windows and Linux, see what they install and how they name the pen axes; adjust the pen reading; check WinTab with real drivers on the test PC
+- [x] Tablet drivers (Linux: XP-Pen, Huion, UGEE, Veikk, Xencelabs — the pen axes are the ones the program reads; Windows: XP-Pen on the test PC, WinTab loads) *(coming in the next version)*
+- [ ] Tablet drivers, in full: download drivers of the main models (Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs) for Windows and Linux, see what they install and how they name the pen axes; adjust the pen reading; check WinTab with real drivers on the test PC
 - [ ] Pen buttons (assign actions: picker, hand, eraser, right click) and tablet express keys
 - [ ] Pen directly on Wayland, without XWayland — if the window library allows it
 - [ ] Anti-Ripple for Flatten Brush and the wand/bucket “Reduce small omissions” — checked against live SAI 2026 under Wine
