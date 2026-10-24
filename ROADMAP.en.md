@@ -298,3 +298,25 @@ Not done in section 1.1 — needs a live check or compatible storage.
 - [ ] Layer ARGB colour picker for the Pixel Art Pen; colour (ARGB) assets from a layer; custom tools per layer type
 - [ ] Ready-made “Ver.1” and “Artistic” tool groups, as in SAI 2 (their brushes are needed)
 - [ ] Binary linework tools — if compatible storage is found
+
+### Menu icons
+
+- [ ] An icon on every item of drop-down and context menus (open, save, new folder, new 3D layer, etc.) — in the style of familiar icons from other programs, one set with the tool icons
+- [ ] Check the menus in every language: icons do not shift labels, long labels and shortcuts are not cut off
+
+### Graphics tablets
+
+Pressure now comes from XInput 2 (Linux, X11/XWayland) and Windows Ink (Windows).
+
+- [ ] List the popular brands and lines: Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs, Parblo, Artisul and others
+- [ ] Download drivers for the main models and check what they give programs: Windows Ink, WinTab, XInput 2, libinput/Wayland (`zwp_tablet_v2`)
+- [ ] WinTab support on Windows (for drivers and modes without Windows Ink), API choice in the settings
+- [ ] Pen directly on Wayland, without XWayland
+- [ ] Pen tilt and rotation, eraser end, pen buttons and tablet express keys; a table of checked models in the manual
+
+### Systems
+
+- [ ] FreeBSD: build, pen pressure (XInput 2), check on a live system, ready package
+- [ ] Linux: check the desktops from the Debian installer — GNOME, KDE Plasma, Xfce, Cinnamon, MATE, LXDE, LXQt, GNOME Flashback — and popular window managers (i3, Sway, Openbox, Fluxbox, IceWM, awesome, bspwm, Hyprland): window, pen, file drop, separate windows on top
+- [ ] Windows 7, 8, 8.1, 10, 11: check the build (Windows 7/8 — a separate build for the old system)
+- [ ] Windows XP and Vista — at least in theory: what stands in the way (Rust and its libraries do not support XP; OpenGL 2 or software rendering is needed), whether a light 32-bit build is possible
