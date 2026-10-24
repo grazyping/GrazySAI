@@ -6,6 +6,9 @@ use crate::model::{err, Error, Image, Mesh, Model, Node, Prim, Res, Skin, MAX_TE
 use glam::{Mat4, Quat, Vec2, Vec3};
 use std::collections::HashMap;
 
+/// Памяти на разбор FBX, байт (на временную и на итоговую части).
+const MEMORY_LIMIT: usize = 4 << 30;
+
 fn mat4(m: &ufbx::Matrix) -> Mat4 {
     Mat4::from_cols_array(&[
         m.m00 as f32, m.m10 as f32, m.m20 as f32, 0.0,
@@ -21,7 +24,15 @@ fn v3(v: ufbx::Vec3) -> Vec3 {
 
 /// Имена внешних (не встроенных) текстур FBX — чтобы взять их с диска рядом с моделью.
 pub fn texture_files(data: &[u8]) -> Vec<String> {
-    let opts = ufbx::LoadOpts { ignore_geometry: true, ignore_animation: true, load_external_files: false, node_depth_limit: 512, ..Default::default() };
+    let opts = ufbx::LoadOpts {
+        ignore_geometry: true,
+        ignore_animation: true,
+        load_external_files: false,
+        node_depth_limit: 512,
+        temp_allocator: ufbx::AllocatorOpts { memory_limit: MEMORY_LIMIT, ..Default::default() },
+        result_allocator: ufbx::AllocatorOpts { memory_limit: MEMORY_LIMIT, ..Default::default() },
+        ..Default::default()
+    };
     let Ok(scene) = ufbx::load_memory(data, opts) else { return Vec::new() };
     scene.textures.iter().filter(|t| t.content.is_empty()).map(|t| if t.relative_filename.is_empty() { t.filename.to_string() } else { t.relative_filename.to_string() }).filter(|n| !n.is_empty()).collect()
 }
@@ -36,8 +47,10 @@ pub fn load(data: &[u8], files: &[(String, Vec<u8>)]) -> Res<Model> {
         ignore_animation: true,
         // соседние файлы — только из списка рядом с моделью, сама библиотека диск не читает
         load_external_files: false,
-        // испорченный файл не должен развернуться в огромное дерево
+        // испорченный файл не должен развернуться в огромное дерево и съесть всю память
         node_depth_limit: 512,
+        temp_allocator: ufbx::AllocatorOpts { memory_limit: MEMORY_LIMIT, ..Default::default() },
+        result_allocator: ufbx::AllocatorOpts { memory_limit: MEMORY_LIMIT, ..Default::default() },
         ..Default::default()
     };
     let scene = ufbx::load_memory(data, opts).map_err(|e| Error(format!("FBX: {}", &*e.description)))?;
