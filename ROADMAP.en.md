@@ -10,7 +10,7 @@ third number.
 On 16 October 2026 **1.0.0** was released: everything on the 1.0 list is done. Next come
 feedback, Clip Studio Paint-like filters and ideas from Krita.
 
-On 23 October 2026 **1.1.0** was released: new features from SAI 2 after 2017. From this version on, releases come by sections: a section is done in full, tested and released as one version with the next second number: 1.2.0 — interface as in SAI 2 (checked on Windows), 1.3.0 — in progress: the brush library, everything left in the roadmap, menu icons, graphics tablets and new systems.
+On 23 October 2026 **1.1.0** was released: new features from SAI 2 after 2017. From this version on, releases come by sections: a section is done in full, tested and released as one version with the next second number: 1.2.0 — interface as in SAI 2 (checked on Windows), 1.3.0 (24 October 2026) — brush library, SAI 2 and Photoshop brushes, 3D poses and lines, menu icons, tablets (WinTab, tilt), FreeBSD and Windows 7 builds. Next — 1.4.0 from Clip Studio Paint.
 
 On GitHub every stage is a milestone with a progress bar
 ([Milestones](https://github.com/grazyping/GrazySAI/milestones)) and every item is an issue
@@ -184,6 +184,55 @@ Checked on real Windows next to the official SAI 2 2026.
 - [x] “Drive Usage” in the status bar (1.2.0)
 - [x] Icons in the new-tool list and on new menu items; labels fit in all 10 languages (1.2.0)
 
+### 1.3 — brush library, other programs' brushes, 3D, menu icons, tablets, systems (current version 1.3.0)
+
+#### Brush library
+
+Like Krita's preset docker, Clip Studio's material palette and Photoshop's brushes panel.
+
+- [x] A library of brushes from other programs in the program's own folder: SAI 2, Clip Studio, Krita, Photoshop, GIMP, GrazySAI; the originals are copied (1.3.0)
+- [x] Adding in bulk: many files or a whole folder by drag and drop, “Open”, “Add…”; duplicates are skipped (1.3.0)
+- [x] Library window: “All”, “Favorites”, “New”, by program, set and tag; search; cards with a stroke sample or a list (1.3.0)
+- [x] A separate system window (another monitor, always on top) or inside the program (1.3.0)
+- [x] Double-click puts a brush into the grid, in the “Library” tab (1.3.0)
+
+#### Other programs' brushes
+
+- [x] SAI 2 custom tools (`custool` folder: `.saitdat`, `.saitgrp` groups) go into the library; forms, bristles and textures by name from the SAI 2 folder, including `brushfom`. Linework and shape layer tools are not converted yet (1.3.0)
+- [x] `.svg` tips (Krita and any SVG picture) (1.3.0)
+- [x] Photoshop brush settings from the `desc` section: size, spacing, hardness, angle and roundness, pressure, scatter and jitter (Scatter brush), colour dynamics (1.3.0)
+
+#### 3D layer
+
+- [x] 3D: poses — save, apply (by joint names, works with another model), mirror (left ↔ right) (1.3.0)
+- [x] 3D: “drag the hand or foot” (inverse kinematics) (1.3.0)
+- [x] 3D: camera from the perspective ruler (1.3.0)
+- [x] 3D: turning the model into lines — outline and creases as a new linework layer (1.3.0)
+
+#### Leftovers of new SAI 2 features
+
+- [x] Layer ARGB colour picker for the Pixel Art Pen: a transparent pixel makes the pen erase (1.3.0)
+- [x] SAI 2 scatter shapes (`.ini` and `.bmp` from `settings/scatter`) go into the library as Scatter brushes (1.3.0)
+- [x] Ready-made “Ver.1” and “Artistic” tool groups, as in SAI 2 (right-click a group tab → “Group as in SAI 2”) (1.3.0)
+
+#### Menu icons
+
+- [x] An icon on every item of drop-down and context menus (open, save, new folder, new 3D layer, etc.) — the Phosphor set, as in familiar programs (1.3.0)
+- [x] Menus checked in all 10 languages: labels line up, nothing is cut off (1.3.0)
+
+#### Graphics tablets
+
+- [x] Popular brands and lines, their drivers and input methods (Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs, Parblo, Artisul…) — `docs/42-tablets.en.md` (1.3.0)
+- [x] WinTab support on Windows — optional in the settings (off by default for now: not checked with a real tablet) (1.3.0)
+- [x] Pen tilt and rotation (WinTab, XInput 2) as brush dynamics inputs; eraser end; a table of checked models (1.3.0)
+
+#### Systems
+
+- [x] FreeBSD: build (`tools/build-freebsd.sh`), pen through XInput 2, checked in a FreeBSD 15.1 virtual machine (window, menus, a stroke), FreeBSD archive (1.3.0)
+- [x] Linux: checked under Openbox (LXDE, LXQt), Fluxbox, IceWM, i3, bspwm, Metacity (GNOME Flashback) and KDE Plasma (`tools/wm-check.sh`); the separate library window comes on top (1.3.0)
+- [x] Windows 10 and 11 — the main build (checked on Windows 11); Windows 7, 8, 8.1 — a separate build (`tools/build-win7.sh`), checked under Wine in Windows 7 mode (1.3.0)
+- [x] Windows XP and Vista — worked out in theory (`docs/43-systems.en.md`): a separate light program would be needed (1.3.0)
+
 ### Filters as in Clip Studio Paint
 
 A Filter menu with CSP's submenus; windows with a preview, like our current filters. They only change layer pixels, so `.sai2` compatibility is kept. CSP is closed source: built from its manual's descriptions, checked against Krita and GIMP where they have a match.
@@ -267,68 +316,26 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 
 ## Ahead
 
-Everything below goes into **1.3.0** together with the brush library: whatever can be done is released as one version after testing.
-
-### 1.3 — brush library (in progress, coming in 1.3.0)
-
-Like Krita's preset docker, Clip Studio's material palette and Photoshop's brushes panel.
-
-- [x] A library of brushes from other programs in the program's own folder: SAI 2, Clip Studio, Krita, Photoshop, GIMP, GrazySAI; the originals are copied *(coming in the next version)*
-- [x] Adding in bulk: many files or a whole folder by drag and drop, “Open”, “Add…”; duplicates are skipped *(coming in the next version)*
-- [x] Library window: “All”, “Favorites”, “New”, by program, set and tag; search; cards with a stroke sample or a list *(coming in the next version)*
-- [x] A separate system window (another monitor, always on top) or inside the program *(coming in the next version)*
-- [x] Double-click puts a brush into the grid, in the “Library” tab *(coming in the next version)*
-
-### Other programs' brushes — what is left
-
-- [x] SAI 2 custom tools (`custool` folder: `.saitdat`, `.saitgrp` groups) go into the library; forms, bristles and textures by name from the SAI 2 folder, including `brushfom`. Linework and shape layer tools are not converted yet *(coming in the next version)*
-- [x] `.svg` tips (Krita and any SVG picture) *(coming in the next version)*
-- [x] Photoshop brush settings from the `desc` section: size, spacing, hardness, angle and roundness, pressure, scatter and jitter (Scatter brush), colour dynamics *(coming in the next version)*
-
-### 3D layer
-
-- [x] 3D: poses — save, apply (by joint names, works with another model), mirror (left ↔ right) *(coming in the next version)*
-- [x] 3D: “drag the hand or foot” (inverse kinematics) *(coming in the next version)*
-- [x] 3D: camera from the perspective ruler *(coming in the next version)*
-- [x] 3D: turning the model into lines — outline and creases as a new linework layer *(coming in the next version)*
+Not in 1.3.0 — to do later.
 
 ### Leftovers of new SAI 2 features
 
-Not done in section 1.1 — needs a live check or compatible storage.
-
 - [ ] Anti-Ripple for the flattest large brushes
 - [ ] “Reduce gaps at tips” for the wand and bucket
-- [x] Layer ARGB colour picker for the Pixel Art Pen: a transparent pixel makes the pen erase *(coming in the next version)*
-- [x] SAI 2 scatter shapes (`.ini` and `.bmp` from `settings/scatter`) go into the library as Scatter brushes *(coming in the next version)*
 - [ ] Colour (ARGB) assets from a layer; custom tools per layer type (linework, shapes)
-- [x] Ready-made “Ver.1” and “Artistic” tool groups, as in SAI 2 (right-click a group tab → “Group as in SAI 2”) *(coming in the next version)*
 - [ ] Binary linework tools — if compatible storage is found
-
-### Menu icons
-
-- [x] An icon on every item of drop-down and context menus (open, save, new folder, new 3D layer, etc.) — the Phosphor set, as in familiar programs *(coming in the next version)*
-- [x] Menus checked in English, German, French, Ukrainian, Japanese and Korean: labels line up, nothing is cut off *(coming in the next version)*
 
 ### Graphics tablets
 
-Pressure now comes from XInput 2 (Linux, X11/XWayland) and Windows Ink (Windows).
-
-- [x] Popular brands and lines, their drivers and input methods (Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs, Parblo, Artisul…) — `docs/42-tablets.en.md` *(coming in the next version)*
 - [ ] Download drivers for the main models and check what they give programs: Windows Ink, WinTab, XInput 2, libinput/Wayland (`zwp_tablet_v2`)
-- [x] WinTab support on Windows (for drivers and modes without Windows Ink), a switch in the settings *(coming in the next version)*
 - [ ] Pen directly on Wayland, without XWayland
-- [x] Pen tilt and rotation (WinTab, XInput 2) as brush dynamics inputs; eraser end; a table of checked models *(coming in the next version)*
 - [ ] Pen buttons and tablet express keys (assign actions)
 
 ### Systems
 
-- [x] FreeBSD: build (`tools/build-freebsd.sh`), pen through XInput 2, checked in a FreeBSD 15.1 virtual machine (window, menus, a stroke), FreeBSD archive *(coming in the next version)*
 - [ ] FreeBSD: a port or `pkg` package
-- [x] Linux: checked under Openbox (LXDE, LXQt), Fluxbox, IceWM, i3, bspwm, Metacity (GNOME Flashback) and KDE Plasma (`tools/wm-check.sh`); the separate library window comes on top *(coming in the next version)*
 - [ ] Linux: GNOME, Xfce, Cinnamon, MATE, awesome, Sway, Hyprland as full sessions
-- [x] Windows 10 and 11 — the main build (checked on Windows 11); Windows 7, 8, 8.1 — a separate build (`tools/build-win7.sh`), checked under Wine in Windows 7 mode *(coming in the next version)*
 - [ ] Windows 7 — check on a real system
-- [x] Windows XP and Vista — worked out in theory (`docs/43-systems.en.md`): a separate light program would be needed *(coming in the next version)*
 
 ## 1.4.0 — from Clip Studio Paint (plan; research after 1.3.0)
 
