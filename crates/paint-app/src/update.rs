@@ -54,9 +54,14 @@ pub fn newer(candidate: &str, than: &str) -> bool {
     parse(candidate) > parse(than)
 }
 
+/// Конец имени архива своей сборки: Windows 10+, Windows 7/8 (цель `win7`), FreeBSD, Linux.
 fn suffix() -> &'static str {
-    if cfg!(windows) {
+    if cfg!(target_vendor = "win7") {
+        "windows7-x86_64.zip"
+    } else if cfg!(windows) {
         "windows-x86_64.zip"
+    } else if cfg!(target_os = "freebsd") {
+        "freebsd-x86_64.tar.gz"
     } else {
         "linux-x86_64.tar.gz"
     }

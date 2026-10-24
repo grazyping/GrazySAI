@@ -38,4 +38,17 @@ mv SOsai-$V-windows-x86_64/GrazySAI.exe SOsai-$V-windows-x86_64/SOsai.exe
 rm -f SOsai-$V-*.tar.gz SOsai-$V-*.zip
 tar czf SOsai-$V-linux-x86_64.tar.gz SOsai-$V-linux-x86_64
 python3 -I "$ROOT/tools/mkzip.py" SOsai-$V-windows-x86_64.zip SOsai-$V-windows-x86_64
+# FreeBSD и Windows 7/8 — отдельные сборки (tools/build-freebsd.sh, tools/build-win7.sh), если
+# есть корень FreeBSD и ночной Rust; только рисовалка, справка — как у основных
+if [ -z "$NO_EXTRA" ]; then
+  (cd "$ROOT" && tools/build-freebsd.sh >/dev/null && tools/build-win7.sh >/dev/null)
+  for os in freebsd windows7; do
+    d=GrazySAI-$V-$os-x86_64; rm -rf $d; cp -r GrazySAI-$V-linux-x86_64 $d; rm -f $d/GrazySAI $d/GrazySAI-Studio
+  done
+  cp ../freebsd/GrazySAI GrazySAI-$V-freebsd-x86_64/
+  cp ../win7/GrazySAI.exe ../win7/gspathcch.dll GrazySAI-$V-windows7-x86_64/
+  rm -f GrazySAI-$V-freebsd-*.tar.gz GrazySAI-$V-windows7-*.zip
+  tar czf GrazySAI-$V-freebsd-x86_64.tar.gz GrazySAI-$V-freebsd-x86_64
+  python3 -I "$ROOT/tools/mkzip.py" GrazySAI-$V-windows7-x86_64.zip GrazySAI-$V-windows7-x86_64
+fi
 ls -la GrazySAI-$V-*.tar.gz GrazySAI-$V-*.zip SOsai-$V-*.tar.gz SOsai-$V-*.zip
