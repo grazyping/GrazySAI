@@ -12,4 +12,5 @@ miniz_oxide = "0.8.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
 zip = { version = "9", default-features = false, features = ["aes-crypto", "deflate"] }
 png = "0.17"
+gif = "0.14"
 resvg = { version = "0.45.1", default-features = false }

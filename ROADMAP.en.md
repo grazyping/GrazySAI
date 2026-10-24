@@ -329,7 +329,7 @@ Not in 1.3.0 and not planned for now.
 - [x] Layer styles (stroke, shadow, glow, colour overlay) and correction layers: gradient map, levels, hue/saturation, brightness/contrast, invert, posterize, threshold *(coming in the next version)*
 - [x] Import from other programs: FBX 3D models (Cinema 4D, Maya, 3ds Max, Mixamo, Daz), VRM (VRoid), PMX (MikuMikuDance), COLLADA `.dae` (SketchUp); USD and Alembic via export to glTF/FBX *(coming in the next version)*
 - [x] User customisation, as in Clip Studio and other programs: command search (Ctrl+Shift+P), a “Quick access” panel with sets of any commands, workspaces, own shortcuts and pen buttons *(coming in the next version)*
-- [ ] Timeline and animation as in Clip Studio Paint: cels (animation folders), timeline, onion skin, playback, export to GIF/video/frames
+- [x] Timeline and animation as in Clip Studio Paint: cels (animation folders), timeline, onion skin, playback, export to GIF/APNG/video/frames *(coming in the next version)*
 - [ ] Puppet animation as in After Effects: a triangle mesh over the layer outline, pins (move, rotate, starch — stiffness, overlap — what is in front), the picture follows the mesh; pins keyed on the timeline
 
 From what was left after 1.3.0:

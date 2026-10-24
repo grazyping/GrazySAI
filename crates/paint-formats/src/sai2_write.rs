@@ -323,7 +323,7 @@ fn flatten_tree<'a>(layers: &'a [Layer], depth: u8, out: &mut Vec<Flat<'a>>) {
     }
 }
 
-fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4], mask_id: Option<u32>) -> Vec<u8> {
+fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4], mask_id: Option<u32>, timeline: &paint_core::anim::Timeline) -> Vec<u8> {
     let l = f.layer;
     let mut d = Vec::with_capacity(96);
     d.extend(b"layr");
@@ -400,6 +400,9 @@ fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4], mask_id: Option<u
     if let Some(a) = &l.adjust {
         own.push((*b"gsad", a.to_text().into_bytes()));
     }
+    if let Some(a) = l.anim.as_deref().filter(|_| l.children.is_some()) {
+        own.push((*b"gsan", (timeline.to_text() + &a.to_text()).into_bytes()));
+    }
     for (tag, body) in effect.iter().chain(&own).chain(&l.extra) {
         d.extend(tag);
         d.extend((body.len() as u32).to_le_bytes());
@@ -456,7 +459,7 @@ pub fn save_with_blocks(doc: &Document, path: &Path, own: Vec<([u8; 4], u32, Vec
             Some(v) if matches!(&v.kind, b"text" | b"pers" | b"grid") => [0; 4],
             _ => rect,
         };
-        blocks.push((*b"layr", ids[i], layer_record(f, ids[i], count - i as u32, own, mask_ids[i])));
+        blocks.push((*b"layr", ids[i], layer_record(f, ids[i], count - i as u32, own, mask_ids[i], &doc.timeline)));
     }
     // пиксели слоёв кодируются параллельно, по слою на поток
     // слои контура и фигур — своим векторным блоком, без пикселей (как у образца)

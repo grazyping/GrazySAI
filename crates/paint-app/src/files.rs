@@ -34,6 +34,8 @@ pub enum Ask {
     OpenWasm,
     /// Модель для слоя 3D (`true` — добавить в сцену выбранного слоя 3D).
     Model3d(bool),
+    /// Вывод анимации: 0 — GIF, 1 — APNG, 2 — PNG-кадры, 3 — видео MP4.
+    AnimExport(u8),
     /// Выгрузка записи процесса: `true` — zip с паролем, иначе анимированный PNG.
     RecordExport(bool),
     /// Картинка водяного знака.
@@ -100,6 +102,14 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
         Ask::OpenWasm => (tr("Модуль WebAssembly"), vec![("WebAssembly (.wasm)".to_string(), vec!["wasm"])]),
         Ask::Watermark => (tr("Водяной знак"), vec![(tr("Картинки").to_string(), vec!["png", "webp", "bmp", "tga", "tif", "tiff", "qoi", "jpg", "jpeg"])]),
         Ask::Model3d(_) => (tr("Модель 3D"), vec![(tr("Модели 3D (glTF, VRM, OBJ, FBX, PMX, DAE)").to_string(), paint_3d::MODEL_EXTS.to_vec())]),
+        Ask::AnimExport(k) => (
+            tr("Вывод анимации"),
+            vec![match k {
+                0 => ("GIF".to_string(), vec!["gif"]),
+                3 => ("MP4".to_string(), vec!["mp4"]),
+                _ => ("PNG".to_string(), vec!["png"]),
+            }],
+        ),
         Ask::RecordExport(zip) => (
             tr("Выгрузить запись процесса"),
             vec![if *zip { (tr("Zip с паролем").to_string(), vec!["zip"]) } else { (tr("Анимированный PNG").to_string(), vec!["png"]) }],

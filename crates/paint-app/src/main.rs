@@ -22,6 +22,7 @@ mod plugins;
 mod recording;
 mod scene3d;
 mod actions;
+mod timeline;
 mod customize;
 mod lassofill;
 mod layer_style;
@@ -1307,6 +1308,8 @@ struct PaintApp {
     actions: actions::ActionsUi,
     /// Поиск команд, быстрый доступ, рабочие пространства.
     custom: customize::CustomUi,
+    /// Окно «Таймлайн» и проигрывание.
+    timeline: timeline::TimelineUi,
     s3d_mode: scene3d::MouseMode,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
@@ -1655,6 +1658,7 @@ impl PaintApp {
             show_actions: false,
             actions: Default::default(),
             custom: Default::default(),
+            timeline: Default::default(),
             s3d_mode: scene3d::MouseMode::Camera,
             layer_drag: None,
             ruler: ruler::Ruler::default(),
@@ -5092,6 +5096,14 @@ app.open_canvas_dialog(d == "resolution")
                 self.save_to(files::with_ext(p, ext));
             }
             (files::Answer::Path(p), files::Ask::Export(ext)) => self.export_to(files::with_ext(p, ext), ext),
+            (files::Answer::Path(p), files::Ask::AnimExport(k)) => {
+                let ext = if k == 3 { "mp4" } else if k == 0 { "gif" } else { "png" };
+                self.run_anim_export(k, files::with_ext(p, ext));
+            }
+            (files::Answer::Unavailable, files::Ask::AnimExport(k)) => {
+                let p = self.anim_export_default(k);
+                self.run_anim_export(k, p);
+            }
             (files::Answer::Path(p), files::Ask::RecordExport(zip)) => self.run_record_export(files::with_ext(p, if zip { "zip" } else { "png" })),
             (files::Answer::Unavailable, files::Ask::RecordExport(zip)) => {
                 let p = self.record_export_default(zip);
@@ -5462,6 +5474,18 @@ app.open_canvas_dialog(d == "resolution")
         if self.filter.is_some() {
             self.status = String::from(tr("Сначала закройте окно фильтра (OK или «Отмена»)"));
             return;
+        }
+        if !self.mask_edit && !self.sel_tool() && self.doc.timeline.enabled && self.selected.len() > 1 {
+            // cel папки анимации рисуется, только когда он показан в текущем кадре
+            let (last, parent) = self.selected.split_last().unwrap();
+            if let Some(track) = self.doc.layer(parent).and_then(|p| p.anim.as_deref()) {
+                let shown = track.cel_at(self.doc.timeline.frame);
+                let name = self.doc.layer(parent).and_then(|p| p.children.as_ref()?.get(*last)).map(|c| c.name.as_str());
+                if shown.is_none() || shown != name {
+                    self.status = String::from(tr("Этот cel не показан в текущем кадре: выберите кадр, где он стоит, или поставьте его сюда (правый щелчок в «Таймлайне»)"));
+                    return;
+                }
+            }
         }
         if !self.mask_edit && !self.sel_tool() && self.doc.layer(&self.selected).is_some_and(|l| l.adjust.is_some()) {
             self.status = String::from(tr("Слой коррекции: рисовать можно только в его маске"));
@@ -7411,6 +7435,7 @@ app.open_canvas_dialog(d == "resolution")
                     ui.close_menu();
                 }
             });
+            self.anim_menu(ui);
             ui.menu_button(keys::hint(tr("Выделение(S)")), |ui| {
                 let has = !self.doc.selection.is_empty();
                 if ui.add(menu_item("Выделить всё", "Ctrl+A")).clicked() {
@@ -11936,6 +11961,7 @@ impl PaintApp {
         self.style_window(ctx);
         self.actions_window(ctx);
         self.customize_windows(ctx);
+        self.timeline_window(ctx);
         if self.show_watermark {
             self.watermark_window(ctx);
         }

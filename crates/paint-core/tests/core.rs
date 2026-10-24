@@ -1571,3 +1571,60 @@ fn squash_history_since_mark() {
     doc.redo().unwrap();
     assert_eq!(doc.layers.len(), 4);
 }
+
+/// Папка анимации: в каждом кадре виден свой cel, метки отменяются; Onion skin — только на
+/// экране, сведённая картинка без неё.
+#[test]
+fn animation_cels_per_frame() {
+    use paint_core::anim::AnimTrack;
+    let mut doc = Document::new(100, 100);
+    let mut a = square_layer("1", [255, 0, 0]);
+    a.pixels = paint_core::tile::ColorMap::new();
+    for y in 10..20 {
+        for x in 10..20 {
+            a.pixels.set(x, y, from_rgba8([255, 0, 0, 255]));
+        }
+    }
+    let mut b = layer::Layer::new("2");
+    for y in 10..20 {
+        for x in 50..60 {
+            b.pixels.set(x, y, from_rgba8([0, 0, 255, 255]));
+        }
+    }
+    let mut folder = layer::Layer::folder("анимация", vec![a, b]);
+    folder.anim = Some(Box::new(AnimTrack::default()));
+    doc.layers.push(folder);
+    doc.timeline.enabled = true;
+    let mut t = AnimTrack::default();
+    t.keys.insert(0, "1".into());
+    t.keys.insert(2, "2".into());
+    t.keys.insert(4, String::new());
+    doc.set_anim(&[1], Some(t));
+    let at = |doc: &Document, f: u32, x: u32| {
+        let img = doc.flatten_frame(f);
+        let o = ((15 * 100 + x) * 4) as usize;
+        [img[o], img[o + 1], img[o + 2]]
+    };
+    assert_eq!(at(&doc, 0, 15), [255, 0, 0]);
+    assert_eq!(at(&doc, 1, 55), [255, 255, 255]);
+    assert_eq!(at(&doc, 3, 55), [0, 0, 255]);
+    assert_eq!(at(&doc, 3, 15), [255, 255, 255]);
+    assert_eq!(at(&doc, 5, 55), [255, 255, 255], "пустой кадр");
+    // Onion skin на экране, но не в сведении
+    doc.timeline.frame = 3;
+    doc.timeline.onion_on = true;
+    let flat = doc.flatten();
+    let o = ((15 * 100 + 15) * 4) as usize;
+    assert_eq!(&flat[o..o + 3], &[255, 255, 255]);
+    let tile = doc.render_tile((0, 0));
+    let t15 = ((15 * 64 + 15) * 4) as usize;
+    assert_ne!(&tile[t15..t15 + 3], &[255, 255, 255], "на экране виден прошлый cel");
+    // отмена меток: снова все cel пусты (дорожка без меток)
+    doc.undo().unwrap();
+    assert_eq!(at(&doc, 3, 55), [255, 255, 255]);
+    // переименование cel меняет метки
+    doc.redo().unwrap();
+    assert_eq!(doc.rename_layer(&[1, 1], "1").as_deref(), Some("1-2"));
+    assert_eq!(doc.layers[1].anim.as_ref().unwrap().cel_at(3), Some("1-2"));
+    assert_eq!(at(&doc, 3, 55), [0, 0, 255]);
+}

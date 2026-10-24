@@ -1,6 +1,7 @@
 //! Чтение и запись файлов. Сейчас — `.sai2`: структура и пиксели растровых слоёв
 //! (см. docs/03-sai2-format.md).
 
+pub mod anim_export;
 pub mod brush_tip;
 pub mod csp;
 pub mod descriptor;

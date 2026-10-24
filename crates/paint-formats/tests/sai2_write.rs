@@ -182,3 +182,29 @@ fn style_sample() {
     doc.layers.push(g);
     paint_formats::sai2_write::save(&doc, std::path::Path::new(&std::env::var("STYLE_OUT").unwrap())).unwrap();
 }
+
+/// Папка анимации: метки кадров и таймлайн сохраняются и читаются обратно.
+#[test]
+fn animation_round_trip() {
+    let mut doc = paint_core::Document::new(64, 64);
+    let mut t = paint_core::anim::AnimTrack::default();
+    t.keys.insert(0, "1".into());
+    t.keys.insert(3, "2 с пробелом".into());
+    t.keys.insert(6, String::new());
+    let mut f = paint_core::layer::Layer::folder("анимация", vec![paint_core::layer::Layer::new("1"), paint_core::layer::Layer::new("2 с пробелом")]);
+    f.anim = Some(Box::new(t));
+    doc.layers.push(f);
+    doc.timeline.enabled = true;
+    doc.timeline.fps = 8;
+    doc.timeline.frames = 10;
+    doc.timeline.end = 9;
+    doc.timeline.frame = 4;
+    let dir = std::env::temp_dir().join(format!("grazysai-anim-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let p = dir.join("a.sai2");
+    paint_formats::sai2_write::save(&doc, &p).unwrap();
+    let back = paint_formats::sai2_doc::load(&p).unwrap().document;
+    std::fs::remove_dir_all(dir).ok();
+    assert_eq!(back.layers[1].anim, doc.layers[1].anim);
+    assert_eq!(back.timeline, doc.timeline);
+}

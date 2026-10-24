@@ -609,6 +609,25 @@ paint without them.
   smallest-size circle.
 - Right-click a tool cell: “Reserve Current Settings”, “Restore Reserved Settings”, “Undo Restore”.
 
+### Animation and timeline
+
+As in Clip Studio Paint. “Animation → New animation folder” creates a folder track with the first cel
+“1” and opens the “Timeline” window. The layers inside the folder are cels; “New cel” adds the next one
+and puts it on the current frame. A cel holds until the next key; right-click a timeline cell to choose
+which cel shows from that frame, “Blank frame” or “Remove key” (all undoable). Clicking the ruler or a
+cell goes to that frame (its cel gets selected). You can paint only in the cel shown on the current
+frame.
+
+The window has go to start, previous, play/stop, next, go to end, “Loop”, **Onion skin** (neighbouring
+cels semi-transparent and tinted: earlier ones red, later ones blue; count, opacity and colours in
+“Animation → Onion skin settings…”), “Timeline” (off — all cels of the folder are visible), frame rate,
+frame count and the playback range.
+
+“Animation → Export animation”: **GIF**, **APNG** (animated PNG in full colour), **PNG frames** (one file
+per frame) and **MP4 video** — only when ffmpeg is installed (otherwise the item is greyed out). The
+playback range is exported, without onion skin. In `.sai2` the keys and timeline settings live in
+GrazySAI's own block on the animation folder; SAI shows the folder with all its cels.
+
 ### Command search, quick access, workspaces
 
 - **Command search** — Ctrl+Shift+P or “Window → Command search…”: type part of a name (shortcut

@@ -2,6 +2,7 @@
 //! От интерфейса и планшета не зависит — всё проверяется тестами и рендером в файл.
 
 pub mod adjust;
+pub mod anim;
 pub mod colorize;
 pub mod curve;
 pub mod dynamics;

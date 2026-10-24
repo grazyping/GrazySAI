@@ -76,6 +76,8 @@ pub struct Layer {
     pub styles: Option<Box<crate::style::Styles>>,
     /// Слой коррекции: вместо пикселей — коррекция цвета всего, что ниже (`adjust.rs`).
     pub adjust: Option<crate::adjust::Adjust>,
+    /// Папка анимации: метки кадров с cel (`anim.rs`).
+    pub anim: Option<Box<crate::anim::AnimTrack>>,
     /// Маска слоя.
     pub mask: Option<LayerMask>,
     /// Папка отмечена для команд видимости (Ctrl + щелчок по глазу, как в SAI); в файл не пишется.
@@ -143,6 +145,7 @@ impl Layer {
             effect: None,
             styles: None,
             adjust: None,
+            anim: None,
             mask: None,
             extra: Vec::new(),
         }

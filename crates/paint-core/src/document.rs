@@ -24,6 +24,8 @@ enum Op {
     Vector { path: Vec<usize>, vector: Option<crate::layer::VectorData> },
     /// Заменить сцену слоя 3D (обратный шаг — прежняя сцена).
     Scene { path: Vec<usize>, scene: Option<Box<crate::layer::Scene3dData>> },
+    /// Заменить метки папки анимации (обратный шаг — прежние).
+    Anim { path: Vec<usize>, anim: Option<Box<crate::anim::AnimTrack>> },
     /// Заменить маску слоя (обратный шаг — прежняя маска).
     Mask { path: Vec<usize>, mask: Option<crate::layer::LayerMask> },
     /// Заменить весь холст: размер, слои, выделение (для действий над холстом).
@@ -76,6 +78,7 @@ impl HistoryEntry {
                 Op::Selection { mask } => mask.tiles.len() * TILE_LEN * 2,
                 Op::Vector { vector, .. } => vector.as_ref().map_or(0, |v| v.raw.len()),
                 Op::Scene { scene, .. } => scene.as_ref().map_or(0, |s| s.state.len()),
+                Op::Anim { anim, .. } => anim.as_ref().map_or(0, |a| a.keys.len() * 16),
                 Op::Remove { .. } | Op::TilesOnDisk { .. } => 0,
                 Op::Mask { mask, .. } => mask.as_ref().map_or(0, |m| m.hide.tiles.len() * TILE_LEN * 2),
             })
@@ -127,6 +130,8 @@ pub struct Document {
     pub bg_color: [u8; 3],
     /// «Layer Effect Color» (0x3C заголовка): `norm`, `vivd`, `deep`, `mult`, `ver1` — хранится как был.
     pub effect_color: [u8; 4],
+    /// Таймлайн анимации (`anim.rs`).
+    pub timeline: crate::anim::Timeline,
     /// Разрешение печати, как в `.sai2` (0x1C): точек на сантиметр × 65536; 96 dpi по умолчанию.
     pub resolution: u32,
     /// Выделение; пустое — рисовать можно везде.
@@ -148,6 +153,7 @@ impl Document {
             bg_code: 0x01,
             bg_color: [0x80, 0x80, 0x80],
             effect_color: *b"norm",
+            timeline: Default::default(),
             resolution: (96.0f64 / 2.54 * 65536.0).round() as u32,
             selection: Selection::default(),
             undo: Vec::new(),
@@ -167,6 +173,7 @@ impl Document {
             bg_code: self.bg_code,
             bg_color: self.bg_color,
             effect_color: self.effect_color,
+            timeline: self.timeline.clone(),
             resolution: self.resolution,
             selection: self.selection.clone(),
             undo: Vec::new(),
@@ -364,7 +371,7 @@ impl Document {
                         out.push(Change::Tiles { uid: l.uid, keys: tiles.iter().map(|(k, _)| *k).collect() });
                     }
                 }
-                Op::TilesOnDisk { path, .. } | Op::Vector { path, .. } | Op::Scene { path, .. } | Op::Mask { path, .. } => {
+                Op::TilesOnDisk { path, .. } | Op::Vector { path, .. } | Op::Scene { path, .. } | Op::Anim { path, .. } | Op::Mask { path, .. } => {
                     if let Some(l) = self.layer(path) {
                         out.push(Change::Layer(l.uid));
                     }
@@ -483,6 +490,12 @@ impl Document {
                 let layer = self.layer_mut(&path)?;
                 let old = std::mem::replace(&mut layer.scene3d, scene);
                 Some((Op::Scene { path, scene: old }, Vec::new()))
+            }
+            Op::Anim { path, anim } => {
+                let layer = self.layer_mut(&path)?;
+                let old = std::mem::replace(&mut layer.anim, anim);
+                let keys = layer_keys(layer);
+                Some((Op::Anim { path, anim: old }, keys))
             }
             Op::Mask { path, mask } => {
                 let layer = self.layer_mut(&path)?;
@@ -868,7 +881,7 @@ impl Document {
         for ty in 0..th {
             for tx in 0..tw {
                 let mut buf = vec![[0f32; 4]; TILE_LEN];
-                render_group(&self.layers, (tx, ty), &mut buf, self.size(), self.fx());
+                render_group(&self.layers, (tx, ty), &mut buf, &self.rcx());
                 if buf.iter().any(|p| p[3] > 0.0) {
                     merged.pixels.tiles.insert((tx, ty), Tile(buf.iter().map(|p| from_f32(*p)).collect()));
                 }
@@ -1042,7 +1055,7 @@ impl Document {
         for ty in 0..th {
             for tx in 0..tw {
                 let mut buf = vec![[0f32; 4]; TILE_LEN];
-                render_group(&layers, (tx, ty), &mut buf, self.size(), self.fx());
+                render_group(&layers, (tx, ty), &mut buf, &self.rcx());
                 if buf.iter().any(|p| p[3] > 0.0) {
                     out.tiles.insert((tx, ty), Tile(buf.iter().map(|p| from_f32(*p)).collect()));
                 }
@@ -1058,7 +1071,7 @@ impl Document {
         for ty in 0..th {
             for tx in 0..tw {
                 let mut buf = vec![[0f32; 4]; TILE_LEN];
-                render_group(&self.layers, (tx, ty), &mut buf, self.size(), self.fx());
+                render_group(&self.layers, (tx, ty), &mut buf, &self.rcx());
                 if buf.iter().any(|p| p[3] > 0.0) {
                     out.tiles.insert((tx, ty), Tile(buf.iter().map(|p| from_f32(*p)).collect()));
                 }
@@ -1120,6 +1133,33 @@ impl Document {
     }
 
     /// Новая сцена слоя 3D и её пиксели — одна запись истории.
+    /// Метки папки анимации (с записью в историю); `None` — папка перестаёт быть анимацией.
+    pub fn set_anim(&mut self, path: &[usize], anim: Option<crate::anim::AnimTrack>) -> Vec<Key> {
+        self.perform(vec![Op::Anim { path: path.to_vec(), anim: anim.map(Box::new) }])
+    }
+
+    /// Переименовать слой; у cel папки анимации имя меняется и в метках (имя — уникальное в
+    /// папке: при совпадении добавляется номер). Возвращает итоговое имя.
+    pub fn rename_layer(&mut self, path: &[usize], name: &str) -> Option<String> {
+        let (last, parent) = path.split_last()?;
+        let old = self.layer(path)?.name.clone();
+        let mut name = name.to_string();
+        if let Some(p) = self.layer(parent).filter(|p| p.anim.is_some()) {
+            let siblings: Vec<&str> = p.children.as_deref().unwrap_or(&[]).iter().enumerate().filter(|(i, _)| i != last).map(|(_, c)| c.name.as_str()).collect();
+            let base = name.clone();
+            let mut k = 2;
+            while siblings.contains(&name.as_str()) {
+                name = format!("{base}-{k}");
+                k += 1;
+            }
+        }
+        self.layer_mut(path)?.name = name.clone();
+        if let Some(a) = self.layer_mut(parent).and_then(|p| p.anim.as_mut()) {
+            a.rename(&old, &name);
+        }
+        Some(name)
+    }
+
     pub fn set_scene_layer(&mut self, path: &[usize], scene: crate::layer::Scene3dData, pixels: ColorMap) -> Vec<Key> {
         let Some(layer) = self.layer(path) else { return Vec::new() };
         let mut keys: Vec<Key> = layer.pixels.tiles.keys().copied().collect();
@@ -1215,7 +1255,7 @@ impl Document {
         let mut tiles: TileBackup = Vec::with_capacity(keys.len());
         for key in &keys {
             let mut buf = vec![[0f32; 4]; TILE_LEN];
-            render_group(&solo, *key, &mut buf, self.size(), self.fx());
+            render_group(&solo, *key, &mut buf, &self.rcx());
             let tile: Vec<Px> = buf.iter().map(|c| from_f32(*c)).collect();
             tiles.push((*key, (!tile.iter().all(|p| p[3] == 0)).then(|| Tile(tile.into_boxed_slice()))));
         }
@@ -1246,7 +1286,7 @@ impl Document {
         for ty in 0..th {
             for tx in 0..tw {
                 let mut buf = vec![[0f32; 4]; TILE_LEN];
-                render_group(&self.layers, (tx, ty), &mut buf, self.size(), self.fx());
+                render_group(&self.layers, (tx, ty), &mut buf, &self.rcx());
                 if buf.iter().any(|p| p[3] > 0.0) {
                     layer.pixels.tiles.insert((tx, ty), Tile(buf.iter().map(|p| from_f32(*p)).collect()));
                 }
@@ -1463,7 +1503,7 @@ impl Document {
         let mut tiles: TileBackup = Vec::with_capacity(keys.len());
         for key in &keys {
             let mut buf = vec![[0f32; 4]; TILE_LEN];
-            render_group(&pair, *key, &mut buf, self.size(), self.fx());
+            render_group(&pair, *key, &mut buf, &self.rcx());
             let tile: Vec<Px> = buf.iter().map(|c| from_f32(*c)).collect();
             if tile.iter().all(|p| p[3] == 0) {
                 tiles.push((*key, None));
@@ -1502,6 +1542,7 @@ impl Document {
                 Op::Remove { path } => (if forward { StepKind::DeleteLayer } else { StepKind::NewLayer }, Some(path)),
                 Op::Selection { .. } => (StepKind::Selection, None),
                 Op::Vector { path, .. } => (StepKind::Vector, Some(path)),
+                Op::Anim { path, .. } => (StepKind::Other, Some(path)),
                 Op::Scene { path, .. } => (StepKind::Scene3d, Some(path)),
                 Op::Mask { path, .. } => (StepKind::Mask, Some(path)),
                 Op::Canvas { .. } => (StepKind::Canvas, None),
@@ -1565,6 +1606,46 @@ impl Document {
     }
 
     /// Цвет эффектов слоя (номер для `effects`/`paper`).
+    /// Сведение для файла и команд: кадр таймлайна, без Onion skin.
+    pub fn rcx(&self) -> Rcx {
+        Rcx { size: self.size(), fx: self.fx(), frame: self.timeline.enabled.then_some(self.timeline.frame), onion: None }
+    }
+
+    /// Сведение для экрана: ещё и Onion skin.
+    pub fn rcx_display(&self) -> Rcx {
+        let t = &self.timeline;
+        Rcx { onion: (t.enabled && t.onion_on).then_some(t.onion), ..self.rcx() }
+    }
+
+    /// Сведённая картинка кадра `frame` (для вывода анимации): RGBA по 8 бит, с фоном холста.
+    pub fn flatten_frame(&self, frame: u32) -> Vec<u8> {
+        let cx = Rcx { frame: Some(frame), ..self.rcx() };
+        let (w, h) = (self.width as i32, self.height as i32);
+        let bg = self.background_f32();
+        let mut out = vec![0u8; (w * h * 4) as usize];
+        for ty in 0..(h + TILE - 1) / TILE {
+            for tx in 0..(w + TILE - 1) / TILE {
+                let mut buf = vec![bg; TILE_LEN];
+                render_group(&self.layers, (tx, ty), &mut buf, &cx);
+                for y in 0..TILE {
+                    let py = ty * TILE + y;
+                    if py >= h {
+                        break;
+                    }
+                    for x in 0..TILE {
+                        let px = tx * TILE + x;
+                        if px >= w {
+                            break;
+                        }
+                        let o = ((py * w + px) * 4) as usize;
+                        out[o..o + 4].copy_from_slice(&to_rgba8(from_f32(buf[(y * TILE + x) as usize])));
+                    }
+                }
+            }
+        }
+        out
+    }
+
     pub fn fx(&self) -> u8 {
         crate::paper::fx_of(&self.effect_color)
     }
@@ -1578,6 +1659,7 @@ impl Document {
 
     /// Сведённая плитка для показа: RGBA по 8 бит, 64×64.
     pub fn render_tile(&self, key: Key) -> Vec<u8> {
+        let cx = self.rcx_display();
         let mut buf = vec![self.background_f32(); TILE_LEN];
         if self.background.is_none() {
             // прозрачный холст на экране — шашкой или цветом, как выбрано в «Фоне холста»
@@ -1585,7 +1667,7 @@ impl Document {
                 *b = self.display_bg(key.0 * TILE + i as i32 % TILE, key.1 * TILE + i as i32 / TILE);
             }
         }
-        render_group(&self.layers, key, &mut buf, self.size(), self.fx());
+        render_group(&self.layers, key, &mut buf, &cx);
         let mut out = vec![0u8; TILE_LEN * 4];
         for (px, o) in buf.iter().zip(out.as_chunks_mut::<4>().0) {
             *o = to_rgba8(from_f32(*px));
@@ -1639,7 +1721,7 @@ impl Document {
                         let mut strip = strips[ty as usize].lock().unwrap();
                         for tx in 0..cols {
                             buf.fill(bg);
-                            render_group(&self.layers, (tx, ty), &mut buf, self.size(), self.fx());
+                            render_group(&self.layers, (tx, ty), &mut buf, &self.rcx());
                             for y in 0..TILE {
                                 if ty * TILE + y >= h {
                                     break;
@@ -1665,6 +1747,15 @@ impl Document {
 }
 
 type Buf = Vec<[f32; 4]>;
+
+/// Как сводить: размер холста и цвет эффектов (для каймы и бумаги), кадр таймлайна (у папок
+/// анимации — только его cel) и Onion skin (только на экране).
+pub struct Rcx {
+    pub size: (i32, i32),
+    pub fx: u8,
+    pub frame: Option<u32>,
+    pub onion: Option<crate::anim::Onion>,
+}
 
 /// Есть ли в этом месте холста хоть что-то от слоя (для папки — от любого вложенного).
 /// Плитки слоя (у папки — всех вложенных).
@@ -1725,8 +1816,8 @@ fn adjust_into(layer: &Layer, a: &crate::adjust::Adjust, key: Key, buf: &mut [[f
 }
 
 /// Содержимое слоя или папки в одной плитке, без учёта его режима и непрозрачности.
-fn layer_source(layer: &Layer, key: Key, size: (i32, i32), fx: u8) -> Option<Buf> {
-    let mut buf = layer_content(layer, key, size, fx)?;
+fn layer_source(layer: &Layer, key: Key, cx: &Rcx) -> Option<Buf> {
+    let mut buf = layer_content(layer, key, cx)?;
     if let Some(tile) = layer.mask.as_ref().and_then(|m| m.hide.tiles.get(&key)) {
         for (px, &m) in buf.iter_mut().zip(tile.0.iter()) {
             let k = 1.0 - m.min(0x4000) as f32 / 16384.0;
@@ -1737,18 +1828,77 @@ fn layer_source(layer: &Layer, key: Key, size: (i32, i32), fx: u8) -> Option<Buf
 }
 
 /// Содержимое слоя или папки без маски.
-fn layer_content(layer: &Layer, key: Key, size: (i32, i32), fx: u8) -> Option<Buf> {
+fn layer_content(layer: &Layer, key: Key, cx: &Rcx) -> Option<Buf> {
     match &layer.children {
+        Some(children) if layer.anim.is_some() && cx.frame.is_some() => anim_content(layer, children, key, cx),
         Some(children) => {
             if !children.iter().any(|c| c.visible && touches(c, key)) {
                 return None;
             }
             let mut buf = vec![[0.0f32; 4]; TILE_LEN];
-            render_group(children, key, &mut buf, size, fx);
+            render_group(children, key, &mut buf, cx);
             Some(buf)
         }
         None => layer.pixels.tiles.get(&key).map(|t| t.0.iter().map(|p| to_f32(*p)).collect()),
     }
+}
+
+/// Папка анимации при включённом таймлайне: cel текущего кадра, на экране — с Onion skin
+/// (соседние cel окрашены и полупрозрачны, под текущим).
+fn anim_content(layer: &Layer, children: &[Layer], key: Key, cx: &Rcx) -> Option<Buf> {
+    let track = layer.anim.as_deref()?;
+    let f = cx.frame?;
+    let one = |name: &str| -> Option<Buf> {
+        let i = children.iter().position(|c| c.name == name)?;
+        let c = &children[i];
+        if !c.visible || !touches(c, key) {
+            return None;
+        }
+        let mut buf = vec![[0.0f32; 4]; TILE_LEN];
+        render_group(&children[i..=i], key, &mut buf, cx);
+        Some(buf)
+    };
+    let mut out: Option<Buf> = None;
+    if let Some(o) = cx.onion {
+        let (before, after) = track.neighbours(f, o.before as usize, o.after as usize);
+        // дальние снизу: сначала самые далёкие
+        let mut skins: Vec<(&str, usize, [u8; 3])> = before.iter().enumerate().map(|(k, n)| (*n, k, o.color_before)).collect();
+        skins.extend(after.iter().enumerate().map(|(k, n)| (*n, k, o.color_after)));
+        skins.sort_by_key(|s| std::cmp::Reverse(s.1));
+        for (name, k, color) in skins {
+            let Some(src) = one(name) else { continue };
+            let a = (o.opacity - o.step * k as f32).clamp(0.0, 1.0);
+            if a <= 0.0 {
+                continue;
+            }
+            let c = color.map(|v| v as f32 / 255.0);
+            let dst = out.get_or_insert_with(|| vec![[0.0f32; 4]; TILE_LEN]);
+            for (d, s) in dst.iter_mut().zip(&src) {
+                let sa = s[3] * a;
+                if sa <= 0.0 {
+                    continue;
+                }
+                let col = if o.tint { [c[0] * sa, c[1] * sa, c[2] * sa] } else { [s[0] * a, s[1] * a, s[2] * a] };
+                for ch in 0..3 {
+                    d[ch] = col[ch] + d[ch] * (1.0 - sa);
+                }
+                d[3] = sa + d[3] * (1.0 - sa);
+            }
+        }
+    }
+    if let Some(cur) = track.cel_at(f).and_then(one) {
+        match out.as_mut() {
+            Some(dst) => {
+                for (d, s) in dst.iter_mut().zip(&cur) {
+                    for ch in 0..4 {
+                        d[ch] = s[ch] + d[ch] * (1.0 - s[3]);
+                    }
+                }
+            }
+            None => out = Some(cur),
+        }
+    }
+    out
 }
 
 /// Бумага слоя на его плитку.
@@ -1790,7 +1940,7 @@ fn color_as_mask(c: &ColorMap) -> MaskMap {
     out
 }
 
-fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]], size: (i32, i32), fx: u8) {
+fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]], cx: &Rcx) {
     let mut i = 0;
     while i < layers.len() {
         let base = &layers[i];
@@ -1811,7 +1961,7 @@ fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]], size: (i3
                 continue;
             }
             let mut inner = backdrop.to_vec();
-            render_group(base.children.as_deref().unwrap_or(&[]), key, &mut inner, size, fx);
+            render_group(base.children.as_deref().unwrap_or(&[]), key, &mut inner, cx);
             let k = base.opacity.clamp(0.0, 1.0);
             for (dst, src) in backdrop.iter_mut().zip(inner.iter()) {
                 for c in 0..4 {
@@ -1824,11 +1974,11 @@ fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]], size: (i3
             adjust_into(base, a, key, backdrop);
             continue;
         }
-        let src = layer_source(base, key, size, fx).or_else(|| styled_near(base, key).then(|| vec![[0.0f32; 4]; TILE_LEN]));
+        let src = layer_source(base, key, cx).or_else(|| styled_near(base, key).then(|| vec![[0.0f32; 4]; TILE_LEN]));
         let Some(mut src) = src else { continue };
         // эффект и бумага — до прикреплённых слоёв (бумага сверена со сведённой картинкой образца)
-        crate::effects::apply(base, key, &mut src, size, fx);
-        apply_paper(base, key, &mut src, fx);
+        crate::effects::apply(base, key, &mut src, cx.size, cx.fx);
+        apply_paper(base, key, &mut src, cx.fx);
         crate::style::overlay(base, &mut src);
         for clip in clips.iter().filter(|c| c.visible && c.opacity > 0.0) {
             if let (Some(a), None) = (&clip.adjust, &clip.children) {
@@ -1836,9 +1986,9 @@ fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]], size: (i3
                 adjust_into(clip, a, key, &mut src);
                 continue;
             }
-            let Some(mut top) = layer_source(clip, key, size, fx) else { continue };
-            crate::effects::apply(clip, key, &mut top, size, fx);
-            apply_paper(clip, key, &mut top, fx);
+            let Some(mut top) = layer_source(clip, key, cx) else { continue };
+            crate::effects::apply(clip, key, &mut top, cx.size, cx.fx);
+            apply_paper(clip, key, &mut top, cx.fx);
             for (b, t) in src.iter_mut().zip(top.iter()) {
                 if b[3] <= 0.0 || t[3] <= 0.0 {
                     continue;

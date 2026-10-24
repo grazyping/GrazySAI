@@ -59,7 +59,7 @@ pub struct Loaded {
     pub vector_layers: Vec<(u32, Vec<sai2_vector::Shape>)>,
 }
 
-fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info: &Sai2Info, notes: &mut BTreeSet<String>, decoded: &mut [Option<io::Result<paint_core::tile::ColorMap>>]) -> io::Result<Vec<Layer>> {
+fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info: &Sai2Info, notes: &mut BTreeSet<String>, decoded: &mut [Option<io::Result<paint_core::tile::ColorMap>>], timeline: &mut Option<String>) -> io::Result<Vec<Layer>> {
     // В файле слои идут сверху вниз; в документе — снизу вверх.
     let mut top_down = Vec::new();
     while *pos < infos.len() && infos[*pos].depth >= depth {
@@ -78,6 +78,13 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
             if tag == b"gsst" {
                 let st = paint_core::style::Styles::from_text(&String::from_utf8_lossy(body));
                 layer.styles = (!st.is_empty()).then(|| Box::new(st));
+                continue;
+            }
+            if tag == b"gsan" {
+                // папка анимации: метки и (у первой) настройки таймлайна
+                let text = String::from_utf8_lossy(body);
+                layer.anim = Some(Box::new(paint_core::anim::AnimTrack::from_text(&text)));
+                timeline.get_or_insert_with(|| text.into_owned());
                 continue;
             }
             if tag == b"gsad" {
@@ -108,7 +115,7 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
         }
         if li.is_folder {
             layer.pass_through = li.blend == "pass";
-            layer.children = Some(build(infos, pos, depth + 1, file, info, notes, decoded)?);
+            layer.children = Some(build(infos, pos, depth + 1, file, info, notes, decoded, timeline)?);
         } else {
             layer.pixels = match decoded[*pos - 1].take() {
                 Some(r) => r?,
@@ -303,7 +310,8 @@ pub fn load(path: &Path) -> io::Result<Loaded> {
         }
     });
     let mut decoded: Vec<Option<io::Result<paint_core::tile::ColorMap>>> = slots.into_iter().map(|m| m.into_inner().unwrap()).collect();
-    let layers = build(&info.layers, &mut pos, 0, &mut file, &info, &mut notes, &mut decoded)?;
+    let mut timeline = None;
+    let layers = build(&info.layers, &mut pos, 0, &mut file, &info, &mut notes, &mut decoded, &mut timeline)?;
     let mut vector_layers = Vec::new();
     for li in info.layers.iter().filter(|l| l.kind == "liwk" || l.kind == "shap") {
         let Some(e) = info.entries.iter().find(|e| e.tag == li.kind.as_bytes() && e.id == li.id) else { continue };
@@ -346,6 +354,9 @@ pub fn load(path: &Path) -> io::Result<Loaded> {
         document.resolution = info.resolution;
     }
     document.layers = layers;
+    if let Some(t) = timeline {
+        document.timeline.read_text(&t);
+    }
     Ok(Loaded { document, info, warnings: notes.into_iter().collect(), vector_layers })
 }
 
