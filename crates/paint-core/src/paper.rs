@@ -436,7 +436,13 @@ pub fn stamp_of(name: &str) -> Option<Arc<crate::stroke::Stamp>> {
     }
     let found = dirs("tips").into_iter().find_map(|d| {
         let (w, h, rgba) = crate::io::decode_png(&std::fs::read(d.join(format!("{name}.png"))).ok()?).ok()?;
-        Some(Arc::new(crate::stroke::Stamp::from_rgba(w as usize, h as usize, &rgba)))
+        // цветной (ARGB) — только с меткой рядом: `<имя набора>.argb`
+        let set = name.rsplit_once('.').filter(|(_, k)| k.parse::<u32>().is_ok()).map_or(name, |(b, _)| b);
+        Some(Arc::new(if d.join(format!("{set}.argb")).exists() {
+            crate::stroke::Stamp::from_rgba_color(w as usize, h as usize, &rgba)
+        } else {
+            crate::stroke::Stamp::from_rgba(w as usize, h as usize, &rgba)
+        }))
     });
     if let Some(s) = &found {
         cache.lock().unwrap().insert(name.to_string(), s.clone());

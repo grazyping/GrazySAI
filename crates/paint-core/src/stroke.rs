@@ -221,17 +221,21 @@ impl Stamp {
     }
 
     /// Отпечаток из RGBA: у картинки с прозрачностью краска — непрозрачное, у непрозрачной —
-    /// тёмное (чёрное на белом, как у кистей GIMP и Photoshop). Картинка с прозрачностью и не
-    /// только чёрными точками — цветной отпечаток.
+    /// тёмное (чёрное на белом, как у кистей GIMP и Photoshop).
     pub fn from_rgba(w: usize, h: usize, rgba: &[u8]) -> Self {
         let px = rgba.as_chunks::<4>().0;
         let opaque = px.iter().all(|p| p[3] == 255);
-        let color = (!opaque && px.iter().any(|p| p[3] > 0 && p[..3] != [0, 0, 0])).then(|| px.iter().map(|p| [p[0], p[1], p[2]]).collect());
         let alpha = px
             .iter()
             .map(|p| if opaque { 255 - ((p[0] as u32 * 77 + p[1] as u32 * 150 + p[2] as u32 * 29) >> 8) as u8 } else { p[3] })
             .collect();
-        Self { width: w, height: h, alpha, color }
+        Self { width: w, height: h, alpha, color: None }
+    }
+
+    /// Цветной отпечаток (ARGB) из RGBA: краска — прозрачность, цвет — свой у каждой точки.
+    pub fn from_rgba_color(w: usize, h: usize, rgba: &[u8]) -> Self {
+        let px = rgba.as_chunks::<4>().0;
+        Self { width: w, height: h, alpha: px.iter().map(|p| p[3]).collect(), color: Some(px.iter().map(|p| [p[0], p[1], p[2]]).collect()) }
     }
 }
 

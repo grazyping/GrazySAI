@@ -1450,8 +1450,7 @@ fn colored_tip_paints_its_own_colors() {
             if edge { [0, 0, 0, 0] } else if x < n / 2 { [255, 0, 0, 255] } else { [0, 0, 255, 255] }
         })
         .collect();
-    let stamp = Arc::new(paint_core::Stamp::from_rgba(n, n, &rgba));
-    assert!(stamp.color.is_some());
+    let stamp = Arc::new(paint_core::Stamp::from_rgba_color(n, n, &rgba));
     let mut doc = Document::new(100, 100);
     let mut s = Stroke::new(BrushParams { size: 60.0, size_by_pressure: false, ..Default::default() });
     s.set_grain(Some(Grain { blot: None, texture: None, paper: false, by_min_density: true, tip: Some(paint_core::Tip::new(stamp)), bristle: None }));
@@ -1464,7 +1463,6 @@ fn colored_tip_paints_its_own_colors() {
     let (l, r) = (px(35, 50), px(65, 50));
     assert!(l[0] > 240 && l[1] < 10 && l[2] < 10 && l[3] > 240, "слева {l:?}");
     assert!(r[2] > 240 && r[0] < 10 && r[1] < 10 && r[3] > 240, "справа {r:?}");
-    // чёрный отпечаток с прозрачностью — не цветной
-    let black: Vec<u8> = rgba.as_chunks::<4>().0.iter().flat_map(|p| [0, 0, 0, p[3]]).collect();
-    assert!(paint_core::Stamp::from_rgba(n, n, &black).color.is_none());
+    // обычная картинка с прозрачностью (без метки ARGB) — не цветная
+    assert!(paint_core::Stamp::from_rgba(n, n, &rgba).color.is_none());
 }

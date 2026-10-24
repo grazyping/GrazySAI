@@ -598,7 +598,7 @@ paint without them.
   kinds: rename, delete, put into groups. “New from the current layer” makes an asset from the selected
   part of the layer or everything drawn: black on white, white on black or by transparency; a tip or
   scattering shape can also be made “Layer Image (ARGB)”: such a brush paints the picture's colours
-  instead of the main colour (so do coloured PNGs with transparency in the tips folder).
+  instead of the main colour (an empty marker file `<name>.argb` sits next to the picture).
 
 ### Smudge
 

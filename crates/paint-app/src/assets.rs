@@ -121,9 +121,9 @@ pub fn create(kind: Kind, name: &str, w: usize, h: usize, rgba: &[u8], t: ImageT
     let res = match kind {
         Kind::Scratch => paint_core::io::save_image(&path, w as u32, h as u32, rgba).map_err(|e| e.to_string()),
         Kind::Tip if t == ImageType::Argb => {
-            // прозрачные точки — чёрные: отпечаток без единой видимой точки цвета не получит
-            let out: Vec<u8> = rgba.as_chunks::<4>().0.iter().flat_map(|p| if p[3] == 0 { [0; 4] } else { *p }).collect();
-            paint_core::io::save_image(&path, w as u32, h as u32, &out).map_err(|e| e.to_string())
+            // метка `<имя>.argb` рядом: отпечаток кладёт свои цвета
+            paint_core::io::save_image(&path, w as u32, h as u32, rgba).map_err(|e| e.to_string())?;
+            std::fs::write(dir.join(format!("{n}.argb")), b"").map_err(|e| e.to_string())
         }
         Kind::Tip => {
             let out: Vec<u8> = inks.iter().flat_map(|&a| [0, 0, 0, a]).collect();
@@ -147,6 +147,7 @@ pub fn rename(kind: Kind, from: &str, to: &str) -> Result<String, String> {
     std::fs::rename(&a, &b).map_err(|e| e.to_string())?;
     if kind == Kind::Tip {
         let dir = paint_core::paper::user_dir(kind.dir()).ok_or(tr("нет папки настроек"))?;
+        std::fs::rename(dir.join(format!("{from}.argb")), dir.join(format!("{to}.argb"))).ok();
         for i in 2.. {
             if std::fs::rename(dir.join(format!("{from}.{i}.png")), dir.join(format!("{to}.{i}.png"))).is_err() {
                 break;
@@ -161,6 +162,7 @@ pub fn delete(kind: Kind, name: &str) -> Result<(), String> {
     std::fs::remove_file(kind.path(name).ok_or(tr("нет папки настроек"))?).map_err(|e| e.to_string())?;
     if kind == Kind::Tip {
         if let Some(dir) = paint_core::paper::user_dir(kind.dir()) {
+            std::fs::remove_file(dir.join(format!("{name}.argb"))).ok();
             for i in 2.. {
                 if std::fs::remove_file(dir.join(format!("{name}.{i}.png"))).is_err() {
                     break;
@@ -204,7 +206,10 @@ mod tests {
         let st = paint_core::paper::stamp_of(&tn).unwrap();
         assert_eq!((st.alpha[0], st.alpha[1]), (255, 0));
         assert_eq!(st.color.as_ref().map(|c| c[0]), Some([200, 30, 10]));
-        delete(Kind::Tip, &tn).unwrap();
+        let tn2 = rename(Kind::Tip, &tn, "цвет2").unwrap();
+        assert!(paint_core::paper::user_dir("tips").unwrap().join("цвет2.argb").exists());
+        delete(Kind::Tip, &tn2).unwrap();
+        assert!(!paint_core::paper::user_dir("tips").unwrap().join("цвет2.argb").exists());
         assert_eq!(Kind::Texture.items(), vec!["проба_1".to_string()]);
         std::fs::remove_dir_all(dir).ok();
         paint_core::paper::set_user_dir(None);
