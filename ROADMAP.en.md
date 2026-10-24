@@ -326,3 +326,10 @@ Pressure now comes from XInput 2 (Linux, X11/XWayland) and Windows Ink (Windows)
 - [ ] Linux: check the desktops from the Debian installer — GNOME, KDE Plasma, Xfce, Cinnamon, MATE, LXDE, LXQt, GNOME Flashback — and popular window managers (i3, Sway, Openbox, Fluxbox, IceWM, awesome, bspwm, Hyprland): window, pen, file drop, separate windows on top
 - [ ] Windows 7, 8, 8.1, 10, 11: check the build (Windows 7/8 — a separate build for the old system)
 - [ ] Windows XP and Vista — at least in theory: what stands in the way (Rust and its libraries do not support XP; OpenGL 2 or software rendering is needed), whether a light 32-bit build is possible
+
+## 1.4.0 — from Clip Studio Paint (plan; research after 1.3.0)
+
+- [ ] Auto Actions: record steps and replay them with one button, action sets
+- [ ] Layer styles (stroke, shadow, glow, etc.) and Gradient Map
+- [ ] Import from other programs: 3D models from Cinema 4D and other packages (FBX, Collada, USD, Alembic, etc.) — find out what else is worth accepting
+- [ ] User customisation, as in Clip Studio and other programs: panels, command sets, custom icons and shortcuts, workspaces
