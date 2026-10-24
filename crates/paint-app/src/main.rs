@@ -577,13 +577,14 @@ struct Options {
     /// «Минимальный нажим для мазка» (SAI 2024+): слабее — перо не рисует, сильнее — нажим
     /// отсчитывается от этого порога. 0..0.9.
     min_pressure: f32,
-    /// Windows: брать перо через WinTab, если драйвер его даёт (иначе — Windows Ink).
+    /// Windows: брать перо через WinTab, если драйвер его даёт (иначе — Windows Ink). Пока
+    /// выключено по умолчанию: на настоящем планшете ещё не проверено.
     wintab: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false, psd16: false, psd_exact: false, min_pressure: 0.0, wintab: true }
+        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false, psd16: false, psd_exact: false, min_pressure: 0.0, wintab: false }
     }
 }
 

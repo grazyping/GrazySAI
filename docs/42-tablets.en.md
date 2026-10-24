@@ -9,8 +9,8 @@ Linux kernel news and user discussions (October 2026).
 
 | System | Method | Gives | How to enable |
 |---|---|---|---|
-| Windows | **WinTab** (`Wintab32.dll`, installed by the driver) | pressure, tilt, rotation, eraser end | on by default; “Settings → Windows: pen via WinTab” |
-| Windows | **Windows Ink** (system) | pressure | when WinTab is missing or off; “Windows Ink” checkbox in the driver |
+| Windows | **WinTab** (`Wintab32.dll`, installed by the driver) | pressure, tilt, rotation, eraser end | “Settings → Windows: pen via WinTab” (off by default for now: not yet checked with a real tablet — tell us whether it works for you) |
+| Windows | **Windows Ink** (system) | pressure | default; “Windows Ink” checkbox in the driver |
 | Linux, X11 and XWayland | **XInput 2** | pressure, tilt, rotation, eraser end | nothing to do |
 | Linux, native Wayland | `zwp_tablet_v2` | — | not yet: the window opens through XWayland |
 | FreeBSD | XInput 2 (as Linux) | pressure, tilt | see “Systems” in the roadmap |
@@ -43,7 +43,7 @@ and GrazySAI; WinTab can be turned off in GrazySAI's settings.
 |---|---|---|---|
 | XP-Pen Artist 24 Pro | Linux (X11, XWayland) | XInput 2 | pressure, eraser end |
 | Virtual pen (`PAINT_VIRTUAL_PEN`) | Linux, Windows (Wine) | Windows Ink | pressure, taps, eraser |
-| — | Windows under Wine, no tablet | WinTab | starts; without a tablet stays on Windows Ink |
+| — | Windows under Wine, no tablet | WinTab | starts; without a tablet stays on Windows Ink; WinTab not yet checked with a real tablet |
 
 Other models — from feedback: tell us in [Issues](https://github.com/grazyping/GrazySAI/issues)
 which model and what the status bar shows.

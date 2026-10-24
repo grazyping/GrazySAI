@@ -43,6 +43,9 @@ Rust's standard library requires Windows 10 since 1.78. For Windows 7 — the
 - the Universal C Runtime is needed (update KB2999226; usually present on an updated Windows 7
   SP1) and a graphics driver with OpenGL 2.0 or newer.
 
+The built-in updater (“Help → Check for updates”) uses the system `curl` and `tar`: Windows 7/8
+and FreeBSD lack them by default — download the release archive by hand there.
+
 ## Windows XP and Vista
 
 Theory, no build:

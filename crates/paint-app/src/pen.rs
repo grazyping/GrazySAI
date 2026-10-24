@@ -4,7 +4,7 @@
 //!   ось `Abs Pressure` планшета. Так же устроено в PhotoCraft (crate `photocraft-tablet`,
 //!   MIT/Apache-2.0) — подход взят оттуда, код свой. В сеансе Wayland окно открывается через
 //!   XWayland: напрямую композитор не даёт перо программам без протокола `zwp_tablet_v2`.
-//! - **Windows** — WinTab (`Wintab32.dll` ставит драйвер планшета: Wacom, XP-Pen, Huion,
+//! - **Windows** — WinTab, если включён в настройках (`Wintab32.dll` ставит драйвер планшета: Wacom, XP-Pen, Huion,
 //!   Gaomon, Veikk и др.): свой поток открывает контекст планшета и забирает пакеты — нажим,
 //!   наклон, поворот, обратный конец пера; положение — от курсора системы, как у мыши. Если
 //!   WinTab нет (или выключен в настройках) — Windows Ink: winit превращает перо в касание с силой
@@ -199,6 +199,10 @@ mod wintab {
             let dev = String::from_utf16_lossy(&dev[..dev.iter().position(|&c| c == 0).unwrap_or(0)]);
             let mut axis = Axis::default();
             info(WTI_DEVICES, DVC_NPRESSURE, &mut axis as *mut _ as *mut c_void);
+            // драйвер не сказал диапазон нажима — нажим был бы всегда полным; остаётся Windows Ink
+            if axis.max <= 1 {
+                return;
+            }
             lc.pkt_data = PACKET_DATA;
             lc.pkt_mode = 0;
             lc.move_mask = PACKET_DATA;
