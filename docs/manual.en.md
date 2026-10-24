@@ -491,8 +491,8 @@ and bristles from the SAI folder travel by name only. File layout: `docs/35-gsbr
 Brushes from other programs are collected in the **library** — the program's own folder (`library/`
 in the settings folder; the original files are copied there too, into `originals/`).
 
-- **Add**: drop brush files onto the program window — `.sut`, `.bfps` (Clip Studio Paint), `.kpp`,
-  `.bundle` (Krita), `.abr` (Photoshop), `.gbr`, `.gih` (GIMP), `.gsbrush`, `.gsbrushes` (GrazySAI) —
+- **Add**: drop brush files onto the program window — `.saitdat`, `.saitgrp` and `.ini` + `.bmp`
+  scatter shapes (SAI 2), `.sut`, `.bfps` (Clip Studio Paint), `.kpp`, `.bundle` (Krita), `.abr` (Photoshop), `.gbr`, `.gih` (GIMP), `.gsbrush`, `.gsbrushes` (GrazySAI) —
   **many at once or a whole folder** (subfolders are searched too). Same with “File → Open” or the
   “Add…” button in the library window (several files can be picked). A brush of the same set that is
   already there is not added twice. With Shift a GIMP or Photoshop image brush still becomes the tip
@@ -508,6 +508,22 @@ in the settings folder; the original files are copied there too, into `originals
 - Click a card to select it (below — name and comma-separated tags); **double-click** or “Put into
   the Grid” puts the brush into the grid, in the “Library” tab, and selects it (again — it is just
   selected). Right-click — “Add to Favorites”, “Remove from Library”.
+
+SAI 2 (2020+) custom tools live in “Documents\SYSTEMAX Software Development\SAIv2\settings\
+custool”: `nrm` for normal layers, `ink` for linework, `shp` for shapes. A `.saitdat` file is a tool,
+`_N.saitgrp` a group (tab); you can drop the whole `custool` folder or a tab folder. Carried over:
+the kind (pencil, brush, water, marker, scatter, etc.), size, minimum size, density, hardness step,
+pressure, “Ver.1” pressure and density amplification, blending, dilution, persistence, blur
+threshold, form (blot, bristle) and texture — by name from the SAI 2 folder (`brushfom`,
+`brushtex`). Linework and shape tools are not converted yet. SAI 2 scatter shapes
+(`settings\scatter\name.ini` and `name.bmp`) become Scatter brushes with that shape and settings.
+
+Photoshop `.abr` brushes (version 6 and later) come with their settings: size, spacing, round brush
+hardness, tip angle and roundness, pressure on size and opacity, scatter, count, size/angle/roundness
+jitter, colour dynamics (brushes with scatter or jitter become Scatter brushes). Texture, dual brush,
+noise and wet edges are skipped.
+
+`.svg` tips (Krita and any SVG picture) are read as tips: black is paint.
 
 Krita brushes: a `.kpp` preset or a `.bundle` pack open the same way — “File → Open” or drag and drop;
 the brushes go to the end of the grid (all of them from a pack). Carried over: size, opacity and flow,
@@ -547,7 +563,14 @@ pixels as normal paint. The “Mode” list works for Scatter too.
 
 The “Pixel Art Pen” (Binary tab in SAI 2) paints dots without anti-aliasing and without pressure: the size
 is rounded to an integer and a dot is a circle of pixels exactly as in SAI (checked at sizes 1–20). There
-are also a binary eraser, binary selection pen and eraser.
+are also a binary eraser, binary selection pen and eraser. “Picker → Layer colour (ARGB)” (Pixel Art
+Pen): Alt-click takes the colour and opacity of the current layer's pixel; a transparent pixel makes
+the pen erase.
+
+Ready-made SAI 2 groups: right-click a tool group tab → “Group as in SAI 2” → “Ver.1” (SAI 1 style
+tools: pencil, brush, water, “Canvas”, “Paper”, “Crayon”, etc.) or “Artistic” (pencil, water, oil,
+gouache, chalk). Forms and textures come from the SAI 2 folder if it is set; without it the tools
+paint without them.
 
 ### Brush details
 
@@ -617,6 +640,18 @@ The “3D” window opens by itself when a 3D layer is selected (again — “La
 - “Joints and parts”: the model tree; the checkbox hides a part; the selected joint has exact X, Y, Z
   angles, “Reset”, “Reset the whole pose”; scene parts without a skeleton can be moved.
 - “Morphs (shape)”: shapes built into the model (weight, facial expressions etc.).
+- **Poses**: “Mirror pose” swaps the left and right sides (joints with “Left/Right”, “.L/.R”, “_L/_R”
+  in the name); “Save pose…” keeps the pose under a name (in the `poses` settings folder; works with
+  another model that has the same joint names); “Use pose” lists the saved ones (✕ deletes).
+- **Drag the end**: in “pose” mode switch “rotate joint / drag the end”. In the second mode grab a
+  hand, foot or other joint: it follows the pointer, and the two joints above it (forearm and upper
+  arm, shin and thigh) turn by themselves.
+- **Camera from the perspective ruler**: show “Ruler → Perspective: 2 points” (or 1 point), place
+  the vanishing points on your drawing and press “From perspective ruler” — horizon tilt, camera
+  tilt, turn and field of view follow (two points are the model's X and Z axes, one is Z).
+- **To lines**: “View → To lines” makes a new linework layer above the 3D layer: the model's outline,
+  edges and creases (faces at an angle above “Crease from”) as curves; hidden lines are removed.
+  Colour and thickness as for the outline. The curves can be edited with linework tools.
 
 Every edit is one undo step (Ctrl+Z). Paint on an ordinary layer above; “Layer → Rasterize layer” turns
 the 3D layer into an ordinary picture. The model is stored inside `.sai2`; SAI 2 opens such a file and
