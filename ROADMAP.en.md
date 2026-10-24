@@ -337,7 +337,7 @@ Not in 1.3.0 — to do later.
 - [ ] Linux: GNOME, Xfce, Cinnamon, MATE, awesome, Sway, Hyprland as full sessions
 - [ ] Windows 7 — check on a real system
 
-## 1.4.0 — from Clip Studio Paint (plan; research after 1.3.0)
+## 1.4.0 — from Clip Studio Paint (plan; research — `docs/44-plan-1.4.en.md`)
 
 - [ ] Auto Actions: record steps and replay them with one button, action sets
 - [ ] Layer styles (stroke, shadow, glow, etc.) and Gradient Map

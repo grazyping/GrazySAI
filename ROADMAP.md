@@ -338,7 +338,7 @@ Clip Studio Paint и идеи из Krita.
 - [ ] Linux: GNOME, Xfce, Cinnamon, MATE, awesome, Sway, Hyprland — полными сеансами
 - [ ] Windows 7 — проверка на настоящей системе
 
-## 1.4.0 — из Clip Studio Paint (план, сведения соберутся после 1.3.0)
+## 1.4.0 — из Clip Studio Paint (план; сведения — `docs/44-plan-1.4.md`)
 
 - [ ] Автодействия (Auto Actions): запись шагов и повтор одной кнопкой, наборы действий
 - [ ] Стили слоя (обводка, тень, свечение и т. п.) и карта градиента (Gradient Map)
