@@ -172,7 +172,7 @@ brushes calibrated against SAI 2017 stay unchanged; files still open in SAI 2017
 - [x] Asset Manager: swatch sets, scratch pads, papers, forms, textures and tips, groups, asset from a layer (1.1.0)
 - [x] 2026 details: lasso stabilizer, grayscale, canvas list in View, clearing Recent (1.1.0)
 
-### 1.2 — interface as in SAI 2 (current version 1.2.0)
+### 1.2 — interface as in SAI 2
 
 Checked on real Windows next to the official SAI 2 2026.
 
@@ -183,6 +183,16 @@ Checked on real Windows next to the official SAI 2 2026.
 - [x] Size list as numbers only and above the settings; open canvases at the bottom of the View menu (1.2.0)
 - [x] “Drive Usage” in the status bar (1.2.0)
 - [x] Icons in the new-tool list and on new menu items; labels fit in all 10 languages (1.2.0)
+
+### 1.3 — brush library (current version 1.3.0)
+
+Like Krita's preset docker, Clip Studio's material palette and Photoshop's brushes panel.
+
+- [x] A library of brushes from other programs in the program's own folder: Clip Studio, Krita, Photoshop, GIMP, GrazySAI; the originals are copied (1.3.0)
+- [x] Adding in bulk: many files or a whole folder by drag and drop, “Open”, “Add…”; duplicates are skipped (1.3.0)
+- [x] Library window: “All”, “Favorites”, “New”, by program, set and tag; search; cards with a stroke sample or a list (1.3.0)
+- [x] A separate system window (another monitor, always on top) or inside the program (1.3.0)
+- [x] Double-click puts a brush into the grid, in the “Library” tab (1.3.0)
 
 ### Beyond the plan
 - [x] Dark interface theme: “Window → Dark theme” (the canvas and drawing colors stay as they are)

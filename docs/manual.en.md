@@ -474,14 +474,37 @@ GrazySAI at once (`plugins/dev/` folder).
 | `.psb` | Yes (same as `.psd`) | “Save As” or “Export → PSB”: Photoshop large document, sides up to 300,000 px |
 | `.ora` (OpenRaster — Krita, GIMP, MyPaint) | Yes, with layers and folders | “Save As” or “Export → OpenRaster”: layers, folders, modes, opacity |
 | `.png`, `.jpg`, `.bmp`, `.tga`, `.tiff`, `.webp`, `.qoi` | Yes, as one layer | “File → Export” (flattened image; JPEG at quality 92, WebP lossless) |
-| `.gsbrush`, `.gsbrushes` (own brushes) | Yes: the brushes go to the end of the grid | Right-click a cell → “Save brush…”, “File → Save brush set…” |
-| `.sut`, `.bfps` (Clip Studio Paint brushes) | Yes: the brushes are added at the end of the grid | — |
-| `.kpp`, `.bundle` (Krita brushes), `.gbr`, `.gih` (GIMP brushes), `.abr` (Photoshop brushes) | Yes: Krita brushes go to the end of the grid, GIMP and Photoshop brushes become tips | — |
+| `.gsbrush`, `.gsbrushes` (own brushes) | Yes: into the brush library | Right-click a cell → “Save brush…”, “File → Save brush set…” |
+| `.sut`, `.bfps` (Clip Studio Paint brushes) | Yes: into the brush library | — |
+| `.kpp`, `.bundle` (Krita brushes), `.gbr`, `.gih` (GIMP brushes), `.abr` (Photoshop brushes) | Yes: into the brush library | — |
 
 Own brushes: right-click a grid cell → “Save brush…” (a `.gsbrush` file) or “File → Save brush set…”
 (all grid tools — `.gsbrushes`). The file holds all settings, the image tip, the texture and a sample
 stroke; open it with “File → Open” or by drag and drop — the brushes go to the end of the grid. Blots
 and bristles from the SAI folder travel by name only. File layout: `docs/35-gsbrush-format.md`.
+
+### Brush library
+
+Brushes from other programs are collected in the **library** — the program's own folder (`library/`
+in the settings folder; the original files are copied there too, into `originals/`).
+
+- **Add**: drop brush files onto the program window — `.sut`, `.bfps` (Clip Studio Paint), `.kpp`,
+  `.bundle` (Krita), `.abr` (Photoshop), `.gbr`, `.gih` (GIMP), `.gsbrush`, `.gsbrushes` (GrazySAI) —
+  **many at once or a whole folder** (subfolders are searched too). Same with “File → Open” or the
+  “Add…” button in the library window (several files can be picked). A brush of the same set that is
+  already there is not added twice. With Shift a GIMP or Photoshop image brush still becomes the tip
+  of the current brush.
+- **The window** “Window → Brush Library…” (available when the library has brushes; it opens by
+  itself on “New” after adding). Like Krita's preset docker, Clip Studio's material palette and
+  Photoshop's brushes panel: sections on the left — “All”, “Favorites”, “New”, “Source” (Clip Studio,
+  Krita, Photoshop, GIMP, GrazySAI), “Sets” (by original file), “Tags”; on top a search by name, set
+  and tag, card size, “Cards” or “List” view; a card shows a stroke sample, the name, source and set
+  (a dot — new, a star — favorite).
+- **Separate window** (default) — its own system window: move it to another monitor and turn on
+  “Always on top”; unchecked — a floating window inside the program.
+- Click a card to select it (below — name and comma-separated tags); **double-click** or “Put into
+  the Grid” puts the brush into the grid, in the “Library” tab, and selects it (again — it is just
+  selected). Right-click — “Add to Favorites”, “Remove from Library”.
 
 Krita brushes: a `.kpp` preset or a `.bundle` pack open the same way — “File → Open” or drag and drop;
 the brushes go to the end of the grid (all of them from a pack). Carried over: size, opacity and flow,
