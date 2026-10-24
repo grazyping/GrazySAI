@@ -1345,3 +1345,5 @@ WinTab даёт нажим, наклон и поворот пера, если д
 перо: WinTab, {0} = ペン: WinTab、{0}
 перо: WinTab не открылся, Windows Ink = ペン: WinTab を開けません。Windows Ink
 Поворот пера = ペンの回転
+
+перо: WinTab есть, но планшет не найден — Windows Ink = ペン: WinTab はありますがタブレットが見つかりません — Windows Ink

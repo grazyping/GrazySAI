@@ -192,7 +192,8 @@ mod wintab {
             let queue = sym!("WTQueueSizeSet", unsafe extern "system" fn(*mut c_void, i32) -> i32);
             let mut lc: LogContext = std::mem::zeroed();
             if info(WTI_DEFSYSCTX, 0, &mut lc as *mut _ as *mut c_void) == 0 {
-                return; // служба есть, планшета нет
+                note(String::from(tr("перо: WinTab есть, но планшет не найден — Windows Ink")));
+                return;
             }
             let mut dev = [0u16; 256];
             info(WTI_DEVICES, DVC_NAME, dev.as_mut_ptr() as *mut c_void);
@@ -201,6 +202,7 @@ mod wintab {
             info(WTI_DEVICES, DVC_NPRESSURE, &mut axis as *mut _ as *mut c_void);
             // драйвер не сказал диапазон нажима — нажим был бы всегда полным; остаётся Windows Ink
             if axis.max <= 1 {
+                note(String::from(tr("перо: WinTab есть, но планшет не найден — Windows Ink")));
                 return;
             }
             lc.pkt_data = PACKET_DATA;
