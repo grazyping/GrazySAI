@@ -322,10 +322,13 @@ Pressure now comes from XInput 2 (Linux, X11/XWayland) and Windows Ink (Windows)
 
 ### Systems
 
-- [ ] FreeBSD: build, pen pressure (XInput 2), check on a live system, ready package
-- [ ] Linux: check the desktops from the Debian installer — GNOME, KDE Plasma, Xfce, Cinnamon, MATE, LXDE, LXQt, GNOME Flashback — and popular window managers (i3, Sway, Openbox, Fluxbox, IceWM, awesome, bspwm, Hyprland): window, pen, file drop, separate windows on top
-- [ ] Windows 7, 8, 8.1, 10, 11: check the build (Windows 7/8 — a separate build for the old system)
-- [ ] Windows XP and Vista — at least in theory: what stands in the way (Rust and its libraries do not support XP; OpenGL 2 or software rendering is needed), whether a light 32-bit build is possible
+- [x] FreeBSD: build (`tools/build-freebsd.sh`), pen through XInput 2, checked in a FreeBSD 15.1 virtual machine (window, menus, a stroke), FreeBSD archive *(coming in the next version)*
+- [ ] FreeBSD: a port or `pkg` package
+- [x] Linux: checked under Openbox (LXDE, LXQt), Fluxbox, IceWM, i3, bspwm, Metacity (GNOME Flashback) and KDE Plasma (`tools/wm-check.sh`); the separate library window comes on top *(coming in the next version)*
+- [ ] Linux: GNOME, Xfce, Cinnamon, MATE, awesome, Sway, Hyprland as full sessions
+- [x] Windows 10 and 11 — the main build (checked on Windows 11); Windows 7, 8, 8.1 — a separate build (`tools/build-win7.sh`), checked under Wine in Windows 7 mode *(coming in the next version)*
+- [ ] Windows 7 — check on a real system
+- [x] Windows XP and Vista — worked out in theory (`docs/43-systems.en.md`): a separate light program would be needed *(coming in the next version)*
 
 ## 1.4.0 — from Clip Studio Paint (plan; research after 1.3.0)
 

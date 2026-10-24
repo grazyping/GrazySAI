@@ -11,7 +11,7 @@ Where GrazySAI runs, how it is built and what has been checked (October 2026).
 | Linux x86_64 (X11, Wayland via XWayland) | main, `cargo build --release` | developer machine (KDE Plasma), hidden Xvfb display |
 | Windows 10 and 11 x86_64 | main, target `x86_64-pc-windows-gnullvm` | real Windows 11, Wine |
 | Windows 7, 8, 8.1 x86_64 | separate, `tools/build-win7.sh` | Wine in Windows 7 mode (not on a real Windows 7) |
-| FreeBSD 15 x86_64 | separate, `tools/build-freebsd.sh` (on Linux) | FreeBSD 15.1 virtual machine, Xvfb |
+| FreeBSD 15 x86_64 | separate, `tools/build-freebsd.sh` (on Linux) | FreeBSD 15.1 virtual machine, Xvfb: window, menus, a stroke |
 | Windows Vista and XP | none | see “Windows XP and Vista” |
 
 ## Linux: desktops and window managers

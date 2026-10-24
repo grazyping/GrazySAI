@@ -11,7 +11,7 @@
 | Linux x86_64 (X11, Wayland через XWayland) | основная, `cargo build --release` | рабочая машина (KDE Plasma), скрытый экран Xvfb |
 | Windows 10 и 11 x86_64 | основная, цель `x86_64-pc-windows-gnullvm` | настоящая Windows 11, Wine |
 | Windows 7, 8, 8.1 x86_64 | отдельная, `tools/build-win7.sh` | Wine в режиме Windows 7 (на настоящей Windows 7 — нет) |
-| FreeBSD 15 x86_64 | отдельная, `tools/build-freebsd.sh` (на Linux) | виртуальная машина FreeBSD 15.1, Xvfb |
+| FreeBSD 15 x86_64 | отдельная, `tools/build-freebsd.sh` (на Linux) | виртуальная машина FreeBSD 15.1, Xvfb: окно, меню, мазок |
 | Windows Vista и XP | нет | см. «Windows XP и Vista» |
 
 ## Linux: окружения и оконные менеджеры
