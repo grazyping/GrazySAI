@@ -1,7 +1,7 @@
 //! «Менеджер ресурсов» (Asset Manager, SAI 2 2020+): свои бумаги слоя, формы кисти, текстуры
 //! кисти, отпечатки (и формы россыпи), черновики — файлами в своей папке программы; наборы
 //! образцов — в настройках. Ресурс можно сделать из слоя: «чёрное на белом», «белое на чёрном»
-//! или по прозрачности слоя, как в окне «New … » SAI.
+//! или по прозрачности слоя, отпечаток — ещё и в цвете (ARGB), как в окне «New … » SAI.
 
 use crate::i18n::{tr, trf};
 use std::path::PathBuf;
@@ -77,6 +77,8 @@ pub enum ImageType {
     WhiteOnBlack,
     /// Только прозрачность слоя.
     Alpha,
+    /// В цвете (ARGB, только отпечатки): цвет и прозрачность слоя как есть.
+    Argb,
 }
 
 /// Имя файла без запрещённых знаков.
@@ -92,7 +94,7 @@ fn ink(px: [u8; 4], t: ImageType) -> u8 {
     // на белом или на чёрном фоне — как видно на холсте
     let lum = (px[0] as u32 * 77 + px[1] as u32 * 150 + px[2] as u32 * 29 + 128) >> 8;
     match t {
-        ImageType::Alpha => px[3],
+        ImageType::Alpha | ImageType::Argb => px[3],
         ImageType::BlackOnWhite => (255 - (lum * a + 255 * (255 - a)) / 255) as u8,
         ImageType::WhiteOnBlack => ((lum * a) / 255) as u8,
     }
@@ -118,6 +120,11 @@ pub fn create(kind: Kind, name: &str, w: usize, h: usize, rgba: &[u8], t: ImageT
     let inks: Vec<u8> = rgba.as_chunks::<4>().0.iter().map(|p| ink(*p, t)).collect();
     let res = match kind {
         Kind::Scratch => paint_core::io::save_image(&path, w as u32, h as u32, rgba).map_err(|e| e.to_string()),
+        Kind::Tip if t == ImageType::Argb => {
+            // прозрачные точки — чёрные: отпечаток без единой видимой точки цвета не получит
+            let out: Vec<u8> = rgba.as_chunks::<4>().0.iter().flat_map(|p| if p[3] == 0 { [0; 4] } else { *p }).collect();
+            paint_core::io::save_image(&path, w as u32, h as u32, &out).map_err(|e| e.to_string())
+        }
         Kind::Tip => {
             let out: Vec<u8> = inks.iter().flat_map(|&a| [0, 0, 0, a]).collect();
             paint_core::io::save_image(&path, w as u32, h as u32, &out).map_err(|e| e.to_string())
@@ -191,6 +198,13 @@ mod tests {
         let r = rename(Kind::Texture, "проба_1 2", "другое").unwrap();
         assert_eq!(Kind::Texture.items(), vec!["другое".to_string(), "проба_1".to_string()]);
         delete(Kind::Texture, &r).unwrap();
+        // отпечаток в цвете сохраняет цвет и становится цветным
+        let col: Vec<u8> = (0..16).flat_map(|i| if i % 2 == 0 { [200, 30, 10, 255] } else { [9, 9, 9, 0] }).collect();
+        let tn = create(Kind::Tip, "цвет", 4, 4, &col, ImageType::Argb).unwrap();
+        let st = paint_core::paper::stamp_of(&tn).unwrap();
+        assert_eq!((st.alpha[0], st.alpha[1]), (255, 0));
+        assert_eq!(st.color.as_ref().map(|c| c[0]), Some([200, 30, 10]));
+        delete(Kind::Tip, &tn).unwrap();
         assert_eq!(Kind::Texture.items(), vec!["проба_1".to_string()]);
         std::fs::remove_dir_all(dir).ok();
         paint_core::paper::set_user_dir(None);

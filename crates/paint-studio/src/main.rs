@@ -224,7 +224,7 @@ impl Studio {
     /// Отпечаток из генератора: сохраняется в папку отпечатков и выбирается.
     fn generate(&mut self, kind: &str) {
         let stamp = match kind {
-            "square" => paint_core::Stamp { width: 64, height: 64, alpha: vec![255; 64 * 64] },
+            "square" => paint_core::Stamp { color: None, width: 64, height: 64, alpha: vec![255; 64 * 64] },
             "spray" => spray(self.gen_dots),
             "chalk" => chalk(),
             _ => paint_core::Stamp::disc(self.brush.params.hardness),
@@ -679,7 +679,7 @@ fn spray(n: u32) -> paint_core::Stamp {
             }
         }
     }
-    paint_core::Stamp { width: s, height: s, alpha }
+    paint_core::Stamp { color: None, width: s, height: s, alpha }
 }
 
 /// «Мел»: круг с рваным краем и пропусками внутри.
@@ -693,7 +693,7 @@ fn chalk() -> paint_core::Stamp {
             if d < 1.0 && n > 0.25 + d * 0.5 { (255.0 * (1.0 - d * 0.3)) as u8 } else { 0 }
         })
         .collect();
-    paint_core::Stamp { width: s, height: s, alpha }
+    paint_core::Stamp { color: None, width: s, height: s, alpha }
 }
 
 fn main() -> eframe::Result {

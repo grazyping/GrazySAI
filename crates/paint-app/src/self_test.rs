@@ -76,7 +76,7 @@ pub fn run(report: Option<PathBuf>) -> bool {
             Ok(format!("«{}», {} px", b[0].name, b[0].size))
         })),
         ("отпечаток кисти", Box::new(|d| {
-            let s = paint_core::Stamp { width: 3, height: 2, alpha: vec![0, 128, 255, 255, 128, 0] };
+            let s = paint_core::Stamp { color: None, width: 3, height: 2, alpha: vec![0, 128, 255, 255, 128, 0] };
             paint_core::paper::set_user_dir(Some(d.to_path_buf()));
             let name = paint_core::paper::save_tip("проба", &s)?;
             let back = paint_core::paper::stamp_of(&name).ok_or("не прочитан")?;

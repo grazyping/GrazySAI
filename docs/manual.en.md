@@ -596,7 +596,9 @@ paint without them.
 - **Scratch pads** — save the current scratch pad under a name, open a saved one.
 - **Layer paper, brush forms, brush textures, tips and scattering shapes** — your own files of these
   kinds: rename, delete, put into groups. “New from the current layer” makes an asset from the selected
-  part of the layer or everything drawn: black on white, white on black or by transparency.
+  part of the layer or everything drawn: black on white, white on black or by transparency; a tip or
+  scattering shape can also be made “Layer Image (ARGB)”: such a brush paints the picture's colours
+  instead of the main colour (so do coloured PNGs with transparency in the tips folder).
 
 ### Smudge
 

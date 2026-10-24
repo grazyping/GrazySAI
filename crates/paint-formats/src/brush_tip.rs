@@ -110,7 +110,7 @@ pub fn svg(d: &[u8]) -> Res<Stamp> {
     resvg::render(&tree, resvg::tiny_skia::Transform::from_scale(k, k), &mut pix.as_mut());
     // на белом фоне точки непрозрачны: цвет — уже итог наложения
     let alpha = pix.data().as_chunks::<4>().0.iter().map(|p| 255 - ((p[0] as u32 * 77 + p[1] as u32 * 150 + p[2] as u32 * 29 + 128) >> 8) as u8).collect();
-    Ok(Stamp { width: pw as usize, height: ph as usize, alpha })
+    Ok(Stamp { color: None, width: pw as usize, height: ph as usize, alpha })
 }
 
 /// Все клетки набора GIMP и смена вразнобой (`sel0:random` в строке параметров).
@@ -171,7 +171,7 @@ pub fn gbr(d: &[u8]) -> Res<(String, Stamp)> {
     let name = String::from_utf8_lossy(d.get(name_at.min(header)..header).unwrap_or(&[])).trim_end_matches('\0').to_string();
     let data = d.get(header..header + w * h * bytes).ok_or("GBR: мало данных")?;
     let alpha = if bytes == 1 { data.to_vec() } else { data.as_chunks::<4>().0.iter().map(|p| p[3]).collect() };
-    Ok((name, Stamp { width: w, height: h, alpha }))
+    Ok((name, Stamp { color: None, width: w, height: h, alpha }))
 }
 
 /// Кисти Photoshop `.abr`: картинки отпечатков. Версии 1 и 2 — список кистей (у «вычисляемых»
@@ -239,7 +239,7 @@ fn abr_parts(d: &[u8]) -> Res<(AbrImages, Option<&[u8]>)> {
             };
             let alpha = if bpp == 1 { raw } else { raw.as_chunks::<2>().0.iter().map(|c| c[0]).collect() };
             // уменьшить сразу: в наборе до тысячи кистей, а держать нужно только хранимый размер
-            Ok(shrink(Stamp { width: w, height: h, alpha }, MAX_SIDE))
+            Ok(shrink(Stamp { color: None, width: w, height: h, alpha }, MAX_SIDE))
         }
     }
     let mut r = R { d, p: 0 };
@@ -458,7 +458,7 @@ pub fn shrink(s: Stamp, max: usize) -> Stamp {
             alpha[y * w + x] = (sum / ((y1 - y0) * (x1 - x0)) as u32) as u8;
         }
     }
-    Stamp { width: w, height: h, alpha }
+    Stamp { color: None, width: w, height: h, alpha }
 }
 
 #[cfg(test)]
@@ -636,7 +636,7 @@ mod tests {
 
     #[test]
     fn large_tips_are_shrunk() {
-        let s = shrink(Stamp { width: 1024, height: 512, alpha: vec![200; 1024 * 512] }, 512);
+        let s = shrink(Stamp { color: None, width: 1024, height: 512, alpha: vec![200; 1024 * 512] }, 512);
         assert_eq!((s.width, s.height), (512, 256));
         assert!(s.alpha.iter().all(|&a| a == 200));
     }

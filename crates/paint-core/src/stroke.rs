@@ -154,6 +154,9 @@ pub struct Stamp {
     pub width: usize,
     pub height: usize,
     pub alpha: Vec<u8>,
+    /// Цветной отпечаток (ресурс «Картинка слоя (ARGB)», цветные кисти GIMP): свой цвет каждой
+    /// точки, без предумножения; такой отпечаток кладёт свои цвета, а не основной.
+    pub color: Option<Vec<[u8; 3]>>,
 }
 
 impl Stamp {
@@ -175,6 +178,30 @@ impl Stamp {
         (top * (1.0 - fy) + bottom * fy) / 255.0
     }
 
+    /// Цвет в точке (u, v), 0..=1, билинейно с весом по прозрачности (тёмная кайма у края не
+    /// появляется); белый, если отпечаток не цветной.
+    fn sample_color(&self, u: f32, v: f32) -> [f32; 3] {
+        let Some(col) = &self.color else { return [1.0; 3] };
+        let (x, y) = (u - 0.5, v - 0.5);
+        let (x0, y0) = (x.floor(), y.floor());
+        let (fx, fy) = (x - x0, y - y0);
+        let mut acc = [0.0f32; 4];
+        for (dx, dy, w) in [(0.0, 0.0, (1.0 - fx) * (1.0 - fy)), (1.0, 0.0, fx * (1.0 - fy)), (0.0, 1.0, (1.0 - fx) * fy), (1.0, 1.0, fx * fy)] {
+            let (xi, yi) = ((x0 + dx).clamp(0.0, self.width as f32 - 1.0) as usize, (y0 + dy).clamp(0.0, self.height as f32 - 1.0) as usize);
+            let i = yi * self.width + xi;
+            let a = self.alpha[i] as f32 * w;
+            for c in 0..3 {
+                acc[c] += col[i][c] as f32 * a;
+            }
+            acc[3] += a;
+        }
+        if acc[3] <= 0.0 {
+            let (xi, yi) = (x.round().clamp(0.0, self.width as f32 - 1.0) as usize, y.round().clamp(0.0, self.height as f32 - 1.0) as usize);
+            return col[yi * self.width + xi].map(|c| c as f32 / 255.0);
+        }
+        [acc[0] / acc[3] / 255.0, acc[1] / acc[3] / 255.0, acc[2] / acc[3] / 255.0]
+    }
+
     /// Круг 128×128 с краем по жёсткости (1 — резкий, 0 — мягкий от центра): для сплюснутой
     /// круглой кисти, у которой нет картинки.
     pub fn disc(hardness: f32) -> Self {
@@ -190,19 +217,21 @@ impl Stamp {
                 (t * t * (3.0 - 2.0 * t) * 255.0 + 0.5) as u8
             })
             .collect();
-        Self { width: n, height: n, alpha }
+        Self { width: n, height: n, alpha, color: None }
     }
 
     /// Отпечаток из RGBA: у картинки с прозрачностью краска — непрозрачное, у непрозрачной —
-    /// тёмное (чёрное на белом, как у кистей GIMP и Photoshop).
+    /// тёмное (чёрное на белом, как у кистей GIMP и Photoshop). Картинка с прозрачностью и не
+    /// только чёрными точками — цветной отпечаток.
     pub fn from_rgba(w: usize, h: usize, rgba: &[u8]) -> Self {
         let px = rgba.as_chunks::<4>().0;
         let opaque = px.iter().all(|p| p[3] == 255);
+        let color = (!opaque && px.iter().any(|p| p[3] > 0 && p[..3] != [0, 0, 0])).then(|| px.iter().map(|p| [p[0], p[1], p[2]]).collect());
         let alpha = px
             .iter()
             .map(|p| if opaque { 255 - ((p[0] as u32 * 77 + p[1] as u32 * 150 + p[2] as u32 * 29) >> 8) as u8 } else { p[3] })
             .collect();
-        Self { width: w, height: h, alpha }
+        Self { width: w, height: h, alpha, color }
     }
 }
 
@@ -247,6 +276,18 @@ impl Shape {
                 st.sample(u, v)
             }
             _ => self.coverage(d2.sqrt()),
+        }
+    }
+    /// Цвет цветного отпечатка в точке со смещением (cx, cy) от центра; `None` — краска кисти.
+    fn color_at(&self, cx: f32, cy: f32) -> Option<[f32; 3]> {
+        match self {
+            Shape::Stamp(st, r, cos, sin, ratio) if st.color.is_some() => {
+                let k = st.width.max(st.height) as f32 / (2.0 * r.max(0.01));
+                let u = (cx * cos + cy * sin) * k + st.width as f32 / 2.0;
+                let v = (-cx * sin + cy * cos) * k / ratio.max(0.01) + st.height as f32 / 2.0;
+                Some(st.sample_color(u, v))
+            }
+            _ => None,
         }
     }
     /// Квадрат радиуса, внутри которого покрытие постоянно (`coverage(0)`): там не нужны ни
@@ -670,9 +711,21 @@ impl Stroke {
         (self.params.mix.is_some() || self.colored_shapes()) && !self.params.erase
     }
 
-    /// Кисть-разброс кладёт каждую форму своим цветом.
+    /// Кисть-разброс кладёт каждую форму своим цветом; цветной отпечаток — своими цветами.
     fn colored_shapes(&self) -> bool {
+        self.jitter_shapes() || self.colored_tip()
+    }
+
+    /// Кисть-разброс с цветом у каждой формы.
+    fn jitter_shapes(&self) -> bool {
         self.shape_colors.is_some() && self.params.scatter.is_some_and(|s| s.each_shape && s.has_color_jitter())
+    }
+
+    /// Отпечаток-картинка в цвете (без смешивания с холстом и не у ластика).
+    fn colored_tip(&self) -> bool {
+        self.params.mix.is_none()
+            && !self.params.binary
+            && self.grain.as_ref().and_then(|g| g.tip.as_ref()).is_some_and(|t| t.stamp.color.is_some() || t.more.iter().any(|s| s.color.is_some()))
     }
 
     /// Последняя принятая точка траектории.
@@ -899,6 +952,15 @@ impl Stroke {
     /// Отпечаток — в маску штриха и в очередь; при симметрии — и его отражения (как один штрих,
     /// пересекающий сам себя: у оси покрытие не удваивается).
     fn emit(&mut self, p: InputPoint, shape: Shape, density: f32, diameter: f32, with_grain: bool, color: Option<[f64; 4]>) {
+        // цветной отпечаток: плотность — в краске (у не цветных картинок набора — цвет мазка)
+        let color = match color {
+            None if self.colored_tip() => {
+                let c = self.shape_colors.map_or([0; 3], |(fg, _)| fg);
+                let k = density as f64;
+                Some([c[0] as f64 / 255.0 * k, c[1] as f64 / 255.0 * k, c[2] as f64 / 255.0 * k, k])
+            }
+            c => c,
+        };
         for q in self.mirror.images(p, shape.outer() + 1.0) {
             add_to_hard_mask(&mut self.hard_mask, q.x, q.y, &shape);
             self.dab_count += 1;
@@ -977,7 +1039,7 @@ impl Stroke {
         let heading = self.heading.unwrap_or(0.0);
         let base = if sc.absolute_size { self.params.size } else { diameter };
         let shapes = sc.shapes(self.seed, self.dab_count as u64, base, heading);
-        let colors = if self.colored_shapes() { self.shape_colors } else { None };
+        let colors = if self.jitter_shapes() { self.shape_colors } else { None };
         let tip = self.grain.as_ref().and_then(|g| g.tip.clone());
         let with_grain = self.grain.as_ref().is_some_and(|g| g.texture.is_some() || g.blot.is_some());
         for f in shapes {
@@ -1337,9 +1399,14 @@ fn lay_batch(
                     let cov = cov * s as f32 / ONE as f32;
                     hit = true;
                     let t = tile.get_or_insert_with(|| Tile::filled([0; 4]));
+                    // цветной отпечаток: своя краска точки, плотность — в `d.color[3]`
+                    let own = d.shape.color_at(x as f32 + 0.5 - d.x, y as f32 + 0.5 - d.y).map(|c| {
+                        let k = d.color.map_or(1.0, |p| p[3]);
+                        [c[0] as f64 * k, c[1] as f64 * k, c[2] as f64 * k, k]
+                    });
                     t.0[i] = match marker {
                         Some(brush) => lay_marker(t.0[i], paint, brush, (cov * opacity) as f64),
-                        None => lay(t.0[i], d.color.unwrap_or(paint), (cov * opacity) as f64, preserve_opacity),
+                        None => lay(t.0[i], own.or(d.color).unwrap_or(paint), (cov * opacity) as f64, preserve_opacity),
                     };
                 }
             });

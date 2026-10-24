@@ -1357,3 +1357,6 @@ WinTab даёт нажим, наклон и поворот пера, если д
 
 Уменьшить мелкие пропуски = Réduire les petites omissions
 У кончиков сужающихся линий и хвостов мазков заливка не оставляет светлых точек = Aux pointes des lignes effilées et aux queues des traits, le remplissage ne laisse pas de points clairs
+
+В цвете (ARGB) = En couleur (ARGB)
+Отпечаток кладёт свои цвета, а не основной цвет = L'empreinte peint ses propres couleurs au lieu de la couleur principale

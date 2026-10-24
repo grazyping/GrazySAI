@@ -3173,14 +3173,17 @@ app.open_canvas_dialog(d == "resolution")
     fn stroke_color(&self, stroke: &mut Stroke) -> [u8; 3] {
         let c = self.color();
         let fg = [c.r(), c.g(), c.b()];
+        let bg = [self.back.r(), self.back.g(), self.back.b()];
+        // цвет мазка нужен и цветному отпечатку: его не цветные картинки набора кладут его
+        stroke.shape_colors = Some((fg, bg));
         let Some(sc) = stroke.params.scatter else { return fg };
         stroke.seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_nanos() as u64);
-        let bg = [self.back.r(), self.back.g(), self.back.b()];
         if sc.each_shape {
-            stroke.shape_colors = Some((fg, bg));
             fg
         } else {
-            sc.color(fg, bg, stroke.seed)
+            let c = sc.color(fg, bg, stroke.seed);
+            stroke.shape_colors = Some((c, bg));
+            c
         }
     }
 
@@ -3394,9 +3397,20 @@ app.open_canvas_dialog(d == "resolution")
         ui.label(tr("Новый из текущего слоя (выделенная часть или всё нарисованное):"));
         ui.horizontal(|ui| {
             use assets::ImageType as T;
-            let cur = w.image.unwrap_or(T::BlackOnWhite);
-            for (t, name) in [(T::BlackOnWhite, tr("Чёрное на белом")), (T::WhiteOnBlack, tr("Белое на чёрном")), (T::Alpha, tr("По прозрачности"))] {
-                if ui.radio(cur == t, name).clicked() {
+            let mut cur = w.image.unwrap_or(T::BlackOnWhite);
+            if cur == T::Argb && k != assets::Kind::Tip {
+                cur = T::BlackOnWhite;
+            }
+            for (t, name) in [(T::BlackOnWhite, tr("Чёрное на белом")), (T::WhiteOnBlack, tr("Белое на чёрном")), (T::Alpha, tr("По прозрачности")), (T::Argb, tr("В цвете (ARGB)"))] {
+                // в цвете — только отпечатки и формы россыпи; бумага, формы и текстуры — серые
+                if t == T::Argb && k != assets::Kind::Tip {
+                    continue;
+                }
+                let mut r = ui.radio(cur == t, name);
+                if t == T::Argb {
+                    r = r.on_hover_text(tr("Отпечаток кладёт свои цвета, а не основной цвет"));
+                }
+                if r.clicked() {
                     w.image = Some(t);
                 }
             }
@@ -3406,7 +3420,7 @@ app.open_canvas_dialog(d == "resolution")
             ui.add(egui::TextEdit::singleline(&mut w.name).desired_width(200.0));
             if ui.button(tr("Создать")).clicked() {
                 msg = Some(match self.layer_rgba() {
-                    Some((lw, lh, rgba)) => match assets::create(k, &w.name, lw, lh, &rgba, w.image.unwrap_or(assets::ImageType::BlackOnWhite)) {
+                    Some((lw, lh, rgba)) => match assets::create(k, &w.name, lw, lh, &rgba, w.image.filter(|&t| t != assets::ImageType::Argb || k == assets::Kind::Tip).unwrap_or(assets::ImageType::BlackOnWhite)) {
                         Ok(n) => {
                             self.grain_names = None;
                             w.sel = Some(n.clone());
@@ -4169,7 +4183,7 @@ app.open_canvas_dialog(d == "resolution")
                     let mut b = paint_brush::sai2_tool::scatter_brush(&text).ok_or_else(|| tr("Не форма россыпи SAI 2").to_string())?;
                     let bmp = std::fs::read(path.with_extension("bmp")).map_err(|e| e.to_string())?;
                     let tex = paint_core::paper::PaperTexture::from_bmp(&bmp).ok_or_else(|| tr("Картинка формы не прочитана").to_string())?;
-                    let st = paint_core::Stamp { width: tex.width, height: tex.height, alpha: tex.gray.clone() };
+                    let st = paint_core::Stamp { color: None, width: tex.width, height: tex.height, alpha: tex.gray.clone() };
                     let saved = paint_core::paper::save_tip(&format!("SAI 2 {set}"), &paint_formats::brush_tip::shrink(st, paint_formats::brush_tip::MAX_SIDE)).map_err(|e| e.to_string())?;
                     b.grain.tip = Some(saved);
                     b.custom = Some(set.clone());
@@ -10668,7 +10682,7 @@ app.open_canvas_dialog(d == "resolution")
             if self.tool == Tool::Brush {
                 let size = self.brushes[self.brush].params.size;
                 let g = &self.brushes[self.brush].grain;
-                let tip = g.tip.as_deref().and_then(paint_core::paper::stamp_of).or_else(|| (g.tip_ratio < 0.999).then(|| std::sync::Arc::new(paint_core::Stamp { width: 1, height: 1, alpha: vec![255] })));
+                let tip = g.tip.as_deref().and_then(paint_core::paper::stamp_of).or_else(|| (g.tip_ratio < 0.999).then(|| std::sync::Arc::new(paint_core::Stamp { color: None, width: 1, height: 1, alpha: vec![255] })));
                 if self.win.brush_circle {
                     match tip {
                         // отпечаток-картинка — её рамка с поворотом (большая сторона — размер кисти)

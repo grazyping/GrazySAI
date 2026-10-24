@@ -1340,7 +1340,7 @@ fn stamp_tip_paints_its_picture() {
     use paint_core::stroke::Grain;
     use std::sync::Arc;
     let (n, w) = (16usize, 64u32);
-    let stamp = Arc::new(paint_core::Stamp { width: n, height: n, alpha: (0..n * n).map(|i| if i % n < n / 2 { 255 } else { 0 }).collect() });
+    let stamp = Arc::new(paint_core::Stamp { color: None, width: n, height: n, alpha: (0..n * n).map(|i| if i % n < n / 2 { 255 } else { 0 }).collect() });
     let draw = |angle: f32| {
         let mut doc = Document::new(w, w);
         let mut s = Stroke::new(BrushParams { size: 40.0, size_by_pressure: false, ..Default::default() });
@@ -1364,7 +1364,7 @@ fn stamp_tip_paints_its_picture() {
 fn flat_tip_follows_the_stroke() {
     use paint_core::stroke::Grain;
     use std::sync::Arc;
-    let stamp = Arc::new(paint_core::Stamp { width: 8, height: 8, alpha: vec![255; 64] });
+    let stamp = Arc::new(paint_core::Stamp { color: None, width: 8, height: 8, alpha: vec![255; 64] });
     let w = 100u32;
     // ширина закрашенного поперёк мазка в точке (x, y): по вертикали или по горизонтали
     let draw = |from: (f32, f32), to: (f32, f32), follow: bool| {
@@ -1392,7 +1392,7 @@ fn flat_tip_follows_the_stroke() {
 fn tip_set_changes_along_the_stroke() {
     use paint_core::stroke::Grain;
     use std::sync::Arc;
-    let half = |left: bool| Arc::new(paint_core::Stamp { width: 8, height: 8, alpha: (0..64).map(|i| if (i % 8 < 4) == left { 255 } else { 0 }).collect() });
+    let half = |left: bool| Arc::new(paint_core::Stamp { color: None, width: 8, height: 8, alpha: (0..64).map(|i| if (i % 8 < 4) == left { 255 } else { 0 }).collect() });
     let mut doc = Document::new(120, 40);
     let mut s = Stroke::new(BrushParams { size: 20.0, size_by_pressure: false, spacing: 3.0, ..Default::default() });
     s.set_grain(Some(Grain { blot: None, texture: None, paper: false, by_min_density: true, tip: Some(paint_core::Tip { more: vec![half(false)], ..paint_core::Tip::new(half(true)) }), bristle: None }));
@@ -1433,4 +1433,38 @@ fn grayscale_and_undo() {
     assert!(p[0] == p[1] && p[1] == p[2] && (p[3] as i32 - 128).abs() <= 1, "{p:?}");
     doc.undo();
     assert!(doc.layers[0].pixels == before);
+}
+
+/// Цветной отпечаток (ARGB) кладёт свои цвета, а не основной; картинка набора без цвета — цвет
+/// мазка.
+#[test]
+fn colored_tip_paints_its_own_colors() {
+    use paint_core::stroke::Grain;
+    use std::sync::Arc;
+    // левая половина красная, правая синяя, всё непрозрачно; рамка в 1 точку прозрачна
+    let n = 16usize;
+    let rgba: Vec<u8> = (0..n * n)
+        .flat_map(|i| {
+            let (x, y) = (i % n, i / n);
+            let edge = x == 0 || y == 0 || x == n - 1 || y == n - 1;
+            if edge { [0, 0, 0, 0] } else if x < n / 2 { [255, 0, 0, 255] } else { [0, 0, 255, 255] }
+        })
+        .collect();
+    let stamp = Arc::new(paint_core::Stamp::from_rgba(n, n, &rgba));
+    assert!(stamp.color.is_some());
+    let mut doc = Document::new(100, 100);
+    let mut s = Stroke::new(BrushParams { size: 60.0, size_by_pressure: false, ..Default::default() });
+    s.set_grain(Some(Grain { blot: None, texture: None, paper: false, by_min_density: true, tip: Some(paint_core::Tip::new(stamp)), bristle: None }));
+    s.shape_colors = Some(([0, 255, 0], [255, 255, 255]));
+    let mut live = paint_core::LiveStroke::new(vec![0], s, [0, 255, 0]);
+    live.stroke.add_point(InputPoint { x: 50.0, y: 50.0, pressure: 1.0 });
+    doc.live_update(&mut live);
+    doc.live_finish(live);
+    let px = |x, y| paint_core::pixel::to_rgba8(doc.layers[0].pixels.get(x, y));
+    let (l, r) = (px(35, 50), px(65, 50));
+    assert!(l[0] > 240 && l[1] < 10 && l[2] < 10 && l[3] > 240, "слева {l:?}");
+    assert!(r[2] > 240 && r[0] < 10 && r[1] < 10 && r[3] > 240, "справа {r:?}");
+    // чёрный отпечаток с прозрачностью — не цветной
+    let black: Vec<u8> = rgba.as_chunks::<4>().0.iter().flat_map(|p| [0, 0, 0, p[3]]).collect();
+    assert!(paint_core::Stamp::from_rgba(n, n, &black).color.is_none());
 }
