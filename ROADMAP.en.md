@@ -325,7 +325,7 @@ Not in 1.3.0 and not planned for now.
 
 ## 1.4.0 — from Clip Studio Paint (plan; research — `docs/44-plan-1.4.en.md`)
 
-- [ ] Auto Actions: record steps and replay them with one button, action sets
+- [x] Auto Actions: record steps and replay them with one button, action sets *(coming in the next version)*
 - [x] Layer styles (stroke, shadow, glow, colour overlay) and correction layers: gradient map, levels, hue/saturation, brightness/contrast, invert, posterize, threshold *(coming in the next version)*
 - [x] Import from other programs: FBX 3D models (Cinema 4D, Maya, 3ds Max, Mixamo, Daz), VRM (VRoid), PMX (MikuMikuDance), COLLADA `.dae` (SketchUp); USD and Alembic via export to glTF/FBX *(coming in the next version)*
 - [ ] User customisation, as in Clip Studio and other programs: panels, command sets, custom icons and shortcuts, workspaces
