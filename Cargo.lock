@@ -2217,6 +2217,7 @@ dependencies = [
  "glam",
  "gltf",
  "paint-core",
+ "roxmltree",
  "serde_json",
  "tobj",
  "ufbx",

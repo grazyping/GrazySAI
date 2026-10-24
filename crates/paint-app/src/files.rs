@@ -73,7 +73,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
             tr("Открыть"),
             vec![
                 (tr("Рисунки").to_string(), vec!["sai2", "psd", "psb", "ora", "png", "jpg", "jpeg", "bmp", "tga", "tif", "tiff", "webp", "qoi"]),
-                (tr("Модели 3D (glTF, VRM, OBJ, FBX, PMX)").to_string(), paint_3d::MODEL_EXTS.to_vec()),
+                (tr("Модели 3D (glTF, VRM, OBJ, FBX, PMX, DAE)").to_string(), paint_3d::MODEL_EXTS.to_vec()),
                 (tr("Палитры (GIMP, Krita)").to_string(), vec!["gpl", "kpl"]),
                 (tr("Кисти GrazySAI").to_string(), vec!["gsbrush", "gsbrushes"]),
                 (tr("Плагины GrazySAI").to_string(), vec!["gsplugin"]),
@@ -99,7 +99,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
         Ask::SavePlugin => (tr("Сохранить плагин"), vec![(tr("Плагины GrazySAI").to_string(), vec!["gsplugin"])]),
         Ask::OpenWasm => (tr("Модуль WebAssembly"), vec![("WebAssembly (.wasm)".to_string(), vec!["wasm"])]),
         Ask::Watermark => (tr("Водяной знак"), vec![(tr("Картинки").to_string(), vec!["png", "webp", "bmp", "tga", "tif", "tiff", "qoi", "jpg", "jpeg"])]),
-        Ask::Model3d(_) => (tr("Модель 3D"), vec![(tr("Модели 3D (glTF, VRM, OBJ, FBX, PMX)").to_string(), paint_3d::MODEL_EXTS.to_vec())]),
+        Ask::Model3d(_) => (tr("Модель 3D"), vec![(tr("Модели 3D (glTF, VRM, OBJ, FBX, PMX, DAE)").to_string(), paint_3d::MODEL_EXTS.to_vec())]),
         Ask::RecordExport(zip) => (
             tr("Выгрузить запись процесса"),
             vec![if *zip { (tr("Zip с паролем").to_string(), vec!["zip"]) } else { (tr("Анимированный PNG").to_string(), vec!["png"]) }],

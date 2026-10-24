@@ -1,4 +1,4 @@
-//! Модель, прочитанная из glTF/GLB/VRM, OBJ, FBX или PMX: узлы, сетки, скелеты, морфы, текстуры.
+//! Модель, прочитанная из glTF/GLB/VRM, OBJ, FBX, PMX или COLLADA: узлы, сетки, скелеты, морфы, текстуры.
 //!
 //! Файлы чужие и непроверенные: каждый индекс и размер проверяется, объёмы ограничены, ошибки —
 //! сообщения, а не падение программы.
@@ -109,7 +109,7 @@ impl Model {
     }
 }
 
-/// Разобрать модель: главный файл первым (`.glb`, `.gltf`, `.vrm`, `.obj`, `.fbx`, `.pmx`), рядом — его
+/// Разобрать модель: главный файл первым (`.glb`, `.gltf`, `.vrm`, `.obj`, `.fbx`, `.pmx`, `.dae`), рядом — его
 /// файлы.
 pub fn load(files: &[(String, Vec<u8>)]) -> Res<Model> {
     let Some((name, data)) = files.first() else { return err("нет файла модели") };
@@ -118,6 +118,7 @@ pub fn load(files: &[(String, Vec<u8>)]) -> Res<Model> {
         "obj" => load_obj(data, files)?,
         "fbx" => crate::fbx::load(data, files)?,
         "pmx" => crate::pmx::load(data, files)?,
+        "dae" => crate::collada::load(data, files)?,
         _ if data.starts_with(b"glTF") || ext == "gltf" || ext == "glb" || data.first() == Some(&b'{') => load_gltf(data, files)?,
         _ => return err(format!("неизвестный вид модели: {name}")),
     };

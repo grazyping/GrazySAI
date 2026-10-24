@@ -49,7 +49,7 @@ LWS (LightWave), OBJ, GLB, glTF, VRM. **Cinema 4D** своего формата 
 сохраняет FBX, glTF, Alembic, COLLADA (1.4/1.5), OBJ и USD — путь из C4D к нам: **FBX или glTF**.
 То же у Blender, Maya, 3ds Max, Houdini, ZBrush, Daz Studio, VRoid, MMD (PMX — через Blender).
 
-**У нас:** glTF/GLB и OBJ (скелет, позы, морфы, текстуры).
+**У нас:** glTF/GLB и OBJ (скелет, позы, морфы, текстуры); в 1.4.0 добавлены FBX (ufbx), VRM, PMX и COLLADA.
 
 **Что добавить (по пользе):**
 1. **FBX** — главный обменный формат (C4D, Maya, Max, Mixamo, Daz). Читалка: библиотека ufbx

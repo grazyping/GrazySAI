@@ -1,6 +1,7 @@
 //! Слой 3D GrazySAI: модели glTF/GLB и OBJ, сцена (положение, поза, морфы, камера), отрисовка на
 //! процессоре в обычные пиксели слоя. План — `docs/39-3d-reference.md`.
 
+pub mod collada;
 pub mod fbx;
 pub mod pmx;
 pub mod model;
@@ -114,11 +115,11 @@ pub fn new_layer_data(files: Vec<(String, Vec<u8>)>) -> Result<(Scene3dData, Str
 }
 
 /// Расширения файлов моделей.
-pub const MODEL_EXTS: [&str; 6] = ["glb", "gltf", "vrm", "obj", "fbx", "pmx"];
+pub const MODEL_EXTS: [&str; 7] = ["glb", "gltf", "vrm", "obj", "fbx", "pmx", "dae"];
 
 /// Прочитать модель с диска вместе с соседними файлами, на которые она ссылается (буферы и
 /// текстуры glTF, материалы и текстуры OBJ, текстуры FBX). Берутся только файлы из той же папки
-/// (у FBX — ещё из `<имя>.fbm` рядом, у PMX — и из подпапок по пути из файла), по имени.
+/// (у FBX — ещё из `<имя>.fbm` рядом, у PMX и COLLADA — и из подпапок по пути из файла), по имени.
 pub fn gather(path: &std::path::Path) -> Result<Vec<(String, Vec<u8>)>, Error> {
     const MAX: u64 = 2 << 30;
     let read = |p: &std::path::Path| -> Option<Vec<u8>> {
@@ -141,6 +142,8 @@ pub fn gather(path: &std::path::Path) -> Result<Vec<(String, Vec<u8>)>, Error> {
                 }
             }
         }
+    } else if ext == "dae" {
+        wanted.extend(collada::texture_files(&main).into_iter().filter(|p| !p.split('/').any(|c| c == "..") && !p.starts_with('/') && !p.contains(':')));
     } else if ext == "pmx" {
         // у PMX текстуры обычно в подпапках (`tex/кожа.png`): путь берётся целиком
         wanted.extend(pmx::texture_files(&main).into_iter().filter(|p| !p.split('/').any(|c| c == "..") && !p.starts_with('/') && !p.contains(':')));

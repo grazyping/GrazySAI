@@ -47,7 +47,7 @@ OBJ, GLB, glTF, VRM. **Cinema 4D** does not expose its `.c4d` format but saves F
 COLLADA (1.4/1.5), OBJ and USD — so the way from C4D to us is **FBX or glTF**. The same holds for
 Blender, Maya, 3ds Max, Houdini, ZBrush, Daz Studio, VRoid, MMD (PMX via Blender).
 
-**GrazySAI now:** glTF/GLB and OBJ (skeleton, poses, morphs, textures).
+**GrazySAI now:** glTF/GLB and OBJ (skeleton, poses, morphs, textures); 1.4.0 adds FBX (ufbx), VRM, PMX and COLLADA.
 
 **To add (by usefulness):**
 1. **FBX** — the main exchange format (C4D, Maya, Max, Mixamo, Daz). Reader: the ufbx library

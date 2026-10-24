@@ -630,12 +630,13 @@ on.
 ### 3D layer
 
 “Layer → New 3D layer…” (or “File → Open”, or drag the file into the window) turns a glTF (`.glb`,
-`.gltf`), VRM (VRoid), OBJ, FBX or PMX (MikuMikuDance) model into a layer: a figure for proportions, an object, a room, a
+`.gltf`), VRM (VRoid), OBJ, FBX, PMX (MikuMikuDance) or COLLADA (`.dae`, SketchUp) model into a layer: a figure for proportions, an object, a room, a
 street. No models are bundled — bring your own. FBX comes from Cinema 4D, Maya, 3ds Max, Blender, Daz,
 Mixamo: the skeleton, morphs (blend shapes), materials and textures are read — embedded or lying next to
 the file (also in the `<name>.fbm` folder); axes and units are converted automatically. PMX brings
 bones, vertex morphs and textures from folders next to it by the paths in the file (physics and bone
-morphs are not read; re-save an old `.pmd` in PMX Editor). From Cinema 4D
+morphs are not read; re-save an old `.pmd` in PMX Editor). COLLADA brings nodes, meshes, material colours and textures;
+skinned meshes come in their bind pose, without bones. From Cinema 4D
 use “File → Export → FBX” (or glTF). Compressed glTF meshes (Draco, meshopt) are not read — save the
 model without compression.
 

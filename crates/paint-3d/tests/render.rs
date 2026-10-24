@@ -416,3 +416,60 @@ fn pmx_gathers_textures_from_subfolders() {
     assert!(got.iter().any(|(n, _)| n == "skin.png"), "{:?}", got.iter().map(|f| &f.0).collect::<Vec<_>>());
     assert!(!model::load(&got).unwrap().images.is_empty());
 }
+
+/// COLLADA: куб из четырёхугольников (`polylist`), ось Z вверх, сантиметры, текстура через
+/// sampler2D → surface → image, узел со сдвигом и `instance_node`.
+#[test]
+fn collada_cube() {
+    let dae = r##"<?xml version="1.0" encoding="utf-8"?>
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset><unit name="centimeter" meter="0.01"/><up_axis>Z_UP</up_axis></asset>
+  <library_images><image id="img"><init_from>textures/check.png</init_from></image></library_images>
+  <library_effects><effect id="eff"><profile_COMMON>
+    <newparam sid="surf"><surface type="2D"><init_from>img</init_from></surface></newparam>
+    <newparam sid="samp"><sampler2D><source>surf</source></sampler2D></newparam>
+    <technique sid="common"><lambert><diffuse><texture texture="samp" texcoord="UV"/></diffuse></lambert></technique>
+  </profile_COMMON></effect></library_effects>
+  <library_materials><material id="mat"><instance_effect url="#eff"/></material></library_materials>
+  <library_geometries><geometry id="cube" name="Cube"><mesh>
+    <source id="p"><float_array id="pa" count="24">-50 -50 0 50 -50 0 50 50 0 -50 50 0 -50 -50 100 50 -50 100 50 50 100 -50 50 100</float_array>
+      <technique_common><accessor source="#pa" count="8" stride="3"/></technique_common></source>
+    <source id="t"><float_array id="ta" count="8">0 0 1 0 1 1 0 1</float_array>
+      <technique_common><accessor source="#ta" count="4" stride="2"/></technique_common></source>
+    <vertices id="v"><input semantic="POSITION" source="#p"/></vertices>
+    <polylist material="sym" count="6">
+      <input semantic="VERTEX" source="#v" offset="0"/><input semantic="TEXCOORD" source="#t" offset="1" set="0"/>
+      <vcount>4 4 4 4 4 4</vcount>
+      <p>0 0 3 3 2 2 1 1  4 0 5 1 6 2 7 3  0 0 1 1 5 2 4 3  1 0 2 1 6 2 5 3  2 0 3 1 7 2 6 3  3 0 0 1 4 2 7 3</p>
+    </polylist>
+  </mesh></geometry></library_geometries>
+  <library_nodes><node id="box"><instance_geometry url="#cube"><bind_material><technique_common>
+    <instance_material symbol="sym" target="#mat"/></technique_common></bind_material></instance_geometry></node></library_nodes>
+  <library_visual_scenes><visual_scene id="s"><node name="Up"><translate>0 0 200</translate><instance_node url="#box"/></node></visual_scene></library_visual_scenes>
+  <scene><instance_visual_scene url="#s"/></scene>
+</COLLADA>"##;
+    let png = paint_core::io::encode_png(2, 2, &[255, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 255]).unwrap();
+    let files = vec![("cube.dae".to_string(), dae.as_bytes().to_vec()), ("check.png".to_string(), png)];
+    let m = model::load(&files).unwrap();
+    assert_eq!(m.triangles, 12);
+    assert_eq!(m.images.len(), 1, "текстура не прочитана");
+    // низ куба — на высоте 2 м (Z вверх → Y вверх), ребро — 1 м
+    let g = Object::new(1).globals(&m);
+    let ni = m.nodes.iter().position(|n| n.mesh.is_some()).unwrap();
+    let p = &m.meshes[m.nodes[ni].mesh.unwrap()].prims[0];
+    let world: Vec<glam::Vec3> = p.pos.iter().map(|v| g[ni].transform_point3(*v)).collect();
+    let (lo, hi) = world.iter().fold((glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN)), |(a, b), v| (a.min(*v), b.max(*v)));
+    assert!((lo - glam::Vec3::new(-0.5, 2.0, -0.5)).length() < 1e-4 && (hi - glam::Vec3::new(0.5, 3.0, 0.5)).length() < 1e-4, "{lo} {hi}");
+    // на диске текстура из подпапки по пути из файла
+    let dir = std::env::temp_dir().join(format!("gs-dae-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("textures")).unwrap();
+    std::fs::write(dir.join("cube.dae"), dae).unwrap();
+    std::fs::write(dir.join("textures/check.png"), &files[1].1).unwrap();
+    let got = paint_3d::gather(&dir.join("cube.dae")).unwrap();
+    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(model::load(&got).unwrap().images.len(), 1);
+    // испорченный файл — ошибка, а не падение
+    for n in (0..dae.len()).step_by(37) {
+        let _ = model::load(&[("cube.dae".to_string(), dae.as_bytes()[..n].to_vec())]);
+    }
+}
