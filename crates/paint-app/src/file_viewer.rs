@@ -479,7 +479,7 @@ impl FileViewer {
             }
         }
         resp.context_menu(|ui| {
-            if ui.button(tr("В закладки")).clicked() {
+            if ui.add(crate::menu_icons::button("В закладки")).clicked() {
                 if !self.bookmarks.iter().any(|b| b == p) {
                     self.bookmarks.push(p.to_path_buf());
                 }
@@ -507,15 +507,15 @@ impl FileViewer {
                 go = Some(b.clone());
             }
             r.context_menu(|ui| {
-                if i > 0 && ui.button(tr("Выше")).clicked() {
+                if i > 0 && ui.add(crate::menu_icons::button("Выше")).clicked() {
                     swap = Some((i, i - 1));
                     ui.close_menu();
                 }
-                if i + 1 < self.bookmarks.len() && ui.button(tr("Ниже")).clicked() {
+                if i + 1 < self.bookmarks.len() && ui.add(crate::menu_icons::button("Ниже")).clicked() {
                     swap = Some((i, i + 1));
                     ui.close_menu();
                 }
-                if ui.button(tr("Убрать из закладок")).clicked() {
+                if ui.add(crate::menu_icons::button("Убрать из закладок")).clicked() {
                     remove = Some(i);
                     ui.close_menu();
                 }
@@ -637,20 +637,20 @@ impl FileViewer {
         let path = self.items[i].path.clone();
         let dir = self.items[i].dir;
         resp.context_menu(|ui| {
-            if ui.button(if dir || self.mode == Mode::Open { tr("Открыть") } else { tr("Сохранить сюда") }).clicked() {
+            if ui.add(crate::menu_icons::button(if dir || self.mode == Mode::Open { "Открыть" } else { "Сохранить сюда" })).clicked() {
                 self.selected = Some(i);
                 out = self.ok();
                 ui.close_menu();
             }
-            if ui.button(tr("Переименовать…")).clicked() {
+            if ui.add(crate::menu_icons::button("Переименовать…")).clicked() {
                 self.rename = Some((path.clone(), path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
                 ui.close_menu();
             }
-            if ui.button(tr("Удалить…")).clicked() {
+            if ui.add(crate::menu_icons::button("Удалить…")).clicked() {
                 self.delete_ask = Some(path.clone());
                 ui.close_menu();
             }
-            if dir && ui.button(tr("В закладки")).clicked() {
+            if dir && ui.add(crate::menu_icons::button("В закладки")).clicked() {
                 if !self.bookmarks.contains(&path) {
                     self.bookmarks.push(path.clone());
                 }

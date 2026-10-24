@@ -152,6 +152,9 @@ pub fn install_fonts(ctx: &egui::Context) {
             fonts.families.entry(family).or_default().push("cjk".into());
         }
     }
+    // значки пунктов меню (Phosphor) — после остальных шрифтов: их знаки в своей области Юникода
+    fonts.font_data.insert("phosphor".into(), egui_phosphor::Variant::Regular.font_data());
+    fonts.families.entry(egui::FontFamily::Proportional).or_default().push("phosphor".into());
     ctx.set_fonts(fonts);
 }
 

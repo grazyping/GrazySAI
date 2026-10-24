@@ -85,19 +85,6 @@ fn fill_triangle(px: &mut [[f32; 4]], n: usize, p: [(f32, f32); 3], c: [Color32;
     }
 }
 
-/// Подменю со значком. (`menu_image_text_button` egui внутри меню значок не рисует — поэтому
-/// перед названием оставляется место, и значок рисуется поверх кнопки.)
-pub fn submenu<R>(ui: &mut egui::Ui, icon: &'static str, title: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> egui::InnerResponse<Option<R>> {
-    let mut job = egui::text::LayoutJob::default();
-    let format = egui::TextFormat { font_id: egui::TextStyle::Button.resolve(ui.style()), color: ui.visuals().text_color(), ..Default::default() };
-    job.append(title, SIZE + 4.0, format);
-    let r = ui.menu_button(job, add);
-    let rect = r.response.rect;
-    let at = Rect::from_min_size(Pos2::new(rect.left() + ui.spacing().button_padding.x, rect.center().y - SIZE / 2.0), Vec2::splat(SIZE));
-    image(ui.ctx(), icon).paint_at(ui, at);
-    r
-}
-
 /// Пункт меню со значком.
 pub fn item(ui: &mut egui::Ui, icon: &'static str, title: &str) -> egui::Response {
     ui.add(egui::Button::image_and_text(image(ui.ctx(), icon), title))

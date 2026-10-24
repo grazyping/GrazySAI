@@ -3,6 +3,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod assets;
+mod menu_icons;
 mod library;
 mod i18n;
 mod file_viewer;
@@ -2504,11 +2505,11 @@ app.open_canvas_dialog(d == "resolution")
                     act = Some((g, 0));
                 }
                 r.context_menu(|ui| {
-                    if ui.button(tr("Новая группа")).clicked() {
+                    if ui.add(menu_icons::button("Новая группа")).clicked() {
                         act = Some((g, 1));
                         ui.close_menu();
                     }
-                    ui.menu_button(tr("Группа как в SAI 2"), |ui| {
+                    ui.menu_button(menu_icons::label("Группа как в SAI 2"), |ui| {
                         for (k, (name, _)) in paint_brush::sai2_tool::PRESET_GROUPS.iter().enumerate() {
                             if ui.button(*name).clicked() {
                                 act = Some((k, 10));
@@ -2516,11 +2517,11 @@ app.open_canvas_dialog(d == "resolution")
                             }
                         }
                     });
-                    if ui.button(tr("Переименовать…")).clicked() {
+                    if ui.add(menu_icons::button("Переименовать…")).clicked() {
                         act = Some((g, 2));
                         ui.close_menu();
                     }
-                    if ui.add_enabled(self.tool_groups.len() > 1, egui::Button::new(tr("Удалить группу"))).clicked() {
+                    if ui.add_enabled(self.tool_groups.len() > 1, menu_icons::button("Удалить группу")).clicked() {
                         act = Some((g, 3));
                         ui.close_menu();
                     }
@@ -3654,11 +3655,11 @@ app.open_canvas_dialog(d == "resolution")
         if !self.plugins.is_empty() {
             ui.separator();
         }
-        if ui.button(tr("Управление плагинами…")).clicked() {
+        if ui.add(menu_icons::button("Управление плагинами…")).clicked() {
             self.show_plugins = true;
             ui.close_menu();
         }
-        if ui.button(tr("Открыть папку плагинов")).clicked() {
+        if ui.add(menu_icons::button("Открыть папку плагинов")).clicked() {
             if let Some(d) = plugins::dir() {
                 let _ = std::fs::create_dir_all(&d);
                 update::open_url(&d.display().to_string());
@@ -4233,7 +4234,7 @@ app.open_canvas_dialog(d == "resolution")
         // верхняя строка
         let mut add = false;
         ui.horizontal(|ui| {
-            if icons::item(ui, "plus", tr("Добавить…")).on_hover_text(tr("Добавить файлы кистей; можно и перетащить файлы или папку в окно программы")).clicked() {
+            if ui.add(menu_icons::button("Добавить…")).on_hover_text(tr("Добавить файлы кистей; можно и перетащить файлы или папку в окно программы")).clicked() {
                 add = true;
             }
             ui.separator();
@@ -4337,7 +4338,7 @@ app.open_canvas_dialog(d == "resolution")
                                     take = Some(e.id.clone());
                                 }
                                 r.context_menu(|ui| {
-                                    if ui.button(tr("Взять в сетку")).clicked() {
+                                    if ui.add(menu_icons::button("Взять в сетку")).clicked() {
                                         take = Some(e.id.clone());
                                         ui.close_menu();
                                     }
@@ -4345,7 +4346,7 @@ app.open_canvas_dialog(d == "resolution")
                                         act = Some((e.id.clone(), 1));
                                         ui.close_menu();
                                     }
-                                    if ui.button(tr("Удалить из библиотеки")).clicked() {
+                                    if ui.add(menu_icons::button("Удалить из библиотеки")).clicked() {
                                         act = Some((e.id.clone(), 2));
                                         ui.close_menu();
                                     }
@@ -6896,7 +6897,7 @@ app.open_canvas_dialog(d == "resolution")
     fn menu_bar(&mut self, ui: &mut egui::Ui) {
         egui::menu::bar(ui, |ui| {
             ui.menu_button(keys::hint(tr("Файл(F)")), |ui| {
-                if ui.button(tr("Создать холст…")).clicked() {
+                if ui.add(menu_icons::button("Создать холст…")).clicked() {
                     self.show_new = true;
                     ui.close_menu();
                 }
@@ -6916,12 +6917,12 @@ app.open_canvas_dialog(d == "resolution")
                     self.save_numbered();
                     ui.close_menu();
                 }
-                if ui.button(tr("Сохранить набор кистей…")).on_hover_text(tr("Все инструменты сетки — одним файлом .gsbrushes")).clicked() {
+                if ui.add(menu_icons::button("Сохранить набор кистей…")).on_hover_text(tr("Все инструменты сетки — одним файлом .gsbrushes")).clicked() {
                     self.ask_save_brush(None);
                     ui.close_menu();
                 }
                 self.recording_menu(ui);
-                if ui.button(tr("Водяной знак…")).clicked() {
+                if ui.add(menu_icons::button("Водяной знак…")).clicked() {
                     self.show_watermark = true;
                     self.watermark_preview = None;
                     ui.close_menu();
@@ -6930,21 +6931,21 @@ app.open_canvas_dialog(d == "resolution")
                 if ui.checkbox(&mut self.always_viewer, tr("Всегда использовать обозреватель файлов")).changed() {
                     self.save_settings();
                 }
-                if ui.button(tr("Открыть через обозреватель…")).clicked() {
+                if ui.add(menu_icons::button("Открыть через обозреватель…")).clicked() {
                     self.open_viewer(file_viewer::Mode::Open);
                     ui.close_menu();
                 }
-                if ui.button(tr("Сохранить через обозреватель…")).clicked() {
+                if ui.add(menu_icons::button("Сохранить через обозреватель…")).clicked() {
                     self.open_viewer(file_viewer::Mode::Save);
                     ui.close_menu();
                 }
                 ui.separator();
-                icons::submenu(ui, "export", tr("Экспорт"), |ui| {
+                ui.menu_button(menu_icons::label("Экспорт"), |ui| {
                     for (label, ext) in EXPORTS {
                         if ext == "psd" {
                             ui.separator();
                         }
-                        if ui.button(tr(label)).clicked() {
+                        if ui.add(menu_icons::button(label)).clicked() {
                             self.export_as(ext);
                             ui.close_menu();
                         }
@@ -6953,16 +6954,16 @@ app.open_canvas_dialog(d == "resolution")
                 let mut pick = None;
                 let mut clear_recent = false;
                 ui.add_enabled_ui(!self.recent.is_empty(), |ui| {
-                    ui.menu_button(tr("Недавние"), |ui| {
+                    ui.menu_button(menu_icons::label("Недавние"), |ui| {
                         for p in &self.recent {
                             let name = p.file_name().map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned());
-                            if ui.button(name).on_hover_text(p.display().to_string()).clicked() {
+                            if ui.add(egui::Button::new(menu_icons::with_icon(Some(egui_phosphor::regular::FILE_IMAGE), &name))).on_hover_text(p.display().to_string()).clicked() {
                                 pick = Some(p.clone());
                                 ui.close_menu();
                             }
                         }
                         ui.separator();
-                        if icons::item(ui, "clear", tr("Очистить список")).clicked() {
+                        if ui.add(menu_icons::button("Очистить список")).clicked() {
                             clear_recent = true;
                             ui.close_menu();
                         }
@@ -6990,7 +6991,7 @@ app.open_canvas_dialog(d == "resolution")
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.button(tr("Выход")).clicked() {
+                if ui.add(menu_icons::button("Выход")).clicked() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             });
@@ -7028,30 +7029,30 @@ app.open_canvas_dialog(d == "resolution")
                     self.paste();
                     ui.close_menu();
                 }
-                if ui.add_enabled(!self.doc.selection.is_empty(), egui::Button::new(tr("Копировать по границам выделения"))).clicked() {
+                if ui.add_enabled(!self.doc.selection.is_empty(), menu_icons::button("Копировать по границам выделения")).clicked() {
                     self.copy(false, true);
                     ui.close_menu();
                 }
             });
             ui.menu_button(keys::hint(tr("Холст(C)")), |ui| {
-                for (item, resample) in [(tr("Изменить разрешение…"), true), (tr("Изменить размер…"), false)] {
-                    if ui.button(item).clicked() {
+                for (item, resample) in [("Изменить разрешение…", true), ("Изменить размер…", false)] {
+                    if ui.add(menu_icons::button(item)).clicked() {
                         self.open_canvas_dialog(resample);
                         ui.close_menu();
                     }
                 }
-                if icons::item(ui, "gray", tr("Перевести в оттенки серого…")).clicked() {
+                if ui.add(menu_icons::button("Перевести в оттенки серого…")).clicked() {
                     self.ask_gray = true;
                     ui.close_menu();
                 }
                 ui.separator();
                 for (item, op) in [
-                    (tr("Отразить по горизонтали"), 0),
-                    (tr("Отразить по вертикали"), 1),
-                    (tr("Повернуть на 90° против часовой"), 2),
-                    (tr("Повернуть на 90° по часовой"), 3),
+                    ("Отразить по горизонтали", 0),
+                    ("Отразить по вертикали", 1),
+                    ("Повернуть на 90° против часовой", 2),
+                    ("Повернуть на 90° по часовой", 3),
                 ] {
-                    if ui.button(item).clicked() {
+                    if ui.add(menu_icons::button(item)).clicked() {
                         self.canvas_op(|d| match op {
                             0 => d.flip_canvas(true),
                             1 => d.flip_canvas(false),
@@ -7061,30 +7062,30 @@ app.open_canvas_dialog(d == "resolution")
                         ui.close_menu();
                     }
                 }
-                if ui.add_enabled(!self.doc.selection.is_empty(), egui::Button::new(tr("Обрезать по выделению"))).clicked() {
+                if ui.add_enabled(!self.doc.selection.is_empty(), menu_icons::button("Обрезать по выделению")).clicked() {
                     self.canvas_op(|d| d.trim_to_selection());
                     self.sel_dirty = true;
                     ui.close_menu();
                 }
                 ui.separator();
-                ui.menu_button(tr("Фон холста"), |ui| {
-                    if ui.button(tr("Цвет фона холста…")).clicked() {
+                ui.menu_button(menu_icons::label("Фон холста"), |ui| {
+                    if ui.add(menu_icons::button("Цвет фона холста…")).clicked() {
                         self.bg_color_edit = Some(self.doc.bg_color);
                         ui.close_menu();
                     }
                     ui.separator();
                     // как в SAI 2017: код фона — байт 0x11 заголовка .sai2
                     for (code, name) in [
-                        (0x40, tr("Прозрачный (цвет)")),
-                        (0x30, tr("Прозрачный (чёрный)")),
-                        (0x20, tr("Прозрачный (белый)")),
-                        (0x10, tr("Прозрачный (тёмная шашка)")),
-                        (0x00, tr("Прозрачный (светлая шашка)")),
-                        (0x21, tr("Цвет")),
-                        (0x11, tr("Чёрный")),
-                        (0x01, tr("Белый")),
+                        (0x40, "Прозрачный (цвет)"),
+                        (0x30, "Прозрачный (чёрный)"),
+                        (0x20, "Прозрачный (белый)"),
+                        (0x10, "Прозрачный (тёмная шашка)"),
+                        (0x00, "Прозрачный (светлая шашка)"),
+                        (0x21, "Цвет"),
+                        (0x11, "Чёрный"),
+                        (0x01, "Белый"),
                     ] {
-                        if ui.radio(self.doc.bg_code == code, name).clicked() {
+                        if ui.radio(self.doc.bg_code == code, tr(name)).clicked() {
                             let color = self.doc.bg_color;
                             self.doc.set_background(code, color);
                             self.invalidate_all();
@@ -7094,13 +7095,13 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 });
                 // как в SAI 2017: цвет каймы и бумаги у эффектов слоя (метка в заголовке .sai2)
-                ui.menu_button(tr("Цвет эффектов слоя"), |ui| {
+                ui.menu_button(menu_icons::label("Цвет эффектов слоя"), |ui| {
                     for (fx, name) in [
-                        (4u8, tr("Как в версии 1")),
-                        (3, tr("Умножение")),
-                        (2, tr("Глубокий")),
-                        (1, tr("Яркий")),
-                        (0, tr("Обычный")),
+                        (4u8, "Как в версии 1"),
+                        (3, "Умножение"),
+                        (2, "Глубокий"),
+                        (1, "Яркий"),
+                        (0, "Обычный"),
                     ] {
                         if ui.radio(self.doc.fx() == fx, name).clicked() {
                             self.doc.effect_color = paint_core::paper::fx_tag(fx);
@@ -7112,30 +7113,30 @@ app.open_canvas_dialog(d == "resolution")
                 });
             });
             ui.menu_button(keys::hint(tr("Слой(L)")), |ui| {
-                if ui.button(tr("Новый слой")).clicked() {
+                if ui.add(menu_icons::button("Новый слой")).clicked() {
                     self.add_layer(false);
                     ui.close_menu();
                 }
-                if ui.button(tr("Новый слой контура")).clicked() {
+                if ui.add(menu_icons::button("Новый слой контура")).clicked() {
                     self.add_linework_layer();
                     ui.close_menu();
                 }
-                if ui.button(tr("Новый слой фигур")).clicked() {
+                if ui.add(menu_icons::button("Новый слой фигур")).clicked() {
                     self.add_shape_layer();
                     ui.close_menu();
                 }
-                if ui.button(tr("Новая папка")).clicked() {
+                if ui.add(menu_icons::button("Новая папка")).clicked() {
                     self.add_layer(true);
                     ui.close_menu();
                 }
-                if ui.button(tr("Новый слой 3D…")).on_hover_text(tr("Модель glTF (.glb, .gltf) или OBJ: камера, поза по суставам, вид")).clicked() {
+                if ui.add(menu_icons::button("Новый слой 3D…")).on_hover_text(tr("Модель glTF (.glb, .gltf) или OBJ: камера, поза по суставам, вид")).clicked() {
                     let dir = self.file.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("x"));
                     if !self.native_dialog(files::Ask::Model3d(false), &dir) {
                         self.status = String::from(tr("Окно выбора файла недоступно; перетащите файл модели в окно"));
                     }
                     ui.close_menu();
                 }
-                if ui.add_enabled(self.s3d.is_some(), egui::Button::new(tr("Окно 3D"))).clicked() {
+                if ui.add_enabled(self.s3d.is_some(), menu_icons::button("Окно 3D")).clicked() {
                     self.show_3d = true;
                     ui.close_menu();
                 }
@@ -7154,11 +7155,11 @@ app.open_canvas_dialog(d == "resolution")
                         ui.close_menu();
                     }
                 }
-                if ui.button(tr("Слой на передний план")).clicked() {
+                if ui.add(menu_icons::button("Слой на передний план")).clicked() {
                     self.layer_to_end(true);
                     ui.close_menu();
                 }
-                if ui.button(tr("Слой на задний план")).clicked() {
+                if ui.add(menu_icons::button("Слой на задний план")).clicked() {
                     self.layer_to_end(false);
                     ui.close_menu();
                 }
@@ -7168,14 +7169,14 @@ app.open_canvas_dialog(d == "resolution")
                     ui.close_menu();
                 }
                 ui.separator();
-                for (item, cw) in [(tr("Повернуть слой на 90° против часовой"), false), (tr("Повернуть слой на 90° по часовой"), true)] {
-                    if ui.button(item).clicked() {
+                for (item, cw) in [("Повернуть слой на 90° против часовой", false), ("Повернуть слой на 90° по часовой", true)] {
+                    if ui.add(menu_icons::button(item)).clicked() {
                         self.layer_turn(Some(cw), None);
                         ui.close_menu();
                     }
                 }
-                for (item, horizontal) in [(tr("Отразить слой по горизонтали"), true), (tr("Отразить слой по вертикали"), false)] {
-                    if ui.button(item).clicked() {
+                for (item, horizontal) in [("Отразить слой по горизонтали", true), ("Отразить слой по вертикали", false)] {
+                    if ui.add(menu_icons::button(item)).clicked() {
                         self.layer_turn(None, Some(horizontal));
                         ui.close_menu();
                     }
@@ -7183,26 +7184,26 @@ app.open_canvas_dialog(d == "resolution")
                 ui.separator();
                 let masked = self.doc.layer(&self.selected).is_some_and(|l| l.mask.is_some());
                 let raster = self.doc.layer(&self.selected).is_some_and(|l| l.children.is_none());
-                if ui.add_enabled(!masked, egui::Button::new(tr("Новая маска слоя"))).clicked() {
+                if ui.add_enabled(!masked, menu_icons::button("Новая маска слоя")).clicked() {
                     self.mask_command(0);
                     ui.close_menu();
                 }
-                if ui.add_enabled(masked && raster, egui::Button::new(tr("Применить маску"))).clicked() {
+                if ui.add_enabled(masked && raster, menu_icons::button("Применить маску")).clicked() {
                     self.mask_command(1);
                     ui.close_menu();
                 }
-                if ui.add_enabled(masked, egui::Button::new(tr("Удалить маску"))).clicked() {
+                if ui.add_enabled(masked, menu_icons::button("Удалить маску")).clicked() {
                     self.mask_command(2);
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.add_enabled(raster, egui::Button::new(tr("Раскрасить по контуру"))).on_hover_text(tr("Цветные пятна текущего слоя растекаются до линий остальных видимых слоёв; результат — новый слой под текущим")).clicked() {
+                if ui.add_enabled(raster, menu_icons::button("Раскрасить по контуру")).on_hover_text(tr("Цветные пятна текущего слоя растекаются до линий остальных видимых слоёв; результат — новый слой под текущим")).clicked() {
                     self.colorize_by_lines();
                     ui.close_menu();
                 }
                 ui.separator();
                 let is_vec = self.doc.layer(&self.selected).is_some_and(|l| l.vector.is_some() || l.scene3d.is_some());
-                if ui.add_enabled(is_vec, egui::Button::new(tr("Растеризовать слой"))).clicked() {
+                if ui.add_enabled(is_vec, menu_icons::button("Растеризовать слой")).clicked() {
                     self.s3d_finish();
                     let path = self.selected.clone();
                     let keys = self.doc.rasterize_layer(&path);
@@ -7212,21 +7213,21 @@ app.open_canvas_dialog(d == "resolution")
                     ui.close_menu();
                 }
                 let can_outline = self.outline_dialog.is_none() && self.doc.layer(&self.selected).is_some_and(|l| l.children.is_none() && l.paintable());
-                if ui.add_enabled(can_outline, egui::Button::new(tr("Обводка…"))).clicked() {
+                if ui.add_enabled(can_outline, menu_icons::button("Обводка…")).clicked() {
                     if let Some(l) = self.doc.layer(&self.selected) {
                         let (width, position, canvas_edges) = self.outline_last;
                         self.outline_dialog = Some(OutlineDialog { path: self.selected.clone(), original: l.pixels.clone(), width, position, canvas_edges, preview: true, dirty: true });
                     }
                     ui.close_menu();
                 }
-                if ui.button(tr("Яркость в прозрачность")).clicked() {
+                if ui.add(menu_icons::button("Яркость в прозрачность")).clicked() {
                     let keys = self.doc.luminance_to_alpha(&self.selected.clone());
                     self.invalidate(keys);
                     self.thumbs.clear();
                     self.dirty = true;
                     ui.close_menu();
                 }
-                if ui.button(tr("Слить видимые")).clicked() {
+                if ui.add(menu_icons::button("Слить видимые")).clicked() {
                     if self.transform.is_some() {
                         self.finish_transform(true);
                     }
@@ -7238,13 +7239,13 @@ app.open_canvas_dialog(d == "resolution")
                     }
                     ui.close_menu();
                 }
-                if ui.button(tr("Свести всё")).clicked() {
+                if ui.add(menu_icons::button("Свести всё")).clicked() {
                     self.canvas_op(|d| d.flatten_layers());
                     self.selected = vec![0];
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.add_enabled(self.doc.layer(&self.selected).is_some(), egui::Button::new(tr("Свойства слоя…"))).clicked() {
+                if ui.add_enabled(self.doc.layer(&self.selected).is_some(), menu_icons::button("Свойства слоя…")).clicked() {
                     self.layer_props = self.doc.layer(&self.selected).map(|l| (self.selected.clone(), l.name.clone()));
                     ui.close_menu();
                 }
@@ -7259,7 +7260,7 @@ app.open_canvas_dialog(d == "resolution")
                     self.deselect();
                     ui.close_menu();
                 }
-                if ui.button(tr("Инвертировать")).clicked() {
+                if ui.add(menu_icons::button("Инвертировать")).clicked() {
                     self.invert_selection();
                     ui.close_menu();
                 }
@@ -7268,18 +7269,18 @@ app.open_canvas_dialog(d == "resolution")
                     ui.close_menu();
                 }
                 ui.separator();
-                for (grow, name) in [(true, tr("Расширить выделение…")), (false, tr("Сузить выделение…"))] {
-                    if ui.add_enabled(has && self.grow_dialog.is_none(), egui::Button::new(name)).clicked() {
+                for (grow, name) in [(true, "Расширить выделение…"), (false, "Сузить выделение…")] {
+                    if ui.add_enabled(has && self.grow_dialog.is_none(), menu_icons::button(name)).clicked() {
                         self.grow_dialog = Some(GrowDialog { grow, n: self.grow_last, preview: true, original: self.doc.selection.clone(), dirty: true });
                         ui.close_menu();
                     }
                 }
-                if ui.add_enabled(has, egui::Button::new(tr("Расширить на 1 px"))).clicked() {
+                if ui.add_enabled(has, menu_icons::button("Расширить на 1 px")).clicked() {
                     self.doc.grow_selection(true);
                     self.sel_dirty = true;
                     ui.close_menu();
                 }
-                if ui.add_enabled(has, egui::Button::new(tr("Сузить на 1 px"))).clicked() {
+                if ui.add_enabled(has, menu_icons::button("Сузить на 1 px")).clicked() {
                     self.doc.grow_selection(false);
                     self.sel_dirty = true;
                     ui.close_menu();
@@ -7287,17 +7288,17 @@ app.open_canvas_dialog(d == "resolution")
                 ui.separator();
                 // узлы слоя контура, как в SAI (Select CPs in Selection и т. п.)
                 let liwk = self.doc.layer(&self.selected).is_some_and(|l| l.vector.as_ref().is_some_and(|v| &v.kind == b"liwk"));
-                for (cmd, name, need) in [(Some(false), tr("Выделить узлы в выделении"), has), (Some(true), tr("Выделить штрихи по выделению"), has), (None, tr("Снять выделение узлов"), self.cp_sel.is_some())] {
-                    if ui.add_enabled(liwk && need, egui::Button::new(name)).clicked() {
+                for (cmd, name, need) in [(Some(false), "Выделить узлы в выделении", has), (Some(true), "Выделить штрихи по выделению", has), (None, "Снять выделение узлов", self.cp_sel.is_some())] {
+                    if ui.add_enabled(liwk && need, menu_icons::button(name)).clicked() {
                         self.select_cps(cmd);
                         ui.close_menu();
                     }
                 }
                 ui.separator();
                 // «Region Created from Pixel Opacity» в SAI
-                ui.menu_button(tr("Область по непрозрачности слоя"), |ui| {
-                    for (mode, name) in [(Combine::Replace, tr("Задать")), (Combine::Add, tr("Добавить")), (Combine::Subtract, tr("Вычесть")), (Combine::Intersect, tr("Пересечь"))] {
-                        if ui.button(name).clicked() {
+                ui.menu_button(menu_icons::label("Область по непрозрачности слоя"), |ui| {
+                    for (mode, name) in [(Combine::Replace, "Задать"), (Combine::Add, "Добавить"), (Combine::Subtract, "Вычесть"), (Combine::Intersect, "Пересечь")] {
+                        if ui.add(menu_icons::button(name)).clicked() {
                             let path = self.selected.clone();
                             self.select_by_opacity(&path, mode);
                             ui.close_menu();
@@ -7311,9 +7312,9 @@ app.open_canvas_dialog(d == "resolution")
                     self.toggle_ruler();
                     ui.close_menu();
                 }
-                ui.menu_button(tr("Симметрия"), |ui| {
-                    for (v, name) in [(0u8, tr("Выключена")), (1, tr("Лево ↔ право")), (2, tr("Верх ↔ низ")), (3, tr("Обе оси")), (4, tr("По кругу"))] {
-                        if ui.radio(self.symmetry == v, name).clicked() {
+                ui.menu_button(menu_icons::label("Симметрия"), |ui| {
+                    for (v, name) in [(0u8, "Выключена"), (1, "Лево ↔ право"), (2, "Верх ↔ низ"), (3, "Обе оси"), (4, "По кругу")] {
+                        if ui.radio(self.symmetry == v, tr(name)).clicked() {
                             self.symmetry = v;
                             self.save_settings();
                             if v != 4 {
@@ -7343,7 +7344,7 @@ app.open_canvas_dialog(d == "resolution")
                                 self.sym_center = Some(c);
                             }
                         });
-                        if ui.button(tr("Центр — середина холста")).clicked() {
+                        if ui.add(menu_icons::button("Центр — середина холста")).clicked() {
                             self.sym_center = None;
                         }
                         if changed {
@@ -7353,16 +7354,16 @@ app.open_canvas_dialog(d == "resolution")
                 });
                 ui.separator();
                 for (kind, label) in [
-                    (ruler::Kind::Straight, tr("Прямая")),
-                    (ruler::Kind::Ellipse, tr("Эллипс")),
-                    (ruler::Kind::Perspective(1), tr("Перспектива: 1 точка")),
-                    (ruler::Kind::Perspective(2), tr("Перспектива: 2 точки")),
-                    (ruler::Kind::Perspective(3), tr("Перспектива: 3 точки")),
-                    (ruler::Kind::Parallel, tr("Параллельные линии")),
-                    (ruler::Kind::Concentric, tr("Концентрические эллипсы")),
-                    (ruler::Kind::Radial, tr("Точка схода (лучи)")),
+                    (ruler::Kind::Straight, "Прямая"),
+                    (ruler::Kind::Ellipse, "Эллипс"),
+                    (ruler::Kind::Perspective(1), "Перспектива: 1 точка"),
+                    (ruler::Kind::Perspective(2), "Перспектива: 2 точки"),
+                    (ruler::Kind::Perspective(3), "Перспектива: 3 точки"),
+                    (ruler::Kind::Parallel, "Параллельные линии"),
+                    (ruler::Kind::Concentric, "Концентрические эллипсы"),
+                    (ruler::Kind::Radial, "Точка схода (лучи)"),
                 ] {
-                    if ui.radio(self.ruler.kind == kind, label).clicked() {
+                    if ui.radio(self.ruler.kind == kind, tr(label)).clicked() {
                         let was = self.ruler.kind;
                         self.ruler.kind = kind;
                         // точки схода — заново посреди вида, если сменилось их число
@@ -7382,7 +7383,7 @@ app.open_canvas_dialog(d == "resolution")
                     ui.checkbox(&mut self.ruler.lock_pivot, tr("Закрепить ось"))
                         .on_hover_text(tr("Ctrl + перетаскивание полосы поворачивает линейку вокруг оси"));
                 });
-                if ui.add_enabled(self.ruler.visible, egui::Button::new(tr("Сбросить линейку"))).clicked() {
+                if ui.add_enabled(self.ruler.visible, menu_icons::button("Сбросить линейку")).clicked() {
                     self.reset_ruler();
                     ui.close_menu();
                 }
@@ -7395,7 +7396,7 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 }
                 // подменю — как в Clip Studio Paint
-                icons::submenu(ui, "f_blur", tr("Размытие"), |ui| {
+                ui.menu_button(menu_icons::label("Размытие"), |ui| {
                     for (item, kind) in [
                         ("Среднее", FilterKind::Average),
                         ("Размытие", FilterKind::Blur),
@@ -7407,13 +7408,13 @@ app.open_canvas_dialog(d == "resolution")
                         ("Размытие вращением…", FilterKind::Spin),
                         ("Сглаживание краёв", FilterKind::Smoothing),
                     ] {
-                        if ui.button(tr(item)).clicked() {
+                        if ui.add(menu_icons::button(item)).clicked() {
                             self.open_filter(kind);
                             ui.close_menu();
                         }
                     }
                 });
-                icons::submenu(ui, "f_effect", tr("Эффекты"), |ui| {
+                ui.menu_button(menu_icons::label("Эффекты"), |ui| {
                     for (item, kind) in [
                         ("Хроматическая аберрация…", FilterKind::Aberration),
                         ("Шум…", FilterKind::Noise),
@@ -7423,13 +7424,13 @@ app.open_canvas_dialog(d == "resolution")
                         ("Карандашный рисунок…", FilterKind::Pencil),
                         ("Художественный…", FilterKind::Artistic),
                     ] {
-                        if ui.button(tr(item)).clicked() {
+                        if ui.add(menu_icons::button(item)).clicked() {
                             self.open_filter(kind);
                             ui.close_menu();
                         }
                     }
                 });
-                icons::submenu(ui, "f_distort", tr("Искажение"), |ui| {
+                ui.menu_button(menu_icons::label("Искажение"), |ui| {
                     use paint_core::filters::DistortKind as D;
                     for (item, kind) in [
                         ("Щипок…", D::Pinch),
@@ -7439,29 +7440,29 @@ app.open_canvas_dialog(d == "resolution")
                         ("Волна…", D::Wave),
                         ("Скручивание…", D::Twirl),
                     ] {
-                        if ui.button(tr(item)).clicked() {
+                        if ui.add(menu_icons::button(item)).clicked() {
                             self.open_filter(FilterKind::Distort(kind));
                             ui.close_menu();
                         }
                     }
                 });
-                icons::submenu(ui, "f_render", tr("Отрисовка"), |ui| {
-                    if ui.button(tr("Шум Перлина…")).clicked() {
+                ui.menu_button(menu_icons::label("Отрисовка"), |ui| {
+                    if ui.add(menu_icons::button("Шум Перлина…")).clicked() {
                         self.open_filter(FilterKind::Perlin);
                         ui.close_menu();
                     }
                 });
-                icons::submenu(ui, "f_correct", tr("Коррекция"), |ui| {
+                ui.menu_button(menu_icons::label("Коррекция"), |ui| {
                     for (item, kind) in [("Удаление пыли…", FilterKind::Dust), ("Изменение толщины линий…", FilterKind::LineWidth), ("Медиана…", FilterKind::Median)] {
-                        if ui.button(tr(item)).clicked() {
+                        if ui.add(menu_icons::button(item)).clicked() {
                             self.open_filter(kind);
                             ui.close_menu();
                         }
                     }
                 });
-                icons::submenu(ui, "f_sharpen", tr("Резкость"), |ui| {
+                ui.menu_button(menu_icons::label("Резкость"), |ui| {
                     for (item, kind) in [("Резкость", FilterKind::Sharpen), ("Сильная резкость", FilterKind::SharpenMore), ("Нерезкая маска…", FilterKind::Unsharp)] {
-                        if ui.button(tr(item)).clicked() {
+                        if ui.add(menu_icons::button(item)).clicked() {
                             self.open_filter(kind);
                             ui.close_menu();
                         }
@@ -7484,7 +7485,7 @@ app.open_canvas_dialog(d == "resolution")
                     self.set_zoom(1.0 / self.ppp);
                     ui.close_menu();
                 }
-                if ui.button(tr("Вписать в окно")).clicked() {
+                if ui.add(menu_icons::button("Вписать в окно")).clicked() {
                     self.fit_pending = true;
                     ui.close_menu();
                 }
@@ -7520,15 +7521,15 @@ app.open_canvas_dialog(d == "resolution")
                     ui.close_menu();
                 }
                 let many = self.views.len() > 1;
-                if ui.add_enabled(many, egui::Button::new(tr("Предыдущий вид"))).clicked() {
+                if ui.add_enabled(many, menu_icons::button("Предыдущий вид")).clicked() {
                     self.switch_view((self.active_view + self.views.len() - 1) % self.views.len());
                     ui.close_menu();
                 }
-                if ui.add_enabled(many, egui::Button::new(tr("Следующий вид"))).clicked() {
+                if ui.add_enabled(many, menu_icons::button("Следующий вид")).clicked() {
                     self.switch_view((self.active_view + 1) % self.views.len());
                     ui.close_menu();
                 }
-                if ui.add_enabled(many, egui::Button::new(tr("Закрыть все виды"))).clicked() {
+                if ui.add_enabled(many, menu_icons::button("Закрыть все виды")).clicked() {
                     self.close_all_views();
                     ui.close_menu();
                 }
@@ -7559,11 +7560,11 @@ app.open_canvas_dialog(d == "resolution")
                     self.lib_win.open = true;
                     ui.close_menu();
                 }
-                if icons::item(ui, "assets", tr("Менеджер ресурсов…")).clicked() {
+                if ui.add(menu_icons::button("Менеджер ресурсов…")).clicked() {
                     self.assets = Some(AssetsWindow::default());
                     ui.close_menu();
                 }
-                ui.menu_button(tr("Показать"), |ui| {
+                ui.menu_button(menu_icons::label("Показать"), |ui| {
                     for (i, name) in SHOW_NAMES.iter().enumerate() {
                         if ui.checkbox(&mut self.win.show[i], tr(name)).changed() {
                             self.save_settings();
@@ -7571,14 +7572,14 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 });
                 // как Separate User Interface Panel в SAI: панель — в своём окне
-                ui.menu_button(tr("Отдельные панели"), |ui| {
+                ui.menu_button(menu_icons::label("Отдельные панели"), |ui| {
                     for i in [3, 2, 1, 0] {
                         if ui.checkbox(&mut self.win.separate[i], tr(SHOW_NAMES[i])).changed() {
                             self.save_settings();
                         }
                     }
                 });
-                ui.menu_button(tr("Язык (Language)"), |ui| {
+                ui.menu_button(menu_icons::label("Язык (Language)"), |ui| {
                     for (code, native, _) in i18n::LANGS {
                         if ui.radio(i18n::code() == code, native).clicked() {
                             i18n::set(code);
@@ -7606,7 +7607,7 @@ app.open_canvas_dialog(d == "resolution")
                 if ui.checkbox(&mut self.show_history, tr("История")).clicked() {
                     ui.close_menu();
                 }
-                if ui.button(tr("Опорная картинка…")).on_hover_text(tr("Или перетащите картинку в окно с Ctrl")).clicked() {
+                if ui.add(menu_icons::button("Опорная картинка…")).on_hover_text(tr("Или перетащите картинку в окно с Ctrl")).clicked() {
                     let dir = self.file.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("x"));
                     if !self.native_dialog(files::Ask::Reference, &dir) {
                         self.status = String::from(tr("Перетащите картинку в окно с Ctrl"));
@@ -7622,7 +7623,7 @@ app.open_canvas_dialog(d == "resolution")
                 }
                 // как меню Window в SAI 2017
                 let w = &mut self.win;
-                ui.menu_button(tr("Масштаб интерфейса"), |ui| {
+                ui.menu_button(menu_icons::label("Масштаб интерфейса"), |ui| {
                     for z in [1.0_f32, 1.25, 1.5, 2.0] {
                         if ui.radio((w.ui_scale - z).abs() < 0.01, format!("{:.0}%", z * 100.0)).clicked() {
                             w.ui_scale = z;
@@ -7630,21 +7631,21 @@ app.open_canvas_dialog(d == "resolution")
                         }
                     }
                 });
-                if ui.button(tr("Быстрые клавиши…")).clicked() {
+                if ui.add(menu_icons::button("Быстрые клавиши…")).clicked() {
                     self.show_keys = true;
                     ui.close_menu();
                 }
-                ui.menu_button(tr("Режим ползунков HSV"), |ui| {
+                ui.menu_button(menu_icons::label("Режим ползунков HSV"), |ui| {
                     for (m, name) in [(2u8, "HSV"), (1, "HSL"), (0, "V-HSV")] {
-                        if ui.radio(w.hsv_mode == m, name).clicked() {
+                        if ui.radio(w.hsv_mode == m, tr(name)).clicked() {
                             w.hsv_mode = m;
                             ui.close_menu();
                         }
                     }
                 });
-                ui.menu_button(tr("Размер образцов"), |ui| {
-                    for (m, name) in [(0u8, tr("Маленький")), (1, tr("Средний")), (2, tr("Большой"))] {
-                        if ui.radio(w.swatch_size == m, name).clicked() {
+                ui.menu_button(menu_icons::label("Размер образцов"), |ui| {
+                    for (m, name) in [(0u8, "Маленький"), (1, "Средний"), (2, "Большой")] {
+                        if ui.radio(w.swatch_size == m, tr(name)).clicked() {
                             w.swatch_size = m;
                             ui.close_menu();
                         }
@@ -7666,20 +7667,20 @@ app.open_canvas_dialog(d == "resolution")
                 ui.checkbox(&mut w.size_list_top, tr("Список размеров — над настройками кисти"));
             });
             ui.menu_button(keys::hint(tr("Помощь(H)")), |ui| {
-                if ui.button(tr("Клавиши…")).clicked() {
+                if ui.add(menu_icons::button("Клавиши…")).clicked() {
                     self.show_keys = true;
                     ui.close_menu();
                 }
-                if ui.button(tr("Настройки…")).clicked() {
+                if ui.add(menu_icons::button("Настройки…")).clicked() {
                     self.opts_edit = Some(self.opts);
                     ui.close_menu();
                 }
                 ui.separator();
-                if ui.button(tr("GrazySAI на GitHub")).clicked() {
+                if ui.add(menu_icons::button("GrazySAI на GitHub")).clicked() {
                     update::open_url(update::REPO);
                     ui.close_menu();
                 }
-                if ui.button(tr("Проверить обновления…")).clicked() {
+                if ui.add(menu_icons::button("Проверить обновления…")).clicked() {
                     update::check(&self.update, ui.ctx());
                     self.show_update = true;
                     ui.close_menu();
@@ -7690,7 +7691,7 @@ app.open_canvas_dialog(d == "resolution")
                     s.save();
                 }
                 ui.separator();
-                if ui.button(tr("О программе")).clicked() {
+                if ui.add(menu_icons::button("О программе")).clicked() {
                     self.show_about = true;
                     ui.close_menu();
                 }
@@ -8204,14 +8205,14 @@ app.open_canvas_dialog(d == "resolution")
                                 }
                                 let (has_res, has_undo) = (tool.reserved.is_some(), tool.before_restore.is_some());
                                 r.context_menu(|ui| {
-                                    for (act, name) in [(GridAction::Duplicate, tr("Копия")), (GridAction::Delete, tr("Удалить")), (GridAction::Property, tr("Свойства…")), (GridAction::Save, tr("Сохранить кисть…"))] {
-                                        if ui.button(name).clicked() {
+                                    for (act, name) in [(GridAction::Duplicate, "Копия"), (GridAction::Delete, "Удалить"), (GridAction::Property, "Свойства…"), (GridAction::Save, "Сохранить кисть…")] {
+                                        if ui.add(menu_icons::button(name)).clicked() {
                                             grid_action = Some((i, act));
                                             ui.close_menu();
                                         }
                                     }
                                     if groups.len() > 1 {
-                                        ui.menu_button(tr("В группу"), |ui| {
+                                        ui.menu_button(menu_icons::label("В группу"), |ui| {
                                             for (g, name) in groups.iter().enumerate() {
                                                 if ui.radio(tool.group == g, name).clicked() {
                                                     grid_action = Some((i, GridAction::ToGroup(g)));
@@ -8222,11 +8223,11 @@ app.open_canvas_dialog(d == "resolution")
                                     }
                                     ui.separator();
                                     for (act, name, on) in [
-                                        (GridAction::Reserve, tr("Запомнить настройки"), true),
-                                        (GridAction::Restore, tr("Вернуть запомненные"), has_res),
-                                        (GridAction::UndoRestore, tr("Отменить возврат"), has_undo),
+                                        (GridAction::Reserve, "Запомнить настройки", true),
+                                        (GridAction::Restore, "Вернуть запомненные", has_res),
+                                        (GridAction::UndoRestore, "Отменить возврат", has_undo),
                                     ] {
-                                        if ui.add_enabled(on, egui::Button::new(name)).clicked() {
+                                        if ui.add_enabled(on, menu_icons::button(name)).clicked() {
                                             grid_action = Some((i, act));
                                             ui.close_menu();
                                         }
@@ -12450,6 +12451,7 @@ impl eframe::App for PaintApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        menu_icons::set_font(ctx);
         self.ppp = ctx.pixels_per_point();
         let _frame_timer = self.frame_stats.clone().filter(|_| self.live.is_some()).map(|s| FrameTimer(s, Instant::now()));
         self.ctx = Some(ctx.clone());
@@ -13123,7 +13125,7 @@ fn new_document(w: u32, h: u32) -> Document {
 
 /// Пункт меню: подпись на выбранном языке и клавиша справа.
 fn menu_item(label: &'static str, shortcut: &str) -> egui::Button<'static> {
-    let b = egui::Button::new(tr(label));
+    let b = menu_icons::button(label);
     if keys::hints() {
         b.shortcut_text(shortcut.to_string())
     } else {

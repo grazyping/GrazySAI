@@ -164,18 +164,18 @@ impl PaintApp {
 
     /// Подменю «Файл → Запись процесса».
     pub(crate) fn recording_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button(tr("Запись процесса"), |ui| {
+        ui.menu_button(crate::menu_icons::label("Запись процесса"), |ui| {
             if self.rec.is_none() {
-                if ui.button(tr("Начать запись")).on_hover_text(tr("Каждый шаг рисования пишется в файл рядом с рисунком (.gsrec)")).clicked() {
+                if ui.add(crate::menu_icons::button("Начать запись")).on_hover_text(tr("Каждый шаг рисования пишется в файл рядом с рисунком (.gsrec)")).clicked() {
                     self.start_recording();
                     ui.close_menu();
                 }
-            } else if ui.button(tr("Остановить запись")).clicked() {
+            } else if ui.add(crate::menu_icons::button("Остановить запись")).clicked() {
                 self.stop_recording_by(true);
                 ui.close_menu();
             }
             let file = self.record_file();
-            if ui.add_enabled(file.is_some() && self.rec_job.is_none(), egui::Button::new(tr("Выгрузить видео…"))).clicked() {
+            if ui.add_enabled(file.is_some() && self.rec_job.is_none(), crate::menu_icons::button("Выгрузить видео…")).clicked() {
                 if let Some(f) = file {
                     self.open_record_export(f);
                 }
