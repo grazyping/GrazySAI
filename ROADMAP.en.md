@@ -338,7 +338,7 @@ From what was left after 1.3.0:
 - [ ] Tablet drivers, in full: download drivers of the main models (Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs) for Windows and Linux, see what they install and how they name the pen axes; adjust the pen reading; check WinTab with real drivers on the test PC
 - [x] Pen buttons: hand, picker, palette at cursor, undo (the driver sends express keys as keyboard keys — shortcuts work) *(coming in the next version)*
 - [ ] Pen directly on Wayland, without XWayland — waits for the window library: winit 0.31 (still beta) has the Wayland pen, but egui/eframe, even the newest, is on winit 0.30
-- [ ] Anti-Ripple for Flatten Brush and the wand/bucket “Reduce small omissions” — checked against live SAI 2026 under Wine
+- [x] Anti-Ripple for Flatten Brush and the wand/bucket “Reduce small omissions” — checked against live SAI 2026: omissions done, our flat brush edge already behaves as Anti-Ripple *(coming in the next version)*
 - [ ] Colour (ARGB) assets: coloured tips and scatter shapes, colour assets from a layer
 - [x] FreeBSD: a `pkg` package with every release (`tools/freebsd/mkpkg.sh`; added to 1.3.0) *(coming in the next version)*
 - [ ] FreeBSD: a port in the ports tree

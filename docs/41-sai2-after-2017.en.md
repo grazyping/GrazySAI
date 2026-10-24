@@ -69,8 +69,11 @@ not analysed; live checks only on official builds, hidden display, a separate Wi
 - **Brush details (from SAI 2024 strings):** Minimum Pressure for Brush Stroke in Options ("suppresses
   the sensitiveness of the pen pressure rising"); Anti-Hook in the brush Miscellaneous ("the removal
   range of hooks at both ends of a stroke", in screen pixels); Anti-Ripple for Flatten Brush
-  ("suppress ripple like artifacts of a flattest large brush") — not done here: our flat brushes
-  show no ripple to measure against.
+  ("suppress ripple like artifacts of a flattest large brush") — checked against live SAI 2026 (1.4.0): the box is
+  on by default; with a 100 px flattest AirBrush drawn diagonally the ~4 px edge ripples without it
+  (6 levels of 240 along the stroke) and is steeper and almost even with it (0.8). Our edge (the
+  stroke mask of the hardest step from 20 px) matches the “on” state within 1–2 levels (2.5), so
+  there is no separate box: turning it off would only bring the ripple back.
 - **Canvas presets and reserved settings:** the SAI 2026 New Canvas window has a preset list
   ("512 × 512 - 72ppi" etc.) with edit and add buttons; SAI 2020+ tools have Reserve Current
   Settings / Restore Reserved Settings (here — in the tool cell menu, with Undo Restore).
