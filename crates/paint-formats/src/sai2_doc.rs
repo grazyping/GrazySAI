@@ -80,6 +80,15 @@ fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info:
                 layer.styles = (!st.is_empty()).then(|| Box::new(st));
                 continue;
             }
+            if *tag == crate::sai2_3d::PUPPET_TAG {
+                match crate::sai2_3d::puppet_from_block(body) {
+                    Some(p) => layer.puppet = Some(Box::new(p)),
+                    None => {
+                        notes.insert(format!("слой «{}»: марионетка не прочитана", li.name));
+                    }
+                }
+                continue;
+            }
             if tag == b"gsan" {
                 // папка анимации: метки и (у первой) настройки таймлайна
                 let text = String::from_utf8_lossy(body);

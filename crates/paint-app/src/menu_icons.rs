@@ -125,6 +125,7 @@ pub fn icon(key: &str) -> Option<&'static str> {
         "Автодействия…" => ph::PLAY_CIRCLE,
         "Поиск команд…" => ph::MAGNIFYING_GLASS,
         "Новая папка анимации" => ph::FILM_STRIP,
+        "Марионетка (Puppet)…" => ph::PUSH_PIN,
         "Новый кадр (cel)" => ph::FILE_PLUS,
         "Вывод анимации" => ph::FILM_REEL,
         "Рабочее пространство" => ph::LAYOUT,

@@ -26,6 +26,8 @@ enum Op {
     Scene { path: Vec<usize>, scene: Option<Box<crate::layer::Scene3dData>> },
     /// Заменить метки папки анимации (обратный шаг — прежние).
     Anim { path: Vec<usize>, anim: Option<Box<crate::anim::AnimTrack>> },
+    /// Заменить марионетку слоя (обратный шаг — прежняя); пиксели пересчитывает `update_puppets`.
+    Puppet { path: Vec<usize>, puppet: Option<Box<crate::puppet::Puppet>> },
     /// Заменить маску слоя (обратный шаг — прежняя маска).
     Mask { path: Vec<usize>, mask: Option<crate::layer::LayerMask> },
     /// Заменить весь холст: размер, слои, выделение (для действий над холстом).
@@ -79,6 +81,7 @@ impl HistoryEntry {
                 Op::Vector { vector, .. } => vector.as_ref().map_or(0, |v| v.raw.len()),
                 Op::Scene { scene, .. } => scene.as_ref().map_or(0, |s| s.state.len()),
                 Op::Anim { anim, .. } => anim.as_ref().map_or(0, |a| a.keys.len() * 16),
+                Op::Puppet { puppet, .. } => puppet.as_ref().map_or(0, |p| p.source.tiles.len() * TILE_LEN * 8 + p.pins.len() * 64),
                 Op::Remove { .. } | Op::TilesOnDisk { .. } => 0,
                 Op::Mask { mask, .. } => mask.as_ref().map_or(0, |m| m.hide.tiles.len() * TILE_LEN * 2),
             })
@@ -371,7 +374,7 @@ impl Document {
                         out.push(Change::Tiles { uid: l.uid, keys: tiles.iter().map(|(k, _)| *k).collect() });
                     }
                 }
-                Op::TilesOnDisk { path, .. } | Op::Vector { path, .. } | Op::Scene { path, .. } | Op::Anim { path, .. } | Op::Mask { path, .. } => {
+                Op::TilesOnDisk { path, .. } | Op::Vector { path, .. } | Op::Scene { path, .. } | Op::Anim { path, .. } | Op::Puppet { path, .. } | Op::Mask { path, .. } => {
                     if let Some(l) = self.layer(path) {
                         out.push(Change::Layer(l.uid));
                     }
@@ -490,6 +493,12 @@ impl Document {
                 let layer = self.layer_mut(&path)?;
                 let old = std::mem::replace(&mut layer.scene3d, scene);
                 Some((Op::Scene { path, scene: old }, Vec::new()))
+            }
+            Op::Puppet { path, puppet } => {
+                let layer = self.layer_mut(&path)?;
+                let old = std::mem::replace(&mut layer.puppet, puppet);
+                let keys = layer_keys(layer);
+                Some((Op::Puppet { path, puppet: old }, keys))
             }
             Op::Anim { path, anim } => {
                 let layer = self.layer_mut(&path)?;
@@ -1133,6 +1142,53 @@ impl Document {
     }
 
     /// Новая сцена слоя 3D и её пиксели — одна запись истории.
+    /// Сделать слой марионеткой (исходник — его рисунок) или снять её (рисунок — снова исходник).
+    pub fn set_puppet(&mut self, path: &[usize], on: bool) -> Vec<Key> {
+        let Some(l) = self.layer(path) else { return Vec::new() };
+        if on {
+            if l.puppet.is_some() || l.children.is_some() {
+                return Vec::new();
+            }
+            let p = crate::puppet::Puppet::new(l.pixels.clone());
+            return self.perform(vec![Op::Puppet { path: path.to_vec(), puppet: Some(Box::new(p)) }]);
+        }
+        let Some(p) = l.puppet.as_deref() else { return Vec::new() };
+        let mut keys: Vec<Key> = l.pixels.tiles.keys().chain(p.source.tiles.keys()).copied().collect();
+        keys.sort_unstable();
+        keys.dedup();
+        let tiles: TileBackup = keys.iter().map(|k| (*k, p.source.tiles.get(k).cloned())).collect();
+        self.perform(vec![Op::Puppet { path: path.to_vec(), puppet: None }, Op::Tiles { path: path.to_vec(), tiles }])
+    }
+
+    /// Записать в историю правку марионетки, сделанную напрямую (`before` — как было).
+    pub fn puppet_edited(&mut self, path: &[usize], before: crate::puppet::Puppet) {
+        if self.layer(path).and_then(|l| l.puppet.as_deref()) == Some(&before) {
+            return;
+        }
+        self.push_raw(vec![Op::Puppet { path: path.to_vec(), puppet: Some(Box::new(before)) }]);
+    }
+
+    /// Пересчитать пиксели слоёв-марионеток для текущего кадра (без записи в историю).
+    pub fn update_puppets(&mut self) -> Vec<Key> {
+        fn walk(layers: &mut [Layer], f: u32, keys: &mut Vec<Key>) {
+            for l in layers {
+                if let Some(c) = l.children.as_mut() {
+                    walk(c, f, keys);
+                } else if let Some(p) = l.puppet.as_deref() {
+                    let px = p.frame(f);
+                    keys.extend(l.pixels.tiles.keys().chain(px.tiles.keys()).copied());
+                    l.pixels = px;
+                }
+            }
+        }
+        let mut keys = Vec::new();
+        let f = self.timeline.frame;
+        walk(&mut self.layers, f, &mut keys);
+        keys.sort_unstable();
+        keys.dedup();
+        keys
+    }
+
     /// Метки папки анимации (с записью в историю); `None` — папка перестаёт быть анимацией.
     pub fn set_anim(&mut self, path: &[usize], anim: Option<crate::anim::AnimTrack>) -> Vec<Key> {
         self.perform(vec![Op::Anim { path: path.to_vec(), anim: anim.map(Box::new) }])
@@ -1542,6 +1598,7 @@ impl Document {
                 Op::Remove { path } => (if forward { StepKind::DeleteLayer } else { StepKind::NewLayer }, Some(path)),
                 Op::Selection { .. } => (StepKind::Selection, None),
                 Op::Vector { path, .. } => (StepKind::Vector, Some(path)),
+                Op::Puppet { path, .. } => (StepKind::Other, Some(path)),
                 Op::Anim { path, .. } => (StepKind::Other, Some(path)),
                 Op::Scene { path, .. } => (StepKind::Scene3d, Some(path)),
                 Op::Mask { path, .. } => (StepKind::Mask, Some(path)),

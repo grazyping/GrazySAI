@@ -78,6 +78,8 @@ pub struct Layer {
     pub adjust: Option<crate::adjust::Adjust>,
     /// Папка анимации: метки кадров с cel (`anim.rs`).
     pub anim: Option<Box<crate::anim::AnimTrack>>,
+    /// Марионетка: исходник и булавки; пиксели слоя — её кадр (`puppet.rs`).
+    pub puppet: Option<Box<crate::puppet::Puppet>>,
     /// Маска слоя.
     pub mask: Option<LayerMask>,
     /// Папка отмечена для команд видимости (Ctrl + щелчок по глазу, как в SAI); в файл не пишется.
@@ -146,6 +148,7 @@ impl Layer {
             styles: None,
             adjust: None,
             anim: None,
+            puppet: None,
             mask: None,
             extra: Vec::new(),
         }

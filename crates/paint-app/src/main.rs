@@ -22,6 +22,7 @@ mod plugins;
 mod recording;
 mod scene3d;
 mod actions;
+mod puppet_ui;
 mod timeline;
 mod customize;
 mod lassofill;
@@ -1310,6 +1311,8 @@ struct PaintApp {
     custom: customize::CustomUi,
     /// Окно «Таймлайн» и проигрывание.
     timeline: timeline::TimelineUi,
+    /// Окно «Марионетка» и булавки на холсте.
+    puppet: puppet_ui::PuppetUi,
     s3d_mode: scene3d::MouseMode,
     /// Перетаскивание слоя в списке: какой слой и строки списка (путь, прямоугольник, папка ли).
     layer_drag: Option<LayerDrag>,
@@ -1659,6 +1662,7 @@ impl PaintApp {
             actions: Default::default(),
             custom: Default::default(),
             timeline: Default::default(),
+            puppet: Default::default(),
             s3d_mode: scene3d::MouseMode::Camera,
             layer_drag: None,
             ruler: ruler::Ruler::default(),
@@ -5487,6 +5491,10 @@ app.open_canvas_dialog(d == "resolution")
                 }
             }
         }
+        if !self.mask_edit && !self.sel_tool() && self.doc.layer(&self.selected).is_some_and(|l| l.puppet.is_some()) {
+            self.status = String::from(tr("Слой-марионетка: рисунок меняется булавками; чтобы рисовать, снимите марионетку («Слой → Марионетка (Puppet)…»)"));
+            return;
+        }
         if !self.mask_edit && !self.sel_tool() && self.doc.layer(&self.selected).is_some_and(|l| l.adjust.is_some()) {
             self.status = String::from(tr("Слой коррекции: рисовать можно только в его маске"));
             return;
@@ -6083,7 +6091,8 @@ app.open_canvas_dialog(d == "resolution")
             return;
         }
         let size = (self.doc.width, self.doc.height);
-        if let Some(keys) = self.doc.undo() {
+        if let Some(mut keys) = self.doc.undo() {
+            keys.extend(self.doc.update_puppets());
             self.after_structure(keys);
         }
         if size != (self.doc.width, self.doc.height) {
@@ -6099,7 +6108,8 @@ app.open_canvas_dialog(d == "resolution")
             return;
         }
         let size = (self.doc.width, self.doc.height);
-        if let Some(keys) = self.doc.redo() {
+        if let Some(mut keys) = self.doc.redo() {
+            keys.extend(self.doc.update_puppets());
             self.after_structure(keys);
         }
         if size != (self.doc.width, self.doc.height) {
@@ -7320,6 +7330,10 @@ app.open_canvas_dialog(d == "resolution")
                         }
                     }
                 });
+                if ui.add(menu_icons::button("Марионетка (Puppet)…")).clicked() {
+                    self.puppet.show = true;
+                    ui.close_menu();
+                }
                 if ui.add(menu_icons::button("Стиль и коррекция слоя…")).clicked() {
                     self.show_style = true;
                     ui.close_menu();
@@ -10298,7 +10312,12 @@ app.open_canvas_dialog(d == "resolution")
         }
         let panning = middle || space || self.tool == Tool::Hand;
         let ctrl = ui.input(|i| i.modifiers.command);
-        if self.s3d_takes_mouse(pressed && response.hovered() && !panning) {
+        if self.puppet_takes_mouse(pressed && response.hovered() && !panning) {
+            // марионетка: булавки
+            let xf = ViewXf::new(rect, self.zoom, self.offset, vang, vflip);
+            let up = released || !ui.input(|i| i.pointer.primary_down());
+            self.puppet_mouse(pointer.map(|p| xf.to_canvas(p)), pressed, up, ctrl);
+        } else if self.s3d_takes_mouse(pressed && response.hovered() && !panning) {
             // слой 3D: мышь вращает камеру или сустав
             let xf = ViewXf::new(rect, self.zoom, self.offset, vang, vflip);
             let pts: Vec<Vec2> = moves.iter().map(|p| xf.to_canvas(*p)).collect();
@@ -10735,6 +10754,7 @@ app.open_canvas_dialog(d == "resolution")
         }
         self.draw_ruler(&painter, xf, ctrl);
         self.s3d_overlay(&painter, xf);
+        self.puppet_overlay(&painter, xf);
         self.draw_text_box(&painter, xf);
         self.draw_line_nodes(&painter, xf);
         // Граница выделения («бегущие муравьи») и выделение, которое сейчас тянут.
@@ -11962,6 +11982,10 @@ impl PaintApp {
         self.actions_window(ctx);
         self.customize_windows(ctx);
         self.timeline_window(ctx);
+        self.puppet_window(ctx);
+        if self.puppet.drag.as_ref().is_some_and(|d| d.2.is_some()) {
+            ctx.request_repaint();
+        }
         if self.show_watermark {
             self.watermark_window(ctx);
         }

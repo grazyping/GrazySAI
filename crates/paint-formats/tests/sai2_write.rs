@@ -208,3 +208,34 @@ fn animation_round_trip() {
     assert_eq!(back.layers[1].anim, doc.layers[1].anim);
     assert_eq!(back.timeline, doc.timeline);
 }
+
+/// Марионетка: исходник, настройки и булавки сохраняются; испорченный блок — не падение.
+#[test]
+fn puppet_round_trip() {
+    use paint_core::puppet::{Pin, PinKind, PinPose, Puppet};
+    let mut doc = paint_core::Document::new(64, 64);
+    let mut src = paint_core::tile::ColorMap::new();
+    for y in 10..30 {
+        for x in 5..60 {
+            src.set(x, y, paint_core::pixel::from_rgba8([10, 200, 30, 255]));
+        }
+    }
+    let mut p = Puppet::new(src);
+    let mut pin = Pin::new(PinKind::Position, [6.0, 20.0]);
+    pin.keys.insert(2, PinPose { pos: [6.0, 40.0], rot: 0.0, scale: 1.0 });
+    p.pins.push(pin);
+    p.pins.push(Pin::new(PinKind::Position, [58.0, 20.0]));
+    doc.layers[0].pixels = p.frame(0);
+    doc.layers[0].puppet = Some(Box::new(p));
+    let dir = std::env::temp_dir().join(format!("grazysai-puppet-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("p.sai2");
+    paint_formats::sai2_write::save(&doc, &path).unwrap();
+    let back = paint_formats::sai2_doc::load(&path).unwrap().document;
+    std::fs::remove_dir_all(dir).ok();
+    assert_eq!(back.layers[0].puppet, doc.layers[0].puppet);
+    let b = paint_formats::sai2_3d::puppet_block(doc.layers[0].puppet.as_ref().unwrap());
+    for n in (0..b.len()).step_by(7) {
+        let _ = paint_formats::sai2_3d::puppet_from_block(&b[..n]);
+    }
+}

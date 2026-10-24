@@ -400,6 +400,9 @@ fn layer_record(f: &Flat, id: u32, order: u32, rect: [i32; 4], mask_id: Option<u
     if let Some(a) = &l.adjust {
         own.push((*b"gsad", a.to_text().into_bytes()));
     }
+    if let Some(p) = l.puppet.as_deref() {
+        own.push((crate::sai2_3d::PUPPET_TAG, crate::sai2_3d::puppet_block(p)));
+    }
     if let Some(a) = l.anim.as_deref().filter(|_| l.children.is_some()) {
         own.push((*b"gsan", (timeline.to_text() + &a.to_text()).into_bytes()));
     }

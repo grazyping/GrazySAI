@@ -61,7 +61,7 @@ impl PaintApp {
             }
         }
         self.refresh_all();
-        self.thumbs.clear();
+        self.refresh_puppets();
     }
 
     /// Новая папка анимации с первым cel «1» в кадре 0; таймлайн включается.
@@ -148,6 +148,7 @@ impl PaintApp {
         if f != self.doc.timeline.frame {
             self.doc.timeline.frame = f;
             self.refresh_all();
+            self.refresh_puppets();
         }
         if self.timeline.playing.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(0.5 / fps as f64));
@@ -216,14 +217,23 @@ impl PaintApp {
         let (w, h) = (self.doc.width, self.doc.height);
         let range = t.start..=t.end.max(t.start);
         let n = range.clone().count();
-        let doc = &self.doc;
-        let frames = range.map(|f| doc.flatten_frame(f));
+        let keep = self.doc.timeline.frame;
+        let doc = &mut self.doc;
+        // у марионеток пиксели — кадр таймлайна: пересчитать для каждого кадра
+        let frames = range.map(|f| {
+            doc.timeline.frame = f;
+            doc.update_puppets();
+            doc.flatten_frame(f)
+        });
         let res = match kind {
             0 => ex::gif(&path, w, h, t.fps, t.looped, frames).map(|_| path.display().to_string()),
             1 => ex::apng(&path, w, h, t.fps, t.looped, frames.collect()).map(|_| path.display().to_string()),
             2 => ex::png_sequence(&path, w, h, frames).map(|v| v.first().map_or(String::new(), |p| p.display().to_string())),
             _ => ex::video(&path, w, h, t.fps, frames).map(|_| path.display().to_string()),
         };
+        self.doc.timeline.frame = keep;
+        let keys = self.doc.update_puppets();
+        self.invalidate(keys);
         self.status = match res {
             Ok(p) => trf("Анимация выведена ({0} кадров): {1}", &[&n, &p]),
             Err(e) => trf("Не удалось вывести анимацию: {0}", &[&e]),

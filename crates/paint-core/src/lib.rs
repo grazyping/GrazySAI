@@ -20,6 +20,7 @@ pub mod mix;
 pub mod history_disk;
 pub mod paper;
 pub mod pixel;
+pub mod puppet;
 pub mod resample;
 pub mod scatter;
 pub mod selection;

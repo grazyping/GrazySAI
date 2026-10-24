@@ -628,6 +628,24 @@ per frame) and **MP4 video** — only when ffmpeg is installed (otherwise the it
 playback range is exported, without onion skin. In `.sai2` the keys and timeline settings live in
 GrazySAI's own block on the animation folder; SAI shows the folder with all its cels.
 
+### Puppet
+
+Like Puppet in After Effects. “Layer → Puppet…” → “Make puppet”: a triangle mesh is built along the
+outline of the layer's picture (**Expansion** — margin around the outline, **Density** — how fine), pins
+pull the mesh and the picture deforms “as rigidly as possible” (parts do not stretch needlessly). A
+click on the picture places a pin of the chosen kind:
+- **Position** — a point you drag;
+- **Starch** — does not move, stiffens the area (**Amount**, **Extent** — radius);
+- **Bend** — rotation and scale of the area around it (drag to rotate), its position follows by itself;
+- **Advanced** — point, rotation and scale;
+- **Overlap** — what is in front when parts overlap (**In Front**, **Extent**).
+
+Dragging a pin sets a key on the current timeline frame; between keys the motion is smooth. **Ctrl +
+drag** records the motion frame by frame in real time (frames advance at the timeline rate). You cannot
+paint on a puppet — “Remove puppet” brings back the original picture. Animation export recomputes the
+puppet for every frame. In `.sai2` the source picture and pins are kept in GrazySAI's own block; SAI
+sees the picture of the current frame.
+
 ### Command search, quick access, workspaces
 
 - **Command search** — Ctrl+Shift+P or “Window → Command search…”: type part of a name (shortcut

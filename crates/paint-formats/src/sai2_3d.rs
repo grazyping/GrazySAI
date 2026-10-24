@@ -161,3 +161,52 @@ mod tests {
         assert_eq!(parse_asset(&b).unwrap(), a);
     }
 }
+
+/// Марионетка слоя в `.sai2`: блок `gspp` — длина текста (u32), текст настроек и булавок, затем
+/// сжатые плитки исходника (число, затем у каждой — x, y и 64×64 точки по 4 u16).
+pub const PUPPET_TAG: [u8; 4] = *b"gspp";
+
+pub fn puppet_block(p: &paint_core::puppet::Puppet) -> Vec<u8> {
+    let text = p.to_text().into_bytes();
+    let mut raw = Vec::new();
+    raw.extend((p.source.tiles.len() as u32).to_le_bytes());
+    let mut keys: Vec<_> = p.source.tiles.keys().copied().collect();
+    keys.sort_unstable();
+    for k in keys {
+        raw.extend(k.0.to_le_bytes());
+        raw.extend(k.1.to_le_bytes());
+        for px in p.source.tiles[&k].0.iter() {
+            for c in px {
+                raw.extend(c.to_le_bytes());
+            }
+        }
+    }
+    let mut out = (text.len() as u32).to_le_bytes().to_vec();
+    out.extend(text);
+    out.extend(miniz_oxide::deflate::compress_to_vec(&raw, 6));
+    out
+}
+
+pub fn puppet_from_block(b: &[u8]) -> Option<paint_core::puppet::Puppet> {
+    use paint_core::tile::{Tile, TILE_LEN};
+    let n = u32::from_le_bytes(b.get(0..4)?.try_into().ok()?) as usize;
+    let text = std::str::from_utf8(b.get(4..4usize.checked_add(n)?)?).ok()?;
+    // не больше 1 ГБ исходника
+    let raw = miniz_oxide::inflate::decompress_to_vec_with_limit(b.get(4 + n..)?, 1 << 30).ok()?;
+    let count = u32::from_le_bytes(raw.get(0..4)?.try_into().ok()?) as usize;
+    let size = 8 + TILE_LEN * 8;
+    if raw.len() != 4 + count.checked_mul(size)? {
+        return None;
+    }
+    let mut src = paint_core::tile::ColorMap::new();
+    for i in 0..count {
+        let o = 4 + i * size;
+        let x = i32::from_le_bytes(raw[o..o + 4].try_into().ok()?);
+        let y = i32::from_le_bytes(raw[o + 4..o + 8].try_into().ok()?);
+        let px: Vec<[u16; 4]> = raw[o + 8..o + size].as_chunks::<8>().0.iter().map(|c| [0, 1, 2, 3].map(|k| u16::from_le_bytes([c[k * 2], c[k * 2 + 1]]))).collect();
+        src.tiles.insert((x, y), Tile(px.into_boxed_slice()));
+    }
+    let mut p = paint_core::puppet::Puppet::new(src);
+    p.read_text(text);
+    Some(p)
+}
