@@ -25,7 +25,12 @@ enum Drag {
     Camera(Vec2),
     /// Поворот узла `node` вокруг оси взгляда: центр на холсте и прошлая точка.
     Joint { node: usize, center: Vec2, last: Vec2 },
+    /// «Тянуть за конец»: узел `node` идёт за указателем, суставы `chain` над ним поворачиваются.
+    Reach { node: usize, chain: Vec<usize> },
 }
+
+/// Сколько суставов над концом поворачивает «тянуть за конец» (у кисти — предплечье и плечо).
+const REACH_CHAIN: usize = 2;
 
 struct Job {
     gen: u64,
@@ -54,6 +59,10 @@ pub struct Edit3d {
     changed_at: Option<Instant>,
     /// Сколько занял последний полный кадр, мс (большие сцены при перетаскивании — вполовину).
     last_ms: f32,
+    /// В режиме позы — тянуть за конец (кисть, стопу), а не поворачивать сустав.
+    pub reach: bool,
+    /// Имя позы, которую сейчас запоминают (поле ввода открыто).
+    pose_name: Option<String>,
 }
 
 impl Edit3d {
@@ -161,6 +170,8 @@ impl PaintApp {
             job: None,
             changed_at: None,
             last_ms: 0.0,
+            reach: false,
+            pose_name: None,
         });
     }
 
@@ -353,7 +364,8 @@ impl PaintApp {
                     Some((oi, node, center, _)) => {
                         e.obj = oi;
                         e.node = Some(node);
-                        e.drag = Some(Drag::Joint { node, center, last: p });
+                        let chain = e.models.get(oi).map(|m| paint_3d::pose::chain(m, node, REACH_CHAIN)).unwrap_or_default();
+                        e.drag = Some(if e.reach && !chain.is_empty() { Drag::Reach { node, chain } } else { Drag::Joint { node, center, last: p } });
                     }
                     None => e.drag = None,
                 }
@@ -417,6 +429,17 @@ impl PaintApp {
                     changed = true;
                 }
             }
+            Some(Drag::Reach { node, chain }) => {
+                let (obj, scene) = (e.obj, &mut e.scene);
+                if let (Some(&p), Some(m)) = (moves.last(), e.models.get(obj)) {
+                    let at = scene.objects[obj].globals(m)[*node].w_axis.truncate();
+                    if let Some(target) = paint_3d::render::unproject(scene, w as u32, h as u32, glam::Vec2::new(p.x, p.y), at) {
+                        let o = &mut scene.objects[obj];
+                        paint_3d::pose::reach(o, m, *node, chain, target);
+                        changed = true;
+                    }
+                }
+            }
             None => {}
         }
         if released {
@@ -466,6 +489,7 @@ impl PaintApp {
         let mut mode = self.s3d_mode;
         let e = self.s3d.as_mut().unwrap();
         let mut changed = false;
+        let mut msg: Option<String> = None;
         egui::Window::new(format!("3D — {layer_name}")).id(egui::Id::new("window3d")).open(&mut open).default_width(330.0).resizable(true).show(ctx, |ui| {
             ui.spacing_mut().slider_width = 170.0;
             ui.horizontal(|ui| {
@@ -476,9 +500,16 @@ impl PaintApp {
             });
             ui.weak(match mode {
                 MouseMode::Camera => tr("Тянуть — вращать, с Shift — сдвигать, с Ctrl — приближать"),
+                MouseMode::Pose if e.reach => tr("Взять кисть, стопу или другой сустав и тянуть — два сустава над ним повернутся, чтобы он шёл за указателем"),
                 MouseMode::Pose => tr("Взять сустав (точку) и тянуть — кость за ним повернётся к указателю; точные углы — ниже"),
                 MouseMode::Off => tr("Мышь работает как обычно (рисуйте на слое выше)"),
             });
+            if mode == MouseMode::Pose {
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut e.reach, false, tr("поворачивать сустав"));
+                    ui.selectable_value(&mut e.reach, true, tr("тянуть за конец"));
+                });
+            }
             egui::CollapsingHeader::new(tr("Камера")).default_open(true).show(ui, |ui| {
                 let c = &mut e.scene.camera;
                 changed |= ui.add(egui::Slider::new(&mut c.yaw, -180.0..=180.0).suffix("°").text(tr("Поворот"))).changed();
@@ -585,6 +616,7 @@ impl PaintApp {
                 for &r in &m.roots {
                     mark(&m, r, &mut shows);
                 }
+                changed |= pose_row(ui, o, &m, &mut e.pose_name, &mut msg);
                 egui::ScrollArea::vertical().id_salt("3d_nodes").max_height(220.0).show(ui, |ui| {
                     let mut stack: Vec<(usize, usize)> = m.roots.iter().rev().map(|&r| (r, 0)).collect();
                     while let Some((i, depth)) = stack.pop() {
@@ -673,6 +705,9 @@ impl PaintApp {
         if changed {
             e.changed();
         }
+        if let Some(m) = msg {
+            self.status = m;
+        }
         if frame_all {
             let models = e.models.clone();
             paint_3d::frame(&mut e.scene, &models);
@@ -689,4 +724,84 @@ impl PaintApp {
             self.show_3d = false;
         }
     }
+}
+
+/// Папка поз в своей папке программы.
+fn poses_dir() -> Option<std::path::PathBuf> {
+    Some(crate::settings::dir()?.join("poses"))
+}
+
+/// Запомненные позы по алфавиту.
+fn pose_names() -> Vec<String> {
+    let Some(rd) = poses_dir().and_then(|d| std::fs::read_dir(d).ok()) else { return Vec::new() };
+    let mut out: Vec<String> = rd.flatten().filter_map(|e| {
+        let p = e.path();
+        p.extension().is_some_and(|x| x == "gspose").then(|| p.file_stem()?.to_str().map(str::to_string)).flatten()
+    }).collect();
+    out.sort_by_key(|n| n.to_lowercase());
+    out
+}
+
+/// Позы: отразить, запомнить под именем, взять запомненную, удалить. `true` — поза изменилась.
+fn pose_row(ui: &mut egui::Ui, o: &mut Object, m: &Model, name: &mut Option<String>, msg: &mut Option<String>) -> bool {
+    let mut changed = false;
+    ui.horizontal_wrapped(|ui| {
+        if ui.button(tr("Отразить позу")).on_hover_text(tr("Левая ↔ правая: суставы с «Left/Right», «.L/.R», «_L/_R» в имени меняются позами")).clicked() {
+            paint_3d::pose::mirror(o, m);
+            changed = true;
+        }
+        if ui.button(tr("Запомнить позу…")).clicked() {
+            *name = Some(String::new());
+        }
+        let names = pose_names();
+        if !names.is_empty() {
+            egui::ComboBox::from_id_salt("3d_poses").selected_text(tr("Взять позу")).show_ui(ui, |ui| {
+                for n in &names {
+                    ui.horizontal(|ui| {
+                        if ui.small_button("✕").on_hover_text(tr("Удалить")).clicked() {
+                            if let Some(d) = poses_dir() {
+                                let _ = std::fs::remove_file(d.join(format!("{n}.gspose")));
+                            }
+                        }
+                        if ui.selectable_label(false, n).clicked() {
+                            let text = poses_dir().and_then(|d| std::fs::read_to_string(d.join(format!("{n}.gspose"))).ok()).unwrap_or_default();
+                            match paint_3d::pose::apply_text(o, m, &text) {
+                                Ok((_, 0)) => *msg = Some(trf("Поза «{0}»", &[n])),
+                                Ok((_, missed)) => *msg = Some(trf("Поза «{0}»: у этой модели нет суставов из позы: {1}", &[n, &missed])),
+                                Err(e) => *msg = Some(trf("Поза «{0}» не открылась: {1}", &[n, &e])),
+                            }
+                            changed = true;
+                        }
+                    });
+                }
+            });
+        }
+    });
+    let mut close = false;
+    if let Some(n) = name.as_mut() {
+        ui.horizontal(|ui| {
+            let r = ui.add(egui::TextEdit::singleline(n).hint_text(tr("Имя позы")).desired_width(150.0));
+            r.request_focus();
+            let ok = ui.button(tr("Запомнить")).clicked() || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+            if ok && !n.trim().is_empty() {
+                let file = crate::assets::clean_name(n);
+                let res = poses_dir().ok_or_else(|| tr("нет папки настроек").to_string()).and_then(|d| {
+                    std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+                    paint_core::io::write_atomic(&d.join(format!("{file}.gspose")), paint_3d::pose::to_text(o, m).as_bytes()).map_err(|e| e.to_string())
+                });
+                *msg = Some(match res {
+                    Ok(()) => trf("Поза «{0}» запомнена", &[&file]),
+                    Err(e) => trf("Поза не запомнена: {0}", &[&e]),
+                });
+                close = true;
+            }
+            if ui.button(tr("Отмена")).clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                close = true;
+            }
+        });
+    }
+    if close {
+        *name = None;
+    }
+    changed
 }

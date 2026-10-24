@@ -398,6 +398,25 @@ pub fn project(scene: &Scene, w: u32, h: u32, p: Vec3) -> Option<Vec2> {
     (c.w > 1e-6).then(|| Vec2::new((c.x / c.w * 0.5 + 0.5) * w as f32, (0.5 - c.y / c.w * 0.5) * h as f32))
 }
 
+/// Точка холста → точка мира на плоскости, которая проходит через `at` поперёк взгляда (та же
+/// камера, что у `project`).
+pub fn unproject(scene: &Scene, w: u32, h: u32, p: Vec2, at: Vec3) -> Option<Vec3> {
+    let cam = &scene.camera;
+    let proj = glam::camera::rh::proj::directx::perspective(cam.fov.clamp(1.0, 150.0).to_radians(), w.max(1) as f32 / h.max(1) as f32, 0.01, 100.0);
+    let inv = (proj * cam.view()).inverse();
+    let (x, y) = (p.x / w.max(1) as f32 * 2.0 - 1.0, 1.0 - p.y / h.max(1) as f32 * 2.0);
+    let a = inv.project_point3(Vec3::new(x, y, 0.0));
+    let b = inv.project_point3(Vec3::new(x, y, 0.5));
+    let dir = (b - a).normalize_or_zero();
+    let n = (cam.target - cam.eye()).normalize_or(Vec3::NEG_Z);
+    let den = dir.dot(n);
+    if den.abs() < 1e-6 {
+        return None;
+    }
+    let t = (at - a).dot(n) / den;
+    (t.is_finite() && t > 0.0).then(|| a + dir * t)
+}
+
 /// Точки, за которые можно взять предмет: суставы скелета, а без скелета — узлы с сетками и их
 /// родители (части сцены). (узел, точка в мире, родитель-точка).
 pub fn handles(o: &crate::scene::Object, m: &Model) -> Vec<(usize, Vec3, Option<usize>)> {
@@ -432,4 +451,18 @@ pub fn upscale(src: &[u8], sw: u32, sh: u32, w: u32, h: u32) -> Vec<u8> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unproject_inverts_project() {
+        let scene = Scene::default();
+        let p = Vec3::new(0.3, 1.2, -0.4);
+        let s = project(&scene, 800, 600, p).unwrap();
+        let back = unproject(&scene, 800, 600, s, p).unwrap();
+        assert!((back - p).length() < 1e-3, "{back:?}");
+    }
 }

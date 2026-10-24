@@ -2,6 +2,7 @@
 //! процессоре в обычные пиксели слоя. План — `docs/39-3d-reference.md`.
 
 pub mod model;
+pub mod pose;
 pub mod render;
 pub mod scene;
 
