@@ -49,6 +49,10 @@ if [ -z "$NO_EXTRA" ]; then
   cp ../win7/GrazySAI.exe ../win7/gspathcch.dll GrazySAI-$V-windows7-x86_64/
   rm -f GrazySAI-$V-freebsd-*.tar.gz GrazySAI-$V-windows7-*.zip
   tar czf GrazySAI-$V-freebsd-x86_64.tar.gz GrazySAI-$V-freebsd-x86_64
+  # пакет FreeBSD — в виртуальной машине FreeBSD, если она есть
+  if [ -x "${FREEBSD_VM:-$HOME/.local/share/vms/freebsd}/ssh.sh" ]; then
+    (cd "$ROOT" && tools/freebsd/mkpkg.sh "$V" >/dev/null) && cp ../freebsd/grazysai-$V.pkg .
+  fi
   python3 -I "$ROOT/tools/mkzip.py" GrazySAI-$V-windows7-x86_64.zip GrazySAI-$V-windows7-x86_64
 fi
 ls -la GrazySAI-$V-*.tar.gz GrazySAI-$V-*.zip SOsai-$V-*.tar.gz SOsai-$V-*.zip

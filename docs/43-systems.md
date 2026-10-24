@@ -32,6 +32,10 @@ awesome, Sway и Hyprland без полного сеанса запустить 
 FreeBSD — рабочий стол freedesktop). Нужны пакеты: `xorg` (или `xorg-vfbserver` для проверок),
 `mesa-dri`, `mesa-libs`, `libxkbcommon`.
 
+Установка: пакет из выпуска — `pkg add grazysai-ВЕРСИЯ.pkg` (зависимости — Mesa и библиотеки
+X11 — `pkg` поставит сам), или архив `freebsd-x86_64.tar.gz`. Пакет собирает
+`tools/freebsd/mkpkg.sh` (`pkg create` в виртуальной машине FreeBSD).
+
 ## Windows 7, 8 и 8.1
 
 Стандартная библиотека Rust с версии 1.78 требует Windows 10. Для Windows 7 — цель

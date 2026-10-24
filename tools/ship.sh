@@ -26,7 +26,7 @@ git commit -q -m "GrazySAI $V: $TITLE
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 git tag "v$V"
 git push -q origin HEAD "v$V"
-EXTRA=$(ls dist/release/GrazySAI-$V-freebsd-x86_64.tar.gz dist/release/GrazySAI-$V-windows7-x86_64.zip 2>/dev/null || true)
+EXTRA=$(ls dist/release/GrazySAI-$V-freebsd-x86_64.tar.gz dist/release/grazysai-$V.pkg dist/release/GrazySAI-$V-windows7-x86_64.zip 2>/dev/null || true)
 gh release create "v$V" -R $R -t "GrazySAI $V" -F "$NOTES" dist/release/GrazySAI-$V-windows-x86_64.zip dist/release/GrazySAI-$V-linux-x86_64.tar.gz dist/release/SOsai-$V-windows-x86_64.zip dist/release/SOsai-$V-linux-x86_64.tar.gz $EXTRA
 for i in "$@"; do gh issue close "$i" -R $R -c "Сделано в $V / Done in $V"; done
 echo "выпущено $V"

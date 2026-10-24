@@ -32,6 +32,10 @@ Built on Linux: target `x86_64-unknown-freebsd`, clang and lld from llvm-mingw, 
 Linux and FreeBSD are freedesktop desktops). Packages needed: `xorg` (or `xorg-vfbserver` for
 checks), `mesa-dri`, `mesa-libs`, `libxkbcommon`.
 
+Install: the package from the release — `pkg add grazysai-VERSION.pkg` (`pkg` pulls in Mesa and the
+X11 libraries itself), or the `freebsd-x86_64.tar.gz` archive. The package is built by
+`tools/freebsd/mkpkg.sh` (`pkg create` in a FreeBSD virtual machine).
+
 ## Windows 7, 8 and 8.1
 
 Rust's standard library requires Windows 10 since 1.78. For Windows 7 — the
