@@ -3,6 +3,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod assets;
+mod library;
 mod i18n;
 mod file_viewer;
 mod icons;
@@ -749,6 +750,29 @@ struct CanvasDialog {
     anchor: (u8, u8),
 }
 
+/// Окно библиотеки кистей (как панель пресетов Krita, палитра материалов CSP, кисти Photoshop):
+/// разделы слева, поиск и размер карточек сверху, карточки с образцом мазка.
+struct LibWindow {
+    open: bool,
+    filter: library::Filter,
+    search: String,
+    /// Ширина карточки, точек.
+    card: f32,
+    list: bool,
+    sel: Option<String>,
+    /// Отдельным окном системы (иначе — внутри главного) и поверх других окон.
+    separate: bool,
+    on_top: bool,
+    rename: Option<String>,
+    tag: String,
+}
+
+impl Default for LibWindow {
+    fn default() -> Self {
+        Self { open: false, filter: library::Filter::All, search: String::new(), card: 150.0, list: false, sel: None, separate: true, on_top: false, rename: None, tag: String::new() }
+    }
+}
+
 /// Окно «Менеджер ресурсов»: раздел (`None` — наборы образцов), выбранный ресурс, поля ввода.
 #[derive(Default)]
 struct AssetsWindow {
@@ -1050,6 +1074,8 @@ struct BrushTool {
     before_restore: Option<paint_brush::Brush>,
     /// Группа инструментов (вкладка над сеткой, как в SAI 2020+).
     group: usize,
+    /// Кисть из библиотеки (id) — чтобы не ставить её в сетку второй раз.
+    lib_id: Option<String>,
 }
 
 impl std::ops::Deref for BrushTool {
@@ -1072,7 +1098,7 @@ trait NewTool {
 
 impl NewTool for ToolKind {
     fn new_tool(self) -> BrushTool {
-        BrushTool { brush: self.new_brush(), key: None, reserved: None, before_restore: None, group: 0 }
+        BrushTool { brush: self.new_brush(), key: None, reserved: None, before_restore: None, group: 0, lib_id: None }
     }
 }
 
@@ -1284,6 +1310,10 @@ struct PaintApp {
     nav_dirty: HashSet<Key>,
     /// Когда смотрели занятость диска и что увидели.
     disk_seen: Option<(Instant, Option<(u64, u64)>)>,
+    /// Библиотека кистей, её окно и образцы мазков для карточек.
+    lib: Option<library::Library>,
+    lib_win: LibWindow,
+    lib_tex: HashMap<String, egui::TextureHandle>,
     brush: usize,
     /// Основной цвет в HSV (тон хранится и у серых), фоновый — RGB.
     hsv: [f32; 3],
@@ -1596,6 +1626,9 @@ impl PaintApp {
             nav: None,
             nav_dirty: HashSet::new(),
             disk_seen: None,
+            lib: library::Library::open(),
+            lib_win: LibWindow::default(),
+            lib_tex: HashMap::new(),
             // PAINT_BRUSH — номер кисти в сетке при запуске (для проверок виртуальным пером)
             brush: std::env::var("PAINT_BRUSH").ok().and_then(|v| v.parse().ok()).filter(|&i: &usize| i != 5 && i < 8).unwrap_or(0),
             hsv: [0.0, 0.0, 0.08],
@@ -1898,6 +1931,7 @@ app.open_canvas_dialog(d == "resolution")
                     t.extra = s.str(&format!("tool.{i}.extra")).unwrap_or("").to_string();
                     t.key = s.str(&format!("tool.{i}.key")).and_then(keys::Binding::parse);
                     t.group = s.f32(&format!("tool.{i}.group")).map_or(0, |v| v as usize);
+                    t.lib_id = s.str(&format!("tool.{i}.lib")).filter(|v| !v.is_empty()).map(str::to_string);
                     Some(t)
                 })
                 .collect();
@@ -2027,6 +2061,12 @@ app.open_canvas_dialog(d == "resolution")
         s.read_bool("dot_cursor", &mut self.win.dot_cursor);
         s.read_bool("brush_circle", &mut self.win.brush_circle);
         s.read_bool("size_numbers", &mut self.win.size_numbers);
+        if let Some(v) = s.f32("lib.card") {
+            self.lib_win.card = v.clamp(100.0, 260.0);
+        }
+        s.read_bool("lib.list", &mut self.lib_win.list);
+        s.read_bool("lib.separate", &mut self.lib_win.separate);
+        s.read_bool("lib.on_top", &mut self.lib_win.on_top);
         s.read_bool("size_list_top", &mut self.win.size_list_top);
         if let Some(v) = s.f32("hsv_mode") {
             self.win.hsv_mode = (v as u8).min(2);
@@ -2158,6 +2198,7 @@ app.open_canvas_dialog(d == "resolution")
             s.set(&format!("tool.{i}.extra"), &b.extra);
             s.set(&format!("tool.{i}.key"), b.key.map_or(String::new(), |k| k.text()));
             s.set(&format!("tool.{i}.group"), b.group);
+            s.set(&format!("tool.{i}.lib"), b.lib_id.as_deref().unwrap_or(""));
         }
         for (i, b) in self.brushes.iter().enumerate() {
             write_tool(b, &mut s, &format!("brush.{i}."));
@@ -2216,6 +2257,10 @@ app.open_canvas_dialog(d == "resolution")
         s.set("dot_cursor", w.dot_cursor as u8);
         s.set("brush_circle", w.brush_circle as u8);
         s.set("size_numbers", w.size_numbers as u8);
+        s.set("lib.card", self.lib_win.card);
+        s.set("lib.list", self.lib_win.list as u8);
+        s.set("lib.separate", self.lib_win.separate as u8);
+        s.set("lib.on_top", self.lib_win.on_top as u8);
         s.set("size_list_top", w.size_list_top as u8);
         s.set("hsv_mode", w.hsv_mode);
         s.set("swatch_size", w.swatch_size);
@@ -2396,7 +2441,7 @@ app.open_canvas_dialog(d == "resolution")
             }
             GridAction::Duplicate => {
                 let src = &self.brushes[i];
-                let copy = BrushTool { brush: src.brush.clone(), key: None, reserved: src.reserved.clone(), before_restore: None, group: src.group };
+                let copy = BrushTool { brush: src.brush.clone(), key: None, reserved: src.reserved.clone(), before_restore: None, group: src.group, lib_id: None };
                 self.brushes.insert(i + 1, copy);
                 if self.brush > i {
                     self.brush += 1;
@@ -3844,7 +3889,7 @@ app.open_canvas_dialog(d == "resolution")
                         self.brush = i;
                     }
                     None => {
-                        self.brushes.push(BrushTool { brush, key: None, reserved: None, before_restore: None, group: 0 });
+                        self.brushes.push(BrushTool { brush, key: None, reserved: None, before_restore: None, group: 0, lib_id: None });
                         self.brush = self.brushes.len() - 1;
                     }
                 }
@@ -3886,7 +3931,7 @@ app.open_canvas_dialog(d == "resolution")
             return;
         }
         let added = list.len();
-        self.brushes.extend(list.into_iter().map(|brush| BrushTool { brush, key: None, reserved: None, before_restore: None, group: 0 }));
+        self.brushes.extend(list.into_iter().map(|brush| BrushTool { brush, key: None, reserved: None, before_restore: None, group: 0, lib_id: None }));
         self.brush = self.brushes.len() - 1;
         self.tool = Tool::Brush;
         self.grain_names = None;
@@ -3907,53 +3952,20 @@ app.open_canvas_dialog(d == "resolution")
     fn add_imported(&mut self, brushes: &[paint_formats::brush_tip::ImportedBrush], from: &str) {
         let mut skipped: Vec<&str> = Vec::new();
         for b in brushes {
-            let kind = if b.erase {
-                ToolKind::Eraser
-            } else if b.mix.is_some() {
-                ToolKind::Brush
-            } else {
-                ToolKind::Pencil
-            };
-            let mut t = kind.new_tool();
-            let step = paint_core::brush::HARDNESS_STEPS.iter().copied().min_by(|x, y| (x - b.hardness).abs().total_cmp(&(y - b.hardness).abs())).unwrap_or(1.0);
-            t.params = BrushParams {
-                size: b.size,
-                min_size: b.size_pressure.unwrap_or(1.0),
-                size_by_pressure: b.size_pressure.is_some(),
-                density: b.density,
-                min_density: b.density_pressure.unwrap_or(1.0),
-                density_by_pressure: b.density_pressure.is_some(),
-                hardness: step,
-                spacing: b.spacing.unwrap_or(0.0),
-                mix: b.mix.map(|(blend, dilute)| MixParams::new(blend, dilute, 0.5)),
-                ..t.params
-            };
-            t.custom = Some(b.name.clone());
-            t.extra = from.to_string();
-            if let (Some(tex), Some(dir)) = (&b.texture, paint_core::paper::user_dir("brushtex")) {
-                let name: String = format!("{from} {}", b.name).chars().map(|c| if c.is_alphanumeric() || " -_().".contains(c) { c } else { '_' }).collect();
-                if std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(format!("{name}.bmp")), tex.to_bmp())).is_ok() {
-                    t.grain.tex = TexChoice::File(name);
-                    t.grain.tex_strength = b.texture_density;
-                    t.grain.tex_scale = b.texture_scale;
-                }
-            }
-            if let Some(tip) = &b.tip {
-                let cells: Vec<paint_core::Stamp> = std::iter::once(tip.clone()).chain(b.tip_more.iter().cloned()).collect();
-                if let Ok(name) = paint_core::paper::save_tips(&format!("{from} {}", b.name), &cells) {
-                    t.grain.tip = Some(name);
-                    t.grain.tip_random = b.tip_random;
-                }
-            }
-            t.grain.tip_angle = b.tip_angle;
-            t.grain.tip_ratio = b.tip_ratio;
-            t.grain.tip_follow = b.tip_follow;
+            let t = imported_brush(b, from);
             for s in &b.skipped {
                 if !skipped.contains(s) {
                     skipped.push(s);
                 }
             }
-            self.brushes.push(t);
+            self.brushes.push(BrushTool { brush: t, key: None, reserved: None, before_restore: None, group: self.tool_group, lib_id: None });
+        }
+        self.after_import(brushes, from, skipped);
+    }
+
+    fn after_import(&mut self, brushes: &[paint_formats::brush_tip::ImportedBrush], from: &str, skipped: Vec<&str>) {
+        if brushes.is_empty() {
+            return;
         }
         self.brush = self.brushes.len() - 1;
         self.tool = Tool::Brush;
@@ -3962,24 +3974,443 @@ app.open_canvas_dialog(d == "resolution")
             [one] => trf("Кисть {0} «{1}» добавлена в сетку", &[&from, &one.name]),
             many => trf("Кистей {0} добавлено в сетку: {1}", &[&from, &many.len()]),
         };
-        let label = |s: &str| match s {
-            "распыление" => tr("распыление"),
-            "двойная кисть" => tr("двойная кисть"),
-            "форма кончика из картинки" => tr("форма кончика из картинки"),
-            "смена цвета по мазку" => tr("смена цвета по мазку"),
-            "кайма акварели" => tr("кайма акварели"),
-            "толщина кончика" => tr("толщина кончика"),
-            "текстура (картинки нет в файле)" => tr("текстура (картинки нет в файле)"),
-            "движок кисти (взяты только общие настройки)" => tr("движок кисти (взяты только общие настройки)"),
-            "сплюснутый кончик" => tr("сплюснутый кончик"),
-            "кончик (файла нет рядом с пресетом и в папках Krita)" => tr("кончик (файла нет рядом с пресетом и в папках Krita)"),
-            "вид кончика (векторный или текстовый)" => tr("вид кончика (векторный или текстовый)"),
-            "текстура" => tr("текстура"),
-            _ => s,
-        }
-        .to_string();
+        let label = |s: &str| tr_skipped(s).to_string();
         let skipped: Vec<String> = skipped.iter().map(|s| label(s)).collect();
         self.status = if skipped.is_empty() { added } else { format!("{added}. {}", trf("Нет в GrazySAI, пропущено: {0}", &[&skipped.join(", ")])) };
+    }
+
+    /// Кисти из файла — в библиотеку (каждая — своей карточкой; исходный файл копируется в
+    /// `library/originals`), окно библиотеки открывается на «Новых».
+    fn import_to_library(&mut self, path: &std::path::Path) {
+        self.import_batch(vec![path.to_path_buf()]);
+    }
+
+    /// Пачка файлов и папок (папки — со всеми кистями внутри, до 4 уровней): всё — в библиотеку,
+    /// итог — одной строкой, окно библиотеки — на «Новых».
+    fn import_batch(&mut self, paths: Vec<PathBuf>) {
+        fn walk(p: &std::path::Path, depth: u32, out: &mut Vec<PathBuf>) {
+            if out.len() >= 5000 {
+                return;
+            }
+            if p.is_dir() {
+                if depth == 0 {
+                    return;
+                }
+                let Ok(rd) = std::fs::read_dir(p) else { return };
+                let mut list: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+                list.sort();
+                for q in list {
+                    walk(&q, depth - 1, out);
+                }
+            } else if library::is_brush_file(p) {
+                out.push(p.to_path_buf());
+            }
+        }
+        let mut files = Vec::new();
+        for p in &paths {
+            walk(p, 4, &mut files);
+        }
+        if files.is_empty() {
+            self.status = tr("Файлов кистей не найдено").to_string();
+            return;
+        }
+        let (mut added, mut failed) = (0usize, Vec::new());
+        let mut skipped: Vec<String> = Vec::new();
+        for f in &files {
+            match self.import_one(f) {
+                Ok((n, sk)) => {
+                    added += n;
+                    skipped.extend(sk);
+                }
+                Err(e) => failed.push(format!("{}: {e}", f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())),
+            }
+        }
+        if let Some(lib) = &self.lib {
+            lib.save();
+        }
+        skipped.sort();
+        skipped.dedup();
+        self.grain_names = None;
+        if added > 0 {
+            self.lib_win.open = true;
+            self.lib_win.filter = library::Filter::New;
+        }
+        let mut msg = trf("В библиотеку добавлено кистей: {0} из файлов: {1}", &[&added, &files.len()]);
+        if !skipped.is_empty() {
+            let names: Vec<&str> = skipped.iter().map(|s| tr_skipped(s)).collect();
+            msg = format!("{msg}. {}", trf("Нет в GrazySAI, пропущено: {0}", &[&names.join(", ")]));
+        }
+        if !failed.is_empty() {
+            msg = format!("{msg}. {}", trf("Не добавились: {0}", &[&failed.join("; ")]));
+        }
+        self.status = msg;
+    }
+
+    /// Кисти одного файла — в библиотеку (без сохранения сведений): сколько добавлено и что
+    /// пропущено при переносе.
+    fn import_one(&mut self, path: &std::path::Path) -> Result<(usize, Vec<String>), String> {
+        let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
+        let set = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        // кисть с картинкой-отпечатком (GIMP, Photoshop): карандаш с этим отпечатком
+        let tip_brush = |tip: String, random: bool| {
+            let mut b = ToolKind::Pencil.new_brush();
+            b.params.size = 40.0;
+            b.params.spacing = 0.1;
+            b.grain.tip = Some(tip);
+            b.grain.tip_random = random;
+            b
+        };
+        let res: Result<Imported, String> = (|| {
+            let mut skipped = Vec::new();
+            Ok(match ext.as_str() {
+                "sut" | "bfps" => {
+                    let list = paint_formats::csp::load(path).map_err(|e| e.to_string())?;
+                    skipped = list.iter().flat_map(|b| b.skipped.clone()).collect();
+                    (list.iter().map(|b| (imported_brush(b, "CSP"), b.name.clone())).collect(), "Clip Studio", skipped)
+                }
+                "kpp" | "bundle" => {
+                    let list = if ext == "bundle" { paint_formats::krita::load_bundle(path) } else { paint_formats::krita::load_kpp(path).map(|b| vec![b]) }.map_err(|e| e.to_string())?;
+                    skipped = list.iter().flat_map(|b| b.skipped.clone()).collect();
+                    (list.iter().map(|b| (imported_brush(b, "Krita"), b.name.clone())).collect(), "Krita", skipped)
+                }
+                "abr" => {
+                    let list = std::fs::read(path).map_err(|e| e.to_string()).and_then(|d| paint_formats::brush_tip::abr(&d).map_err(|e| e.to_string()))?;
+                    let mut out = Vec::new();
+                    for (name, st) in &list {
+                        if let Ok(saved) = paint_core::paper::save_tip(&format!("{set} {name}"), st) {
+                            out.push((tip_brush(saved, false), name.clone()));
+                        }
+                    }
+                    (out, "Photoshop", skipped)
+                }
+                "gbr" | "gih" => {
+                    let (name, cells, random) = paint_formats::brush_tip::load_all(path).map_err(|e| e.to_string())?;
+                    let saved = paint_core::paper::save_tips(&name, &cells).map_err(|e| e.to_string())?;
+                    (vec![(tip_brush(saved, random), name)], "GIMP", skipped)
+                }
+                _ => {
+                    let files = paint_formats::pack::read(path).map_err(|e| e.to_string())?;
+                    let list = paint_brush::from_files(&files, tr("Кисть"));
+                    (list.into_iter().map(|b| { let n = b.custom.clone().unwrap_or_else(|| tr(b.kind.label()).to_string()); (b, n) }).collect(), "GrazySAI", skipped)
+                }
+            })
+        })();
+        let lib = self.lib.as_mut().ok_or_else(|| tr("нет папки настроек").to_string())?;
+        let (list, source, skipped) = res?;
+        if list.is_empty() {
+            return Err(tr("В файле нет кистей").to_string());
+        }
+        lib.keep_original(path);
+        let mut added = 0;
+        for (b, name) in &list {
+            // та же кисть того же набора уже есть — второй раз не добавляется
+            if lib.entries.iter().any(|e| e.source == source && e.set == set && e.name == *name) {
+                continue;
+            }
+            if lib.add(b, name, source, &set).is_ok() {
+                added += 1;
+            }
+        }
+        Ok((added, skipped.into_iter().map(str::to_string).collect()))
+    }
+
+    /// Окно библиотеки: отдельным окном системы (можно унести на другой монитор, «поверх
+    /// других окон») или плавающим внутри главного.
+    fn library_window(&mut self, ctx: &egui::Context) {
+        if !self.lib_win.open || self.lib.as_ref().is_none_or(|l| l.entries.is_empty()) {
+            self.lib_win.open = false;
+            return;
+        }
+        let title = format!("{} — GrazySAI", tr("Библиотека кистей"));
+        let mut closed = false;
+        if self.lib_win.separate {
+            let level = if self.lib_win.on_top { egui::WindowLevel::AlwaysOnTop } else { egui::WindowLevel::Normal };
+            let builder = egui::ViewportBuilder::default().with_title(title.clone()).with_inner_size([720.0, 480.0]).with_min_inner_size([360.0, 240.0]).with_window_level(level);
+            ctx.show_viewport_immediate(egui::ViewportId::from_hash_of("brush_library"), builder, |ctx, class| {
+                if class == egui::ViewportClass::Embedded {
+                    let mut open = true;
+                    egui::Window::new(&title).id(egui::Id::new("lib_win")).open(&mut open).default_size([720.0, 480.0]).show(ctx, |ui| self.library_ui(ui));
+                    closed = !open;
+                } else {
+                    egui::CentralPanel::default().show(ctx, |ui| self.library_ui(ui));
+                    closed = ctx.input(|i| i.viewport().close_requested());
+                }
+            });
+        } else {
+            let mut open = true;
+            egui::Window::new(&title).id(egui::Id::new("lib_win")).open(&mut open).default_size([720.0, 480.0]).show(ctx, |ui| self.library_ui(ui));
+            closed = !open;
+        }
+        if closed {
+            self.lib_win.open = false;
+            // просмотренные — уже не «новые»
+            if let Some(lib) = self.lib.as_mut() {
+                let mut changed = false;
+                for e in lib.entries.iter_mut().filter(|e| e.new) {
+                    e.new = false;
+                    changed = true;
+                }
+                if changed {
+                    lib.save();
+                }
+            }
+            if self.lib_win.filter == library::Filter::New {
+                self.lib_win.filter = library::Filter::All;
+            }
+            self.save_settings();
+        }
+    }
+
+    /// Содержимое окна библиотеки: разделы слева, поиск и вид сверху, карточки, сведения снизу.
+    fn library_ui(&mut self, ui: &mut egui::Ui) {
+        use library::Filter;
+        let Some(lib) = self.lib.as_ref() else { return };
+        let (sources, sets, tags) = lib.groups();
+        let entries = lib.entries.clone();
+        let count = |f: &Filter| entries.iter().filter(|e| f.matches(e, "")).count();
+        // верхняя строка
+        let mut add = false;
+        ui.horizontal(|ui| {
+            if icons::item(ui, "plus", tr("Добавить…")).on_hover_text(tr("Добавить файлы кистей; можно и перетащить файлы или папку в окно программы")).clicked() {
+                add = true;
+            }
+            ui.separator();
+            ui.add(egui::TextEdit::singleline(&mut self.lib_win.search).hint_text(tr("Поиск по имени, набору, метке")).desired_width(200.0));
+            ui.separator();
+            ui.add(egui::Slider::new(&mut self.lib_win.card, 100.0..=260.0).show_value(false)).on_hover_text(tr("Размер карточек"));
+            ui.selectable_value(&mut self.lib_win.list, false, tr("Карточки"));
+            ui.selectable_value(&mut self.lib_win.list, true, tr("Список"));
+            ui.separator();
+            ui.checkbox(&mut self.lib_win.separate, tr("Отдельным окном")).on_hover_text(tr("Своё окно системы — можно унести на другой монитор"));
+            ui.add_enabled(self.lib_win.separate, egui::Checkbox::new(&mut self.lib_win.on_top, tr("Поверх других окон")));
+        });
+        ui.separator();
+        let mut pick_filter = None;
+        let mut take = None;
+        let mut act: Option<(String, u8)> = None;
+        let filter = self.lib_win.filter.clone();
+        let search = self.lib_win.search.clone();
+        let shown: Vec<library::Entry> = entries.iter().filter(|e| filter.matches(e, &search)).cloned().collect();
+        ui.horizontal_top(|ui| {
+            // разделы
+            ui.vertical(|ui| {
+            ui.set_width(170.0);
+            egui::ScrollArea::vertical().id_salt("lib_nav").max_height(ui.available_height()).show(ui, |ui| {
+                ui.set_width(165.0);
+                for (f, name) in [(Filter::All, tr("Все")), (Filter::Fav, tr("Избранное")), (Filter::New, tr("Новые"))] {
+                    let n = count(&f);
+                    if ui.selectable_label(filter == f, format!("{name} ({n})")).clicked() {
+                        pick_filter = Some(f);
+                    }
+                }
+                let block = |ui: &mut egui::Ui, head: &str, items: &[String], make: &dyn Fn(String) -> Filter, pick: &mut Option<Filter>| {
+                    if items.is_empty() {
+                        return;
+                    }
+                    ui.add_space(4.0);
+                    ui.weak(head);
+                    for it in items {
+                        let f = make(it.clone());
+                        let n = count(&f);
+                        if ui.selectable_label(filter == f, format!("  {it} ({n})")).clicked() {
+                            *pick = Some(f);
+                        }
+                    }
+                };
+                block(ui, tr("Откуда"), &sources, &Filter::Source, &mut pick_filter);
+                block(ui, tr("Наборы"), &sets, &Filter::Set, &mut pick_filter);
+                block(ui, tr("Метки"), &tags, &Filter::Tag, &mut pick_filter);
+            });
+            });
+            ui.separator();
+            // карточки
+            ui.vertical(|ui| {
+                if shown.is_empty() {
+                    ui.weak(tr("Ничего не найдено"));
+                }
+                let card = self.lib_win.card;
+                let list = self.lib_win.list;
+                let sel = self.lib_win.sel.clone();
+                egui::ScrollArea::vertical().id_salt("lib_cards").max_height(ui.available_height() - 64.0).auto_shrink([false, false]).show(ui, |ui| {
+                    let per_row = if list { 1 } else { ((ui.available_width() + 6.0) / (card + 6.0)).floor().max(1.0) as usize };
+                    for row in shown.chunks(per_row) {
+                        ui.horizontal(|ui| {
+                            for e in row {
+                                let tex = self.lib_tex.get(&e.id).cloned().or_else(|| {
+                                    let lib = self.lib.as_ref()?;
+                                    let (w, h, rgba) = lib.preview(&e.id)?;
+                                    // образец на шашке, как над настройками кисти
+                                    let mut px = Vec::with_capacity(rgba.len());
+                                    for (i, p) in rgba.as_chunks::<4>().0.iter().enumerate() {
+                                        let (x, y) = (i as u32 % w, i as u32 / w);
+                                        let bg = if (x / 6 + y / 6).is_multiple_of(2) { 255u32 } else { 232 };
+                                        let a = p[3] as u32;
+                                        px.extend((0..3).map(|c| ((p[c] as u32 * a + bg * (255 - a)) / 255) as u8));
+                                        px.push(255);
+                                    }
+                                    let t = ui.ctx().load_texture(format!("lib-{}", e.id), egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &px), egui::TextureOptions::LINEAR);
+                                    self.lib_tex.insert(e.id.clone(), t.clone());
+                                    Some(t)
+                                });
+                                let selected = sel.as_deref() == Some(e.id.as_str());
+                                let size = if list { Vec2::new(ui.available_width(), 34.0) } else { Vec2::new(card, card * 0.25 + 30.0) };
+                                let (rect, r) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
+                                let p = ui.painter_at(rect);
+                                p.rect_filled(rect, 3.0, if selected { sai_ui::select_bg() } else { sai_ui::gray(250) });
+                                p.rect_stroke(rect, 3.0, egui::Stroke::new(1.0_f32, sai_ui::border()));
+                                let img = if list { Rect::from_min_size(rect.min + Vec2::new(4.0, 4.0), Vec2::new(104.0, 26.0)) } else { Rect::from_min_size(rect.min + Vec2::new(4.0, 4.0), Vec2::new(card - 8.0, card * 0.25)) };
+                                if let Some(t) = &tex {
+                                    p.image(t.id(), img, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                                }
+                                let star = if e.fav { "★ " } else { "" };
+                                let new = if e.new { " •" } else { "" };
+                                let (tpos, maxw) = if list { (Pos2::new(img.right() + 8.0, rect.top() + 4.0), rect.width() - 120.0) } else { (Pos2::new(rect.left() + 5.0, img.bottom() + 3.0), card - 10.0) };
+                                sai_ui::fit_text(&p, tpos, egui::Align2::LEFT_TOP, &format!("{star}{}{new}", e.name), maxw, 12.0, sai_ui::ink());
+                                sai_ui::fit_text(&p, tpos + Vec2::new(0.0, 14.0), egui::Align2::LEFT_TOP, &format!("{} · {}", e.source, e.set), maxw, 10.0, sai_ui::gray(120));
+                                let r = r.on_hover_text(tr("Щелчок — выбрать, двойной щелчок — взять в сетку"));
+                                if r.clicked() {
+                                    act = Some((e.id.clone(), 0));
+                                }
+                                if r.double_clicked() {
+                                    take = Some(e.id.clone());
+                                }
+                                r.context_menu(|ui| {
+                                    if ui.button(tr("Взять в сетку")).clicked() {
+                                        take = Some(e.id.clone());
+                                        ui.close_menu();
+                                    }
+                                    if ui.button(if e.fav { tr("Убрать из избранного") } else { tr("В избранное") }).clicked() {
+                                        act = Some((e.id.clone(), 1));
+                                        ui.close_menu();
+                                    }
+                                    if ui.button(tr("Удалить из библиотеки")).clicked() {
+                                        act = Some((e.id.clone(), 2));
+                                        ui.close_menu();
+                                    }
+                                });
+                            }
+                        });
+                    }
+                });
+                // выбранная кисть: имя, метки, «Взять в сетку»
+                ui.separator();
+                let sel_entry = self.lib_win.sel.as_ref().and_then(|id| self.lib.as_ref()?.entries.iter().find(|e| &e.id == id).cloned());
+                if let Some(e) = sel_entry {
+                    ui.horizontal(|ui| {
+                        let mut name = self.lib_win.rename.clone().unwrap_or_else(|| e.name.clone());
+                        ui.label(tr("Название:"));
+                        let r = ui.add(egui::TextEdit::singleline(&mut name).desired_width(170.0));
+                        if r.changed() {
+                            self.lib_win.rename = Some(name.clone());
+                        }
+                        if r.lost_focus() && !name.trim().is_empty() && name != e.name {
+                            if let Some(en) = self.lib.as_mut().and_then(|l| l.get_mut(&e.id)) {
+                                en.name = name.trim().to_string();
+                            }
+                            act = Some((e.id.clone(), 3));
+                        }
+                        ui.label(tr("Метки:"));
+                        if self.lib_win.tag.is_empty() {
+                            self.lib_win.tag = e.tags.join(", ");
+                        }
+                        let r = ui.add(egui::TextEdit::singleline(&mut self.lib_win.tag).hint_text(tr("через запятую")).desired_width(150.0));
+                        if r.lost_focus() {
+                            let tags: Vec<String> = self.lib_win.tag.split(',').map(str::trim).filter(|t| !t.is_empty()).map(str::to_string).collect();
+                            if let Some(en) = self.lib.as_mut().and_then(|l| l.get_mut(&e.id)) {
+                                en.tags = tags;
+                            }
+                            act = Some((e.id.clone(), 3));
+                        }
+                        if ui.button(tr("Взять в сетку")).clicked() {
+                            take = Some(e.id.clone());
+                        }
+                    });
+                } else {
+                    ui.weak(tr("Щелчок по карточке — выбрать; двойной щелчок — взять в сетку (группа «Библиотека»)"));
+                }
+            });
+        });
+        if let Some(f) = pick_filter {
+            self.lib_win.filter = f;
+        }
+        match act {
+            Some((id, 0)) => {
+                if self.lib_win.sel.as_deref() != Some(id.as_str()) {
+                    self.lib_win.rename = None;
+                    self.lib_win.tag.clear();
+                }
+                self.lib_win.sel = Some(id);
+            }
+            Some((id, 1)) => {
+                if let Some(lib) = self.lib.as_mut() {
+                    if let Some(e) = lib.get_mut(&id) {
+                        e.fav = !e.fav;
+                    }
+                    lib.save();
+                }
+            }
+            Some((id, 2)) => {
+                if let Some(lib) = self.lib.as_mut() {
+                    lib.remove(&id);
+                    lib.save();
+                }
+                self.lib_tex.remove(&id);
+                if self.lib_win.sel.as_deref() == Some(id.as_str()) {
+                    self.lib_win.sel = None;
+                }
+            }
+            Some((_, 3)) => {
+                if let Some(lib) = &self.lib {
+                    lib.save();
+                }
+            }
+            _ => {}
+        }
+        if let Some(id) = take {
+            self.take_from_library(&id);
+        }
+        if add {
+            let dir = std::env::current_dir().unwrap_or_default().join("x");
+            if !self.native_dialog(files::Ask::LibraryAdd, &dir) {
+                self.status = String::from(tr("Перетащите файлы кистей в окно — они попадут в библиотеку"));
+            }
+        }
+    }
+
+    /// Взять кисть библиотеки в сетку — в группу «Библиотека» (уже взятая просто выбирается).
+    fn take_from_library(&mut self, id: &str) {
+        if let Some(i) = self.brushes.iter().position(|b| b.lib_id.as_deref() == Some(id)) {
+            self.brush = i;
+            self.tool = Tool::Brush;
+            return;
+        }
+        let Some(lib) = self.lib.as_mut() else { return };
+        let Some(mut brush) = lib.load(id) else {
+            self.status = tr("Кисть библиотеки не открылась").to_string();
+            return;
+        };
+        let entry = lib.get_mut(id).map(|e| {
+            e.new = false;
+            e.clone()
+        });
+        lib.save();
+        if let Some(e) = &entry {
+            brush.custom = Some(e.name.clone());
+            brush.extra = e.source.clone();
+        }
+        let gname = tr("Библиотека").to_string();
+        let group = match self.tool_groups.iter().position(|g| *g == gname) {
+            Some(g) => g,
+            None => {
+                self.tool_groups.push(gname);
+                self.tool_groups.len() - 1
+            }
+        };
+        self.brushes.push(BrushTool { brush, key: None, reserved: None, before_restore: None, group, lib_id: Some(id.to_string()) });
+        self.brush = self.brushes.len() - 1;
+        self.tool = Tool::Brush;
+        self.grain_names = None;
+        self.status = trf("Кисть «{0}» — в группе «{1}»", &[&entry.map(|e| e.name).unwrap_or_default(), &tr("Библиотека")]);
     }
 
     /// Палитра GIMP или Krita — в образцы цвета (вместо прежних, по порядку).
@@ -4018,6 +4449,11 @@ app.open_canvas_dialog(d == "resolution")
         let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
         if ext == "gpl" || ext == "kpl" {
             self.load_palette(&path);
+            return;
+        }
+        // сторонние кисти и файлы кистей — открытием или перетаскиванием — сразу в библиотеку
+        if (path.is_dir() || library::is_brush_file(&path)) && self.lib.is_some() {
+            self.import_to_library(&path);
             return;
         }
         if ext == "gbr" || ext == "gih" || ext == "abr" {
@@ -4488,6 +4924,10 @@ app.open_canvas_dialog(d == "resolution")
             (files::Answer::Unavailable, files::Ask::Model3d(_)) => self.status = String::from(tr("Окно выбора файла недоступно; перетащите файл модели в окно")),
             (files::Answer::Path(p), files::Ask::Reference) => self.add_reference(&p),
             (files::Answer::Path(p), files::Ask::Tip) => self.add_tip(&p),
+            (files::Answer::Path(p), files::Ask::LibraryAdd) => self.import_batch(vec![p]),
+            (files::Answer::Many(v), files::Ask::LibraryAdd) => self.import_batch(v),
+            (files::Answer::Many(_), _) => {}
+            (files::Answer::Unavailable, files::Ask::LibraryAdd) => self.status = String::from(tr("Перетащите файлы кистей в окно — они попадут в библиотеку")),
             (files::Answer::Path(p), files::Ask::Watermark) => {
                 self.watermark.image = Some(p);
                 self.watermark_preview = None;
@@ -7037,6 +7477,11 @@ app.open_canvas_dialog(d == "resolution")
                 }
             });
             ui.menu_button(keys::hint(tr("Окно(W)")), |ui| {
+                let has_lib = self.lib.as_ref().is_some_and(|l| !l.entries.is_empty());
+                if ui.add_enabled(has_lib, egui::Button::image_and_text(icons::image(ui.ctx(), "brush"), tr("Библиотека кистей…"))).on_disabled_hover_text(tr("Библиотека пуста: перетащите в окно файлы кистей (.sut, .kpp, .bundle, .abr, .gbr, .gih, .gsbrush) или папку с ними")).clicked() {
+                    self.lib_win.open = true;
+                    ui.close_menu();
+                }
                 if icons::item(ui, "assets", tr("Менеджер ресурсов…")).clicked() {
                     self.assets = Some(AssetsWindow::default());
                     ui.close_menu();
@@ -11011,6 +11456,7 @@ impl PaintApp {
             self.show_open &= open;
         }
         self.assets_window(ctx);
+        self.library_window(ctx);
         if self.ask_gray {
             let mut choice = None;
             egui::Window::new(tr("Оттенки серого")).collapsible(false).resizable(false).show(ctx, |ui| {
@@ -11931,7 +12377,16 @@ impl eframe::App for PaintApp {
             self.status = trf("Ошибка плагина «{0}»: {1}", &[&tr("Динамика"), &e.lines().next().unwrap_or("")]);
             self.plugin_log.push(e);
         }
-        let dropped = ctx.input(|i| i.raw.dropped_files.iter().find_map(|f| f.path.clone()));
+        let all: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
+        // кисти и папки с кистями — пачкой в библиотеку; остальное — первый файл, как раньше
+        let (brushes, other): (Vec<PathBuf>, Vec<PathBuf>) = all.into_iter().partition(|p| p.is_dir() || library::is_brush_file(p));
+        let shift_drop = ctx.input(|i| i.modifiers.shift);
+        if !brushes.is_empty() && self.lib.is_some() && !(shift_drop && brushes.iter().all(|p| p.is_file())) {
+            self.import_batch(brushes);
+        } else if let Some(p) = brushes.into_iter().next() {
+            self.add_tip(&p);
+        }
+        let dropped = other.into_iter().next();
         if let Some(path) = dropped {
             // с Ctrl картинка становится опорной, а не открывается
             if ctx.input(|i| i.modifiers.command) {
@@ -12419,7 +12874,12 @@ impl eframe::App for PaintApp {
                     ui.colored_label(Color32::from_rgb(220, 50, 50), format!("● REC {}", recording::size_text(r.bytes()))).on_hover_text(r.path.display().to_string());
                     ui.separator();
                 }
-                ui.label(&self.status);
+                // справа — нажим, диск, память: сообщению — что останется
+                let room = (ui.available_width() - 470.0).max(120.0);
+                ui.scope(|ui| {
+                    ui.set_max_width(room);
+                    ui.add(egui::Label::new(&self.status).truncate());
+                });
                 for note in &self.notes {
                     ui.separator();
                     ui.weak(note);
@@ -12647,6 +13107,75 @@ fn main() -> eframe::Result {
             Ok(Box::new(app))
         }),
     )
+}
+
+/// Название пропущенной при переносе возможности на языке интерфейса.
+fn tr_skipped(s: &str) -> &str {
+    match s {
+        "распыление" => tr("распыление"),
+        "двойная кисть" => tr("двойная кисть"),
+        "форма кончика из картинки" => tr("форма кончика из картинки"),
+        "смена цвета по мазку" => tr("смена цвета по мазку"),
+        "кайма акварели" => tr("кайма акварели"),
+        "толщина кончика" => tr("толщина кончика"),
+        "текстура (картинки нет в файле)" => tr("текстура (картинки нет в файле)"),
+        "движок кисти (взяты только общие настройки)" => tr("движок кисти (взяты только общие настройки)"),
+        "сплюснутый кончик" => tr("сплюснутый кончик"),
+        "кончик (файла нет рядом с пресетом и в папках Krita)" => tr("кончик (файла нет рядом с пресетом и в папках Krita)"),
+        "вид кончика (векторный или текстовый)" => tr("вид кончика (векторный или текстовый)"),
+        "текстура" => tr("текстура"),
+        _ => s,
+    }
+}
+
+/// Кисти одного файла для библиотеки: кисти с именами, откуда, что пропущено при переносе.
+type Imported = (Vec<(paint_brush::Brush, String)>, &'static str, Vec<&'static str>);
+
+/// Кисть другой программы (CSP, Krita) — кисть GrazySAI: картинки и текстура — в свою папку
+/// программы; `from` — подпись во второй строке ячейки.
+fn imported_brush(b: &paint_formats::brush_tip::ImportedBrush, from: &str) -> paint_brush::Brush {
+        let kind = if b.erase {
+            ToolKind::Eraser
+        } else if b.mix.is_some() {
+            ToolKind::Brush
+        } else {
+            ToolKind::Pencil
+        };
+        let mut t = kind.new_tool();
+        let step = paint_core::brush::HARDNESS_STEPS.iter().copied().min_by(|x, y| (x - b.hardness).abs().total_cmp(&(y - b.hardness).abs())).unwrap_or(1.0);
+        t.params = BrushParams {
+            size: b.size,
+            min_size: b.size_pressure.unwrap_or(1.0),
+            size_by_pressure: b.size_pressure.is_some(),
+            density: b.density,
+            min_density: b.density_pressure.unwrap_or(1.0),
+            density_by_pressure: b.density_pressure.is_some(),
+            hardness: step,
+            spacing: b.spacing.unwrap_or(0.0),
+            mix: b.mix.map(|(blend, dilute)| MixParams::new(blend, dilute, 0.5)),
+            ..t.params
+        };
+        t.custom = Some(b.name.clone());
+        t.extra = from.to_string();
+        if let (Some(tex), Some(dir)) = (&b.texture, paint_core::paper::user_dir("brushtex")) {
+            let name: String = format!("{from} {}", b.name).chars().map(|c| if c.is_alphanumeric() || " -_().".contains(c) { c } else { '_' }).collect();
+            if std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(dir.join(format!("{name}.bmp")), tex.to_bmp())).is_ok() {
+                t.grain.tex = TexChoice::File(name);
+                t.grain.tex_strength = b.texture_density;
+                t.grain.tex_scale = b.texture_scale;
+            }
+        }
+        if let Some(tip) = &b.tip {
+            let cells: Vec<paint_core::Stamp> = std::iter::once(tip.clone()).chain(b.tip_more.iter().cloned()).collect();
+            if let Ok(name) = paint_core::paper::save_tips(&format!("{from} {}", b.name), &cells) {
+                t.grain.tip = Some(name);
+                t.grain.tip_random = b.tip_random;
+            }
+        }
+        t.grain.tip_angle = b.tip_angle;
+        t.grain.tip_ratio = b.tip_ratio;
+        t.grain.tip_follow = b.tip_follow;
+    t.brush
 }
 
 /// Сетка размеров кисти, как в SAI: кружок и число, 5 в ряд; `numbers` — только числа. Возвращает

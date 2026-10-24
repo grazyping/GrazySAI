@@ -39,17 +39,21 @@ pub enum Ask {
     /// Картинка водяного знака.
     #[allow(dead_code)]
     Watermark,
+    /// Сторонние кисти — в библиотеку.
+    LibraryAdd,
 }
 
 pub struct Pending {
     pub ask: Ask,
-    rx: Receiver<Option<PathBuf>>,
+    rx: Receiver<Option<Vec<PathBuf>>>,
     started: Instant,
 }
 
 /// Ответ системного окна.
 pub enum Answer {
     Path(PathBuf),
+    /// Несколько файлов (добавление кистей в библиотеку пачкой).
+    Many(Vec<PathBuf>),
     Cancelled,
     /// Системного окна нет — нужно встроенное.
     Unavailable,
@@ -77,6 +81,10 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
                 (tr("Кисти Krita и GIMP").to_string(), vec!["kpp", "bundle", "gbr", "gih", "abr"]),
                 (tr("Все файлы").to_string(), vec!["*"]),
             ],
+        ),
+        Ask::LibraryAdd => (
+            tr("Добавить кисти в библиотеку"),
+            vec![(tr("Кисти (Clip Studio, Krita, Photoshop, GIMP, GrazySAI)").to_string(), vec!["sut", "bfps", "kpp", "bundle", "abr", "gbr", "gih", "gsbrush", "gsbrushes"])],
         ),
         Ask::Tip => (
             tr("Отпечаток кисти"),
@@ -125,12 +133,13 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
             d = d.set_directory(dir);
         }
         let picked = match kind {
-            Ask::Open | Ask::Reference | Ask::Tip | Ask::OpenWasm | Ask::Watermark | Ask::Model3d(_) => d.pick_file(),
+            Ask::LibraryAdd => d.pick_files(),
+            Ask::Open | Ask::Reference | Ask::Tip | Ask::OpenWasm | Ask::Watermark | Ask::Model3d(_) => d.pick_file().map(|p| vec![p]),
             _ => {
                 if let Some(n) = name {
                     d = d.set_file_name(n);
                 }
-                d.save_file()
+                d.save_file().map(|p| vec![p])
             }
         };
         let _ = tx.send(picked);
@@ -144,7 +153,9 @@ impl Pending {
     pub fn poll(&self) -> Option<Answer> {
         let picked = self.rx.try_recv().ok()?;
         Some(match picked {
-            Some(p) => Answer::Path(p),
+            Some(v) if self.ask == Ask::LibraryAdd => Answer::Many(v),
+            Some(mut v) if !v.is_empty() => Answer::Path(v.swap_remove(0)),
+            Some(_) => Answer::Cancelled,
             // мгновенный пустой ответ — окна не было (portal не отвечает)
             None if cfg!(target_os = "linux") && self.started.elapsed() < Duration::from_millis(250) => Answer::Unavailable,
             None => Answer::Cancelled,
