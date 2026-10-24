@@ -329,6 +329,7 @@ Not in 1.3.0 and not planned for now.
 - [ ] Layer styles (stroke, shadow, glow, etc.) and Gradient Map
 - [ ] Import from other programs: 3D models from Cinema 4D and other packages (FBX, Collada, USD, Alembic, etc.) — find out what else is worth accepting
 - [ ] User customisation, as in Clip Studio and other programs: panels, command sets, custom icons and shortcuts, workspaces
+- [ ] Timeline and animation as in Clip Studio Paint: cels (animation folders), timeline, onion skin, playback, export to GIF/video/frames
 
 From what was left after 1.3.0:
 
