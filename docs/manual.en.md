@@ -630,9 +630,14 @@ on.
 ### 3D layer
 
 “Layer → New 3D layer…” (or “File → Open”, or drag the file into the window) turns a glTF (`.glb`,
-`.gltf`) or OBJ model into a layer: a figure for proportions, an object, a room, a street. No models are
-bundled — bring your own (Blender saves glTF directly; models from websites, VRoid, Mixamo via Blender
-work). Compressed meshes (Draco, meshopt) are not read — save the model without compression.
+`.gltf`), VRM (VRoid), OBJ, FBX or PMX (MikuMikuDance) model into a layer: a figure for proportions, an object, a room, a
+street. No models are bundled — bring your own. FBX comes from Cinema 4D, Maya, 3ds Max, Blender, Daz,
+Mixamo: the skeleton, morphs (blend shapes), materials and textures are read — embedded or lying next to
+the file (also in the `<name>.fbm` folder); axes and units are converted automatically. PMX brings
+bones, vertex morphs and textures from folders next to it by the paths in the file (physics and bone
+morphs are not read; re-save an old `.pmd` in PMX Editor). From Cinema 4D
+use “File → Export → FBX” (or glTF). Compressed glTF meshes (Draco, meshopt) are not read — save the
+model without compression.
 
 The “3D” window opens by itself when a 3D layer is selected (again — “Layer → 3D window”):
 

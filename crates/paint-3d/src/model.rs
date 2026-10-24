@@ -1,4 +1,4 @@
-//! Модель, прочитанная из glTF/GLB или OBJ: узлы, сетки, скелеты, морфы, текстуры.
+//! Модель, прочитанная из glTF/GLB/VRM, OBJ, FBX или PMX: узлы, сетки, скелеты, морфы, текстуры.
 //!
 //! Файлы чужие и непроверенные: каждый индекс и размер проверяется, объёмы ограничены, ошибки —
 //! сообщения, а не падение программы.
@@ -22,7 +22,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-fn err<T>(s: impl Into<String>) -> Result<T, Error> {
+pub(crate) fn err<T>(s: impl Into<String>) -> Result<T, Error> {
     Err(Error(s.into()))
 }
 
@@ -102,19 +102,22 @@ impl Model {
     }
 
     /// Найти файл по имени из списка (без путей; регистр не важен).
-    fn file<'a>(files: &'a [(String, Vec<u8>)], uri: &str) -> Option<&'a [u8]> {
+    pub(crate) fn file<'a>(files: &'a [(String, Vec<u8>)], uri: &str) -> Option<&'a [u8]> {
         let name = percent_decode(uri);
         let base = name.rsplit(['/', '\\']).next().unwrap_or(&name).to_lowercase();
         files.iter().find(|(n, _)| n.to_lowercase() == base).map(|(_, d)| d.as_slice())
     }
 }
 
-/// Разобрать модель: главный файл первым (`.glb`, `.gltf`, `.obj`), рядом — его файлы.
+/// Разобрать модель: главный файл первым (`.glb`, `.gltf`, `.vrm`, `.obj`, `.fbx`, `.pmx`), рядом — его
+/// файлы.
 pub fn load(files: &[(String, Vec<u8>)]) -> Res<Model> {
     let Some((name, data)) = files.first() else { return err("нет файла модели") };
     let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
     let m = match ext.as_str() {
         "obj" => load_obj(data, files)?,
+        "fbx" => crate::fbx::load(data, files)?,
+        "pmx" => crate::pmx::load(data, files)?,
         _ if data.starts_with(b"glTF") || ext == "gltf" || ext == "glb" || data.first() == Some(&b'{') => load_gltf(data, files)?,
         _ => return err(format!("неизвестный вид модели: {name}")),
     };

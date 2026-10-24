@@ -1,6 +1,8 @@
 //! Слой 3D GrazySAI: модели glTF/GLB и OBJ, сцена (положение, поза, морфы, камера), отрисовка на
 //! процессоре в обычные пиксели слоя. План — `docs/39-3d-reference.md`.
 
+pub mod fbx;
+pub mod pmx;
 pub mod model;
 pub mod pose;
 pub mod render;
@@ -112,10 +114,11 @@ pub fn new_layer_data(files: Vec<(String, Vec<u8>)>) -> Result<(Scene3dData, Str
 }
 
 /// Расширения файлов моделей.
-pub const MODEL_EXTS: [&str; 3] = ["glb", "gltf", "obj"];
+pub const MODEL_EXTS: [&str; 6] = ["glb", "gltf", "vrm", "obj", "fbx", "pmx"];
 
 /// Прочитать модель с диска вместе с соседними файлами, на которые она ссылается (буферы и
-/// текстуры glTF, материалы и текстуры OBJ). Берутся только файлы из той же папки, по имени.
+/// текстуры glTF, материалы и текстуры OBJ, текстуры FBX). Берутся только файлы из той же папки
+/// (у FBX — ещё из `<имя>.fbm` рядом, у PMX — и из подпапок по пути из файла), по имени.
 pub fn gather(path: &std::path::Path) -> Result<Vec<(String, Vec<u8>)>, Error> {
     const MAX: u64 = 2 << 30;
     let read = |p: &std::path::Path| -> Option<Vec<u8>> {
@@ -138,6 +141,11 @@ pub fn gather(path: &std::path::Path) -> Result<Vec<(String, Vec<u8>)>, Error> {
                 }
             }
         }
+    } else if ext == "pmx" {
+        // у PMX текстуры обычно в подпапках (`tex/кожа.png`): путь берётся целиком
+        wanted.extend(pmx::texture_files(&main).into_iter().filter(|p| !p.split('/').any(|c| c == "..") && !p.starts_with('/') && !p.contains(':')));
+    } else if ext == "fbx" {
+        wanted.extend(fbx::texture_files(&main).iter().map(|s| base(s)));
     } else if ext == "obj" {
         let text = String::from_utf8_lossy(&main);
         for line in text.lines() {
@@ -154,7 +162,10 @@ pub fn gather(path: &std::path::Path) -> Result<Vec<(String, Vec<u8>)>, Error> {
         if w.is_empty() || files.iter().any(|(n, _)| n.eq_ignore_ascii_case(&w)) {
             continue;
         }
-        let Some(data) = read(&dir.join(&w)) else { continue };
+        let fbm = dir.join(format!("{}.fbm", path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default())).join(&w);
+        let Some(data) = read(&dir.join(&w)).or_else(|| (ext == "fbx").then(|| read(&fbm)).flatten()) else { continue };
+        // у модели файл ищется по имени без папок
+        let w = base(&w);
         if w.to_lowercase().ends_with(".mtl") {
             for line in String::from_utf8_lossy(&data).lines() {
                 let t = line.trim();

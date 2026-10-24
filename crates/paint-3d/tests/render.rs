@@ -170,3 +170,249 @@ fn figure_to_lines() {
     }
     assert!(ms < 3000, "{ms} мс");
 }
+
+/// FBX той же фигуры (Blender, тот же скрипт) даёт ту же картинку, что glTF: оси, единицы,
+/// текстура; поза локтя и морф живота работают так же.
+#[test]
+fn fbx_matches_gltf() {
+    let load = |name: &str| {
+        let m = Arc::new(model::load(&data(name)).unwrap());
+        let mut s = Scene::default();
+        s.objects.push(Object::new(1));
+        s.camera.yaw = 0.0;
+        s.camera.pitch = 0.0;
+        let models = vec![m];
+        paint_3d::frame(&mut s, &models);
+        (s, models)
+    };
+    let (sg, mg) = load("figure.glb");
+    let (sf, mf) = load("figure.fbx");
+    let f = &mf[0];
+    assert!(!f.images.is_empty(), "текстура FBX не прочитана");
+    assert!(f.skins.len() == 1 && f.joints().count() >= 40, "скелет FBX: {} суставов", f.joints().count());
+    let shot = |s: &Scene, m: &Vec<Arc<model::Model>>, name: &str| {
+        let img = render::render(s, m, 300, 400, 1);
+        save(name, &img, 300, 400);
+        img
+    };
+    let (g, x) = (shot(&sg, &mg, "fbx-gltf.png"), shot(&sf, &mf, "fbx-fbx.png"));
+    let (bg, bx) = (bounds(&g, 300), bounds(&x, 300));
+    let near = |a: usize, b: usize, d: usize| a.abs_diff(b) <= d;
+    assert!(near(bg.0, bx.0, 3) && near(bg.1, bx.1, 3) && near(bg.2, bx.2, 3) && near(bg.3, bx.3, 3), "рамка: glTF {bg:?}, FBX {bx:?}");
+    assert!(near(bg.4, bx.4, bg.4 / 50), "площадь: glTF {}, FBX {}", bg.4, bx.4);
+    // цвет текстуры почти тот же
+    let diff: u64 = g.iter().zip(&x).map(|(a, b)| a.abs_diff(*b) as u64).sum::<u64>() / (300 * 400);
+    assert!(diff < 6, "средняя разница {diff}");
+    // поза и морф
+    let bend = |s: &Scene, m: &Vec<Arc<model::Model>>| {
+        let fore = m[0].nodes.iter().position(|n| n.name == "forearm.L").unwrap();
+        let mut b = s.clone();
+        b.objects[0].pose.insert(fore, glam::Quat::from_rotation_z(80f32.to_radians()));
+        bounds(&render::render(&b, m, 300, 400, 1), 300)
+    };
+    let (pg, px) = (bend(&sg, &mg), bend(&sf, &mf));
+    assert!(near(pg.1, px.1, 3) && near(pg.4, px.4, pg.4 / 50), "поза: glTF {pg:?}, FBX {px:?}");
+    let belly = |s: &Scene, m: &Vec<Arc<model::Model>>| {
+        let mi = m[0].meshes.iter().position(|x| x.morph_names.iter().any(|n| n == "Belly")).expect("нет морфа Belly");
+        let mut b = s.clone();
+        b.camera.yaw = 90.0;
+        b.objects[0].morphs.insert((mi, 0), 1.0);
+        bounds(&render::render(&b, m, 300, 400, 1), 300).4
+    };
+    let (mgb, mfb) = (belly(&sg, &mg), belly(&sf, &mf));
+    assert!(near(mgb, mfb, mgb / 50), "морф: glTF {mgb}, FBX {mfb}");
+}
+
+/// Обрезанный или испорченный FBX — ошибка, а не падение.
+#[test]
+fn broken_fbx_is_an_error() {
+    let f = data("figure.fbx");
+    let d = &f[0].1;
+    for n in (0..d.len()).step_by(997) {
+        let _ = model::load(&[("figure.fbx".to_string(), d[..n].to_vec())]);
+    }
+    let mut bad = d.clone();
+    for i in (200..bad.len()).step_by(61) {
+        bad[i] ^= 0x5a;
+    }
+    let _ = model::load(&[("figure.fbx".to_string(), bad)]);
+}
+
+/// VRM — это GLB с расширениями VRoid: читается тем же путём.
+#[test]
+fn vrm_is_read_as_glb() {
+    let mut f = data("figure.glb");
+    f[0].0 = "figure.vrm".to_string();
+    let m = model::load(&f).unwrap();
+    assert!(m.joints().count() >= 40);
+}
+
+/// Запись PMX 2.0 (UTF-8, номера по 4 байта) из модели — для проверки чтения: вершины в позе
+/// покоя, кости — суставы скелета, морфы вершин, текстура в подпапке `tex`.
+fn to_pmx(m: &model::Model) -> Vec<(String, Vec<u8>)> {
+    let mut o: Vec<u8> = b"PMX ".to_vec();
+    let f = |o: &mut Vec<u8>, v: f32| o.extend(v.to_le_bytes());
+    let i = |o: &mut Vec<u8>, v: i32| o.extend(v.to_le_bytes());
+    let t = |o: &mut Vec<u8>, s: &str| {
+        o.extend((s.len() as i32).to_le_bytes());
+        o.extend(s.as_bytes());
+    };
+    let to = |v: glam::Vec3| glam::Vec3::new(v.x, v.y, -v.z) / 0.08;
+    f(&mut o, 2.0);
+    o.push(8);
+    o.extend([1, 0, 4, 4, 4, 4, 4, 4]);
+    for _ in 0..4 {
+        t(&mut o, "");
+    }
+    let obj = Object::new(1);
+    let g = obj.globals(m);
+    let skin = &m.skins[0];
+    let rest: Vec<glam::Mat4> = skin.joints.iter().zip(&skin.inv_bind).map(|(&j, ib)| g[j] * *ib).collect();
+    // вершины всех частей подряд
+    let (mut verts, mut faces, mut mats, mut belly) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for (ni, node) in m.nodes.iter().enumerate() {
+        let Some(mi) = node.mesh else { continue };
+        for p in &m.meshes[mi].prims {
+            let base = verts.len() as i32;
+            for v in 0..p.pos.len() {
+                let (jj, ww) = if p.joints.is_empty() { ([0u16; 4], [0f32; 4]) } else { (p.joints[v], p.weights[v]) };
+                let total: f32 = ww.iter().sum();
+                let mtx = if total > 0.0 { (0..4).fold(glam::Mat4::ZERO, |a, k| a + rest[jj[k] as usize] * (ww[k] / total)) } else { g[ni] };
+                let morph = p.morphs.first().map(|d| mtx.transform_vector3(d[v]));
+                belly.push(morph.unwrap_or_default());
+                verts.push((mtx.transform_point3(p.pos[v]), p.nrm.get(v).map_or(glam::Vec3::Y, |n| mtx.transform_vector3(*n).normalize()), p.uv.get(v).copied().unwrap_or_default(), jj, ww));
+            }
+            for tr in p.idx.as_chunks::<3>().0 {
+                faces.extend([base + tr[0] as i32, base + tr[2] as i32, base + tr[1] as i32]);
+            }
+            mats.push((p.color, p.tex, p.double, p.idx.len() as i32));
+        }
+    }
+    i(&mut o, verts.len() as i32);
+    for (pos, n, uv, jj, ww) in &verts {
+        for v in to(*pos).to_array().into_iter().chain(glam::Vec3::new(n.x, n.y, -n.z).to_array()).chain(uv.to_array()) {
+            f(&mut o, v);
+        }
+        o.push(2);
+        for k in 0..4 {
+            i(&mut o, jj[k] as i32);
+        }
+        for k in 0..4 {
+            f(&mut o, ww[k]);
+        }
+        f(&mut o, 1.0);
+    }
+    i(&mut o, faces.len() as i32);
+    for x in &faces {
+        i(&mut o, *x);
+    }
+    i(&mut o, 1);
+    t(&mut o, "tex\\skin.png");
+    i(&mut o, mats.len() as i32);
+    for (c, tex, double, n) in &mats {
+        t(&mut o, "mat");
+        t(&mut o, "");
+        for v in c {
+            f(&mut o, *v);
+        }
+        for _ in 0..7 {
+            f(&mut o, 0.0);
+        }
+        o.push(if *double { 1 } else { 0 });
+        for _ in 0..5 {
+            f(&mut o, 0.0);
+        }
+        i(&mut o, if tex.is_some() { 0 } else { -1 });
+        i(&mut o, -1);
+        o.extend([0, 1, 0]);
+        t(&mut o, "");
+        i(&mut o, *n);
+    }
+    i(&mut o, skin.joints.len() as i32);
+    for &j in &skin.joints {
+        t(&mut o, &m.nodes[j].name);
+        t(&mut o, "");
+        for v in to(g[j].w_axis.truncate()).to_array() {
+            f(&mut o, v);
+        }
+        i(&mut o, m.nodes[j].parent.and_then(|p| skin.joints.iter().position(|&x| x == p)).map_or(-1, |p| p as i32));
+        i(&mut o, 0);
+        o.extend(0u16.to_le_bytes());
+        for _ in 0..3 {
+            f(&mut o, 0.0);
+        }
+    }
+    i(&mut o, 1);
+    t(&mut o, "Belly");
+    t(&mut o, "");
+    o.extend([4, 1]);
+    let moved: Vec<(usize, glam::Vec3)> = belly.iter().enumerate().filter(|(_, d)| d.length() > 0.0).map(|(k, d)| (k, *d)).collect();
+    i(&mut o, moved.len() as i32);
+    for (k, d) in moved {
+        i(&mut o, k as i32);
+        for v in to(d).to_array() {
+            f(&mut o, v);
+        }
+    }
+    let img = &m.images[0];
+    let png = paint_core::io::encode_png(img.w, img.h, &img.rgba).unwrap();
+    vec![("figure.pmx".into(), o), ("skin.png".into(), png)]
+}
+
+/// PMX той же фигуры даёт ту же картинку, что glTF; морф и поза работают.
+#[test]
+fn pmx_matches_gltf() {
+    let (sg, mg) = figure();
+    let files = to_pmx(&mg[0]);
+    let mp = Arc::new(model::load(&files).unwrap());
+    assert!(!mp.images.is_empty(), "текстура PMX не прочитана");
+    assert!(mp.joints().count() >= 40);
+    let mut sp = Scene::default();
+    sp.objects.push(Object::new(1));
+    sp.camera.yaw = 0.0;
+    sp.camera.pitch = 0.0;
+    let mp = vec![mp];
+    paint_3d::frame(&mut sp, &mp);
+    let g = render::render(&sg, &mg, 300, 400, 1);
+    let x = render::render(&sp, &mp, 300, 400, 1);
+    save("pmx-pmx.png", &x, 300, 400);
+    let (bg, bx) = (bounds(&g, 300), bounds(&x, 300));
+    let near = |a: usize, b: usize, d: usize| a.abs_diff(b) <= d;
+    assert!(near(bg.0, bx.0, 3) && near(bg.1, bx.1, 3) && near(bg.2, bx.2, 3) && near(bg.3, bx.3, 3), "рамка: glTF {bg:?}, PMX {bx:?}");
+    let diff: u64 = g.iter().zip(&x).map(|(a, b)| a.abs_diff(*b) as u64).sum::<u64>() / (300 * 400);
+    assert!(diff < 6, "средняя разница {diff}");
+    // морф живота
+    let belly = |s: &Scene, m: &Vec<Arc<model::Model>>| {
+        let mi = m[0].meshes.iter().position(|x| x.morph_names.iter().any(|n| n == "Belly")).expect("нет морфа Belly");
+        let mut b = s.clone();
+        b.camera.yaw = 90.0;
+        b.objects[0].morphs.insert((mi, 0), 1.0);
+        bounds(&render::render(&b, m, 300, 400, 1), 300).4
+    };
+    let (a, b) = (belly(&sg, &mg), belly(&sp, &mp));
+    assert!(near(a, b, a / 50), "морф: glTF {a}, PMX {b}");
+    // поза: предплечье поворачивается
+    let fore = mp[0].nodes.iter().position(|n| n.name == "forearm.L").unwrap();
+    let mut bent = sp.clone();
+    bent.objects[0].pose.insert(fore, glam::Quat::from_rotation_z(80f32.to_radians()));
+    assert_ne!(render::render(&bent, &mp, 300, 400, 1), x);
+    // обрезанный файл — ошибка, а не падение
+    for n in (0..files[0].1.len()).step_by(331) {
+        let _ = model::load(&[("figure.pmx".to_string(), files[0].1[..n].to_vec())]);
+    }
+}
+
+/// PMX с диска: текстура берётся из подпапки по пути из файла.
+#[test]
+fn pmx_gathers_textures_from_subfolders() {
+    let (_, mg) = figure();
+    let files = to_pmx(&mg[0]);
+    let dir = std::env::temp_dir().join(format!("gs-pmx-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("tex")).unwrap();
+    std::fs::write(dir.join("figure.pmx"), &files[0].1).unwrap();
+    std::fs::write(dir.join("tex/skin.png"), &files[1].1).unwrap();
+    let got = paint_3d::gather(&dir.join("figure.pmx")).unwrap();
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(got.iter().any(|(n, _)| n == "skin.png"), "{:?}", got.iter().map(|f| &f.0).collect::<Vec<_>>());
+    assert!(!model::load(&got).unwrap().images.is_empty());
+}

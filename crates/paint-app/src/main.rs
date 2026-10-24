@@ -7194,7 +7194,7 @@ app.open_canvas_dialog(d == "resolution")
                     self.add_layer(true);
                     ui.close_menu();
                 }
-                if ui.add(menu_icons::button("Новый слой 3D…")).on_hover_text(tr("Модель glTF (.glb, .gltf) или OBJ: камера, поза по суставам, вид")).clicked() {
+                if ui.add(menu_icons::button("Новый слой 3D…")).on_hover_text(tr("Модель glTF (.glb, .gltf, .vrm), OBJ, FBX или PMX: камера, поза по суставам, вид")).clicked() {
                     let dir = self.file.clone().unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("x"));
                     if !self.native_dialog(files::Ask::Model3d(false), &dir) {
                         self.status = String::from(tr("Окно выбора файла недоступно; перетащите файл модели в окно"));

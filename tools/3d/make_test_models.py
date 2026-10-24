@@ -3,7 +3,8 @@
     blender -b --factory-startup --python tools/3d/make_test_models.py -- OUT_DIR [треугольников]
 
 figure.glb — фигура из простых тел на скелете (позвоночник, голова, руки с пятью пальцами по три
-сустава, ноги), жёсткая привязка, морф «Belly», клетчатая текстура; figure.obj — она же без скелета;
+сустава, ноги), жёсткая привязка, морф «Belly», клетчатая текстура; figure.fbx — она же в FBX;
+figure.obj — она же без скелета;
 scene.glb (и scene.gltf + scene.bin) — несколько предметов с вложенностью; heavy.glb — много треугольников (по умолчанию 1 млн)
 для проверки скорости.
 """
@@ -118,6 +119,14 @@ def figure():
     bpy.ops.export_scene.gltf(filepath=f"{OUT}/figure.glb", export_format="GLB", export_morph=True, export_skins=True, export_animations=False)
     # OBJ — без скелета и морфов
     bpy.ops.wm.obj_export(filepath=f"{OUT}/figure.obj", export_materials=True)
+    # FBX — со скелетом, морфом и текстурой внутри файла (созданную картинку FBX встраивает,
+    # только если у неё есть файл)
+    for img in bpy.data.images:
+        img.filepath_raw = f"{OUT}/{img.name}.png"
+        img.file_format = "PNG"
+        img.save()
+        img.pack()
+    bpy.ops.export_scene.fbx(filepath=f"{OUT}/figure.fbx", add_leaf_bones=False, bake_anim=False, path_mode="COPY", embed_textures=True)
 
 
 def scene():
