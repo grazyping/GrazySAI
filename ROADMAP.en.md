@@ -10,7 +10,7 @@ third number.
 On 16 October 2026 **1.0.0** was released: everything on the 1.0 list is done. Next come
 feedback, Clip Studio Paint-like filters and ideas from Krita.
 
-On 23 October 2026 **1.1.0** was released: new features from SAI 2 after 2017. From this version on, releases come by sections: a section is done in full, tested and released as one version with the next second number: 1.2.0 — interface as in SAI 2 (checked on Windows), 1.3.0 (24 October 2026) — brush library, SAI 2 and Photoshop brushes, 3D poses and lines, menu icons, tablets (WinTab, tilt), FreeBSD and Windows 7 builds. Next — 1.4.0 from Clip Studio Paint.
+On 23 October 2026 **1.1.0** was released: new features from SAI 2 after 2017. From this version on, releases come by sections: a section is done in full, tested and released as one version with the next second number: 1.2.0 — interface as in SAI 2 (checked on Windows), 1.3.0 (24 October 2026) — brush library, SAI 2 and Photoshop brushes, 3D poses and lines, menu icons, tablets (WinTab, tilt), FreeBSD and Windows 7 builds, 1.4.0 (24 October 2026) — from Clip Studio Paint and After Effects: auto actions, layer styles and correction layers, FBX/VRM/PMX/COLLADA import, command search and quick access, timeline and animation, puppet.
 
 On GitHub every stage is a milestone with a progress bar
 ([Milestones](https://github.com/grazyping/GrazySAI/milestones)) and every item is an issue
@@ -184,7 +184,7 @@ Checked on real Windows next to the official SAI 2 2026.
 - [x] “Drive Usage” in the status bar (1.2.0)
 - [x] Icons in the new-tool list and on new menu items; labels fit in all 10 languages (1.2.0)
 
-### 1.3 — brush library, other programs' brushes, 3D, menu icons, tablets, systems (current version 1.3.0)
+### 1.3 — brush library, other programs' brushes, 3D, menu icons, tablets, systems (1.3.0)
 
 #### Brush library
 
@@ -314,31 +314,34 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 - [x] System “Open”, “Save As” and “Export” windows (File Explorer on Windows, the desktop dialog on Linux), Ctrl+O
 - [x] Shortcut keys in menus and tooltips can be hidden (“Window → Show shortcut keys”)
 
+### 1.4 — from Clip Studio Paint and After Effects (current version 1.4.0; research — `docs/44-plan-1.4.en.md`)
+
+- [x] Auto Actions: record steps and replay them with one button, action sets (1.4.0)
+- [x] Layer styles (stroke, shadow, glow, colour overlay) and correction layers: gradient map, levels, hue/saturation, brightness/contrast, invert, posterize, threshold (1.4.0)
+- [x] Import from other programs: FBX 3D models (Cinema 4D, Maya, 3ds Max, Mixamo, Daz), VRM (VRoid), PMX (MikuMikuDance), COLLADA `.dae` (SketchUp); USD and Alembic via export to glTF/FBX (1.4.0)
+- [x] User customisation, as in Clip Studio and other programs: command search (Ctrl+Shift+P), a “Quick access” panel with sets of any commands, workspaces, own shortcuts and pen buttons (1.4.0)
+- [x] Timeline and animation as in Clip Studio Paint: cels (animation folders), timeline, onion skin, playback, export to GIF/APNG/video/frames (1.4.0)
+- [x] Puppet animation as in After Effects: a triangle mesh over the layer outline, pins (move, rotate, starch — stiffness, overlap — what is in front), the picture follows the mesh; pins keyed on the timeline (1.4.0)
+
+From what was left after 1.3.0:
+
+- [x] Tablet drivers (Linux: XP-Pen, Huion, UGEE, Veikk, Xencelabs — the pen axes are the ones the program reads; Windows: XP-Pen on the test PC, WinTab loads) (1.4.0)
+- [x] Pen buttons: hand, picker, palette at cursor, undo (the driver sends express keys as keyboard keys — shortcuts work) (1.4.0)
+- [x] Anti-Ripple for Flatten Brush and the wand/bucket “Reduce small omissions” — checked against live SAI 2026: omissions done, our flat brush edge already behaves as Anti-Ripple (1.4.0)
+- [x] Colour (ARGB) assets: coloured tips and scatter shapes, colour assets from a layer (1.4.0)
+- [x] FreeBSD: a `pkg` package with every release (`tools/freebsd/mkpkg.sh`; added to 1.3.0) (1.4.0)
+
 ## Ahead
 
-Not in 1.3.0 and not planned for now.
+Not in 1.4.0.
 
 ### Leftovers of new SAI 2 features
 
 - [ ] SAI 2 custom tools for linework and shape layers
 - [ ] Binary linework tools — if compatible storage is found
 
-## 1.4.0 — from Clip Studio Paint (plan; research — `docs/44-plan-1.4.en.md`)
+### Left for the next version
 
-- [x] Auto Actions: record steps and replay them with one button, action sets *(coming in the next version)*
-- [x] Layer styles (stroke, shadow, glow, colour overlay) and correction layers: gradient map, levels, hue/saturation, brightness/contrast, invert, posterize, threshold *(coming in the next version)*
-- [x] Import from other programs: FBX 3D models (Cinema 4D, Maya, 3ds Max, Mixamo, Daz), VRM (VRoid), PMX (MikuMikuDance), COLLADA `.dae` (SketchUp); USD and Alembic via export to glTF/FBX *(coming in the next version)*
-- [x] User customisation, as in Clip Studio and other programs: command search (Ctrl+Shift+P), a “Quick access” panel with sets of any commands, workspaces, own shortcuts and pen buttons *(coming in the next version)*
-- [x] Timeline and animation as in Clip Studio Paint: cels (animation folders), timeline, onion skin, playback, export to GIF/APNG/video/frames *(coming in the next version)*
-- [x] Puppet animation as in After Effects: a triangle mesh over the layer outline, pins (move, rotate, starch — stiffness, overlap — what is in front), the picture follows the mesh; pins keyed on the timeline *(coming in the next version)*
-
-From what was left after 1.3.0:
-
-- [x] Tablet drivers (Linux: XP-Pen, Huion, UGEE, Veikk, Xencelabs — the pen axes are the ones the program reads; Windows: XP-Pen on the test PC, WinTab loads) *(coming in the next version)*
 - [ ] Tablet drivers, in full: download drivers of the main models (Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs) for Windows and Linux, see what they install and how they name the pen axes; adjust the pen reading; check WinTab with real drivers on the test PC
-- [x] Pen buttons: hand, picker, palette at cursor, undo (the driver sends express keys as keyboard keys — shortcuts work) *(coming in the next version)*
 - [ ] Pen directly on Wayland, without XWayland — waits for the window library: winit 0.31 (still beta) has the Wayland pen, but egui/eframe, even the newest, is on winit 0.30
-- [x] Anti-Ripple for Flatten Brush and the wand/bucket “Reduce small omissions” — checked against live SAI 2026: omissions done, our flat brush edge already behaves as Anti-Ripple *(coming in the next version)*
-- [x] Colour (ARGB) assets: coloured tips and scatter shapes, colour assets from a layer *(coming in the next version)*
-- [x] FreeBSD: a `pkg` package with every release (`tools/freebsd/mkpkg.sh`; added to 1.3.0) *(coming in the next version)*
 - [ ] FreeBSD: a port in the ports tree

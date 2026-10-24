@@ -59,6 +59,7 @@ pub struct Loaded {
     pub vector_layers: Vec<(u32, Vec<sai2_vector::Shape>)>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build(infos: &[LayerInfo], pos: &mut usize, depth: u8, file: &mut File, info: &Sai2Info, notes: &mut BTreeSet<String>, decoded: &mut [Option<io::Result<paint_core::tile::ColorMap>>], timeline: &mut Option<String>) -> io::Result<Vec<Layer>> {
     // В файле слои идут сверху вниз; в документе — снизу вверх.
     let mut top_down = Vec::new();

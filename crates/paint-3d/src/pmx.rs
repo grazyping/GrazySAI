@@ -314,13 +314,13 @@ pub fn load(data: &[u8], files: &[(String, Vec<u8>)]) -> Res<Model> {
         m.nodes.push(Node { name: name.clone(), parent, children: Vec::new(), t: conv(*pos) - base, r: Quat::IDENTITY, s: Vec3::ONE, mesh: None, skin: None, joint: true });
     }
     // круги из костей разрываем: такой кости — без родителя
-    for i in 0..nb {
+    for (i, bone) in bones.iter().enumerate() {
         let mut j = i;
         for _ in 0..=nb {
             match m.nodes[j].parent {
                 Some(p) if p == i => {
                     m.nodes[i].parent = None;
-                    m.nodes[i].t = conv(bones[i].1);
+                    m.nodes[i].t = conv(bone.1);
                     break;
                 }
                 Some(p) => j = p,

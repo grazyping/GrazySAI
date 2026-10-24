@@ -108,11 +108,16 @@ pub struct Puppet {
     pub cache: Cache,
 }
 
+/// Исходник плотным массивом: левый верхний угол, ширина, высота, точки.
+type Dense = (i32, i32, usize, usize, Vec<[f32; 4]>);
+/// Булавка, привязанная к вершинам (номер и доля), и её точка в кадре.
+type Hold = (Vec<(u32, f32)>, [f32; 2]);
+
 pub struct CacheData {
     key: (u32, u8),
     mesh: std::sync::Arc<Mesh>,
     /// Исходник: левый верхний угол, ширина, высота, точки (доли единицы, предумноженные).
-    src: std::sync::Arc<(i32, i32, usize, usize, Vec<[f32; 4]>)>,
+    src: std::sync::Arc<Dense>,
     last: Option<Vec<[f32; 2]>>,
 }
 
@@ -273,7 +278,7 @@ impl Puppet {
             let best = (0..n).min_by(|&a, &b| dist2(rest[a], at).total_cmp(&dist2(rest[b], at)));
             best.map(|i| vec![(i as u32, 1.0)]).unwrap_or_default()
         };
-        let holds: Vec<(Vec<(u32, f32)>, [f32; 2])> = self.pins.iter().filter(|p| p.kind.holds_position()).map(|p| (attach(p.at), p.pose(f).pos)).filter(|(a, _)| !a.is_empty()).collect();
+        let holds: Vec<Hold> = self.pins.iter().filter(|p| p.kind.holds_position()).map(|p| (attach(p.at), p.pose(f).pos)).filter(|(a, _)| !a.is_empty()).collect();
         if n == 0 || holds.is_empty() {
             return rest.clone();
         }
@@ -484,7 +489,7 @@ impl Puppet {
     }
 
     /// Как `render`, но через плотные массивы (быстрее): исходник `src` — из кэша.
-    fn render_dense(&self, mesh: &Mesh, pos: &[[f32; 2]], src: &(i32, i32, usize, usize, Vec<[f32; 4]>)) -> ColorMap {
+    fn render_dense(&self, mesh: &Mesh, pos: &[[f32; 2]], src: &Dense) -> ColorMap {
         let (sx0, sy0, sw, sh, sv) = src;
         let mut out = ColorMap::new();
         if pos.is_empty() || sv.is_empty() {

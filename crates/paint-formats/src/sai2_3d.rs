@@ -113,55 +113,6 @@ pub fn attach(layers: &mut [Layer], assets: &HashMap<u64, Arc<Asset3d>>) -> Vec<
     missing
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Слой 3D сохраняется и читается обратно: сцена, модели (одна на два слоя), пиксели.
-    #[test]
-    fn scene_layers_round_trip() {
-        let a = Arc::new(Asset3d { id: 42, name: "m.glb".into(), files: vec![("m.glb".into(), vec![1, 2, 3]), ("tex.png".into(), vec![9; 1000])] });
-        let mut doc = paint_core::Document::new(64, 64);
-        let mut l = Layer::new("3D");
-        l.scene3d = Some(Box::new(Scene3dData { assets: vec![a.clone()], state: "gs3d 1\ndisplay clay\n".into() }));
-        l.pixels.set(5, 5, [100, 0, 0, 32768]);
-        let mut l2 = l.clone();
-        l2.name = "3D копия".into();
-        doc.layers.push(l);
-        doc.layers.push(l2);
-        let dir = std::env::temp_dir().join(format!("grazysai-3d-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let p = dir.join("s.sai2");
-        crate::sai2_write::save(&doc, &p).unwrap();
-        let info = crate::sai2::read_info(&p).unwrap();
-        assert_eq!(info.entries.iter().filter(|e| e.tag == FILE_TAG).count(), 1, "модель записана один раз");
-        let back = crate::sai2_doc::load(&p).unwrap();
-        let ls = &back.document.layers;
-        for i in [1, 2] {
-            let s = ls[i].scene3d.as_ref().expect("сцена прочитана");
-            assert_eq!(s.state, "gs3d 1\ndisplay clay\n");
-            assert_eq!(*s.assets[0], *a);
-            assert!(ls[i].extra.iter().all(|(t, _)| *t != LAYER_TAG));
-            assert_eq!(ls[i].pixels.get(5, 5)[3], 32768);
-        }
-        // пересохранение не дублирует блоки
-        crate::sai2_write::save(&back.document, &p).unwrap();
-        let again = crate::sai2_doc::load(&p).unwrap();
-        assert_eq!(again.document.layers[1].scene3d, back.document.layers[1].scene3d);
-        std::fs::remove_dir_all(dir).ok();
-    }
-
-    #[test]
-    fn broken_asset_is_none() {
-        let a = Asset3d { id: 1, name: "x".into(), files: vec![("x".into(), vec![0; 10])] };
-        let b = asset_block(&a);
-        for cut in 0..b.len() {
-            assert!(parse_asset(&b[..cut]).is_none());
-        }
-        assert_eq!(parse_asset(&b).unwrap(), a);
-    }
-}
-
 /// Марионетка слоя в `.sai2`: блок `gspp` — длина текста (u32), текст настроек и булавок, затем
 /// сжатые плитки исходника (число, затем у каждой — x, y и 64×64 точки по 4 u16).
 pub const PUPPET_TAG: [u8; 4] = *b"gspp";
@@ -209,4 +160,53 @@ pub fn puppet_from_block(b: &[u8]) -> Option<paint_core::puppet::Puppet> {
     let mut p = paint_core::puppet::Puppet::new(src);
     p.read_text(text);
     Some(p)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Слой 3D сохраняется и читается обратно: сцена, модели (одна на два слоя), пиксели.
+    #[test]
+    fn scene_layers_round_trip() {
+        let a = Arc::new(Asset3d { id: 42, name: "m.glb".into(), files: vec![("m.glb".into(), vec![1, 2, 3]), ("tex.png".into(), vec![9; 1000])] });
+        let mut doc = paint_core::Document::new(64, 64);
+        let mut l = Layer::new("3D");
+        l.scene3d = Some(Box::new(Scene3dData { assets: vec![a.clone()], state: "gs3d 1\ndisplay clay\n".into() }));
+        l.pixels.set(5, 5, [100, 0, 0, 32768]);
+        let mut l2 = l.clone();
+        l2.name = "3D копия".into();
+        doc.layers.push(l);
+        doc.layers.push(l2);
+        let dir = std::env::temp_dir().join(format!("grazysai-3d-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("s.sai2");
+        crate::sai2_write::save(&doc, &p).unwrap();
+        let info = crate::sai2::read_info(&p).unwrap();
+        assert_eq!(info.entries.iter().filter(|e| e.tag == FILE_TAG).count(), 1, "модель записана один раз");
+        let back = crate::sai2_doc::load(&p).unwrap();
+        let ls = &back.document.layers;
+        for i in [1, 2] {
+            let s = ls[i].scene3d.as_ref().expect("сцена прочитана");
+            assert_eq!(s.state, "gs3d 1\ndisplay clay\n");
+            assert_eq!(*s.assets[0], *a);
+            assert!(ls[i].extra.iter().all(|(t, _)| *t != LAYER_TAG));
+            assert_eq!(ls[i].pixels.get(5, 5)[3], 32768);
+        }
+        // пересохранение не дублирует блоки
+        crate::sai2_write::save(&back.document, &p).unwrap();
+        let again = crate::sai2_doc::load(&p).unwrap();
+        assert_eq!(again.document.layers[1].scene3d, back.document.layers[1].scene3d);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn broken_asset_is_none() {
+        let a = Asset3d { id: 1, name: "x".into(), files: vec![("x".into(), vec![0; 10])] };
+        let b = asset_block(&a);
+        for cut in 0..b.len() {
+            assert!(parse_asset(&b[..cut]).is_none());
+        }
+        assert_eq!(parse_asset(&b).unwrap(), a);
+    }
 }

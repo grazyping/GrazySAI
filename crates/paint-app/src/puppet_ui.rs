@@ -8,13 +8,16 @@ use eframe::egui::{self, Color32, Vec2};
 use paint_core::puppet::{Pin, PinKind, PinPose, Puppet};
 use std::time::Instant;
 
+/// Перетаскивание булавки: номер, марионетка до него, запись (начало, первый кадр).
+type PinDrag = (usize, Puppet, Option<(Instant, u32)>);
+
 pub struct PuppetUi {
     pub show: bool,
     pub kind: PinKind,
     pub sel: Option<usize>,
     pub show_mesh: bool,
     /// Перетаскивание: булавка, как было до него, запись (начало, первый кадр).
-    pub drag: Option<(usize, Puppet, Option<(Instant, u32)>)>,
+    pub drag: Option<PinDrag>,
 }
 
 impl Default for PuppetUi {

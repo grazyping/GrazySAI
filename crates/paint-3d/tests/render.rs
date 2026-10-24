@@ -294,11 +294,11 @@ fn to_pmx(m: &model::Model) -> Vec<(String, Vec<u8>)> {
             f(&mut o, v);
         }
         o.push(2);
-        for k in 0..4 {
-            i(&mut o, jj[k] as i32);
+        for j in jj {
+            i(&mut o, *j as i32);
         }
-        for k in 0..4 {
-            f(&mut o, ww[k]);
+        for w in ww {
+            f(&mut o, *w);
         }
         f(&mut o, 1.0);
     }

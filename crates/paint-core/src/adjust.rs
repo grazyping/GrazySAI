@@ -123,7 +123,9 @@ impl Adjust {
         Some(match kind {
             "gradient" => {
                 let mut stops: Vec<Stop> = nums
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .take(64)
                     .map(|c| Stop { at: (c[0] as f32).clamp(0.0, 1.0), color: [c[1], c[2], c[3]].map(|v| v.clamp(0.0, 255.0) as u8) })
                     .collect();
