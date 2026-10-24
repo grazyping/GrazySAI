@@ -96,6 +96,9 @@ pub struct Brush {
     /// «Срезать крючки» (Anti-Hook, SAI 2018+): длина крючка на концах мазка, точки экрана;
     /// 0 — выключено.
     pub anti_hook: f32,
+    /// Пипетка «Layer ARGB» у пиксельного пера (SAI 2020+): цвет и прозрачность точки текущего
+    /// слоя; прозрачная точка — перо стирает.
+    pub argb_pick: bool,
 }
 
 /// Вид инструмента сетки — как в меню SAI 2017 по правому щелчку на пустой ячейке.
@@ -299,7 +302,7 @@ impl ToolKind {
                 BrushParams { size_by_pressure: false, density_by_pressure: true, sharpness: 0.5, mix: Some(MixParams { blur: true, blur_only: true, ..MixParams::new(0.0, 0.0, 0.5) }), ..b(50.0, 0.0, 1.0) },
             ),
         };
-        Brush { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), dynamics: Vec::new(), dyn_plugin: None, anti_hook: 0.0 }
+        Brush { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), dynamics: Vec::new(), dyn_plugin: None, anti_hook: 0.0, argb_pick: false }
     }
 }
 
@@ -375,6 +378,7 @@ pub fn read(b: &mut Brush, s: &Kv, prefix: &str) {
         b.dynamics = (0..(n as usize).min(32)).filter_map(|i| s.str(&k(&format!("dyn.{i}"))).and_then(paint_core::dynamics::Dynamic::from_text)).collect();
     }
     s.read_f32(&k("anti_hook"), &mut b.anti_hook);
+    s.read_bool(&k("argb_pick"), &mut b.argb_pick);
     b.anti_hook = b.anti_hook.clamp(0.0, 100.0);
     let p = &mut b.params;
     s.read_f32(&k("size"), &mut p.size);
@@ -458,6 +462,7 @@ pub fn write(b: &Brush, s: &mut Kv, prefix: &str) {
         s.set(&k(&format!("dyn.{n}")), d.to_text());
     }
     s.set(&k("anti_hook"), b.anti_hook);
+    s.set(&k("argb_pick"), b.argb_pick as u8);
     let p = &b.params;
     s.set(&k("size"), p.size);
     s.set(&k("min_size"), p.min_size);

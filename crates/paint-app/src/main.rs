@@ -4132,6 +4132,19 @@ app.open_canvas_dialog(d == "resolution")
                     skipped.dedup();
                     (out, "SAI 2", skipped)
                 }
+                "ini" => {
+                    // форма россыпи SAI 2: настройки и картинка `.bmp` рядом (белое — форма)
+                    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+                    let mut b = paint_brush::sai2_tool::scatter_brush(&text).ok_or_else(|| tr("Не форма россыпи SAI 2").to_string())?;
+                    let bmp = std::fs::read(path.with_extension("bmp")).map_err(|e| e.to_string())?;
+                    let tex = paint_core::paper::PaperTexture::from_bmp(&bmp).ok_or_else(|| tr("Картинка формы не прочитана").to_string())?;
+                    let st = paint_core::Stamp { width: tex.width, height: tex.height, alpha: tex.gray.clone() };
+                    let saved = paint_core::paper::save_tip(&format!("SAI 2 {set}"), &paint_formats::brush_tip::shrink(st, paint_formats::brush_tip::MAX_SIDE)).map_err(|e| e.to_string())?;
+                    b.grain.tip = Some(saved);
+                    b.custom = Some(set.clone());
+                    b.extra = "SAI 2".to_string();
+                    (vec![(b, set.clone())], "SAI 2", skipped)
+                }
                 "gbr" | "gih" => {
                     let (name, cells, random) = paint_formats::brush_tip::load_all(path).map_err(|e| e.to_string())?;
                     let saved = paint_core::paper::save_tips(&name, &cells).map_err(|e| e.to_string())?;
@@ -6702,6 +6715,21 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn pick_color(&mut self, x: f32, y: f32) {
+        // пиксельное перо с пипеткой «Layer ARGB»: цвет и прозрачность точки текущего слоя
+        let argb = self.tool == Tool::Brush && self.brushes.get(self.brush).is_some_and(|b| b.kind == ToolKind::PixelPen && b.argb_pick);
+        if argb {
+            if let Some(l) = self.doc.layer(&self.selected) {
+                let [r, g, b, a] = paint_core::pixel::to_rgba8(l.pixels.get(x.floor() as i32, y.floor() as i32));
+                let p = &mut self.brushes[self.brush].params;
+                p.erase = a == 0;
+                if a > 0 {
+                    p.density = a as f32 / 255.0;
+                    self.hsv = sai_ui::rgb_to_hsv(Color32::from_rgb(r, g, b));
+                }
+                self.status = if a == 0 { tr("Пипетка ARGB: прозрачная точка — перо стирает").to_string() } else { trf("Пипетка ARGB: непрозрачность {0}", &[&a]) };
+            }
+            return;
+        }
         if self.pick_layer {
             // только текущий слой: прозрачное не берётся
             if let Some(l) = self.doc.layer(&self.selected) {
@@ -8402,6 +8430,16 @@ app.open_canvas_dialog(d == "resolution")
         let mut size_range = self.size_range as usize;
         let tool = &mut self.brushes[self.brush];
         let tool = &mut tool.brush;
+        if tool.kind == ToolKind::PixelPen {
+            let argb = &mut tool.argb_pick;
+            sai_ui::row(ui, tr("Пипетка"), lw, true, |ui| {
+                let names = [tr("Обычная"), tr("Цвет слоя (ARGB)")];
+                egui::ComboBox::from_id_salt("argbpick").selected_text(names[*argb as usize]).width(w - 8.0).show_ui(ui, |ui| {
+                    ui.selectable_value(argb, false, names[0]);
+                    ui.selectable_value(argb, true, names[1]).on_hover_text(tr("Цвет и прозрачность точки текущего слоя; прозрачная точка — перо стирает"));
+                });
+            });
+        }
         let (brush, grain, dyns, dyn_plugin, anti_hook) = (&mut tool.params, &mut tool.grain, &mut tool.dynamics, &mut tool.dyn_plugin, &mut tool.anti_hook);
         // режим наложения мазка — у пера эффектов и разброса (у остальных в SAI он неактивен)
         let has_mode = brush.effect.is_some();

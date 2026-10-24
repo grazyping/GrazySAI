@@ -34,7 +34,12 @@ pub struct Library {
 pub const EXTS: [&str; 11] = ["saitdat", "saitgrp", "sut", "bfps", "kpp", "bundle", "abr", "gbr", "gih", "gsbrush", "gsbrushes"];
 
 pub fn is_brush_file(p: &Path) -> bool {
-    p.extension().and_then(|e| e.to_str()).is_some_and(|e| EXTS.contains(&e.to_ascii_lowercase().as_str()))
+    let Some(ext) = p.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase) else { return false };
+    // форма россыпи SAI 2: `.ini` с картинкой `.bmp` рядом
+    if ext == "ini" {
+        return p.with_extension("bmp").exists() && std::fs::read_to_string(p).is_ok_and(|t| t.contains("Scattering"));
+    }
+    EXTS.contains(&ext.as_str())
 }
 
 impl Library {

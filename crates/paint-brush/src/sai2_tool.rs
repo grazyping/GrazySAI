@@ -255,6 +255,81 @@ pub fn to_brush(t: &Sai2Tool) -> Result<Brush, String> {
     Ok(b)
 }
 
+/// Форма россыпи SAI 2 (`settings/scatter/<имя>.ini` рядом с `<имя>.bmp`): «Россыпь» с
+/// настройками из `.ini` (`Ключ = значение`, `;` — пояснения). Картинку кладёт вызывающий.
+pub fn scatter_brush(ini: &str) -> Option<Brush> {
+    let mut v: BTreeMap<String, String> = BTreeMap::new();
+    for line in ini.lines() {
+        let line = line.trim();
+        if line.starts_with(';') || line.starts_with('[') {
+            continue;
+        }
+        if let Some((k, x)) = line.split_once('=') {
+            v.insert(k.trim().to_string(), x.trim().to_string());
+        }
+    }
+    // это не форма россыпи
+    v.get("Scattering")?;
+    let num = |k: &str| v.get(k).and_then(|x| x.trim_start_matches('+').parse::<f32>().ok());
+    let pct = |k: &str, max: f32| num(k).map(|x| (x / 100.0).clamp(0.0, max));
+    let on = |k: &str| num(k).map(|x| x != 0.0);
+    let mut b = ToolKind::Scatter.new_brush();
+    let sc = b.params.scatter.as_mut()?;
+    if let Some(x) = num("AngleControl") {
+        sc.angle_control = match x as i32 {
+            0 => paint_core::scatter::AngleControl::None,
+            2 => paint_core::scatter::AngleControl::Direction,
+            _ => paint_core::scatter::AngleControl::Auto,
+        };
+    }
+    if let Some(x) = num("Angle") {
+        sc.angle = x.clamp(-180.0, 180.0).to_radians();
+    }
+    for (field, k, max) in [
+        (&mut sc.angle_jitter, "AngleJitter", 1.0),
+        (&mut sc.scaling, "Scaling", 2.0),
+        (&mut sc.size_jitter, "SizeJitter", 1.0),
+        (&mut sc.scattering, "Scattering", 2.0),
+        (&mut sc.ratio_jitter, "WxHJitter", 1.0),
+        (&mut sc.count_jitter, "CountJitter", 1.0),
+        (&mut sc.fg_bg_jitter, "ColJitter", 1.0),
+        (&mut sc.hue_jitter, "HueJitter", 1.0),
+        (&mut sc.sat_jitter, "SaturationJitter", 1.0),
+        (&mut sc.bri_jitter, "BrightnessJitter", 1.0),
+    ] {
+        if let Some(x) = pct(k, max) {
+            *field = x;
+        }
+    }
+    sc.scaling = sc.scaling.max(0.01);
+    // «W:H» — «100:50»: шире, чем выше
+    if let Some((w, h)) = v.get("WxHRatio").and_then(|r| r.split_once(':')) {
+        if let (Ok(w), Ok(h)) = (w.trim().parse::<f32>(), h.trim().parse::<f32>()) {
+            if w > 0.0 && h > 0.0 {
+                sc.ratio = (w / h).clamp(0.01, 100.0);
+            }
+        }
+    }
+    if let Some(x) = num("Count") {
+        sc.count = x.clamp(1.0, 20.0) as u8;
+    }
+    for (field, k) in [(&mut sc.all_directions, "AllDirScattering"), (&mut sc.gaussian, "GaussianDistribution"), (&mut sc.absolute_size, "AbsoluteSize"), (&mut sc.int_position, "IntegerPosition"), (&mut sc.each_shape, "ApplyToEachShape")] {
+        if let Some(x) = on(k) {
+            *field = x;
+        }
+    }
+    let absolute = sc.absolute_size;
+    if let Some(x) = pct("Spacing", 10.0) {
+        b.params.spacing = x.max(0.01);
+    }
+    if absolute {
+        if let Some(x) = num("ShapeSize") {
+            b.params.size = x.clamp(1.0, 5000.0);
+        }
+    }
+    Some(b)
+}
+
 /// Готовые группы SAI 2 2026 (вкладки «Ver.1» и «Artistic» по умолчанию): ячейка и настройки
 /// инструмента в виде `.saitdat` через «;» (только то, что переносится). Формы, щетина и текстуры —
 /// по именам из папки SAI 2; без неё инструменты рисуют без них.
@@ -327,6 +402,17 @@ mod tests {
         assert_eq!(chalk.custom.as_deref(), Some("Chalk"));
         assert_eq!(chalk.grain.bristle.as_deref(), Some("Flat Face"));
         assert!(!chalk.params.size_by_pressure);
+    }
+
+    #[test]
+    fn reads_a_scatter_shape() {
+        let ini = "; x\n[Parameters]\n\t; [Angle]\n\tAngle = +30\n\tAngleJitter = 12\n\tScaling = 50\n\tSpacing = 50\n\tScattering = 100\n\tWxHRatio = 100:50\n\tCount = 3\n\tAllDirScattering = 1\n\tHueJitter = 100\n";
+        let b = scatter_brush(ini).unwrap();
+        let sc = b.params.scatter.unwrap();
+        assert!((sc.angle - 30f32.to_radians()).abs() < 1e-6);
+        assert_eq!((sc.scaling, sc.scattering, sc.ratio, sc.count, sc.all_directions, sc.hue_jitter), (0.5, 1.0, 2.0, 3, true, 1.0));
+        assert_eq!(b.params.spacing, 0.5);
+        assert!(scatter_brush("[Parameters]\nDensity = 50\n").is_none());
     }
 
     #[test]

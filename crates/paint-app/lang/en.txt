@@ -1327,3 +1327,12 @@ Zip с паролем = Password-protected zip
 Кисти (SAI 2, Clip Studio, Krita, Photoshop, GIMP, GrazySAI) = Brushes (SAI 2, Clip Studio, Krita, Photoshop, GIMP, GrazySAI)
 Не группа инструментов SAI 2 = Not a SAI 2 tool group
 Не инструмент SAI 2 = Not a SAI 2 tool
+
+Обычная = Normal
+Пипетка ARGB: непрозрачность {0} = ARGB picker: opacity {0}
+Пипетка ARGB: прозрачная точка — перо стирает = ARGB picker: transparent pixel — the pen erases
+Цвет и прозрачность точки текущего слоя; прозрачная точка — перо стирает = Colour and opacity of the current layer's pixel; a transparent pixel makes the pen erase
+Цвет слоя (ARGB) = Layer colour (ARGB)
+
+Не форма россыпи SAI 2 = Not a SAI 2 scatter shape
+Картинка формы не прочитана = The shape picture could not be read

@@ -1326,3 +1326,12 @@ Zip с паролем = Zip con contraseña
 Кисти (SAI 2, Clip Studio, Krita, Photoshop, GIMP, GrazySAI) = Pinceles (SAI 2, Clip Studio, Krita, Photoshop, GIMP, GrazySAI)
 Не группа инструментов SAI 2 = No es un grupo de herramientas de SAI 2
 Не инструмент SAI 2 = No es una herramienta de SAI 2
+
+Обычная = Normal
+Пипетка ARGB: непрозрачность {0} = Cuentagotas ARGB: opacidad {0}
+Пипетка ARGB: прозрачная точка — перо стирает = Cuentagotas ARGB: píxel transparente — la pluma borra
+Цвет и прозрачность точки текущего слоя; прозрачная точка — перо стирает = Color y opacidad del píxel de la capa actual; un píxel transparente hace que la pluma borre
+Цвет слоя (ARGB) = Color de la capa (ARGB)
+
+Не форма россыпи SAI 2 = No es una forma de dispersión de SAI 2
+Картинка формы не прочитана = No se pudo leer la imagen de la forma
