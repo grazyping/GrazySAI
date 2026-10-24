@@ -2,6 +2,8 @@
 //! запись в текст `ключ=значение` и в файл кисти `.gsbrush`. Общая для рисовалки и мастерской
 //! (GrazySAI Studio), чтобы кисть вела себя в обеих одинаково.
 
+pub mod sai2_tool;
+
 use paint_core::mix::MixParams;
 use paint_core::BrushParams;
 use std::collections::BTreeMap;

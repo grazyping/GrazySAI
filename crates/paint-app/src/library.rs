@@ -31,7 +31,7 @@ pub struct Library {
 }
 
 /// Расширения файлов, которые принимает библиотека.
-pub const EXTS: [&str; 9] = ["sut", "bfps", "kpp", "bundle", "abr", "gbr", "gih", "gsbrush", "gsbrushes"];
+pub const EXTS: [&str; 11] = ["saitdat", "saitgrp", "sut", "bfps", "kpp", "bundle", "abr", "gbr", "gih", "gsbrush", "gsbrushes"];
 
 pub fn is_brush_file(p: &Path) -> bool {
     p.extension().and_then(|e| e.to_str()).is_some_and(|e| EXTS.contains(&e.to_ascii_lowercase().as_str()))

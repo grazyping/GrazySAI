@@ -1268,7 +1268,6 @@ Zip с паролем = Zip com senha
 Добавить файлы кистей; можно и перетащить файлы или папку в окно программы = Adicionar arquivos de pincéis; também é possível arrastar arquivos ou uma pasta para a janela
 Избранное = Favoritos
 Карточки = Cartões
-Кисти (Clip Studio, Krita, Photoshop, GIMP, GrazySAI) = Pincéis (Clip Studio, Krita, Photoshop, GIMP, GrazySAI)
 Кисть «{0}» — в группе «{1}» = Pincel “{0}” no grupo “{1}”
 Кисть библиотеки не открылась = O pincel da biblioteca não abriu
 Метки = Etiquetas
@@ -1321,3 +1320,9 @@ Zip с паролем = Zip com senha
 Линий не вышло: модели не видно в кадре = Nenhuma linha: o modelo não está no quadro
 линии = linhas
 Слой контура из модели: кривых {0} = Camada de traço do modelo: {0} curvas
+
+Группа как в SAI 2 = Grupo como no SAI 2
+инструменты слоя контура и фигур = ferramentas de camadas de traço e formas
+Кисти (SAI 2, Clip Studio, Krita, Photoshop, GIMP, GrazySAI) = Pincéis (SAI 2, Clip Studio, Krita, Photoshop, GIMP, GrazySAI)
+Не группа инструментов SAI 2 = Não é um grupo de ferramentas do SAI 2
+Не инструмент SAI 2 = Não é uma ferramenta do SAI 2

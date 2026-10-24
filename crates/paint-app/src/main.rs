@@ -2508,6 +2508,14 @@ app.open_canvas_dialog(d == "resolution")
                         act = Some((g, 1));
                         ui.close_menu();
                     }
+                    ui.menu_button(tr("Группа как в SAI 2"), |ui| {
+                        for (k, (name, _)) in paint_brush::sai2_tool::PRESET_GROUPS.iter().enumerate() {
+                            if ui.button(*name).clicked() {
+                                act = Some((k, 10));
+                                ui.close_menu();
+                            }
+                        }
+                    });
                     if ui.button(tr("Переименовать…")).clicked() {
                         act = Some((g, 2));
                         ui.close_menu();
@@ -2526,6 +2534,19 @@ app.open_canvas_dialog(d == "resolution")
                 self.tool_group = self.tool_groups.len() - 1;
             }
             Some((g, 2)) => self.group_rename = Some((g, self.tool_groups[g].clone())),
+            Some((k, 10)) => {
+                // готовая группа SAI 2: «Ver.1» или «Artistic»
+                let name = paint_brush::sai2_tool::PRESET_GROUPS[k].0.to_string();
+                self.tool_groups.push(name);
+                let group = self.tool_groups.len() - 1;
+                let mut tools = paint_brush::sai2_tool::preset_group(k);
+                tools.sort_by_key(|t| t.0);
+                for (_, mut brush) in tools {
+                    brush.extra = "SAI 2".to_string();
+                    self.brushes.push(BrushTool { brush, key: None, reserved: None, before_restore: None, group, lib_id: None });
+                }
+                self.tool_group = group;
+            }
             Some((g, 3)) if self.tool_groups.len() > 1 => {
                 self.tool_groups.remove(g);
                 for b in self.brushes.iter_mut() {
@@ -4050,7 +4071,7 @@ app.open_canvas_dialog(d == "resolution")
     /// пропущено при переносе.
     fn import_one(&mut self, path: &std::path::Path) -> Result<(usize, Vec<String>), String> {
         let ext = path.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).unwrap_or_default();
-        let set = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let set = if ext == "saitdat" || ext == "saitgrp" { sai2_set(path) } else { path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default() };
         // кисть с картинкой-отпечатком (GIMP, Photoshop): карандаш с этим отпечатком
         let tip_brush = |tip: String, random: bool| {
             let mut b = ToolKind::Pencil.new_brush();
@@ -4077,6 +4098,39 @@ app.open_canvas_dialog(d == "resolution")
                     let list = std::fs::read(path).map_err(|e| e.to_string()).and_then(|d| paint_formats::brush_tip::abr_brushes(&d).map_err(|e| e.to_string()))?;
                     skipped = list.iter().flat_map(|b| b.skipped.clone()).collect();
                     (list.iter().map(|b| (imported_brush(b, "Photoshop", &set), b.name.clone())).collect(), "Photoshop", skipped)
+                }
+                "saitdat" | "saitgrp" => {
+                    // инструмент или группа своих инструментов SAI 2 (папка `custool`)
+                    let dir = path.parent().unwrap_or(std::path::Path::new("."));
+                    let read = |id: &str| -> Option<paint_brush::sai2_tool::Sai2Tool> {
+                        let t = paint_brush::sai2_tool::parse(&std::fs::read_to_string(dir.join(format!("{id}.saitdat"))).ok()?);
+                        // ссылка на инструмент другой группы
+                        t.or_else(|| {
+                            let v = paint_brush::sai2_tool::values(&std::fs::read_to_string(dir.join(format!("{id}.saitlnk"))).ok()?);
+                            paint_brush::sai2_tool::parse(&std::fs::read_to_string(dir.join(format!("{}.saitdat", v.get("tarid")?))).ok()?)
+                        })
+                    };
+                    let tools: Vec<paint_brush::sai2_tool::Sai2Tool> = if ext == "saitgrp" {
+                        let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+                        let (_, cells) = paint_brush::sai2_tool::parse_group(&text).ok_or_else(|| tr("Не группа инструментов SAI 2").to_string())?;
+                        cells.iter().filter_map(|(_, id)| read(&id.to_string())).collect()
+                    } else {
+                        let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+                        vec![paint_brush::sai2_tool::parse(&text).ok_or_else(|| tr("Не инструмент SAI 2").to_string())?]
+                    };
+                    let mut out = Vec::new();
+                    for t in &tools {
+                        match paint_brush::sai2_tool::to_brush(t) {
+                            Ok(mut b) => {
+                                b.extra = "SAI 2".to_string();
+                                let name = if t.name.is_empty() { tr(b.kind.label()).to_string() } else { t.name.clone() };
+                                out.push((b, name));
+                            }
+                            Err(_) => skipped.push("инструменты слоя контура и фигур"),
+                        }
+                    }
+                    skipped.dedup();
+                    (out, "SAI 2", skipped)
                 }
                 "gbr" | "gih" => {
                     let (name, cells, random) = paint_formats::brush_tip::load_all(path).map_err(|e| e.to_string())?;
@@ -13122,8 +13176,24 @@ fn tr_skipped(s: &str) -> &str {
         "отражение кончика" => tr("отражение кончика"),
         "разброс непрозрачности" => tr("разброс непрозрачности"),
         "шум" => tr("шум"),
+        "инструменты слоя контура и фигур" => tr("инструменты слоя контура и фигур"),
         _ => s,
     }
+}
+
+/// Набор для инструмента SAI 2: имя группы (`_N.saitgrp` в той же папке), где он есть, иначе —
+/// имя папки (у группы — её имя).
+fn sai2_set(path: &std::path::Path) -> String {
+    let folder = || path.parent().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let read_group = |p: &std::path::Path| std::fs::read_to_string(p).ok().and_then(|t| paint_brush::sai2_tool::parse_group(&t));
+    if path.extension().is_some_and(|e| e.eq_ignore_ascii_case("saitgrp")) {
+        return read_group(path).map_or_else(folder, |g| g.0);
+    }
+    let Some(id) = path.file_stem().and_then(|s| s.to_str()).and_then(|s| s.parse::<u32>().ok()) else { return folder() };
+    let Some(rd) = path.parent().and_then(|d| std::fs::read_dir(d).ok()) else { return folder() };
+    let mut groups: Vec<std::path::PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("saitgrp"))).collect();
+    groups.sort();
+    groups.iter().filter_map(|p| read_group(p)).find(|(_, cells)| cells.iter().any(|c| c.1 == id)).map_or_else(folder, |g| g.0)
 }
 
 /// Кисти одного файла для библиотеки: кисти с именами, откуда, что пропущено при переносе.

@@ -84,7 +84,7 @@ pub fn ask(ask: Ask, suggested: &Path, ctx: &eframe::egui::Context) -> Pending {
         ),
         Ask::LibraryAdd => (
             tr("Добавить кисти в библиотеку"),
-            vec![(tr("Кисти (Clip Studio, Krita, Photoshop, GIMP, GrazySAI)").to_string(), vec!["sut", "bfps", "kpp", "bundle", "abr", "gbr", "gih", "gsbrush", "gsbrushes"])],
+            vec![(tr("Кисти (SAI 2, Clip Studio, Krita, Photoshop, GIMP, GrazySAI)").to_string(), vec!["saitdat", "saitgrp", "sut", "bfps", "kpp", "bundle", "abr", "gbr", "gih", "gsbrush", "gsbrushes"])],
         ),
         Ask::Tip => (
             tr("Отпечаток кисти"),

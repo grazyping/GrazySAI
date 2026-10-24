@@ -1269,7 +1269,6 @@ Zip с паролем = Password-protected zip
 Добавить файлы кистей; можно и перетащить файлы или папку в окно программы = Add brush files; you can also drop files or a folder onto the program window
 Избранное = Favorites
 Карточки = Cards
-Кисти (Clip Studio, Krita, Photoshop, GIMP, GrazySAI) = Brushes (Clip Studio, Krita, Photoshop, GIMP, GrazySAI)
 Кисть «{0}» — в группе «{1}» = Brush “{0}” is in the “{1}” group
 Кисть библиотеки не открылась = The library brush did not open
 Метки = Tags
@@ -1322,3 +1321,9 @@ Zip с паролем = Password-protected zip
 Линий не вышло: модели не видно в кадре = No lines: the model is not in view
 линии = lines
 Слой контура из модели: кривых {0} = Linework layer from the model: {0} curves
+
+Группа как в SAI 2 = Group as in SAI 2
+инструменты слоя контура и фигур = linework and shape layer tools
+Кисти (SAI 2, Clip Studio, Krita, Photoshop, GIMP, GrazySAI) = Brushes (SAI 2, Clip Studio, Krita, Photoshop, GIMP, GrazySAI)
+Не группа инструментов SAI 2 = Not a SAI 2 tool group
+Не инструмент SAI 2 = Not a SAI 2 tool

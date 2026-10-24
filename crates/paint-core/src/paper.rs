@@ -349,6 +349,13 @@ fn dirs(kind: &str) -> Vec<PathBuf> {
         if let Some(parent) = d.parent() {
             out.push(parent.join(kind));
         }
+        // SAI 2 2020+: формы и щетина — в `settings/brushfom/…`
+        if matches!(kind, "blotmap" | "bristle") {
+            out.push(d.join("brushfom").join(kind));
+            if let Some(parent) = d.parent() {
+                out.push(parent.join("brushfom").join(kind));
+            }
+        }
     }
     // прежнее имя переменной (до 0.8.42) тоже понимается
     if let Some(d) = std::env::var_os("GRAZYSAI_PAPERTEX").or_else(|| std::env::var_os(concat!("SO", "SAI_PAPERTEX"))) {
