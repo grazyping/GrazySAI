@@ -164,8 +164,11 @@ pub fn abr(d: &[u8]) -> Res<Vec<(String, Stamp)>> {
     Ok(out)
 }
 
-/// Картинки `.abr` (имя, ключ картинки у версии 6, картинка) и раздел `desc` с настройками.
-fn abr_parts(d: &[u8]) -> Res<(Vec<(String, String, Stamp)>, Option<&[u8]>)> {
+/// Картинки `.abr`: имя, ключ картинки (у версии 6) и картинка.
+type AbrImages = Vec<(String, String, Stamp)>;
+
+/// Картинки `.abr` и раздел `desc` с настройками.
+fn abr_parts(d: &[u8]) -> Res<(AbrImages, Option<&[u8]>)> {
     struct R<'a> {
         d: &'a [u8],
         p: usize,
@@ -539,7 +542,7 @@ mod tests {
         item.extend([255, 128, 64, 0]);
         let mut samp = (item.len() as u32).to_be_bytes().to_vec();
         samp.extend(&item);
-        while samp.len() % 4 != 0 {
+        while !samp.len().is_multiple_of(4) {
             samp.push(0);
         }
         // описание: один пресет с россыпью и нажимом на размер
