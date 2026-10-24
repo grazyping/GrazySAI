@@ -323,10 +323,13 @@ Clip Studio Paint и идеи из Krita.
 
 ### Системы
 
-- [ ] FreeBSD: сборка, нажим пера (XInput 2), проверка на живой системе, готовый пакет
-- [ ] Linux: проверить окружения из установщика Debian — GNOME, KDE Plasma, Xfce, Cinnamon, MATE, LXDE, LXQt, GNOME Flashback — и популярные оконные менеджеры (i3, Sway, Openbox, Fluxbox, IceWM, awesome, bspwm, Hyprland): окно, перо, перетаскивание файлов, отдельные окна поверх
-- [ ] Windows 7, 8, 8.1, 10, 11: проверить сборку (Windows 7/8 — отдельная сборка под старую систему)
-- [ ] Windows XP и Vista — хотя бы в теории: что мешает (Rust и его библиотеки XP не поддерживают, нужен OpenGL 2 или программная отрисовка), можно ли собрать облегчённую 32-битную версию
+- [x] FreeBSD: сборка (`tools/build-freebsd.sh`), перо через XInput 2, проверка в виртуальной машине FreeBSD 15.1 (окно, меню, мазок), архив для FreeBSD *(будет в новой версии)*
+- [ ] FreeBSD: порт или пакет `pkg`
+- [x] Linux: проверено под Openbox (LXDE, LXQt), Fluxbox, IceWM, i3, bspwm, Metacity (GNOME Flashback) и KDE Plasma (`tools/wm-check.sh`); отдельное окно библиотеки встаёт поверх *(будет в новой версии)*
+- [ ] Linux: GNOME, Xfce, Cinnamon, MATE, awesome, Sway, Hyprland — полными сеансами
+- [x] Windows 10 и 11 — основная сборка (проверено на Windows 11); Windows 7, 8, 8.1 — отдельная сборка (`tools/build-win7.sh`), проверена под Wine в режиме Windows 7 *(будет в новой версии)*
+- [ ] Windows 7 — проверка на настоящей системе
+- [x] Windows XP и Vista — разобрано в теории (`docs/43-systems.md`): нужна отдельная облегчённая программа *(будет в новой версии)*
 
 ## 1.4.0 — из Clip Studio Paint (план, сведения соберутся после 1.3.0)
 
