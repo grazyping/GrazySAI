@@ -47,11 +47,12 @@ pub fn run(report: Option<PathBuf>) -> bool {
             Ok(format!("{dark} тёмных точек"))
         })),
         ("форматы: запись и чтение", Box::new(formats)),
-        ("сведение холста 4K, 20 слоёв (скорость)", Box::new(|_| {
+        ("сведение холста 4K, 8 слоёв (скорость)", Box::new(|_| {
+            // около 130 МБ памяти: проверка идёт и на слабых машинах
             let mut doc = Document::new(3840, 2160);
-            for n in 0..20 {
+            for n in 0..8 {
                 let mut l = paint_core::Layer::new(&n.to_string());
-                for y in (n * 90)..(n * 90 + 1000) {
+                for y in (n * 200)..(n * 200 + 512) {
                     for x in 0..3840 {
                         l.pixels.set(x, y, paint_core::pixel::from_rgba8([(n * 12) as u8, 120, 200, 180]));
                     }
