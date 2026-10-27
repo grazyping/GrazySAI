@@ -8481,10 +8481,12 @@ app.open_canvas_dialog(d == "resolution")
             .fill(sai_ui::gray(255))
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
-                let w = (ui.available_width() / 4.0).floor();
                 // пустые ячейки — до конца ряда, а если ряд полон — ещё ряд
                 let cells = (shown.len() / 4 + 1) * 4;
                 egui::ScrollArea::vertical().id_salt("tool_grid").max_height(36.0 * 3.0).auto_shrink([false, true]).show(ui, |ui| {
+                    // ширина — внутри прокрутки: при больше чем трёх рядах полоса прокрутки занимает
+                    // своё место, и ячейки, посчитанные по всей ширине, выталкивали панель за край
+                    let w = (ui.available_width() / 4.0).floor();
                     for row in 0..cells / 4 {
                         ui.horizontal(|ui| {
                             for cell in row * 4..row * 4 + 4 {
