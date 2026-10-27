@@ -1347,7 +1347,7 @@ impl Stroke {
 
 /// Пачка отпечатков кладёт краску `paint`. Плитки независимы: каждая получает свои отпечатки в
 /// прежнем порядке, поэтому результат тот же, что при поштучном счёте; много работы — параллельно.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "внутренняя функция горячего цикла: параметры раздельно")]
 fn lay_batch(
     pixels: &mut ColorMap,
     batch: &[Pending],
@@ -1441,7 +1441,7 @@ fn lay_batch(
 }
 
 /// Акварель: пиксели под пачкой сдвигаются к размытому слою на долю, набранную отпечатками.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "внутренняя функция горячего цикла: параметры раздельно")]
 fn water_blur(
     pixels: &mut ColorMap,
     batch: &[Pending],

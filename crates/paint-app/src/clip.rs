@@ -109,6 +109,7 @@ impl PasteKey {
             fn GetAsyncKeyState(key: i32) -> i16;
         }
         // 0x56 — клавиша V
+        // SAFETY: функция без указателей, только читает состояние клавиши.
         Some(ctrl && unsafe { GetAsyncKeyState(0x56) } as u16 & 0x8000 != 0)
     }
 

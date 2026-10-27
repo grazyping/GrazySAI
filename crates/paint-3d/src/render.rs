@@ -330,7 +330,7 @@ fn sample(img: &Image, u: f32, v: f32) -> [f32; 4] {
     std::array::from_fn(|k| (a[k] * (1.0 - tx) + b[k] * tx) * (1.0 - ty) + (c[k] * (1.0 - tx) + d[k] * tx) * ty)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "внутренняя функция горячего цикла: параметры раздельно")]
 fn raster_band(b: usize, bin: &[u32], tris: &[STri], mats: &[Mat], images: &[&[Image]], mode: Display, ink: [f32; 4], fw: usize, fh: usize, depth: &mut [f32], color: &mut [[f32; 4]], part: &mut [u32], vdepth: &mut [f32]) {
     let (by0, by1) = (b * BAND, ((b + 1) * BAND).min(fh));
     for &ti in bin {

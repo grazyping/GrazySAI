@@ -27,10 +27,10 @@ pub enum Ask {
     /// Сохранить все инструменты сетки набором `.gsbrushes`.
     SaveBrushSet,
     /// Сохранить пакет плагина `.gsplugin` (только мастерская).
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "используется только мастерской")]
     SavePlugin,
     /// Модуль WebAssembly для плагина (только мастерская).
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "используется только мастерской")]
     OpenWasm,
     /// Модель для слоя 3D (`true` — добавить в сцену выбранного слоя 3D).
     Model3d(bool),
@@ -39,7 +39,7 @@ pub enum Ask {
     /// Выгрузка записи процесса: `true` — zip с паролем, иначе анимированный PNG.
     RecordExport(bool),
     /// Картинка водяного знака.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "модуль общий с мастерской, там не используется")]
     Watermark,
     /// Сторонние кисти — в библиотеку.
     LibraryAdd,

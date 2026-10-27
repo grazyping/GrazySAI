@@ -61,7 +61,7 @@ pub struct App {
     pub rate: u32,
     pub last: String,
     pub last_pressure: f32,
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg_attr(not(windows), allow(dead_code, reason = "читается только в версии для Windows"))]
     pub mode: String,
     /// Область холста, которую нужно перерисовать: лево, верх, право, низ (право и низ не включаются).
     pub dirty: Option<[i32; 4]>,

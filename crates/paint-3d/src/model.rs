@@ -608,7 +608,7 @@ mod tests {
         for cut in [0, 12, 20, 100, full.len() / 2, full.len() - 1] {
             assert!(load(&[("x.glb".into(), full[..cut].to_vec())]).is_err(), "обрезка {cut}");
         }
-        let mut bad = full.clone();
+        let mut bad = full;
         for i in (200..bad.len()).step_by(97) {
             bad[i] ^= 0x5a;
         }

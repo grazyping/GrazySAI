@@ -153,7 +153,7 @@ pub fn resize(src: &[[f32; 4]], sw: usize, sh: usize, dw: usize, dh: usize, mode
 /// точки нет). Ядро — то же, что у `resize`; при уменьшении растягивается по местному масштабу
 /// (по разности соседних точек). За краем источника — прозрачность, веса нормируются по всем
 /// отсчётам окна. Результат — `dw`×`dh` с левым верхним углом (`ox`, `oy`).
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "внутренняя функция горячего цикла: параметры раздельно")]
 pub fn sample_map(src: &[[f32; 4]], sw: usize, sh: usize, ox: i32, oy: i32, dw: usize, dh: usize, mode: Mode, map: impl Fn(f64, f64) -> Option<(f64, f64)>) -> Vec<[f32; 4]> {
     let table = mode.table();
     let cross = matches!(mode, Mode::Bicubic | Mode::Lanczos2);
@@ -217,7 +217,7 @@ pub fn sample_map(src: &[[f32; 4]], sw: usize, sh: usize, ox: i32, oy: i32, dw: 
 
 /// Выборка по аффинной матрице: `inv` переводит точку результата в точку источника,
 /// `x = inv[0]·X + inv[1]·Y + inv[2]`, `y = inv[3]·X + inv[4]·Y + inv[5]`.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, reason = "внутренняя функция горячего цикла: параметры раздельно")]
 pub fn affine(src: &[[f32; 4]], sw: usize, sh: usize, inv: [f64; 6], ox: i32, oy: i32, dw: usize, dh: usize, mode: Mode) -> Vec<[f32; 4]> {
     sample_map(src, sw, sh, ox, oy, dw, dh, mode, |x, y| Some((inv[0] * x + inv[1] * y + inv[2], inv[3] * x + inv[4] * y + inv[5])))
 }

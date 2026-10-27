@@ -95,8 +95,10 @@ mod uinput {
     impl Tablet {
         pub fn create() -> std::io::Result<Tablet> {
             let path = CString::new("/dev/uinput").unwrap();
+            // SAFETY: путь — строка C с нулём в конце, живёт до конца вызова.
             let fd = unsafe { libc::open(path.as_ptr(), libc::O_WRONLY | libc::O_NONBLOCK) };
             check(fd, "открыть /dev/uinput")?;
+            // SAFETY: fd открыт выше и проверен; эти ioctl принимают число, не указатель.
             unsafe {
                 for ev in [EV_SYN, EV_KEY, EV_ABS] {
                     check(libc::ioctl(fd, UI_SET_EVBIT, ev as libc::c_int), "EV")?;
@@ -113,12 +115,15 @@ mod uinput {
             // оси: координаты в сотых долях мм (100 на мм), нажим 0..8191, наклон ±60° (57 на радиан)
             for (code, min, max, resolution) in [(ABS_X, 0, X_MAX, 100), (ABS_Y, 0, Y_MAX, 100), (ABS_PRESSURE, 0, P_MAX, 0), (ABS_TILT_X, -60, 60, 57), (ABS_TILT_Y, -60, 60, 57)] {
                 let abs = AbsSetup { code, _pad: 0, value: 0, min, max, fuzz: 0, flat: 0, resolution };
+                // SAFETY: fd открыт; указатель на локальную #[repr(C)] структуру, живую на время вызова.
                 unsafe { check(libc::ioctl(fd, UI_ABS_SETUP, &abs as *const AbsSetup), "ось")? };
             }
             let mut setup = Setup { bustype: 0x03, vendor: 0x28bd, product: 0x092d, version: 1, name: [0; 80], ff_effects_max: 0 };
             let name = b"XP-Pen Artist 24 Pro (virtual) Pen";
             setup.name[..name.len()].copy_from_slice(name);
+            // SAFETY: fd открыт; указатель на локальную #[repr(C)] структуру, живую на время вызова.
             unsafe { check(libc::ioctl(fd, UI_DEV_SETUP, &setup as *const Setup), "описание устройства")? };
+            // SAFETY: fd открыт; у UI_DEV_CREATE нет аргумента.
             unsafe { check(libc::ioctl(fd, UI_DEV_CREATE), "создать устройство")? };
             // дать системе подхватить устройство
             std::thread::sleep(Duration::from_millis(800));
@@ -127,6 +132,7 @@ mod uinput {
 
         fn emit(&self, kind: u16, code: u16, value: i32) {
             let ev = InputEvent { tv_sec: 0, tv_usec: 0, kind, code, value };
+            // SAFETY: fd открыт, пока жив Tablet; пишем ровно size_of байт локальной #[repr(C)] структуры.
             unsafe {
                 libc::write(self.fd, &ev as *const InputEvent as *const libc::c_void, std::mem::size_of::<InputEvent>());
             }
@@ -162,6 +168,7 @@ mod uinput {
     impl Drop for Tablet {
         fn drop(&mut self) {
             self.leave();
+            // SAFETY: fd принадлежит Tablet и закрывается один раз, здесь.
             unsafe {
                 libc::ioctl(self.fd, UI_DEV_DESTROY);
                 libc::close(self.fd);

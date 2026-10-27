@@ -617,7 +617,7 @@ mod tests {
     #[test]
     fn bmp_takes_color_index_and_flips_rows() {
         let t = PaperTexture::from_bmp(&bmp8(3, 2, &[1, 2, 3, 4, 5, 6])).unwrap();
-        assert_eq!((t.width, t.height, t.gray.clone()), (3, 2, vec![1, 2, 3, 4, 5, 6]));
+        assert_eq!((t.width, t.height, t.gray), (3, 2, vec![1, 2, 3, 4, 5, 6]));
     }
 
     #[test]

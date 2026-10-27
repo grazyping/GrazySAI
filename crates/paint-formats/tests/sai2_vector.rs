@@ -50,7 +50,7 @@ fn linework_block_round_trips() {
     let bytes = write(std::slice::from_ref(&s), true);
     let back = parse(&bytes, true).unwrap();
     // Точки нажима при чтении упорядочены по положению — как у образца.
-    let mut want = s.clone();
+    let mut want = s;
     want.paths[0].points[0].pressure.reverse();
     assert_eq!(back, vec![want]);
 }

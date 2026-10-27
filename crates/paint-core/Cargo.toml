@@ -11,3 +11,6 @@ png = "0.17"
 tiff = "0.9"
 zune-core = "0.4"
 zune-jpeg = "0.4"
+
+[lints]
+workspace = true

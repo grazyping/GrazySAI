@@ -46,7 +46,7 @@ pub fn blend_tag(mode: BlendMode) -> &'static [u8; 4] {
         Exclusion => b"excl",
         Subtract => b"fsub",
         Divide => b"fdiv",
-        #[allow(unreachable_patterns)]
+        #[allow(unreachable_patterns, reason = "на случай новых режимов наложения")]
         _ => b"norm",
     }
 }

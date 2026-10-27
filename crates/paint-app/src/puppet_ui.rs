@@ -108,7 +108,7 @@ impl PaintApp {
                     if self.puppet.kind.holds_position() && (rest[0] - pos[0]).abs() + (rest[1] - pos[1]).abs() > 0.01 {
                         pin.keys.insert(f, PinPose { pos, rot: 0.0, scale: 1.0 });
                     }
-                    let before = pp.clone();
+                    let before = pp;
                     if let Some(l) = self.doc.layer_mut(&path).and_then(|l| l.puppet.as_mut()) {
                         l.pins.push(pin);
                         let n = l.pins.len() - 1;

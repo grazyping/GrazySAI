@@ -73,7 +73,7 @@ fn pose_and_morph_change_pixels() {
     let mut fat = s.clone();
     fat.objects[0].morphs.insert((mi, 0), 1.0);
     fat.camera.yaw = 90.0;
-    let mut side = s.clone();
+    let mut side = s;
     side.camera.yaw = 90.0;
     side.objects[0].morphs.insert((mi, 0), 0.0);
     let ia = render::render(&side, &models, 300, 400, 1);
@@ -153,7 +153,7 @@ fn figure_to_lines() {
     assert!(len(&creases) > len(&outline));
     println!("линий {} / {}, {ms} мс", outline.len(), creases.len());
     if let Some(out) = std::env::var_os("GS_LINES_PNG") {
-        let mut im = img.clone();
+        let mut im = img;
         for l in &creases {
             for s in l.windows(2) {
                 let n = ((s[1][0] - s[0][0]).hypot(s[1][1] - s[0][1]).ceil() as usize).max(1);

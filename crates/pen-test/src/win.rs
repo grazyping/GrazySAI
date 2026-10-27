@@ -452,6 +452,8 @@ pub fn run(use_wintab: bool, autoclose: Option<u32>) {
         let _ = std::fs::write(exe_dir().join("pen-test-crash.txt"), format!("{info}\n"));
     }));
 
+    // SAFETY: вызовы Win32 с подписями из описания API; строки — с нулём в конце, живут до конца блока,
+    // окно и его данные используются только в этом потоке.
     unsafe {
         SetProcessDpiAwarenessContext(-4); // по монитору, версия 2: координаты в настоящих пикселях
         let class = wide("PaintRsPenTest");

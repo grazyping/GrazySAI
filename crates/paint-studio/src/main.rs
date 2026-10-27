@@ -5,16 +5,16 @@
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-#[allow(dead_code)]
+#[allow(dead_code, reason = "модуль общий с GrazySAI, мастерская берёт из него часть")]
 #[path = "../../paint-app/src/i18n.rs"]
 mod i18n;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "модуль общий с GrazySAI, мастерская берёт из него часть")]
 #[path = "../../paint-app/src/sai_ui.rs"]
 mod sai_ui;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "модуль общий с GrazySAI, мастерская берёт из него часть")]
 #[path = "../../paint-app/src/files.rs"]
 mod files;
-#[allow(dead_code)]
+#[allow(dead_code, reason = "модуль общий с GrazySAI, мастерская берёт из него часть")]
 #[path = "../../paint-app/src/settings.rs"]
 mod settings;
 mod plugin_tab;

@@ -16,3 +16,6 @@ eframe = { version = "0.29", default-features = false, features = ["glow", "defa
 rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
 paint-plugin = { path = "../paint-plugin" }
 egui-phosphor = "0.7.3"
+
+[lints]
+workspace = true

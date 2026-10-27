@@ -4251,7 +4251,7 @@ app.open_canvas_dialog(d == "resolution")
                     let mut b = paint_brush::sai2_tool::scatter_brush(&text).ok_or_else(|| tr("Не форма россыпи SAI 2").to_string())?;
                     let bmp = std::fs::read(path.with_extension("bmp")).map_err(|e| e.to_string())?;
                     let tex = paint_core::paper::PaperTexture::from_bmp(&bmp).ok_or_else(|| tr("Картинка формы не прочитана").to_string())?;
-                    let st = paint_core::Stamp { color: None, width: tex.width, height: tex.height, alpha: tex.gray.clone() };
+                    let st = paint_core::Stamp { color: None, width: tex.width, height: tex.height, alpha: tex.gray };
                     let saved = paint_core::paper::save_tip(&format!("SAI 2 {set}"), &paint_formats::brush_tip::shrink(st, paint_formats::brush_tip::MAX_SIDE)).map_err(|e| e.to_string())?;
                     b.grain.tip = Some(saved);
                     b.custom = Some(set.clone());

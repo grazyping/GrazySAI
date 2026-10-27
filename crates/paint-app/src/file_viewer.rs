@@ -555,7 +555,7 @@ impl FileViewer {
                 }
             }
             if sai_ui::icon_button(ui, b, false, sel.is_some(), tr("Удалить"), |p, r, c| sai_ui::glyph(p, r, c, "delete")).clicked() {
-                self.delete_ask = sel.clone();
+                self.delete_ask = sel;
             }
             let marked = self.bookmarks.contains(&self.dir);
             if sai_ui::icon_button(ui, b, marked, true, tr("Текущую папку — в закладки"), |p, r, c| {

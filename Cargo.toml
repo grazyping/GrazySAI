@@ -9,3 +9,11 @@ license = "MIT"
 
 [profile.dev]
 opt-level = 1
+
+# Правила сверх обычного clippy (выбраны из BeautifulRust): ship.sh гоняет clippy с -D warnings.
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "warn"      # у каждого unsafe — комментарий SAFETY: почему это безопасно
+allow_attributes_without_reason = "warn" # у каждого #[allow] — reason = "…"
+redundant_clone = "warn"                 # лишнее копирование
+dbg_macro = "warn"
+todo = "warn"
