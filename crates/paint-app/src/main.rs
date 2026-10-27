@@ -1319,6 +1319,9 @@ struct PaintApp {
     dock_saved: String,
     /// Места плавающих окон стыковки: (номер поверхности, x, y, ширина, высота).
     dock_windows: Vec<(usize, [f32; 4])>,
+    /// Панели рисуются с подменённым состоянием: сохранение настроек — отложить.
+    panels_busy: std::cell::Cell<bool>,
+    save_later: std::cell::Cell<bool>,
     /// Окно «Марионетка» и булавки на холсте.
     puppet: puppet_ui::PuppetUi,
     s3d_mode: scene3d::MouseMode,
@@ -1678,6 +1681,8 @@ impl PaintApp {
             dock: dock::default_layout(false, false),
             dock_saved: String::new(),
             dock_windows: Vec::new(),
+            panels_busy: Default::default(),
+            save_later: Default::default(),
             puppet: Default::default(),
             s3d_mode: scene3d::MouseMode::Camera,
             layer_drag: None,
@@ -2310,6 +2315,12 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn save_settings(&self) {
+        // пока панели рисуются во вкладках или отделённых окнах, дерево вкладок вынуто, а
+        // `win.show` подменён — записать после, см. `finish_panels`
+        if self.panels_busy.get() {
+            self.save_later.set(true);
+            return;
+        }
         let mut s = settings::Settings::load();
         s.set("tools.count", self.brushes.len());
         for (i, b) in self.brushes.iter().enumerate() {
@@ -7944,8 +7955,11 @@ app.open_canvas_dialog(d == "resolution")
                         }
                     }
                 });
-                ui.checkbox(&mut w.tools_right, tr("Панель цвета и инструментов справа"));
-                ui.checkbox(&mut w.layers_right, tr("Панель навигатора и слоёв справа"));
+                let sides = ui.checkbox(&mut w.tools_right, tr("Панель цвета и инструментов справа")).changed() | ui.checkbox(&mut w.layers_right, tr("Панель навигатора и слоёв справа")).changed();
+                // у стыкуемых панелей сторона — в дереве вкладок: собрать его заново
+                if sides && w.dock {
+                    self.dock = dock::default_layout(w.tools_right, w.layers_right);
+                }
                 ui.checkbox(&mut w.dock, tr("Стыкуемые панели")).on_hover_text(tr("Панель можно схватить за вкладку, оторвать в окно и пристыковать к любому краю"));
                 if w.dock && ui.button(tr("Сбросить раскладку панелей")).clicked() {
                     self.dock = dock::default_layout(w.tools_right, w.layers_right);
@@ -8156,6 +8170,20 @@ app.open_canvas_dialog(d == "resolution")
     /// Отделённые панели (Separate User Interface Panel в SAI) — каждая в своём окне системы;
     /// закрыть окно — панель возвращается на место.
     fn separate_panels(&mut self, ctx: &egui::Context) {
+        self.panels_busy.set(true);
+        self.separate_panels_inner(ctx);
+        self.finish_panels();
+    }
+
+    /// Конец показа панелей с подменённым состоянием: отложенное сохранение настроек.
+    fn finish_panels(&mut self) {
+        self.panels_busy.set(false);
+        if self.save_later.take() {
+            self.save_settings();
+        }
+    }
+
+    fn separate_panels_inner(&mut self, ctx: &egui::Context) {
         for i in [3usize, 2, 1, 0] {
             if !(self.win.separate[i] && self.win.show[i]) {
                 continue;

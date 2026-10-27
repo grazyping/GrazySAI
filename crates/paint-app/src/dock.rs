@@ -214,6 +214,22 @@ impl PaintApp {
         }
     }
 
+    /// Панель, брошенная на середину холста, встала бы вкладкой рядом с ним и закрыла бы его
+    /// (холст тогда не рисуется, вид и навигатор отстают) — такие вкладки уходят вправо от холста.
+    fn keep_canvas_alone(&mut self) {
+        let Some((s, n, _)) = self.dock.find_tab(&Tab::Canvas) else { return };
+        let Some(tree) = self.dock.get_surface_mut(s).and_then(|x| x.node_tree_mut()) else { return };
+        let others: Vec<Tab> = tree[n].tabs().map(|t| t.iter().copied().filter(|&t| t != Tab::Canvas).collect()).unwrap_or_default();
+        if others.is_empty() {
+            return;
+        }
+        tree[n].retain_tabs(|t| *t == Tab::Canvas);
+        if let egui_dock::Node::Leaf { active, .. } = &mut tree[n] {
+            *active = egui_dock::TabIndex(0);
+        }
+        tree.split_right(n, 0.8, others);
+    }
+
     /// Главная область окна в режиме стыкуемых панелей.
     pub(crate) fn dock_area(&mut self, ctx: &egui::Context) {
         self.sync_dock();
@@ -237,6 +253,7 @@ impl PaintApp {
         t.tab_context_menu.close_button = tr("Закрыть").to_string();
         t.tab_context_menu.eject_button = tr("В отдельное окно").to_string();
         t.window.close_button_tooltip = tr("Закрыть").to_string();
+        self.panels_busy.set(true);
         egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
             DockArea::new(&mut dock)
                 .id(egui::Id::new("dock"))
@@ -246,6 +263,7 @@ impl PaintApp {
                 .show_inside(ui, &mut Viewer { app: self });
         });
         self.dock = dock;
+        self.keep_canvas_alone();
         // места окон — из памяти egui; размер — без полей рамки, как его задаёт set_size
         self.dock_windows = (1..self.dock.surfaces_count())
             .filter(|&i| self.dock.get_window_state_mut(egui_dock::SurfaceIndex(i)).is_some())
@@ -255,6 +273,7 @@ impl PaintApp {
                 Some((i, [r.min.x, r.min.y, r.width() - m.x, r.height() - m.y]))
             })
             .collect();
+        self.finish_panels();
         // раскладку сохранить, когда отпущена мышь и что-то поменялось
         if ctx.input(|i| i.pointer.any_released()) {
             let text = self.dock_text();
