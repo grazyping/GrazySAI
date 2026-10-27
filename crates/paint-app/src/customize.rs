@@ -182,7 +182,7 @@ impl PaintApp {
         let w = &self.win;
         let b = |v: bool| if v { '1' } else { '0' };
         format!(
-            "{} {} {} {} {} {} {} {} {} {} {} {} {}",
+            "{} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
             w.ui_scale,
             b(w.tools_right),
             b(w.layers_right),
@@ -196,6 +196,9 @@ impl PaintApp {
             w.separate.iter().map(|&v| b(v)).collect::<String>(),
             b(self.dark_theme),
             b(self.custom.show_quick),
+            b(w.dock),
+            // в тексте JSON нет пробелов: имена вкладок — латиница
+            self.dock_text(),
         )
     }
 
@@ -224,6 +227,11 @@ impl PaintApp {
         self.dark_theme = one(p[11]);
         crate::sai_ui::set_dark(self.dark_theme);
         self.custom.show_quick = one(p[12]);
+        // пространства, сохранённые до стыкуемых панелей, раскладку вкладок не меняют
+        if let (Some(d), Some(t)) = (p.get(13), p.get(14).and_then(|t| crate::dock::parse(t))) {
+            self.win.dock = one(d);
+            self.dock = t;
+        }
     }
 
     /// Подменю «Окно → Рабочее пространство».

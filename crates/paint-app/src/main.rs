@@ -24,6 +24,7 @@ mod scene3d;
 mod actions;
 mod puppet_ui;
 mod timeline;
+mod dock;
 mod customize;
 mod lassofill;
 mod layer_style;
@@ -740,11 +741,13 @@ struct WindowOpts {
     /// «Окно → Отдельные панели» (Separate User Interface Panel в SAI): навигатор, слои, цвет,
     /// инструменты — каждая в своём окне (номера — как у `show`).
     separate: [bool; 4],
+    /// Стыкуемые панели (как в Clip Studio) вместо двух колонок SAI.
+    dock: bool,
 }
 
 impl Default for WindowOpts {
     fn default() -> Self {
-        Self { ui_scale: 1.0, tools_right: false, layers_right: false, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true, size_numbers: false, size_list_top: false, hsv_mode: 0, swatch_size: 2, show: [true; 7], separate: [false; 4] }
+        Self { ui_scale: 1.0, tools_right: false, layers_right: false, fullscreen: false, panels_hidden: false, dot_cursor: false, brush_circle: true, size_numbers: false, size_list_top: false, hsv_mode: 0, swatch_size: 2, show: [true; 7], separate: [false; 4], dock: false }
     }
 }
 
@@ -1311,6 +1314,11 @@ struct PaintApp {
     custom: customize::CustomUi,
     /// Окно «Таймлайн» и проигрывание.
     timeline: timeline::TimelineUi,
+    /// Дерево вкладок стыкуемых панелей и его последний сохранённый текст.
+    dock: egui_dock::DockState<dock::Tab>,
+    dock_saved: String,
+    /// Места плавающих окон стыковки: (номер поверхности, x, y, ширина, высота).
+    dock_windows: Vec<(usize, [f32; 4])>,
     /// Окно «Марионетка» и булавки на холсте.
     puppet: puppet_ui::PuppetUi,
     s3d_mode: scene3d::MouseMode,
@@ -1667,6 +1675,9 @@ impl PaintApp {
             actions: Default::default(),
             custom: Default::default(),
             timeline: Default::default(),
+            dock: dock::default_layout(false, false),
+            dock_saved: String::new(),
+            dock_windows: Vec::new(),
             puppet: Default::default(),
             s3d_mode: scene3d::MouseMode::Camera,
             layer_drag: None,
@@ -2156,6 +2167,9 @@ app.open_canvas_dialog(d == "resolution")
         }
         paint_core::history_disk::set_ram_budget(self.opts.history_mb as usize * (1 << 20));
         s.read_bool("layers_right", &mut self.win.layers_right);
+        s.read_bool("dock_ui", &mut self.win.dock);
+        self.dock = s.str("dock_layout").and_then(dock::parse).unwrap_or_else(|| dock::default_layout(self.win.tools_right, self.win.layers_right));
+        self.dock_saved = self.dock_text();
         s.read_bool("dot_cursor", &mut self.win.dot_cursor);
         s.read_bool("brush_circle", &mut self.win.brush_circle);
         s.read_bool("size_numbers", &mut self.win.size_numbers);
@@ -2364,6 +2378,8 @@ app.open_canvas_dialog(d == "resolution")
         s.set("opt.btn_middle", o.btn_middle);
         s.set("opt.btn_right", o.btn_right);
         s.set("layers_right", w.layers_right as u8);
+        s.set("dock_ui", w.dock as u8);
+        s.set("dock_layout", self.dock_text());
         s.set("dot_cursor", w.dot_cursor as u8);
         s.set("brush_circle", w.brush_circle as u8);
         s.set("size_numbers", w.size_numbers as u8);
@@ -7930,6 +7946,11 @@ app.open_canvas_dialog(d == "resolution")
                 });
                 ui.checkbox(&mut w.tools_right, tr("Панель цвета и инструментов справа"));
                 ui.checkbox(&mut w.layers_right, tr("Панель навигатора и слоёв справа"));
+                ui.checkbox(&mut w.dock, tr("Стыкуемые панели")).on_hover_text(tr("Панель можно схватить за вкладку, оторвать в окно и пристыковать к любому краю"));
+                if w.dock && ui.button(tr("Сбросить раскладку панелей")).clicked() {
+                    self.dock = dock::default_layout(w.tools_right, w.layers_right);
+                    ui.close_menu();
+                }
                 ui.separator();
                 if ui.add(egui::Checkbox::new(&mut w.fullscreen, tr("Полный экран"))).on_hover_text("F11, Shift+Tab").changed() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Fullscreen(w.fullscreen));
@@ -13372,6 +13393,7 @@ impl eframe::App for PaintApp {
             ctx.set_zoom_factor(self.win.ui_scale);
         }
         let side = |right: bool, id: &'static str| if right { egui::SidePanel::right(id) } else { egui::SidePanel::left(id) };
+        let docked = self.win.dock && !self.win.panels_hidden;
         if !self.win.panels_hidden {
             let full = self.win.show;
             // отделённые панели — в своих окнах, в главном их место освобождается
@@ -13382,10 +13404,12 @@ impl eframe::App for PaintApp {
             }
             self.win.show = sh;
             // как в SAI: навигатор и слои — с краю окна, цвет и инструменты — ближе к холсту
-            if sh[0] || sh[1] {
+            if docked {
+                // колонки — вкладками в общей области, см. dock_area ниже
+            } else if sh[0] || sh[1] {
                 side(self.win.layers_right, "layers").exact_width(186.0).resizable(false).show(ctx, |ui| self.right_panel(ui));
             }
-            if sh[2] || sh[3] {
+            if !docked && (sh[2] || sh[3]) {
                 side(self.win.tools_right, "tools").exact_width(236.0).resizable(false).show(ctx, |ui| {
                     // настройки кисти бывают выше окна: прокрутка, как у отделённой панели
                     egui::ScrollArea::vertical().id_salt("tools_scroll").auto_shrink([false, true]).show(ui, |ui| self.left_panel(ui));
@@ -13441,9 +13465,13 @@ impl eframe::App for PaintApp {
         if let Some(i) = tab_close {
             self.request_close_view(i);
         }
-        egui::CentralPanel::default()
-            .frame(egui::Frame::none())
-            .show(ctx, |ui| self.canvas(ui));
+        if docked {
+            self.dock_area(ctx);
+        } else {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::none())
+                .show(ctx, |ui| self.canvas(ui));
+        }
         if let Some(mut fv) = self.float_view {
             // плавающий вид рисуется тем же холстом со своим масштабом, сдвигом и поворотом
             let mut open = true;

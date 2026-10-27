@@ -79,6 +79,13 @@ Shortcut keys in menu items and tooltips can be hidden: “Window → Show short
 “Window → Separate User Interface Panel” (as in SAI): tools, color, layers or navigator — each
 panel in its own window that can go to another monitor; closing that window puts the panel back.
 
+“Window → Dockable panels” gives a Clip Studio-style layout: the navigator, layers, color, tools,
+timeline and the canvas itself become tabs. Drag a tab and the spot where it will land lights up —
+an edge of another panel, a tab next to it, or a floating window over the canvas (release away from
+the markers). The cross on a tab hides the panel, like “Window → Show”. The layout and the floating
+window positions are remembered and saved in workspaces; “Reset panel layout” brings back the SAI
+columns. With the option off, the panels stay in two columns as in SAI.
+
 “Window → History” lists the steps: click a step to return the picture to the state after it (undone steps are shown dimmed and can be clicked too); “Initial state” goes back to the start.
 
 The “Window” menu has “Dark theme”: dark panels and menus; the canvas, paper and drawing colors stay unchanged.

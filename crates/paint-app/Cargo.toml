@@ -20,6 +20,9 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 paint-brush = { path = "../paint-brush" }
 paint-plugin = { path = "../paint-plugin" }
 egui-phosphor = "0.7.3"
+egui_dock = { version = "0.14.0", features = ["serde"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1"
 
 [target.'cfg(windows)'.dependencies]
 raw-window-handle = "0.6"

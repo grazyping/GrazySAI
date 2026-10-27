@@ -1502,3 +1502,9 @@ PNG-кадры… = Fotogramas PNG…
 Убрать метку кадра = Quitar clave del fotograma
 Удалить булавку = Eliminar alfiler
 Щелчок по рисунку — булавка; тянуть — двигать (метка в текущем кадре); Ctrl + тянуть — записать движение по кадрам, как при проигрывании. = Clic en el dibujo — alfiler; arrastrar — moverlo (clave en el fotograma actual); Ctrl + arrastrar — grabar el movimiento fotograma a fotograma, como al reproducir.
+
+# Стыкуемые панели
+Стыкуемые панели = Paneles acoplables
+Панель можно схватить за вкладку, оторвать в окно и пристыковать к любому краю = Arrastra un panel por su pestaña para separarlo en una ventana o acoplarlo a cualquier borde
+Сбросить раскладку панелей = Restablecer disposición de paneles
+В отдельное окно = En ventana aparte

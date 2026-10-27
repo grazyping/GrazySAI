@@ -1502,3 +1502,9 @@ PNG-кадры… = PNG-Einzelbilder…
 Убрать метку кадра = Bildmarke entfernen
 Удалить булавку = Pin löschen
 Щелчок по рисунку — булавка; тянуть — двигать (метка в текущем кадре); Ctrl + тянуть — записать движение по кадрам, как при проигрывании. = Klick auf das Bild — Pin; ziehen — bewegen (Marke im aktuellen Bild); Strg + ziehen — Bewegung Bild für Bild aufnehmen wie bei der Wiedergabe.
+
+# Стыкуемые панели
+Стыкуемые панели = Andockbare Bedienfelder
+Панель можно схватить за вкладку, оторвать в окно и пристыковать к любому краю = Ein Bedienfeld am Reiter ziehen, um es als Fenster abzulösen oder an einem beliebigen Rand anzudocken
+Сбросить раскладку панелей = Bedienfeld-Anordnung zurücksetzen
+В отдельное окно = In eigenes Fenster

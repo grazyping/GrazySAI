@@ -1503,3 +1503,9 @@ PNG-кадры… = PNG frames…
 Убрать метку кадра = Remove frame key
 Удалить булавку = Delete pin
 Щелчок по рисунку — булавка; тянуть — двигать (метка в текущем кадре); Ctrl + тянуть — записать движение по кадрам, как при проигрывании. = Click the picture — a pin; drag — move it (key on the current frame); Ctrl + drag — record the motion frame by frame, as in playback.
+
+# Стыкуемые панели
+Стыкуемые панели = Dockable panels
+Панель можно схватить за вкладку, оторвать в окно и пристыковать к любому краю = Drag a panel by its tab to float it in a window or dock it to any edge
+Сбросить раскладку панелей = Reset panel layout
+В отдельное окно = Float in a window

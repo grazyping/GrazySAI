@@ -1502,3 +1502,9 @@ PNG-кадры… = Images PNG…
 Убрать метку кадра = Retirer la clé de l'image
 Удалить булавку = Supprimer l'épingle
 Щелчок по рисунку — булавка; тянуть — двигать (метка в текущем кадре); Ctrl + тянуть — записать движение по кадрам, как при проигрывании. = Clic sur le dessin — une épingle ; glisser — la déplacer (clé sur l'image courante) ; Ctrl + glisser — enregistrer le mouvement image par image, comme en lecture.
+
+# Стыкуемые панели
+Стыкуемые панели = Panneaux ancrables
+Панель можно схватить за вкладку, оторвать в окно и пристыковать к любому краю = Faites glisser un panneau par son onglet pour le détacher dans une fenêtre ou l’ancrer à n’importe quel bord
+Сбросить раскладку панелей = Réinitialiser la disposition des panneaux
+В отдельное окно = Dans une fenêtre séparée

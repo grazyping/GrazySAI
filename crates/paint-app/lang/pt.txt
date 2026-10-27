@@ -1502,3 +1502,9 @@ PNG-кадры… = Quadros PNG…
 Убрать метку кадра = Remover chave do quadro
 Удалить булавку = Excluir alfinete
 Щелчок по рисунку — булавка; тянуть — двигать (метка в текущем кадре); Ctrl + тянуть — записать движение по кадрам, как при проигрывании. = Clique no desenho — alfinete; arrastar — mover (chave no quadro atual); Ctrl + arrastar — gravar o movimento quadro a quadro, como na reprodução.
+
+# Стыкуемые панели
+Стыкуемые панели = Painéis encaixáveis
+Панель можно схватить за вкладку, оторвать в окно и пристыковать к любому краю = Arraste um painel pela aba para soltá-lo numa janela ou encaixá-lo em qualquer borda
+Сбросить раскладку панелей = Redefinir disposição dos painéis
+В отдельное окно = Em janela separada

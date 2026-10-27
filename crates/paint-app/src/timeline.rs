@@ -361,9 +361,21 @@ impl PaintApp {
         if !self.timeline.show {
             return;
         }
+        // во вкладке стыкуемых панелей — там и рисуется
+        if self.win.dock && !self.win.panels_hidden && self.dock.find_tab(&crate::dock::Tab::Timeline).is_some() {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new(tr("Таймлайн")).id(egui::Id::new("timeline")).open(&mut open).default_width(640.0).default_pos([440.0, 600.0]).resizable(true).show(ctx, |ui| self.timeline_panel(ui));
+        if !open {
+            self.timeline.show = false;
+        }
+    }
+
+    /// Содержимое таймлайна: в своём окне или во вкладке.
+    pub(crate) fn timeline_panel(&mut self, ui: &mut egui::Ui) {
         let mut folders = Vec::new();
         anim_folders(&self.doc.layers, &mut Vec::new(), &mut folders);
-        let mut open = true;
         let mut go: Option<u32> = None;
         let mut puppets = Vec::new();
         puppet_layers(&self.doc.layers, &mut Vec::new(), &mut puppets);
@@ -373,7 +385,7 @@ impl PaintApp {
         let mut select: Option<Vec<usize>> = None;
         let mut settings_changed = false;
         let mut play_toggle = false;
-        egui::Window::new(tr("Таймлайн")).id(egui::Id::new("timeline")).open(&mut open).default_width(640.0).default_pos([440.0, 600.0]).resizable(true).show(ctx, |ui| {
+        let mut body = |ui: &mut egui::Ui| {
             let t = &mut self.doc.timeline;
             let playing = self.timeline.playing.is_some();
             ui.horizontal(|ui| {
@@ -616,10 +628,8 @@ impl PaintApp {
                 }
                 ui.label(egui::RichText::new(tr("Правый щелчок по клетке — меню кадра; метку можно перетащить, с Alt — копия")).small());
             });
-        });
-        if !open {
-            self.timeline.show = false;
-        }
+        };
+        body(ui);
         if play_toggle {
             self.timeline.playing = match self.timeline.playing {
                 Some(_) => None,
