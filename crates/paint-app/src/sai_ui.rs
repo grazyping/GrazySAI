@@ -72,10 +72,17 @@ pub fn apply_style(ctx: &egui::Context) {
     }
     v.window_rounding = egui::Rounding::ZERO;
     v.menu_rounding = egui::Rounding::ZERO;
+    // без теней: стандартная тень egui (сдвиг 10×20, размытие 15) налезает на соседние панели
+    v.window_shadow = egui::epaint::Shadow::NONE;
+    v.popup_shadow = egui::epaint::Shadow::NONE;
+    // без плавных анимаций: панели и окна появляются сразу
+    style.animation_time = 0.0;
     style.spacing.item_spacing = Vec2::new(4.0, 3.0);
     style.spacing.button_padding = Vec2::new(4.0, 1.0);
     style.spacing.interact_size = Vec2::new(18.0, 18.0);
     style.spacing.combo_height = 300.0;
+    // полоса прокрутки видна всегда, когда есть что прокручивать, а не только под мышью
+    style.spacing.scroll = egui::style::ScrollStyle::solid();
     use egui::{FontId, TextStyle};
     style.text_styles = [
         (TextStyle::Heading, FontId::proportional(14.0)),
@@ -85,7 +92,13 @@ pub fn apply_style(ctx: &egui::Context) {
         (TextStyle::Small, FontId::proportional(10.0)),
     ]
     .into();
-    ctx.set_style(style);
+    // стиль — обеим темам egui, а тема закреплена: иначе eframe переключается вслед за системной
+    // темой на второй, ненастроенный стиль, и окно выходит наполовину светлым, наполовину тёмным
+    let theme = if is_dark() { egui::Theme::Dark } else { egui::Theme::Light };
+    ctx.set_theme(theme);
+    let style = std::sync::Arc::new(style);
+    ctx.set_style_of(egui::Theme::Dark, style.clone());
+    ctx.set_style_of(egui::Theme::Light, style);
 }
 
 /// Числовое поле-полоска, как «Плотн.» и «Непроз.» у образца: рамка, заливка по значению, число

@@ -2207,7 +2207,9 @@ app.open_canvas_dialog(d == "resolution")
         if let Some(t) = s.f32("wand_tolerance") {
             self.wand_tolerance = t.clamp(0.0, 255.0) as u8;
         }
-        self.recent = (0..10).filter_map(|i| s.str(&format!("recent.{i}")).filter(|v| !v.is_empty()).map(PathBuf::from)).collect();
+        // до 1.4.1 недавние цвета писались под тем же ключом «recent.N»: шесть знаков hex — не файл
+        let is_color = |v: &str| v.len() == 6 && v.bytes().all(|b| b.is_ascii_hexdigit());
+        self.recent = (0..10).filter_map(|i| s.str(&format!("recent.{i}")).filter(|v| !v.is_empty() && !is_color(v)).map(PathBuf::from)).collect();
         if let Some(p) = s.str("open_path") {
             if self.open_path.is_empty() {
                 self.open_path = p.to_string();
@@ -2224,7 +2226,10 @@ app.open_canvas_dialog(d == "resolution")
                 }
             }
         }
-        self.recent_colors = (0..RECENT_COLORS).filter_map(|i| s.str(&format!("recent.{i}")).and_then(hex)).collect();
+        self.recent_colors = (0..RECENT_COLORS).filter_map(|i| s.str(&format!("recent_color.{i}")).and_then(hex)).collect();
+        if self.recent_colors.is_empty() {
+            self.recent_colors = (0..RECENT_COLORS).filter_map(|i| s.str(&format!("recent.{i}")).filter(|v| is_color(v)).and_then(hex)).collect();
+        }
         for (i, c) in self.swatches.iter_mut().enumerate() {
             *c = s.str(&format!("swatch.{i}")).and_then(hex);
         }
@@ -2415,8 +2420,8 @@ app.open_canvas_dialog(d == "resolution")
         }
         for i in 0..RECENT_COLORS {
             match self.recent_colors.get(i) {
-                Some(c) => s.set(&format!("recent.{i}"), hex(*c)),
-                None => s.remove(&format!("recent.{i}")),
+                Some(c) => s.set(&format!("recent_color.{i}"), hex(*c)),
+                None => s.remove(&format!("recent_color.{i}")),
             }
         }
         for (i, c) in self.swatches.iter().enumerate() {
@@ -12620,6 +12625,12 @@ fn recovery_files() -> Option<(PathBuf, PathBuf)> {
 }
 
 impl eframe::App for PaintApp {
+    /// Положение окон и плавающих панелей — в `window.ron` рядом с настройками; без настроек
+    /// (прогоны проверок) ничего не запоминается.
+    fn persist_egui_memory(&self) -> bool {
+        settings::dir().is_some()
+    }
+
     /// Для проверок: `PAINT_EXPORT_ON_EXIT=файл.png` — сохранить холст и вывести сводку по перу.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.save_settings();
@@ -12718,6 +12729,10 @@ impl eframe::App for PaintApp {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         menu_icons::set_font(ctx);
+        // тема сменилась мимо флажка (рабочее пространство) — переоформить
+        if ctx.style().visuals.dark_mode != sai_ui::is_dark() {
+            sai_ui::apply_style(ctx);
+        }
         self.ppp = ctx.pixels_per_point();
         let _frame_timer = self.frame_stats.clone().filter(|_| self.live.is_some()).map(|s| FrameTimer(s, Instant::now()));
         self.ctx = Some(ctx.clone());
@@ -13302,7 +13317,10 @@ impl eframe::App for PaintApp {
                 side(self.win.layers_right, "layers").exact_width(186.0).resizable(false).show(ctx, |ui| self.right_panel(ui));
             }
             if sh[2] || sh[3] {
-                side(self.win.tools_right, "tools").exact_width(236.0).resizable(false).show(ctx, |ui| self.left_panel(ui));
+                side(self.win.tools_right, "tools").exact_width(236.0).resizable(false).show(ctx, |ui| {
+                    // настройки кисти бывают выше окна: прокрутка, как у отделённой панели
+                    egui::ScrollArea::vertical().id_salt("tools_scroll").auto_shrink([false, true]).show(ui, |ui| self.left_panel(ui));
+                });
             }
             self.win.show[..4].copy_from_slice(&full[..4]);
             if sh[4] {
@@ -13449,6 +13467,9 @@ fn main() -> eframe::Result {
             .with_inner_size([1360.0, 900.0])
             .with_fullscreen(std::env::var_os("PAINT_FULLSCREEN").is_some())
             .with_title("GrazySAI"),
+        persist_window: settings::dir().is_some(),
+        // без настроек — файл во временной папке, чтобы прогоны проверок не трогали папку eframe
+        persistence_path: Some(settings::dir().unwrap_or_else(std::env::temp_dir).join(if settings::dir().is_some() { "window.ron" } else { "grazysai-test-window.ron" })),
         ..Default::default()
     };
     eframe::run_native(

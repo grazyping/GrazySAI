@@ -1627,4 +1627,20 @@ fn animation_cels_per_frame() {
     assert_eq!(doc.rename_layer(&[1, 1], "1").as_deref(), Some("1-2"));
     assert_eq!(doc.layers[1].anim.as_ref().unwrap().cel_at(3), Some("1-2"));
     assert_eq!(at(&doc, 3, 55), [0, 0, 255]);
+    // cel вынесли из папки — его метки становятся пустыми кадрами; отмена возвращает
+    let (_, _) = doc.move_layer_to(&[1, 1], &[], 0).unwrap();
+    let track = doc.layers[2].anim.as_ref().unwrap();
+    assert_eq!(track.keys.get(&2).map(String::as_str), Some(""), "метка вынесенного cel пуста");
+    assert_eq!(track.cel_at(0), Some("1"));
+    doc.undo().unwrap();
+    assert_eq!(doc.layers[1].anim.as_ref().unwrap().cel_at(3), Some("1-2"));
+    // удаление cel — то же
+    doc.delete_layer(&[1, 0]);
+    assert_eq!(doc.layers[1].anim.as_ref().unwrap().cel_at(0), None);
+    doc.undo().unwrap();
+    assert_eq!(doc.layers[1].anim.as_ref().unwrap().cel_at(0), Some("1"));
+    // слой с тем же именем, внесённый в папку, получает своё имя
+    doc.layers.insert(0, layer::Layer::new("1"));
+    let (dst, _) = doc.move_layer_to(&[0], &[2], 0).unwrap();
+    assert_eq!(doc.layer(&dst).unwrap().name, "1-3");
 }

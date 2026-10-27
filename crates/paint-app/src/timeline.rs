@@ -388,7 +388,14 @@ impl PaintApp {
                             _ => select = Some(path.clone()),
                         }
                     }
-                    if let Some(f) = hit.filter(|f| *f >= 0.0).map(|f| (f as u32).min(frames - 1)) {
+                    // кадр, по которому открыли меню: запоминается при щелчке, иначе меню закроется,
+                    // как только кнопку отпустят (позиции указателя уже нет)
+                    let menu_id = resp.id.with("menu_frame");
+                    if resp.secondary_clicked() {
+                        let f = hit.filter(|f| *f >= 0.0).map(|f| (f as u32).min(frames - 1));
+                        ui.ctx().data_mut(|d| d.insert_temp(menu_id, f));
+                    }
+                    if let Some(f) = ui.ctx().data(|d| d.get_temp::<Option<u32>>(menu_id)).flatten() {
                         resp.context_menu(|ui| {
                             ui.label(trf("Кадр {0}", &[&(f + 1)]));
                             for c in &cels {

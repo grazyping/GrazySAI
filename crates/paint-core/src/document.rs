@@ -596,7 +596,22 @@ impl Document {
 
     /// Удаляет слой (с отменой).
     pub fn delete_layer(&mut self, path: &[usize]) -> Vec<Key> {
-        self.perform(vec![Op::Remove { path: path.to_vec() }])
+        let mut ops = self.cel_leaves(path);
+        ops.push(Op::Remove { path: path.to_vec() });
+        self.perform(ops)
+    }
+
+    /// Слой уходит из папки анимации: его метки становятся пустыми кадрами, иначе таймлайн
+    /// показывал бы имя слоя, которого в папке нет (или чужой слой с тем же именем).
+    fn cel_leaves(&self, path: &[usize]) -> Vec<Op> {
+        let Some((_, parent)) = path.split_last() else { return Vec::new() };
+        let (Some(layer), Some(track)) = (self.layer(path), self.layer(parent).and_then(|p| p.anim.as_deref())) else { return Vec::new() };
+        if !track.keys.values().any(|v| *v == layer.name) {
+            return Vec::new();
+        }
+        let mut track = track.clone();
+        track.rename(&layer.name, "");
+        vec![Op::Anim { path: parent.to_vec(), anim: Some(Box::new(track)) }]
     }
 
     /// Копия слоя над ним (с отменой).
@@ -1435,8 +1450,22 @@ impl Document {
         if dst == from {
             return None;
         }
-        let layer = self.layer(from)?.clone();
-        let keys = self.perform(vec![Op::Remove { path: from.to_vec() }, Op::Insert { path: dst.clone(), layer: Box::new(layer) }]);
+        let mut layer = self.layer(from)?.clone();
+        // в папке анимации имена cel уникальны: метки ссылаются на cel по имени
+        if parent != from_parent {
+            if let Some(p) = self.layer(parent).filter(|p| p.anim.is_some()) {
+                let names: Vec<&str> = p.children.as_deref().unwrap_or(&[]).iter().map(|c| c.name.as_str()).collect();
+                let base = layer.name.clone();
+                let mut k = 2;
+                while names.contains(&layer.name.as_str()) {
+                    layer.name = format!("{base}-{k}");
+                    k += 1;
+                }
+            }
+        }
+        let mut ops = if parent == from_parent { Vec::new() } else { self.cel_leaves(from) };
+        ops.extend([Op::Remove { path: from.to_vec() }, Op::Insert { path: dst.clone(), layer: Box::new(layer) }]);
+        let keys = self.perform(ops);
         Some((dst, keys))
     }
 
