@@ -1508,3 +1508,24 @@ PNG-кадры… = Fotogramas PNG…
 Панель можно схватить за вкладку, оторвать в окно и пристыковать к любому краю = Arrastra un panel por su pestaña para separarlo en una ventana o acoplarlo a cualquier borde
 Сбросить раскладку панелей = Restablecer disposición de paneles
 В отдельное окно = En ventana aparte
+
+# Конвертер
+{0} — этот формат не читается = {0} — este formato no se puede leer
+Выбрать папку… = Elegir carpeta…
+Добавить файлы… = Añadir archivos…
+Идёт… = Trabajando…
+Куда: = Destino:
+Модели 3D в = Modelos 3D a
+Перетащите сюда рисунки или модели 3D = Arrastra aquí dibujos o modelos 3D
+Преобразовать = Convertir
+Рисунки в = Dibujos a
+Рядом с исходными = Junto a los originales
+Со слоями: SAI 2, PSD, PSB, OpenRaster; остальные картинки — сведённым рисунком. = Con capas: SAI 2, PSD, PSB, OpenRaster; los demás formatos reciben la imagen acoplada.
+в OBJ нет скелета и морфов — записана только сетка = OBJ no tiene esqueleto ni morphs: solo se escribió la malla
+модель нельзя записать в .{0} = un modelo no se puede escribir como .{0}
+модель — в позе покоя: анимации не переносятся = el modelo está en pose de reposo: las animaciones no se transfieren
+рисунок нельзя записать в .{0} = un dibujo no se puede escribir como .{0}
+рядом с исходными = junto a los originales
+сбой при разборе файла = no se pudo analizar el archivo
+файл не может заменить сам себя = un archivo no puede reemplazarse a sí mismo
+формат .{0} не читается = el formato .{0} no se puede leer

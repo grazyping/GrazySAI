@@ -1509,3 +1509,24 @@ PNG-кадры… = PNG frames…
 Панель можно схватить за вкладку, оторвать в окно и пристыковать к любому краю = Drag a panel by its tab to float it in a window or dock it to any edge
 Сбросить раскладку панелей = Reset panel layout
 В отдельное окно = Float in a window
+
+# Конвертер
+{0} — этот формат не читается = {0} — this format can't be read
+Выбрать папку… = Choose folder…
+Добавить файлы… = Add files…
+Идёт… = Working…
+Куда: = Output:
+Модели 3D в = 3D models to
+Перетащите сюда рисунки или модели 3D = Drop pictures or 3D models here
+Преобразовать = Convert
+Рисунки в = Pictures to
+Рядом с исходными = Next to the originals
+Со слоями: SAI 2, PSD, PSB, OpenRaster; остальные картинки — сведённым рисунком. = With layers: SAI 2, PSD, PSB, OpenRaster; other image formats get the flattened picture.
+в OBJ нет скелета и морфов — записана только сетка = OBJ has no skeleton or morphs — only the mesh was written
+модель нельзя записать в .{0} = a model can't be written as .{0}
+модель — в позе покоя: анимации не переносятся = the model is in its rest pose: animations are not carried over
+рисунок нельзя записать в .{0} = a picture can't be written as .{0}
+рядом с исходными = next to the originals
+сбой при разборе файла = the file could not be parsed
+файл не может заменить сам себя = a file can't replace itself
+формат .{0} не читается = the .{0} format can't be read

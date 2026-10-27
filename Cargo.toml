@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/paint-core", "crates/paint-cli", "crates/paint-formats", "crates/paint-brush", "crates/paint-studio", "crates/paint-plugin", "crates/paint-3d", "crates/pen-test", "crates/paint-app", "crates/virtual-tablet"]
+members = ["crates/paint-core", "crates/paint-cli", "crates/paint-formats", "crates/paint-brush", "crates/paint-studio", "crates/paint-plugin", "crates/paint-3d", "crates/pen-test", "crates/paint-app", "crates/virtual-tablet", "crates/paint-convert"]
 
 [workspace.package]
 edition = "2021"

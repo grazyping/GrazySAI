@@ -3,6 +3,7 @@
 
 pub mod anim_export;
 pub mod brush_tip;
+pub mod convert;
 pub mod csp;
 pub mod descriptor;
 pub mod jssf;

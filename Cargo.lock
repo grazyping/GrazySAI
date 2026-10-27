@@ -2357,6 +2357,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "paint-convert"
+version = "1.4.0"
+dependencies = [
+ "eframe",
+ "egui-phosphor",
+ "paint-3d",
+ "paint-core",
+ "paint-formats",
+ "rfd",
+]
+
+[[package]]
 name = "paint-core"
 version = "1.4.0"
 dependencies = [

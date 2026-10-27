@@ -2,6 +2,7 @@
 //! процессоре в обычные пиксели слоя. План — `docs/39-3d-reference.md`.
 
 pub mod collada;
+pub mod export;
 pub mod fbx;
 pub mod pmx;
 pub mod model;

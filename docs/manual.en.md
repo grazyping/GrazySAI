@@ -832,6 +832,29 @@ list with search; they change the text immediately. The whole edit is one undo s
 (“Layer → Rasterize Layer”). Perspective
 rulers from newer SAI versions are not shown but are saved too.
 
+## Converter (GrazySAI Convert)
+
+A separate program next to GrazySAI: `GrazySAI-Convert` (`GrazySAI-Convert.exe` on Windows). It
+converts a batch of files: drop files into the window (or use “Add files…”), choose the target
+format for pictures and for 3D models, and press “Convert”. Results go next to the originals or
+into a chosen folder; the original is never overwritten (a name clash adds “-converted”, equal names
+within one batch get “-2”, “-3”).
+
+- **Pictures**: reads SAI 2, PSD, PSB, OpenRaster, PNG, JPEG, BMP, TGA, TIFF, WebP, QOI; writes
+  SAI 2, PSD, PSB, OpenRaster (with layers) and PNG, JPEG, WebP, TIFF, BMP, TGA, QOI (flattened).
+  PSD and OpenRaster can't hold layer styles (stroke, shadow, glow), so they are written as pixels,
+  like “Apply style”; the painter itself now saves them the same way.
+- **3D models**: reads glTF/GLB, VRM, OBJ, FBX, PMX, COLLADA; writes GLB (nodes, skeleton, morphs,
+  textures, material colors) and OBJ with MTL and PNG textures (the mesh in its rest pose only: OBJ
+  has no skeleton or morphs). Animations are not carried over — the model comes out in its rest
+  pose. Materials keep color, texture, alpha cutoff and double-sidedness. `.blend` files can't be
+  read: export glTF, FBX or OBJ from Blender first, then convert (for example to GLB for Cinema 4D,
+  which reads glTF and OBJ). The output was checked by importing it into Blender 5.2; it was not
+  tested in Cinema 4D.
+
+Without a window: `GrazySAI-Convert --to psd [--out FOLDER] FILES…` (for models `--to glb` or
+`--to obj`); the exit code is 1 if any file failed.
+
 ## Graphics card
 
 On laptops with two GPUs Windows picks the integrated one for new programs. GrazySAI asks for

@@ -4715,15 +4715,7 @@ app.open_canvas_dialog(d == "resolution")
         }
         if ext == "psd" || ext == "psb" || ext == "ora" || paint_core::io::IMAGE_EXTS.contains(&ext.as_str()) {
             let started = Instant::now();
-            let loaded = read_guarded(|| {
-                if ext == "psd" || ext == "psb" {
-                    paint_formats::psd::load(&path)
-                } else if ext == "ora" {
-                    paint_formats::ora::load(&path)
-                } else {
-                    paint_core::io::load_image(&path).map(|(w, h, rgba)| Document::from_rgba(w, h, &rgba))
-                }
-            });
+            let loaded = read_guarded(|| paint_formats::convert::load(&path).map(|(doc, _)| doc));
             match loaded {
                 Ok(doc) => {
                     self.prepare_tab();
@@ -5198,9 +5190,8 @@ app.open_canvas_dialog(d == "resolution")
         }
         let started = Instant::now();
         let result: Result<(), Box<dyn std::error::Error>> = match layered_ext(&path) {
-            Some("ora") => paint_formats::ora::save(&self.doc, &path),
-            Some("psd") => paint_formats::psd::save_with(&self.doc, &path, paint_formats::psd::SaveOptions { big: false, deep: self.opts.psd16, exact: self.opts.psd_exact }),
-            Some("psb") => paint_formats::psd::save_with(&self.doc, &path, paint_formats::psd::SaveOptions { big: true, deep: self.opts.psd16, exact: self.opts.psd_exact }),
+            // стили слоя PSD и OpenRaster не хранят — в файл они идут пикселями (в рисовалке остаются стилями)
+            Some("ora" | "psd" | "psb") => paint_formats::convert::save(&self.doc, &path, paint_formats::psd::SaveOptions { big: false, deep: self.opts.psd16, exact: self.opts.psd_exact }),
             _ => paint_formats::sai2_write::save(&self.doc, &path).map_err(Into::into),
         };
         match result {
@@ -5240,9 +5231,7 @@ app.open_canvas_dialog(d == "resolution")
 
     fn export_to(&mut self, path: PathBuf, ext: &str) {
         let result: Result<(), Box<dyn std::error::Error>> = match ext {
-            "psd" => paint_formats::psd::save_with(&self.doc, &path, paint_formats::psd::SaveOptions { big: false, deep: self.opts.psd16, exact: self.opts.psd_exact }),
-            "psb" => paint_formats::psd::save_with(&self.doc, &path, paint_formats::psd::SaveOptions { big: true, deep: self.opts.psd16, exact: self.opts.psd_exact }),
-            "ora" => paint_formats::ora::save(&self.doc, &path),
+            "psd" | "psb" | "ora" => paint_formats::convert::save(&self.doc, &path, paint_formats::psd::SaveOptions { big: false, deep: self.opts.psd16, exact: self.opts.psd_exact }),
             _ => {
                 let mut img = self.doc.flatten();
                 if self.watermark_on {

@@ -1,0 +1,21 @@
+[package]
+name = "paint-convert"
+description = "Конвертер GrazySAI: рисунки (SAI 2, PSD, PSB, OpenRaster, картинки) и модели 3D (glTF, VRM, OBJ, FBX, PMX, DAE → GLB, OBJ)"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "GrazySAI-Convert"
+path = "src/main.rs"
+
+[dependencies]
+paint-core = { path = "../paint-core" }
+paint-formats = { path = "../paint-formats" }
+paint-3d = { path = "../paint-3d" }
+eframe = { version = "0.29", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
+rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
+egui-phosphor = "0.7.3"
+
+[lints]
+workspace = true

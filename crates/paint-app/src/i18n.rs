@@ -213,7 +213,7 @@ mod tests {
     fn keys_in_code() -> Vec<String> {
         // рисовалка, мастерская и общая библиотека кистей: переводы у них одни (модуль тот же)
         let root = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
-        let dirs = ["paint-app/src", "paint-studio/src", "paint-brush/src"].map(|d| format!("{root}/{d}"));
+        let dirs = ["paint-app/src", "paint-studio/src", "paint-brush/src", "paint-convert/src"].map(|d| format!("{root}/{d}"));
         let mut keys = Vec::new();
         for e in dirs.iter().filter_map(|d| std::fs::read_dir(d).ok()).flatten() {
             let path = e.unwrap().path();

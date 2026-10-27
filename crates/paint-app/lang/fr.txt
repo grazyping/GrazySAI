@@ -1508,3 +1508,24 @@ PNG-кадры… = Images PNG…
 Панель можно схватить за вкладку, оторвать в окно и пристыковать к любому краю = Faites glisser un panneau par son onglet pour le détacher dans une fenêtre ou l’ancrer à n’importe quel bord
 Сбросить раскладку панелей = Réinitialiser la disposition des panneaux
 В отдельное окно = Dans une fenêtre séparée
+
+# Конвертер
+{0} — этот формат не читается = {0} — ce format n’est pas lisible
+Выбрать папку… = Choisir un dossier…
+Добавить файлы… = Ajouter des fichiers…
+Идёт… = En cours…
+Куда: = Destination :
+Модели 3D в = Modèles 3D en
+Перетащите сюда рисунки или модели 3D = Déposez ici des dessins ou des modèles 3D
+Преобразовать = Convertir
+Рисунки в = Dessins en
+Рядом с исходными = À côté des originaux
+Со слоями: SAI 2, PSD, PSB, OpenRaster; остальные картинки — сведённым рисунком. = Avec calques : SAI 2, PSD, PSB, OpenRaster ; les autres formats reçoivent l’image aplatie.
+в OBJ нет скелета и морфов — записана только сетка = OBJ n’a ni squelette ni morphs — seul le maillage a été écrit
+модель нельзя записать в .{0} = un modèle ne peut pas être écrit en .{0}
+модель — в позе покоя: анимации не переносятся = le modèle est en pose de repos : les animations ne sont pas reprises
+рисунок нельзя записать в .{0} = un dessin ne peut pas être écrit en .{0}
+рядом с исходными = à côté des originaux
+сбой при разборе файла = le fichier n’a pas pu être analysé
+файл не может заменить сам себя = un fichier ne peut pas se remplacer lui-même
+формат .{0} не читается = le format .{0} n’est pas lisible

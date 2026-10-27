@@ -331,16 +331,20 @@ From what was left after 1.3.0:
 - [x] Colour (ARGB) assets: coloured tips and scatter shapes, colour assets from a layer (1.4.0)
 - [x] FreeBSD: a `pkg` package with every release (`tools/freebsd/mkpkg.sh`; added to 1.3.0) (1.4.0)
 
+From the tester's feedback:
+
+- [x] Quick fixes: timeline menu, theme after restart, shadows, tool panel scrolling, recent colors vs. recent files, window position, layer moved out of an animation folder (1.4.1)
+- [x] 4K speed: compositing about 3× faster, no "waves" on refresh, playback shows whole frames (1.4.1)
+- [x] Puppet as in Clip Studio: the whole mesh (one pin moves it, a second one rotates and stretches it), puppet keys on the timeline, copying and dragging frames (1.4.1)
+- [x] Dockable panels as in Clip Studio: panels, canvas and timeline are tabs, tear off into floating windows, drop spot highlighted, layout kept in settings and workspaces (1.4.1)
+- [x] GrazySAI Convert, a format converter: pictures (SAI 2, PSD, PSB, OpenRaster, images) and 3D models (glTF, VRM, OBJ, FBX, PMX, COLLADA → GLB, OBJ) in batches (1.4.1)
+
 ## Ahead
 
 Not in 1.4.0.
 
-### From the tester's feedback (a 4-release plan; branches and PRs, released after checks)
+### From the tester's feedback
 
-- [x] 1.4.1, quick fixes: timeline menu, theme after restart, shadows, tool panel scrolling, recent colors vs. recent files, window position, layer moved out of an animation folder (PR 111)
-- [x] 4K speed: compositing about 3× faster, no "waves" on refresh, playback shows whole frames (PR 112)
-- [x] Puppet as in Clip Studio (the whole mesh: one pin moves, a second one rotates), puppet keys on the timeline, copying and dragging frames (PR 113)
-- [x] Dockable panels as in Clip Studio: panels, canvas and timeline are tabs, tear off into floating windows, drop spot highlighted, layout kept in settings and workspaces (PR 114)
 - [ ] A less bulky interface — waiting for the tester's details
 - [ ] Clip Studio brushes that import poorly — need `.sut` samples
 
