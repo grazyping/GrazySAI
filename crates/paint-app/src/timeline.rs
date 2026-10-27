@@ -230,6 +230,12 @@ impl PaintApp {
             }
         }
         let f = start + f;
+        // прошлый кадр ещё не показан целиком — подождать, а потом перескочить по времени:
+        // каждый показанный кадр целый, без «волн» (на медленной машине кадры пропускаются)
+        if f != self.doc.timeline.frame && self.visible_pending() {
+            ctx.request_repaint();
+            return;
+        }
         if f != self.doc.timeline.frame {
             self.doc.timeline.frame = f;
             self.frame_changed();
