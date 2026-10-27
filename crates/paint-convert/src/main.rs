@@ -10,6 +10,7 @@ mod i18n;
 
 use eframe::egui;
 use i18n::{tr, trf};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
 
@@ -130,8 +131,29 @@ fn convert(src: &Path, dst: &Path) -> Result<Vec<String>, String> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).unwrap_or_else(|_| Err(tr("сбой при разборе файла").into()))
 }
 
+/// Куда писать отчёт без окна. Программа для Windows собрана оконной: своей консоли у неё нет,
+/// поэтому — консоль, из которой её запустили (`CONOUT$` после AttachConsole).
+fn console() -> Box<dyn std::io::Write> {
+    #[cfg(windows)]
+    {
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn AttachConsole(pid: u32) -> i32;
+        }
+        // SAFETY: AttachConsole принимает только число (ATTACH_PARENT_PROCESS = u32::MAX), ни на
+        // какую память не ссылается; при отказе возвращает 0, и тогда пишем как обычно.
+        if unsafe { AttachConsole(u32::MAX) } != 0 {
+            if let Ok(f) = std::fs::OpenOptions::new().write(true).open("CONOUT$") {
+                return Box::new(f);
+            }
+        }
+    }
+    Box::new(std::io::stdout())
+}
+
 /// Без окна: `--to ФОРМАТ [--out ПАПКА] ФАЙЛЫ…`. Код выхода 1, если что-то не вышло.
 fn cli(args: &[String]) -> i32 {
+    let mut con = console();
     let (mut to, mut out, mut files) = (None, None, Vec::new());
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -142,7 +164,7 @@ fn cli(args: &[String]) -> i32 {
         }
     }
     let Some(to) = to else {
-        eprintln!("{}", tr("нужно --to ФОРМАТ"));
+        let _ = writeln!(con, "--to ?");
         return 2;
     };
     let mut failed = false;
@@ -151,14 +173,14 @@ fn cli(args: &[String]) -> i32 {
         let dst = unique(out_path(src, out.as_deref(), &to), &mut used);
         match convert(src, &dst) {
             Ok(notes) => {
-                println!("{} → {}", src.display(), dst.display());
+                let _ = writeln!(con, "{} → {}", src.display(), dst.display());
                 for n in notes {
-                    println!("  {n}");
+                    let _ = writeln!(con, "  {n}");
                 }
             }
             Err(e) => {
                 failed = true;
-                eprintln!("{}: {e}", src.display());
+                let _ = writeln!(con, "{}: {e}", src.display());
             }
         }
     }
@@ -179,6 +201,7 @@ struct App {
     out: Option<PathBuf>,
     work: Option<Receiver<(usize, Result<String, String>)>>,
     picked: Option<Receiver<Vec<PathBuf>>>,
+    folder: Option<Receiver<Option<PathBuf>>>,
     skipped: Vec<PathBuf>,
 }
 
@@ -240,6 +263,17 @@ impl eframe::App for App {
                 self.add(v);
             }
         }
+        if let Some(rx) = &self.folder {
+            if let Ok(d) = rx.try_recv() {
+                self.folder = None;
+                if d.is_some() {
+                    self.out = d;
+                }
+            }
+        }
+        if self.picked.is_some() || self.folder.is_some() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        }
         let mut busy = false;
         if let Some(rx) = &self.work {
             busy = true;
@@ -280,10 +314,12 @@ impl eframe::App for App {
                     Some(d) => ui.label(d.display().to_string()),
                     None => ui.label(tr("рядом с исходными")),
                 };
-                if ui.button(tr("Выбрать папку…")).clicked() {
-                    if let Some(d) = rfd::FileDialog::new().pick_folder() {
-                        self.out = Some(d);
-                    }
+                if ui.add_enabled(self.folder.is_none(), egui::Button::new(tr("Выбрать папку…"))).clicked() {
+                    let (tx, rx) = channel();
+                    std::thread::spawn(move || {
+                        let _ = tx.send(rfd::FileDialog::new().pick_folder());
+                    });
+                    self.folder = Some(rx);
                 }
                 if self.out.is_some() && ui.button(tr("Рядом с исходными")).clicked() {
                     self.out = None;
@@ -340,7 +376,7 @@ fn main() {
     if args.iter().any(|a| a == "--to") {
         std::process::exit(cli(&args));
     }
-    let mut app = App { items: Vec::new(), picture_to: 1, model_to: 0, out: None, work: None, picked: None, skipped: Vec::new() };
+    let mut app = App { items: Vec::new(), picture_to: 1, model_to: 0, out: None, work: None, picked: None, folder: None, skipped: Vec::new() };
     app.add(args.into_iter().map(PathBuf::from));
     let options = eframe::NativeOptions { viewport: egui::ViewportBuilder::default().with_title("GrazySAI-Convert").with_inner_size([760.0, 460.0]), ..Default::default() };
     let _ = eframe::run_native(
