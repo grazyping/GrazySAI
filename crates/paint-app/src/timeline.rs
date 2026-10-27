@@ -2,7 +2,7 @@
 //! анимации, кадры, проигрывание, Onion skin), вывод в GIF, APNG, PNG-кадры и видео (ffmpeg).
 
 use crate::i18n::{tr, trf};
-use crate::{files, menu_icons, PaintApp};
+use crate::{files, menu_icons, sai_ui, PaintApp};
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use paint_core::anim::AnimTrack;
 use paint_core::layer::Layer;
@@ -17,6 +17,39 @@ pub struct TimelineUi {
     pub playing: Option<(Instant, u32)>,
     pub onion_settings: bool,
     pub ffmpeg: Option<bool>,
+    /// Скопированный cel: папка анимации и имя слоя.
+    pub copied_cel: Option<(Vec<usize>, String)>,
+    /// Скопированный ключ марионетки: положение каждой булавки.
+    pub copied_pose: Option<Vec<paint_core::puppet::PinPose>>,
+}
+
+/// Что сделать с дорожкой по итогам кадра окна.
+enum TrackCmd {
+    /// Метка cel: кадр, cel (`Some("")` — пустой кадр) или убрать (`None`).
+    Key(Vec<usize>, u32, Option<String>),
+    NewCel,
+    /// Перенести метку папки анимации из кадра в кадр (`true` — копировать).
+    MoveKey(Vec<usize>, u32, u32, bool),
+    /// Копия cel как новый слой в кадр.
+    PasteCel(Vec<usize>, u32),
+    /// Марионетка: поставить ключ всех булавок в кадр.
+    PoseKey(Vec<usize>, u32),
+    PoseRemove(Vec<usize>, u32),
+    PoseMove(Vec<usize>, u32, u32, bool),
+    PosePaste(Vec<usize>, u32),
+}
+
+/// Пути слоёв-марионеток (сверху вниз).
+fn puppet_layers(layers: &[Layer], prefix: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+    for (i, l) in layers.iter().enumerate().rev() {
+        prefix.push(i);
+        if l.puppet.is_some() {
+            out.push(prefix.clone());
+        } else if let Some(c) = &l.children {
+            puppet_layers(c, prefix, out);
+        }
+        prefix.pop();
+    }
 }
 
 /// Пути папок анимации (сверху вниз, как в списке слоёв).
@@ -60,7 +93,11 @@ impl PaintApp {
                 }
             }
         }
-        // пересчитать только рисунок папок анимации, а не весь холст
+        self.frame_changed();
+    }
+
+    /// Кадр сменился: пересчитать только рисунок папок анимации и марионетки, не весь холст.
+    fn frame_changed(&mut self) {
         match paint_core::document::anim_tiles(&self.doc.layers) {
             Some(keys) => self.invalidate(keys),
             None => self.refresh_all(),
@@ -132,6 +169,50 @@ impl PaintApp {
         self.set_frame(f);
     }
 
+    /// Перенести метку дорожки `folder` из кадра `a` в `b` (`copy` — оставить и там).
+    fn move_key(&mut self, folder: &[usize], a: u32, b: u32, copy: bool) {
+        let mut track = self.doc.layer(folder).and_then(|l| l.anim.as_deref().cloned()).unwrap_or_default();
+        let Some(c) = (if copy { track.keys.get(&a).cloned() } else { track.keys.remove(&a) }) else { return };
+        track.keys.insert(b, c);
+        let keys = self.doc.set_anim(folder, Some(track));
+        self.invalidate(keys);
+        self.dirty = true;
+        self.set_frame(b);
+    }
+
+    /// Вставить скопированный cel в кадр `f`: копия слоя — новым cel папки, метка на него.
+    fn paste_cel(&mut self, folder: &[usize], f: u32) {
+        let Some((_, name)) = self.timeline.copied_cel.clone() else { return };
+        let Some(i) = self.doc.layer(folder).and_then(|l| l.children.as_ref()?.iter().position(|c| c.name == name)) else { return };
+        let mark = self.doc.history_mark();
+        let mut src = folder.to_vec();
+        src.push(i);
+        let mut keys = self.doc.duplicate_layer(&src);
+        let mut copy = src.clone();
+        *copy.last_mut().unwrap_or(&mut 0) += 1;
+        let Some(new_name) = self.doc.rename_layer(&copy, &name) else { return };
+        let mut track = self.doc.layer(folder).and_then(|l| l.anim.as_deref().cloned()).unwrap_or_default();
+        track.keys.insert(f, new_name);
+        keys.extend(self.doc.set_anim(folder, Some(track)));
+        // копия слоя и метка — одна отмена
+        self.doc.squash_since(mark);
+        self.selected = copy;
+        self.after_structure(keys);
+        self.dirty = true;
+        self.set_frame(f);
+    }
+
+    /// Изменить ключи булавок марионетки `path` (одна отмена) и показать кадр заново.
+    fn edit_pose(&mut self, path: &[usize], edit: impl FnOnce(&mut Vec<paint_core::puppet::Pin>)) {
+        let Some(before) = self.doc.layer(path).and_then(|l| l.puppet.as_deref()).cloned() else { return };
+        if let Some(pp) = self.doc.layer_mut(path).and_then(|l| l.puppet.as_deref_mut()) {
+            edit(&mut pp.pins);
+        }
+        self.doc.puppet_edited(path, before);
+        self.dirty = true;
+        self.refresh_puppets();
+    }
+
     /// Проигрывание: следующий кадр по времени.
     pub(crate) fn timeline_tick(&mut self, ctx: &egui::Context) {
         let Some((t0, f0)) = self.timeline.playing else { return };
@@ -151,8 +232,7 @@ impl PaintApp {
         let f = start + f;
         if f != self.doc.timeline.frame {
             self.doc.timeline.frame = f;
-            self.refresh_all();
-            self.refresh_puppets();
+            self.frame_changed();
         }
         if self.timeline.playing.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(0.5 / fps as f64));
@@ -279,7 +359,11 @@ impl PaintApp {
         anim_folders(&self.doc.layers, &mut Vec::new(), &mut folders);
         let mut open = true;
         let mut go: Option<u32> = None;
-        let mut key_cmd: Option<(Vec<usize>, u32, Option<String>)> = None;
+        let mut puppets = Vec::new();
+        puppet_layers(&self.doc.layers, &mut Vec::new(), &mut puppets);
+        let mut cmd: Option<TrackCmd> = None;
+        let mut copy_cel = None;
+        let mut copy_pose = None;
         let mut select: Option<Vec<usize>> = None;
         let mut settings_changed = false;
         let mut play_toggle = false;
@@ -321,7 +405,7 @@ impl PaintApp {
                 t.clamp();
             });
             ui.separator();
-            if folders.is_empty() {
+            if folders.is_empty() && puppets.is_empty() {
                 ui.label(tr("Нет папок анимации: «Анимация → Новая папка анимации»"));
                 return;
             }
@@ -330,6 +414,7 @@ impl PaintApp {
             let frames = t.frames;
             let cur = t.frame;
             let (r0, r1) = (t.start, t.end);
+            let alt = ui.input(|i| i.modifiers.alt);
             egui::ScrollArea::horizontal().show(ui, |ui| {
                 // шкала с номерами
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(name_w + cell * frames as f32, 18.0), egui::Sense::click_and_drag());
@@ -340,10 +425,10 @@ impl PaintApp {
                     if f == cur {
                         p.rect_filled(r, 0.0, Color32::from_rgb(120, 150, 230));
                     } else if f < r0 || f > r1 {
-                        p.rect_filled(r, 0.0, Color32::from_gray(200));
+                        p.rect_filled(r, 0.0, sai_ui::gray(200));
                     }
                     if (f + 1) % 5 == 0 || f == 0 {
-                        p.text(r.center(), egui::Align2::CENTER_CENTER, (f + 1).to_string(), egui::FontId::proportional(10.0), Color32::from_gray(40));
+                        p.text(r.center(), egui::Align2::CENTER_CENTER, (f + 1).to_string(), egui::FontId::proportional(10.0), sai_ui::gray(40));
                     }
                 }
                 if let Some(pos) = resp.interact_pointer_pos().filter(|_| resp.clicked() || resp.dragged()) {
@@ -352,15 +437,53 @@ impl PaintApp {
                         go = Some((f as u32).min(frames - 1));
                     }
                 }
+                let frame_at = |x: f32, rect: Rect| -> Option<u32> {
+                    let f = ((x - rect.left() - name_w) / cell).floor();
+                    (f >= 0.0).then(|| (f as u32).min(frames - 1))
+                };
+                // строка дорожки: имя слева, клетки кадров; щелчок, перетаскивание метки, меню
+                let row = |ui: &mut egui::Ui, path: &Vec<usize>, name: &str, has_key: &dyn Fn(u32) -> bool| {
+                    let (rect, resp) = ui.allocate_exact_size(Vec2::new(name_w + cell * frames as f32, cell), egui::Sense::click_and_drag());
+                    let sel = self.selected.starts_with(path);
+                    let p = ui.painter();
+                    p.rect_filled(Rect::from_min_size(rect.min, Vec2::new(name_w - 2.0, cell)), 0.0, if sel { sai_ui::select_bg() } else { sai_ui::gray(230) });
+                    p.text(rect.min + Vec2::new(4.0, cell / 2.0), egui::Align2::LEFT_CENTER, name, egui::FontId::proportional(12.0), sai_ui::ink());
+                    // перетаскивание метки: откуда (кадр с меткой) — запоминается при начале
+                    let drag_id = resp.id.with("drag_from");
+                    if resp.drag_started() {
+                        let from = resp.interact_pointer_pos().and_then(|q| frame_at(q.x, rect)).filter(|f| has_key(*f));
+                        ui.ctx().data_mut(|d| d.insert_temp(drag_id, from));
+                    }
+                    let from = ui.ctx().data(|d| d.get_temp::<Option<u32>>(drag_id)).flatten();
+                    let hover = resp.interact_pointer_pos().or(resp.hover_pos()).and_then(|q| frame_at(q.x, rect));
+                    let mut drop = None;
+                    if let (Some(a), true) = (from, resp.dragged() || resp.drag_stopped()) {
+                        if let Some(b) = hover {
+                            let x = rect.left() + name_w + cell * b as f32;
+                            ui.painter().rect_stroke(Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(cell, cell)).shrink(1.0), 2.0, egui::Stroke::new(2.0_f32, Color32::from_rgb(230, 120, 40)));
+                            if resp.drag_stopped() && a != b {
+                                drop = Some((a, b));
+                            }
+                        }
+                        if resp.drag_stopped() {
+                            ui.ctx().data_mut(|d| d.remove::<Option<u32>>(drag_id));
+                        }
+                    }
+                    let clicked = resp.clicked().then(|| resp.interact_pointer_pos().and_then(|q| frame_at(q.x, rect)));
+                    let menu_id = resp.id.with("menu_frame");
+                    if resp.secondary_clicked() {
+                        let f = resp.interact_pointer_pos().and_then(|q| frame_at(q.x, rect));
+                        ui.ctx().data_mut(|d| d.insert_temp(menu_id, f));
+                    }
+                    let menu = ui.ctx().data(|d| d.get_temp::<Option<u32>>(menu_id)).flatten();
+                    (rect, resp, clicked, drop, menu)
+                };
                 for path in &folders {
                     let Some(layer) = self.doc.layer(path) else { continue };
                     let Some(track) = layer.anim.as_deref() else { continue };
                     let cels: Vec<String> = layer.children.as_deref().unwrap_or(&[]).iter().map(|c| c.name.clone()).collect();
-                    let (rect, resp) = ui.allocate_exact_size(Vec2::new(name_w + cell * frames as f32, cell), egui::Sense::click());
+                    let (rect, resp, clicked, drop, menu) = row(ui, path, &layer.name, &|f| track.keys.contains_key(&f));
                     let p = ui.painter();
-                    let sel = self.selected.starts_with(path);
-                    p.rect_filled(Rect::from_min_size(rect.min, Vec2::new(name_w - 2.0, cell)), 0.0, if sel { Color32::from_rgb(200, 210, 245) } else { Color32::from_gray(230) });
-                    p.text(rect.min + Vec2::new(4.0, cell / 2.0), egui::Align2::LEFT_CENTER, &layer.name, egui::FontId::proportional(12.0), Color32::from_gray(20));
                     for f in 0..frames {
                         let x = rect.left() + name_w + cell * f as f32;
                         let r = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(cell, cell)).shrink(1.0);
@@ -369,7 +492,7 @@ impl PaintApp {
                         let fill = match (key, shown) {
                             (Some(_), Some(_)) => Color32::from_rgb(250, 220, 150),
                             (None, Some(_)) => Color32::from_rgb(252, 238, 205),
-                            _ => Color32::from_gray(245),
+                            _ => sai_ui::gray(245),
                         };
                         p.rect_filled(r, 2.0, fill);
                         if f == cur {
@@ -385,36 +508,96 @@ impl PaintApp {
                             None => {}
                         }
                     }
-                    let hit = resp.interact_pointer_pos().map(|pos| ((pos.x - rect.left() - name_w) / cell).floor());
-                    if resp.clicked() {
-                        match hit {
-                            Some(f) if f >= 0.0 => go = Some((f as u32).min(frames - 1)),
-                            _ => select = Some(path.clone()),
-                        }
+                    match clicked {
+                        Some(Some(f)) => go = Some(f),
+                        Some(None) => select = Some(path.clone()),
+                        None => {}
                     }
-                    // кадр, по которому открыли меню: запоминается при щелчке, иначе меню закроется,
-                    // как только кнопку отпустят (позиции указателя уже нет)
-                    let menu_id = resp.id.with("menu_frame");
-                    if resp.secondary_clicked() {
-                        let f = hit.filter(|f| *f >= 0.0).map(|f| (f as u32).min(frames - 1));
-                        ui.ctx().data_mut(|d| d.insert_temp(menu_id, f));
+                    if let Some((a, b)) = drop {
+                        cmd = Some(TrackCmd::MoveKey(path.clone(), a, b, alt));
                     }
-                    if let Some(f) = ui.ctx().data(|d| d.get_temp::<Option<u32>>(menu_id)).flatten() {
+                    if let Some(f) = menu {
+                        let shown = track.cel_at(f).map(str::to_string);
                         resp.context_menu(|ui| {
                             ui.label(trf("Кадр {0}", &[&(f + 1)]));
                             for c in &cels {
                                 if ui.button(trf("Показать «{0}»", &[c])).clicked() {
-                                    key_cmd = Some((path.clone(), f, Some(c.clone())));
+                                    cmd = Some(TrackCmd::Key(path.clone(), f, Some(c.clone())));
                                     ui.close_menu();
                                 }
                             }
                             ui.separator();
                             if ui.button(tr("Пустой кадр")).clicked() {
-                                key_cmd = Some((path.clone(), f, Some(String::new())));
+                                cmd = Some(TrackCmd::Key(path.clone(), f, Some(String::new())));
                                 ui.close_menu();
                             }
                             if ui.add_enabled(track.keys.contains_key(&f), egui::Button::new(tr("Убрать метку"))).clicked() {
-                                key_cmd = Some((path.clone(), f, None));
+                                cmd = Some(TrackCmd::Key(path.clone(), f, None));
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            if ui.add_enabled(shown.is_some(), egui::Button::new(tr("Копировать cel"))).clicked() {
+                                copy_cel = shown.clone().map(|c| (path.clone(), c));
+                                ui.close_menu();
+                            }
+                            let can_paste = self.timeline.copied_cel.as_ref().is_some_and(|(p, _)| p == path);
+                            if ui.add_enabled(can_paste, egui::Button::new(tr("Вставить cel"))).on_hover_text(tr("Копия слоя — новым cel в этот кадр")).clicked() {
+                                cmd = Some(TrackCmd::PasteCel(path.clone(), f));
+                                ui.close_menu();
+                            }
+                        });
+                    }
+                }
+                for path in &puppets {
+                    let Some(layer) = self.doc.layer(path) else { continue };
+                    let Some(pp) = layer.puppet.as_deref() else { continue };
+                    let keyed = |f: u32| pp.pins.iter().any(|pin| pin.keys.contains_key(&f));
+                    let (rect, resp, clicked, drop, menu) = row(ui, path, &layer.name, &keyed);
+                    let p = ui.painter();
+                    for f in 0..frames {
+                        let x = rect.left() + name_w + cell * f as f32;
+                        let r = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(cell, cell)).shrink(1.0);
+                        p.rect_filled(r, 2.0, sai_ui::gray(245));
+                        if f == cur {
+                            p.rect_stroke(r, 2.0, egui::Stroke::new(1.5_f32, Color32::from_rgb(60, 90, 200)));
+                        }
+                        if keyed(f) {
+                            // ромбик ключа, как в After Effects
+                            let c = r.center();
+                            let d = 5.0;
+                            p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(0.0, -d), c + Vec2::new(d, 0.0), c + Vec2::new(0.0, d), c + Vec2::new(-d, 0.0)], Color32::from_rgb(230, 170, 40), egui::Stroke::new(1.0_f32, Color32::from_gray(60))));
+                        }
+                    }
+                    match clicked {
+                        Some(Some(f)) => {
+                            go = Some(f);
+                            select = Some(path.clone());
+                        }
+                        Some(None) => select = Some(path.clone()),
+                        None => {}
+                    }
+                    if let Some((a, b)) = drop {
+                        cmd = Some(TrackCmd::PoseMove(path.clone(), a, b, alt));
+                    }
+                    if let Some(f) = menu {
+                        resp.context_menu(|ui| {
+                            ui.label(trf("Кадр {0}", &[&(f + 1)]));
+                            if ui.button(tr("Поставить ключ")).on_hover_text(tr("Запомнить положение всех булавок в этом кадре")).clicked() {
+                                cmd = Some(TrackCmd::PoseKey(path.clone(), f));
+                                ui.close_menu();
+                            }
+                            if ui.add_enabled(keyed(f), egui::Button::new(tr("Убрать ключ"))).clicked() {
+                                cmd = Some(TrackCmd::PoseRemove(path.clone(), f));
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            if ui.button(tr("Копировать ключ")).clicked() {
+                                copy_pose = Some(pp.pins.iter().map(|pin| pin.pose(f)).collect());
+                                ui.close_menu();
+                            }
+                            let can_paste = self.timeline.copied_pose.as_ref().is_some_and(|v| v.len() == pp.pins.len());
+                            if ui.add_enabled(can_paste, egui::Button::new(tr("Вставить ключ"))).clicked() {
+                                cmd = Some(TrackCmd::PosePaste(path.clone(), f));
                                 ui.close_menu();
                             }
                         });
@@ -423,9 +606,9 @@ impl PaintApp {
             });
             ui.horizontal(|ui| {
                 if ui.button(tr("Новый кадр (cel)")).clicked() {
-                    key_cmd = Some((Vec::new(), u32::MAX, None));
+                    cmd = Some(TrackCmd::NewCel);
                 }
-                ui.label(egui::RichText::new(tr("Правый щелчок по клетке — какой cel показывать с этого кадра")).small());
+                ui.label(egui::RichText::new(tr("Правый щелчок по клетке — меню кадра; метку можно перетащить, с Alt — копия")).small());
             });
         });
         if !open {
@@ -449,9 +632,44 @@ impl PaintApp {
         if let Some(p) = select {
             self.selected = p;
         }
-        match key_cmd {
-            Some((_, u32::MAX, None)) => self.new_cel(),
-            Some((path, f, cel)) => self.set_key(&path, f, cel),
+        if copy_cel.is_some() {
+            self.timeline.copied_cel = copy_cel;
+        }
+        if copy_pose.is_some() {
+            self.timeline.copied_pose = copy_pose;
+        }
+        match cmd {
+            Some(TrackCmd::NewCel) => self.new_cel(),
+            Some(TrackCmd::Key(path, f, cel)) => self.set_key(&path, f, cel),
+            Some(TrackCmd::MoveKey(path, a, b, copy)) => self.move_key(&path, a, b, copy),
+            Some(TrackCmd::PasteCel(path, f)) => self.paste_cel(&path, f),
+            Some(TrackCmd::PoseKey(path, f)) => self.edit_pose(&path, |pins| {
+                for pin in pins {
+                    let pose = pin.pose(f);
+                    pin.keys.insert(f, pose);
+                }
+            }),
+            Some(TrackCmd::PoseRemove(path, f)) => self.edit_pose(&path, |pins| {
+                for pin in pins {
+                    pin.keys.remove(&f);
+                }
+            }),
+            Some(TrackCmd::PoseMove(path, a, b, copy)) => self.edit_pose(&path, |pins| {
+                for pin in pins {
+                    let k = if copy { pin.keys.get(&a).copied() } else { pin.keys.remove(&a) };
+                    if let Some(k) = k {
+                        pin.keys.insert(b, k);
+                    }
+                }
+            }),
+            Some(TrackCmd::PosePaste(path, f)) => {
+                let poses = self.timeline.copied_pose.clone().unwrap_or_default();
+                self.edit_pose(&path, |pins| {
+                    for (pin, pose) in pins.iter_mut().zip(poses) {
+                        pin.keys.insert(f, pose);
+                    }
+                })
+            }
             None => {}
         }
         if let Some(f) = go {

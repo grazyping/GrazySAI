@@ -47,6 +47,50 @@ pub fn run(report: Option<PathBuf>) -> bool {
             Ok(format!("{dark} тёмных точек"))
         })),
         ("форматы: запись и чтение", Box::new(formats)),
+        ("сведение холста 4K, 20 слоёв (скорость)", Box::new(|_| {
+            let mut doc = Document::new(3840, 2160);
+            for n in 0..20 {
+                let mut l = paint_core::Layer::new(&n.to_string());
+                for y in (n * 90)..(n * 90 + 1000) {
+                    for x in 0..3840 {
+                        l.pixels.set(x, y, paint_core::pixel::from_rgba8([(n * 12) as u8, 120, 200, 180]));
+                    }
+                }
+                doc.layers.push(l);
+            }
+            let t = std::time::Instant::now();
+            let px = doc.flatten();
+            let ms = t.elapsed().as_secs_f32() * 1000.0;
+            if px.len() != 3840 * 2160 * 4 {
+                return Err("не тот размер".into());
+            }
+            Ok(format!("{ms:.0} мс на весь холст"))
+        })),
+        ("марионетка: две булавки поворачивают всю сетку", Box::new(|_| {
+            use paint_core::puppet::{Pin, PinKind, PinPose, Puppet};
+            let mut src = paint_core::tile::ColorMap::new();
+            for y in 400..700 {
+                for x in 100..1700 {
+                    src.set(x, y, paint_core::pixel::from_rgba8([200, 50, 50, 255]));
+                }
+            }
+            let mut pp = Puppet::new(src);
+            let mut b = Pin::new(PinKind::Position, [1650.0, 550.0]);
+            b.keys.insert(0, PinPose { pos: [150.0, 2050.0], rot: 0.0, scale: 1.0 });
+            pp.pins = vec![Pin::new(PinKind::Position, [150.0, 550.0]), b];
+            let t = std::time::Instant::now();
+            let mesh = pp.mesh();
+            let pos = pp.deform(&mesh, 0, None);
+            let ms = t.elapsed().as_secs_f32() * 1000.0;
+            // поворот на 90° вокруг первой булавки (150, 550): дальний угол сетки — туда же
+            let (r, p) = mesh.rest.iter().zip(&pos).max_by(|a, b| (a.0[0] + a.0[1]).total_cmp(&(b.0[0] + b.0[1]))).ok_or("пустая сетка")?;
+            let want = [150.0 - (r[1] - 550.0), 550.0 + (r[0] - 150.0)];
+            let off = ((p[0] - want[0]).powi(2) + (p[1] - want[1]).powi(2)).sqrt();
+            if off > 5.0 {
+                return Err(format!("угол сетки ушёл на {off:.1} точек").into());
+            }
+            Ok(format!("{} вершин, {ms:.0} мс", mesh.rest.len()))
+        })),
         ("сохранение поверх прежнего файла", Box::new(|d| {
             std::fs::create_dir_all(d)?;
             let p = d.join("поверх.sai2");

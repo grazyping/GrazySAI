@@ -614,9 +614,11 @@ paint without them.
 As in Clip Studio Paint. “Animation → New animation folder” creates a folder track with the first cel
 “1” and opens the “Timeline” window. The layers inside the folder are cels; “New cel” adds the next one
 and puts it on the current frame. A cel holds until the next key; right-click a timeline cell to choose
-which cel shows from that frame, “Blank frame” or “Remove key” (all undoable). Clicking the ruler or a
-cell goes to that frame (its cel gets selected). You can paint only in the cel shown on the current
-frame.
+which cel shows from that frame, “Blank frame”, “Remove key”, “Copy cel” and “Paste cel” (a copy of the
+layer as a new cel on that frame); all undoable. A key can be dragged to another frame, with **Alt** it
+is copied. Clicking the ruler or a cell goes to that frame (its cel gets selected). You can paint only
+in the cel shown on the current frame. A layer moved out of the folder or deleted leaves blank frames
+on its keys.
 
 The window has go to start, previous, play/stop, next, go to end, “Loop”, **Onion skin** (neighbouring
 cels semi-transparent and tinted: earlier ones red, later ones blue; count, opacity and colours in
@@ -640,7 +642,10 @@ click on the picture places a pin of the chosen kind:
 - **Advanced** — point, rotation and scale;
 - **Overlap** — what is in front when parts overlap (**In Front**, **Extent**).
 
-Dragging a pin sets a key on the current timeline frame; between keys the motion is smooth. **Ctrl +
+One pin moves the whole mesh, the second rotates (and stretches) it around the first, from the third on
+the mesh bends. Dragging a pin sets a key on the current timeline frame; between keys the motion is
+smooth. A puppet has its own timeline track: diamonds mark frames with keys; right-click for “Set key”,
+“Remove key”, “Copy key”, “Paste key”; a diamond can be dragged, with Alt it is copied. **Ctrl +
 drag** records the motion frame by frame in real time (frames advance at the timeline rate). You cannot
 paint on a puppet — “Remove puppet” brings back the original picture. Animation export recomputes the
 puppet for every frame. In `.sai2` the source picture and pins are kept in GrazySAI's own block; SAI

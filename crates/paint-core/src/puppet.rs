@@ -123,7 +123,7 @@ pub struct CacheData {
 
 /// Кэш для живой правки; копия начинается пустой, на сравнение не влияет.
 #[derive(Default)]
-pub struct Cache(std::sync::Mutex<Option<CacheData>>);
+pub struct Cache(std::sync::Mutex<Option<CacheData>>, std::sync::Mutex<Option<(Vec<u64>, std::sync::Arc<Factor>)>>);
 
 impl Clone for Cache {
     fn clone(&self) -> Self {
@@ -173,8 +173,14 @@ impl Puppet {
         Puppet { source, expansion: 3.0, density: 5, pins: Vec::new(), cache: Cache::default() }
     }
 
+    /// Сторона клетки сетки: не мельче таблицы густоты и не больше ~16–90 клеток по длинной
+    /// стороне рисунка (как в CSP: сотни треугольников, а не десятки тысяч на большом рисунке).
     fn cell(&self) -> i32 {
-        [32, 26, 22, 18, 15, 12, 10, 8, 7, 6][(self.density.clamp(1, 10) - 1) as usize]
+        let k = (self.density.clamp(1, 10) - 1) as usize;
+        let fine = [32, 26, 22, 18, 15, 12, 10, 8, 7, 6][k];
+        let across = [16, 20, 25, 30, 36, 42, 50, 60, 72, 90][k];
+        let long = bounds(&self.source).map_or(0, |(x0, y0, x1, y1)| (x1 - x0).max(y1 - y0) + 1);
+        fine.max(long / across)
     }
 
     /// Сетка по силуэту: клетка входит, если в ней есть точка рисунка (с запасом).
@@ -294,12 +300,20 @@ impl Puppet {
             }
         }
         let turned = forced.iter().any(Option::is_some);
+        let starch = self.pins.iter().any(|p| p.kind == PinKind::Starch);
+        let at = |a: &[(u32, f32)]| a.iter().fold([0.0f32; 2], |s, (i, w)| [s[0] + rest[*i as usize][0] * w, s[1] + rest[*i as usize][1] * w]);
         if holds.len() == 1 && !turned {
-            // одна булавка — просто сдвиг
+            // одна булавка — сдвиг всей сетки
             let (a, target) = &holds[0];
-            let now = a.iter().fold([0.0f32; 2], |s, (i, w)| [s[0] + rest[*i as usize][0] * w, s[1] + rest[*i as usize][1] * w]);
+            let now = at(a);
             let d = [target[0] - now[0], target[1] - now[1]];
             return rest.iter().map(|v| [v[0] + d[0], v[1] + d[1]]).collect();
+        }
+        // начало — поворот, размер и сдвиг, лучше всего сводящие булавки к их точкам
+        let fit = similarity(&holds.iter().map(|(a, t)| (at(a), *t)).collect::<Vec<_>>());
+        if holds.len() == 2 && !turned && !starch {
+            // две булавки — вторая поворачивает (и растягивает) всю сетку вокруг первой, как в CSP
+            return rest.iter().map(|v| fit(*v)).collect();
         }
         // веса рёбер: жёстче у булавок Starch
         let weights: Vec<f32> = mesh
@@ -316,44 +330,32 @@ impl Puppet {
             nb[a as usize].push((b, weights[k]));
             nb[b as usize].push((a, weights[k]));
         }
-        let lambda = 1e3f32;
+        let lambda = 1e3f64;
+        // слабая тяга к началу: кусок без булавок (отдельный остров рисунка) едет вместе с остальным
+        let mu = 1e-4f64;
         let mut p: Vec<[f32; 2]> = match warm.filter(|w| w.len() == n) {
             Some(w) => w.to_vec(),
-            None => {
-                // начало — средний сдвиг булавок
-                let mut d = [0.0f32; 2];
-                for (a, t) in &holds {
-                    let now = a.iter().fold([0.0f32; 2], |s, (i, w)| [s[0] + rest[*i as usize][0] * w, s[1] + rest[*i as usize][1] * w]);
-                    d[0] += (t[0] - now[0]) / holds.len() as f32;
-                    d[1] += (t[1] - now[1]) / holds.len() as f32;
-                }
-                rest.iter().map(|v| [v[0] + d[0], v[1] + d[1]]).collect()
-            }
+            None => rest.iter().map(|v| fit(*v)).collect(),
         };
-        // диагональ матрицы (для предобуславливателя)
-        let mut diag: Vec<f32> = (0..n).map(|i| nb[i].iter().map(|x| x.1).sum::<f32>()).collect();
-        for (a, _) in &holds {
-            for (i, w) in a {
-                diag[*i as usize] += lambda * w * w;
-            }
-        }
-        let apply = |x: &[f32], out: &mut [f32]| {
-            for i in 0..n {
-                let mut s = 0.0;
-                for &(j, w) in &nb[i] {
-                    s += w * (x[i] - x[j as usize]);
-                }
-                out[i] = s;
-            }
-            for (a, _) in &holds {
-                let r: f32 = a.iter().map(|(i, w)| w * x[*i as usize]).sum();
-                for (i, w) in a {
-                    out[*i as usize] += lambda * w * r;
+        let start = p.clone();
+        // матрица не зависит от кадра: разложение — одно на сетку и набор булавок
+        let fkey: Vec<u64> = std::iter::once(n as u64)
+            .chain(holds.iter().flat_map(|(a, _)| a.iter().map(|(i, w)| (*i as u64) << 32 | w.to_bits() as u64)))
+            .chain(weights.iter().map(|w| w.to_bits() as u64))
+            .collect();
+        let factor = {
+            let mut g = self.cache.1.lock().unwrap_or_else(|e| e.into_inner());
+            match g.as_ref().filter(|(k, _)| *k == fkey) {
+                Some((_, f)) => f.clone(),
+                None => {
+                    let f = std::sync::Arc::new(Factor::new(n, &nb, &holds, lambda, mu));
+                    *g = Some((fkey, f.clone()));
+                    f
                 }
             }
         };
         let mut rot = vec![(1.0f32, 0.0f32); n];
-        let iters = if warm.is_some_and(|w| w.len() == n) { 12 } else { 40 };
+        let iters = if warm.is_some_and(|w| w.len() == n) { 20 } else { 40 };
         for _ in 0..iters {
             // местный шаг: лучший поворот у каждой вершины
             for i in 0..n {
@@ -371,9 +373,9 @@ impl Puppet {
                 let a = ss.atan2(sc);
                 rot[i] = (a.cos(), a.sin());
             }
-            // общий шаг: L p = b по x и по y
+            // общий шаг: точное решение A p = b по x и по y
             for axis in 0..2 {
-                let mut b = vec![0.0f32; n];
+                let mut b = vec![0.0f64; n];
                 for i in 0..n {
                     for &(j, w) in &nb[i] {
                         let j = j as usize;
@@ -382,18 +384,18 @@ impl Puppet {
                         let (c2, s2) = rot[j];
                         let (c, s) = ((c1 + c2) / 2.0, (s1 + s2) / 2.0);
                         let re = if axis == 0 { c * e[0] - s * e[1] } else { s * e[0] + c * e[1] };
-                        b[i] += w * re;
+                        b[i] += f64::from(w * re);
                     }
+                    b[i] += mu * f64::from(start[i][axis]);
                 }
                 for (a, t) in &holds {
                     for (i, w) in a {
-                        b[*i as usize] += lambda * w * t[axis];
+                        b[*i as usize] += lambda * f64::from(*w) * f64::from(t[axis]);
                     }
                 }
-                let mut x: Vec<f32> = p.iter().map(|v| v[axis]).collect();
-                cg(&apply, &diag, &b, &mut x, if iters < 40 { 25 } else { 60 });
-                for (v, xv) in p.iter_mut().zip(&x) {
-                    v[axis] = *xv;
+                factor.solve(&mut b);
+                for (v, x) in p.iter_mut().zip(&b) {
+                    v[axis] = *x as f32;
                 }
             }
         }
@@ -684,38 +686,101 @@ fn sample(src: &ColorMap, x: f32, y: f32) -> [f32; 4] {
     o
 }
 
-/// Сопряжённые градиенты с диагональным предобуславливателем.
-fn cg(apply: &dyn Fn(&[f32], &mut [f32]), diag: &[f32], b: &[f32], x: &mut [f32], iters: usize) {
-    let n = b.len();
-    let mut ax = vec![0.0f32; n];
-    apply(x, &mut ax);
-    let mut r: Vec<f32> = (0..n).map(|i| b[i] - ax[i]).collect();
-    let mut z: Vec<f32> = (0..n).map(|i| r[i] / diag[i].max(1e-6)).collect();
-    let mut p = z.clone();
-    let mut rz: f32 = r.iter().zip(&z).map(|(a, b)| a * b).sum();
-    let mut ap = vec![0.0f32; n];
-    for _ in 0..iters {
-        if rz.abs() < 1e-10 {
-            break;
+/// Поворот с размером и сдвиг, лучше всего (наименьшие квадраты) переводящие точки `from` в
+/// `to` — пары (откуда, куда). Одна пара — только сдвиг.
+fn similarity(pairs: &[([f32; 2], [f32; 2])]) -> impl Fn([f32; 2]) -> [f32; 2] {
+    let n = pairs.len().max(1) as f32;
+    let mean = |k: usize| pairs.iter().fold([0.0f32; 2], |s, p| {
+        let v = if k == 0 { p.0 } else { p.1 };
+        [s[0] + v[0] / n, s[1] + v[1] / n]
+    });
+    let (ca, cb) = (mean(0), mean(1));
+    let (mut sc, mut ss, mut norm) = (0.0f32, 0.0f32, 0.0f32);
+    for (a, b) in pairs {
+        let (x, y) = ([a[0] - ca[0], a[1] - ca[1]], [b[0] - cb[0], b[1] - cb[1]]);
+        sc += x[0] * y[0] + x[1] * y[1];
+        ss += x[0] * y[1] - x[1] * y[0];
+        norm += x[0] * x[0] + x[1] * x[1];
+    }
+    let (c, s) = if norm > 1e-6 { (sc / norm, ss / norm) } else { (1.0, 0.0) };
+    move |v: [f32; 2]| {
+        let d = [v[0] - ca[0], v[1] - ca[1]];
+        [cb[0] + c * d[0] - s * d[1], cb[1] + s * d[0] + c * d[1]]
+    }
+}
+
+/// Разложение Холецкого матрицы общего шага (лапласиан сетки с весами рёбер, булавки, слабая
+/// тяга к началу) по «профилю»: в строке i хранится всё от первого ненулевого столбца до
+/// диагонали. Вершины сетки идут по рядам, поэтому профиль — около ширины сетки.
+pub struct Factor {
+    first: Vec<usize>,
+    rows: Vec<Vec<f64>>,
+}
+
+impl Factor {
+    fn new(n: usize, nb: &[Vec<(u32, f32)>], holds: &[Hold], lambda: f64, mu: f64) -> Factor {
+        let mut first: Vec<usize> = (0..n).map(|i| nb[i].iter().map(|x| x.0 as usize).filter(|&j| j < i).min().unwrap_or(i)).collect();
+        for (a, _) in holds {
+            let lo = a.iter().map(|x| x.0 as usize).min().unwrap_or(0);
+            for (i, _) in a {
+                let i = *i as usize;
+                first[i] = first[i].min(lo);
+            }
         }
-        apply(&p, &mut ap);
-        let pap: f32 = p.iter().zip(&ap).map(|(a, b)| a * b).sum();
-        if pap.abs() < 1e-12 {
-            break;
-        }
-        let a = rz / pap;
+        let mut rows: Vec<Vec<f64>> = (0..n).map(|i| vec![0.0; i - first[i] + 1]).collect();
         for i in 0..n {
-            x[i] += a * p[i];
-            r[i] -= a * ap[i];
+            let d = i - first[i];
+            for &(j, w) in &nb[i] {
+                let (j, w) = (j as usize, f64::from(w));
+                rows[i][d] += w;
+                if j < i {
+                    rows[i][j - first[i]] -= w;
+                }
+            }
+            rows[i][d] += mu;
         }
-        for i in 0..n {
-            z[i] = r[i] / diag[i].max(1e-6);
+        for (a, _) in holds {
+            for &(i, wi) in a {
+                for &(j, wj) in a {
+                    let (i, j) = (i as usize, j as usize);
+                    if j <= i {
+                        rows[i][j - first[i]] += lambda * f64::from(wi) * f64::from(wj);
+                    }
+                }
+            }
         }
-        let rz2: f32 = r.iter().zip(&z).map(|(a, b)| a * b).sum();
-        let beta = rz2 / rz;
-        rz = rz2;
+        // разложение на месте: A = L·Lᵀ
         for i in 0..n {
-            p[i] = z[i] + beta * p[i];
+            for j in first[i]..=i {
+                let lo = first[i].max(first[j]);
+                let mut s = rows[i][j - first[i]];
+                for k in lo..j {
+                    s -= rows[i][k - first[i]] * rows[j][k - first[j]];
+                }
+                rows[i][j - first[i]] = if j < i { s / rows[j][j - first[j]] } else { s.max(1e-12).sqrt() };
+            }
+        }
+        Factor { first, rows }
+    }
+
+    /// Решить A x = b на месте.
+    fn solve(&self, b: &mut [f64]) {
+        let n = b.len();
+        for i in 0..n {
+            let r = &self.rows[i];
+            let mut s = b[i];
+            for k in self.first[i]..i {
+                s -= r[k - self.first[i]] * b[k];
+            }
+            b[i] = s / r[i - self.first[i]];
+        }
+        for i in (0..n).rev() {
+            let r = &self.rows[i];
+            b[i] /= r[i - self.first[i]];
+            let x = b[i];
+            for k in self.first[i]..i {
+                b[k] -= r[k - self.first[i]] * x;
+            }
         }
     }
 }
@@ -776,6 +841,51 @@ mod tests {
             worst = worst.max((l1 / l0 - 1.0).abs());
         }
         assert!(worst < 0.05, "рёбра растянуты на {worst}");
+    }
+
+    /// Как в CSP и AE: вторая булавка на длинном рисунке поворачивает всю сетку вокруг первой,
+    /// а не тянет кусок рядом с собой («резина»).
+    #[test]
+    fn two_pins_turn_the_whole_large_mesh() {
+        let mut src = ColorMap::new();
+        for y in 400..700 {
+            for x in 100..1700 {
+                src.set(x, y, from_rgba8([200, 50, 50, 255]));
+            }
+        }
+        let mut pp = Puppet::new(src);
+        let (c, l) = ([150.0f32, 550.0f32], 1500.0f32);
+        let a = Pin::new(PinKind::Position, c);
+        let mut b = Pin::new(PinKind::Position, [c[0] + l, c[1]]);
+        let ang = 60f32.to_radians();
+        key(&mut b, 0, c[0] + l * ang.cos(), c[1] + l * ang.sin());
+        pp.pins = vec![a, b];
+        let mesh = pp.mesh();
+        let pos = pp.deform(&mesh, 0, None);
+        let mut worst = 0.0f32;
+        for (r, p) in mesh.rest.iter().zip(&pos) {
+            let d = [r[0] - c[0], r[1] - c[1]];
+            let want = [c[0] + d[0] * ang.cos() - d[1] * ang.sin(), c[1] + d[0] * ang.sin() + d[1] * ang.cos()];
+            worst = worst.max(dist2(*p, want).sqrt());
+        }
+        assert!(worst < 3.0, "отклонение от поворота всей сетки {worst} точек");
+        // три булавки: вторую и третью тащат по дуге, как мышью (каждый шаг — от прошлого
+        // положения сетки); вся сетка поворачивается, а не тянется кусок у булавок
+        pp.pins.push(Pin::new(PinKind::Position, [c[0] + l / 2.0, c[1]]));
+        let mut pos = mesh.rest.clone();
+        for step in 1..=12 {
+            let a = ang * step as f32 / 12.0;
+            key(&mut pp.pins[1], 0, c[0] + l * a.cos(), c[1] + l * a.sin());
+            key(&mut pp.pins[2], 0, c[0] + l / 2.0 * a.cos(), c[1] + l / 2.0 * a.sin());
+            pos = pp.deform(&mesh, 0, Some(&pos));
+        }
+        let mut worst = 0.0f32;
+        for (r, p) in mesh.rest.iter().zip(&pos) {
+            let d = [r[0] - c[0], r[1] - c[1]];
+            let want = [c[0] + d[0] * ang.cos() - d[1] * ang.sin(), c[1] + d[0] * ang.sin() + d[1] * ang.cos()];
+            worst = worst.max(dist2(*p, want).sqrt());
+        }
+        assert!(worst < 3.0, "три булавки: отклонение {worst} точек");
     }
 
     #[test]
