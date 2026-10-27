@@ -5276,6 +5276,14 @@ app.open_canvas_dialog(d == "resolution")
         self.thumbs.clear();
     }
 
+    /// В очереди есть плитки, видимые в окне.
+    pub(crate) fn visible_pending(&self) -> bool {
+        match self.view_tiles {
+            Some([x0, y0, x1, y1]) => (y0..=y1).any(|y| (x0..=x1).any(|x| self.queued.contains(&(x, y)))),
+            None => !self.queue.is_empty(),
+        }
+    }
+
     fn tile_visible(&self, k: Key) -> bool {
         self.view_tiles.is_none_or(|[x0, y0, x1, y1]| (x0..=x1).contains(&k.0) && (y0..=y1).contains(&k.1))
     }
@@ -5284,11 +5292,9 @@ app.open_canvas_dialog(d == "resolution")
     /// пересчёт лучше показывать по ходу, чем стоять).
     fn update_hold(&mut self) {
         let Some(t) = self.hold else { return };
-        let waiting = match self.view_tiles {
-            Some([x0, y0, x1, y1]) => (y0..=y1).any(|y| (x0..=x1).any(|x| self.queued.contains(&(x, y)))),
-            None => !self.queue.is_empty(),
-        };
-        if !waiting || t.elapsed() > Duration::from_secs(2) {
+        // тащат мышью (ползунок, перенос) — правки идут без перерыва, держать нельзя
+        let dragging = self.ctx.as_ref().is_some_and(|c| c.input(|i| i.pointer.is_decidedly_dragging()));
+        if !self.visible_pending() || dragging || t.elapsed() > Duration::from_secs(2) {
             self.hold = None;
             // показать новое в следующем кадре, даже если очередь уже пуста
             if let Some(c) = &self.ctx {
