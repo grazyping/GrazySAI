@@ -1852,6 +1852,39 @@ fn layer_keys(layer: &Layer) -> Vec<Key> {
     }
 }
 
+/// Плитки, которые меняются при смене кадра таймлайна: рисунок всех папок анимации (cel
+/// и Onion skin). `None` — где-то есть то, что действует на весь холст (слой коррекции в папке
+/// анимации), тогда пересчитывать всё.
+pub fn anim_tiles(layers: &[Layer]) -> Option<Vec<Key>> {
+    fn walk(ls: &[Layer], out: &mut std::collections::HashSet<Key>) -> bool {
+        ls.iter().all(|l| match &l.children {
+            Some(_) if l.anim.is_some() => all(l, out),
+            Some(ch) => walk(ch, out),
+            None => true,
+        })
+    }
+    let mut out = std::collections::HashSet::new();
+    walk(layers, &mut out).then(|| out.into_iter().collect())
+}
+
+/// Плитки рисунка слоя (с папкой — всего, что в ней): что меняется на экране, если слой
+/// скрыть или показать. `None` — слой действует на весь холст (слой коррекции).
+pub fn layer_tiles(layer: &Layer) -> Option<Vec<Key>> {
+    let mut out = std::collections::HashSet::new();
+    all(layer, &mut out).then(|| out.into_iter().collect())
+}
+
+fn all(l: &Layer, out: &mut std::collections::HashSet<Key>) -> bool {
+    if l.adjust.is_some() {
+        return false;
+    }
+    out.extend(l.pixels.tiles.keys().copied());
+    if let Some(m) = &l.mask {
+        out.extend(m.hide.tiles.keys().copied());
+    }
+    l.children.iter().flatten().all(|c| all(c, out))
+}
+
 fn touches(layer: &Layer, key: Key) -> bool {
     match &layer.children {
         Some(children) => children.iter().any(|c| c.visible && touches(c, key)),
@@ -2058,6 +2091,30 @@ fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]], cx: &Rcx)
         }
         if let (Some(a), None) = (&base.adjust, &base.children) {
             adjust_into(base, a, key, backdrop);
+            continue;
+        }
+        // обычный слой без маски, эффекта, бумаги, стиля и прикреплённых — прямо из плитки,
+        // без промежуточного буфера (самый частый случай: на 4K с десятками слоёв — основное время)
+        if clips.is_empty() && base.children.is_none() && base.mask.is_none() && base.effect.is_none() && base.paper.is_none() && base.styles.is_none() {
+            let Some(tile) = base.pixels.tiles.get(&key) else { continue };
+            let op = base.opacity;
+            if base.mode == crate::blend::BlendMode::Normal {
+                for (dst, p) in backdrop.iter_mut().zip(tile.0.iter()) {
+                    if p[3] == 0 {
+                        continue;
+                    }
+                    let s = to_f32(*p);
+                    let sa = s[3] * op;
+                    let inv = 1.0 - sa;
+                    *dst = [s[0] * op + dst[0] * inv, s[1] * op + dst[1] * inv, s[2] * op + dst[2] * inv, sa + dst[3] * inv];
+                }
+            } else {
+                for (dst, p) in backdrop.iter_mut().zip(tile.0.iter()) {
+                    if p[3] != 0 {
+                        *dst = composite(base.mode, *dst, to_f32(*p), op);
+                    }
+                }
+            }
             continue;
         }
         let src = layer_source(base, key, cx).or_else(|| styled_near(base, key).then(|| vec![[0.0f32; 4]; TILE_LEN]));

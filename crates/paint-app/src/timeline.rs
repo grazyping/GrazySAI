@@ -60,7 +60,11 @@ impl PaintApp {
                 }
             }
         }
-        self.refresh_all();
+        // пересчитать только рисунок папок анимации, а не весь холст
+        match paint_core::document::anim_tiles(&self.doc.layers) {
+            Some(keys) => self.invalidate(keys),
+            None => self.refresh_all(),
+        }
         self.refresh_puppets();
     }
 

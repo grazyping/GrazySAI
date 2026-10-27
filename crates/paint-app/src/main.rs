@@ -1471,6 +1471,11 @@ struct PaintApp {
     started: Instant,
     /// Для `PAINT_TIMING`: когда начали показ холста целиком (после открытия или нового холста).
     timing: Option<Instant>,
+    /// Плитки холста, видимые в окне (лево, верх, право, низ включительно), — по прошлому кадру.
+    view_tiles: Option<[i32; 4]>,
+    /// Пересчёт всего холста идёт: на экране прежняя картинка, пока видимые плитки не готовы,
+    /// и потом сразу вся новая — без «волн» (с какого времени держим).
+    hold: Option<Instant>,
     sel_drag: Option<SelDrag>,
     /// Многоугольное лассо: вершины, пока многоугольник не закрыт (Enter, двойной щелчок).
     sel_poly: Option<SelDrag>,
@@ -1773,6 +1778,8 @@ impl PaintApp {
             pen_stats: HashMap::new(),
             started: Instant::now(),
             timing: None,
+            view_tiles: None,
+            hold: None,
             sel_drag: None,
             sel_poly: None,
             lasso_polygon: false,
@@ -5260,18 +5267,62 @@ app.open_canvas_dialog(d == "resolution")
         self.invalidate(keys);
     }
 
+    /// Пересчитать плитки одного слоя (видимость, свойства): прежняя картинка — до готовности.
+    fn refresh_layer(&mut self, path: &[usize]) {
+        match self.doc.layer(path).and_then(paint_core::document::layer_tiles) {
+            Some(keys) => self.invalidate(keys),
+            None => self.refresh_all(),
+        }
+        self.thumbs.clear();
+    }
+
+    fn tile_visible(&self, k: Key) -> bool {
+        self.view_tiles.is_none_or(|[x0, y0, x1, y1]| (x0..=x1).contains(&k.0) && (y0..=y1).contains(&k.1))
+    }
+
+    /// Держать прежнюю картинку, пока в очереди есть видимые плитки (не дольше 2 с: долгий
+    /// пересчёт лучше показывать по ходу, чем стоять).
+    fn update_hold(&mut self) {
+        let Some(t) = self.hold else { return };
+        let waiting = match self.view_tiles {
+            Some([x0, y0, x1, y1]) => (y0..=y1).any(|y| (x0..=x1).any(|x| self.queued.contains(&(x, y)))),
+            None => !self.queue.is_empty(),
+        };
+        if !waiting || t.elapsed() > Duration::from_secs(2) {
+            self.hold = None;
+            // показать новое в следующем кадре, даже если очередь уже пуста
+            if let Some(c) = &self.ctx {
+                c.request_repaint();
+            }
+        }
+    }
+
     fn invalidate(&mut self, keys: impl IntoIterator<Item = Key>) {
         // стиль слоя (тень, обводка) выходит за изменённые плитки — пересчитать и соседние
         let n = paint_core::document::style_ring(&self.doc.layers);
+        let mut fresh = Vec::new();
         for key in keys {
             for dy in -n..=n {
                 for dx in -n..=n {
                     let k = (key.0 + dx, key.1 + dy);
                     if self.queued.insert(k) {
-                        self.queue.push_front(k); // свежие правки показываем первыми
+                        fresh.push(k);
                     }
                 }
             }
+        }
+        // свежие правки показываем первыми, из них первыми — видимые (каждая следующая
+        // встаёт в начало очереди, поэтому видимые — в конец списка)
+        fresh.sort_by_key(|k| self.tile_visible(*k));
+        // большая правка разом (заливка, видимость слоя, кадр анимации) — показать целиком,
+        // а не волной по плиткам; штрих правит понемногу и виден сразу
+        // (пока что-то тащат мышью — перенос, трансформация — показывать по ходу)
+        let dragging = self.ctx.as_ref().is_some_and(|c| c.input(|i| i.pointer.is_decidedly_dragging()));
+        if fresh.len() > 64 && !self.display.is_empty() && !dragging {
+            self.hold = Some(self.hold.unwrap_or_else(Instant::now));
+        }
+        for k in fresh {
+            self.queue.push_front(k);
         }
     }
 
@@ -6223,7 +6274,7 @@ app.open_canvas_dialog(d == "resolution")
             self.show_alone_of(path);
         } else if let Some(l) = self.doc.layer_mut(&path) {
             l.visible = !l.visible;
-            self.invalidate_all();
+            self.refresh_layer(&path);
             self.dirty = true;
         }
     }
@@ -6252,7 +6303,7 @@ app.open_canvas_dialog(d == "resolution")
             walk(&mut self.doc.layers, &mut Vec::new(), &keep, &mut saved);
             self.solo = Some(saved);
         }
-        self.invalidate_all();
+        self.refresh_all();
     }
 
     /// «Закрыть все виды» (Close All Views в SAI): закрываются все вкладки по очереди; о
@@ -10635,6 +10686,16 @@ app.open_canvas_dialog(d == "resolution")
 
         // Показ: только плитки, попавшие в окно.
         let xf = ViewXf::new(rect, self.zoom, self.offset, vang, vflip);
+        if !self.wrap_around {
+            let pts = [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom()].map(|p| xf.to_canvas(p));
+            let t = |v: f32| (v / TILE as f32).floor() as i32;
+            let (x0, x1) = (pts.iter().map(|p| p.x).fold(f32::MAX, f32::min), pts.iter().map(|p| p.x).fold(f32::MIN, f32::max));
+            let (y0, y1) = (pts.iter().map(|p| p.y).fold(f32::MAX, f32::min), pts.iter().map(|p| p.y).fold(f32::MIN, f32::max));
+            self.view_tiles = Some([t(x0), t(y0), t(x1), t(y1)]);
+        } else {
+            self.view_tiles = None;
+        }
+        let holding = self.hold.is_some();
         // проценты масштаба — от пикселей экрана, как в SAI; при 100 % без поворота пиксель
         // холста — пиксель экрана, без размытия
         let shown = self.zoom * self.ppp;
@@ -10676,7 +10737,9 @@ app.open_canvas_dialog(d == "resolution")
             }
             // больше половины кусочков изменилось — одна загрузка целиком дешевле многих мелких
             let full = tile.texture.is_none() || tile.options != Some(options) || tile.dirty.count_ones() > (SUB * SUB / 2) as u32;
-            if full || tile.dirty != 0 {
+            // пересчёт всего холста: прежняя текстура, пока видимое не готово
+            let held = holding && tile.texture.is_some() && tile.options == Some(options);
+            if !held && (full || tile.dirty != 0) {
                 let t0 = Instant::now();
                 match &mut tile.texture {
                     // изменились отдельные кусочки — только они (в 16 раз меньше данных на видеокарту)
@@ -13056,7 +13119,7 @@ impl eframe::App for PaintApp {
             if hit(A::ToggleVisible) {
                 if let Some(l) = self.doc.layer_mut(&self.selected) {
                     l.visible = !l.visible;
-                    self.invalidate_all();
+                    self.refresh_layer(&self.selected.clone());
                     self.dirty = true;
                 }
             }
@@ -13397,6 +13460,7 @@ impl eframe::App for PaintApp {
 
         let t = Instant::now();
         self.render_pending(Duration::from_millis(12));
+        self.update_hold();
         if let Some(s) = &self.frame_stats {
             s.borrow_mut().render += t.elapsed().as_secs_f32() * 1000.0;
         }
