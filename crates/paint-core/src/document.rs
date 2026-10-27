@@ -1602,7 +1602,9 @@ impl Document {
         } else {
             Op::Remove { path: path.to_vec() }
         };
-        let mut ops = vec![Op::Tiles { path: below.clone(), tiles }];
+        // слитый в нижний слой уходит, и в папке анимации его кадры — пустые, как при удалении
+        let mut ops = if keep_upper { Vec::new() } else { self.cel_leaves(path) };
+        ops.push(Op::Tiles { path: below.clone(), tiles });
         if lower_masked {
             ops.push(Op::Mask { path: below.clone(), mask: None });
         }

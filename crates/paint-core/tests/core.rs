@@ -1639,6 +1639,13 @@ fn animation_cels_per_frame() {
     assert_eq!(doc.layers[1].anim.as_ref().unwrap().cel_at(0), None);
     doc.undo().unwrap();
     assert_eq!(doc.layers[1].anim.as_ref().unwrap().cel_at(0), Some("1"));
+    // «Слить с нижним»: верхний cel уходит, его кадры — пустые; отмена возвращает
+    doc.merge_down(&[1, 1]).unwrap();
+    let track = doc.layers[1].anim.as_ref().unwrap();
+    assert_eq!(track.keys.get(&2).map(String::as_str), Some(""), "метка слитого cel пуста");
+    assert_eq!(track.cel_at(0), Some("1"));
+    doc.undo().unwrap();
+    assert_eq!(doc.layers[1].anim.as_ref().unwrap().cel_at(3), Some("1-2"));
     // слой с тем же именем, внесённый в папку, получает своё имя
     doc.layers.insert(0, layer::Layer::new("1"));
     let (dst, _) = doc.move_layer_to(&[0], &[2], 0).unwrap();
