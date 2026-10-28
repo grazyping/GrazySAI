@@ -161,7 +161,7 @@ impl PluginTab {
             (Some(m), s) => {
                 self.manifest = m;
                 self.source = s.unwrap_or_default();
-                self.wasm = files.iter().filter(|(n, _)| n.ends_with(".wasm") && !n.contains('/')).cloned().collect();
+                self.wasm = files.iter().filter(|(n, _)| n.to_ascii_lowercase().ends_with(".wasm") && !n.contains('/')).cloned().collect();
                 self.path = Some(path);
                 self.reparse();
                 self.status = tr("Плагин открыт").to_string();

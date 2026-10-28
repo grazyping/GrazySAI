@@ -13,6 +13,8 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 paint-core = { path = "../crates/paint-core" }
 paint-formats = { path = "../crates/paint-formats" }
+paint-3d = { path = "../crates/paint-3d" }
+paint-plugin = { path = "../crates/paint-plugin" }
 
 [workspace]
 members = ["."]
@@ -53,3 +55,17 @@ name = "brushes"
 path = "fuzz_targets/brushes.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "model"
+path = "fuzz_targets/model.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "own"
+path = "fuzz_targets/own.rs"
+test = false
+doc = false
+bench = false

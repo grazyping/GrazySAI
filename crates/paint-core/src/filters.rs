@@ -2,8 +2,8 @@
 //! размытие по Гауссу. Цветовые фильтры работают с прямым (не предумноженным) цветом каждой
 //! точки, альфа не меняется. Правила прочитаны в коде образца и сверены с живой SAI 2017.
 
-use crate::pixel::{Px, ONE};
-use crate::tile::{ColorMap, TILE};
+use crate::pixel::{Px, CLEAR, ONE};
+use crate::tile::{ColorMap, Tile, TILE};
 
 /// Яркость, контраст и глубина цвета, каждый −100…100.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -213,6 +213,32 @@ fn mix(a: Px, b: Px, s: u32) -> Px {
     [0, 1, 2, 3].map(|c| ((a[c] as u32 * inv + b[c] as u32 * s + ONE / 2) / ONE) as u16)
 }
 
+/// Перевернуть буфер `w`×`h` (строки — в столбцы) блоками, параллельно.
+fn transpose<T: Copy + Default + Send + Sync>(src: &[T], w: usize, h: usize) -> Vec<T> {
+    let mut out = vec![T::default(); src.len()];
+    let threads = crate::threads();
+    // каждый поток пишет свои строки результата (столбцы исходника)
+    let rows = w.div_ceil(threads).max(1);
+    std::thread::scope(|scope| {
+        for (n, chunk) in out.chunks_mut(rows * h).enumerate() {
+            scope.spawn(move || {
+                let x0 = n * rows;
+                let nx = chunk.len() / h;
+                for yb in (0..h).step_by(64) {
+                    for xb in (0..nx).step_by(64) {
+                        for x in xb..(xb + 64).min(nx) {
+                            for y in yb..(yb + 64).min(h) {
+                                chunk[x * h + y] = src[y * w + x0 + x];
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    });
+    out
+}
+
 /// Размытие по Гауссу с σ = `radius` (как в SAI; сверено по сечению линии при радиусах 1, 3 и
 /// 9,9). Считается по предумноженным значениям, за краем — прозрачность; результат смешивается
 /// с исходным по доле выделения. `w`, `h` — размер холста.
@@ -233,61 +259,78 @@ pub fn gaussian_blur(src: &ColorMap, w: u32, h: u32, radius: f64, sel: &(dyn Fn(
     }
     let (bw, bh) = ((x1 - x0) as usize, (y1 - y0) as usize);
     let kf = 1.0 / ONE as f64;
-    let mut buf = vec![[0f64; 4]; bw * bh];
-    for (i, v) in buf.iter_mut().enumerate() {
-        let p = src.get(x0 + (i % bw) as i32, y0 + (i / bw) as i32);
-        *v = p.map(|c| c as f64 * kf);
-    }
+    let buf: Vec<[f64; 4]> = src.read_rect(x0, y0, bw, bh).into_iter().map(|p| p.map(|c| c as f64 * kf)).collect();
     let threads = crate::threads();
-    let pass = |buf: &[[f64; 4]], horizontal: bool| -> Vec<[f64; 4]> {
+    // Порядок сложения у каждой точки — как в прямой свёртке (отводы ядра по возрастанию, за краем
+    // пропускаются), поэтому результат тот же до бита. Отводы за краем отсекаются диапазоном, а не
+    // проверкой на каждом; вертикальный проход — тот же горизонтальный по перевёрнутому буферу
+    // (столбцы подряд в памяти, а не через строку).
+    let pass = |buf: &[[f64; 4]], bw: usize, bh: usize| -> Vec<[f64; 4]> {
         let mut out = vec![[0f64; 4]; buf.len()];
         let rows = bh.div_ceil(threads).max(1);
         std::thread::scope(|scope| {
             for (n, chunk) in out.chunks_mut(rows * bw).enumerate() {
                 let kernel = &kernel;
                 scope.spawn(move || {
-                    for (k, o) in chunk.iter_mut().enumerate() {
-                        let idx = n * rows * bw + k;
-                        let (x, y) = ((idx % bw) as i32, (idx / bw) as i32);
-                        let mut acc = [0f64; 4];
-                        for (j, &kv) in kernel.iter().enumerate() {
-                            let d = j as i32 - r;
-                            let (sx, sy) = if horizontal { (x + d, y) } else { (x, y + d) };
-                            if sx < 0 || sy < 0 || sx >= bw as i32 || sy >= bh as i32 {
-                                continue;
+                    for (ry, orow) in chunk.chunks_mut(bw).enumerate() {
+                        let srow = &buf[(n * rows + ry) * bw..][..bw];
+                        for (x, o) in orow.iter_mut().enumerate() {
+                            let lo = (r - x as i32).max(0) as usize;
+                            let hi = ((bw - 1 - x) as i32 + r).min(2 * r) as usize;
+                            let mut acc = [0f64; 4];
+                            for (j, &kv) in kernel.iter().enumerate().take(hi + 1).skip(lo) {
+                                let p = srow[x + j - r as usize];
+                                for c in 0..4 {
+                                    acc[c] += p[c] * kv;
+                                }
                             }
-                            let p = buf[sy as usize * bw + sx as usize];
-                            for c in 0..4 {
-                                acc[c] += p[c] * kv;
-                            }
+                            *o = acc;
                         }
-                        *o = acc;
                     }
                 });
             }
         });
         out
     };
-    let blurred = pass(&pass(&buf, true), false);
+    let blurred = transpose(&pass(&transpose(&pass(&buf, bw, bh), bw, bh), bh, bw), bh, bw);
+    // обратно в плитки — по плиткам параллельно
+    let (k0, k1) = (crate::tile::key_of(x0, y0), crate::tile::key_of(x1 - 1, y1 - 1));
+    let keys: Vec<(i32, i32)> = (k0.1..=k1.1).flat_map(|ky| (k0.0..=k1.0).map(move |kx| (kx, ky))).collect();
+    let done: Vec<((i32, i32), Tile<Px>)> = std::thread::scope(|scope| {
+        let parts: Vec<_> = keys
+            .chunks(keys.len().div_ceil(threads).max(1))
+            .map(|part| {
+                let blurred = &blurred;
+                scope.spawn(move || {
+                    let mut v = Vec::with_capacity(part.len());
+                    for &(kx, ky) in part {
+                        let mut t = src.tiles.get(&(kx, ky)).cloned().unwrap_or_else(|| Tile::filled(CLEAR));
+                        let (tx, ty) = (kx * TILE, ky * TILE);
+                        for gy in y0.max(ty)..y1.min(ty + TILE) {
+                            for gx in x0.max(tx)..x1.min(tx + TILE) {
+                                let s = sel(gx, gy);
+                                if s == 0 {
+                                    continue;
+                                }
+                                let i = ((gy - ty) * TILE + gx - tx) as usize;
+                                let old = t.0[i];
+                                let v = blurred[(gy - y0) as usize * bw + (gx - x0) as usize];
+                                let a = (v[3].clamp(0.0, 1.0) * ONE as f64 + 0.5) as u16;
+                                let q = |c: f64| ((c.clamp(0.0, 1.0) * ONE as f64 + 0.5) as u16).min(a);
+                                let n = [q(v[0]), q(v[1]), q(v[2]), a];
+                                t.0[i] = if s >= ONE { n } else { mix(old, n, s) };
+                            }
+                        }
+                        v.push(((kx, ky), t));
+                    }
+                    v
+                })
+            })
+            .collect();
+        parts.into_iter().flat_map(|p| p.join().unwrap()).collect()
+    });
     let mut out = src.clone();
-    for y in 0..bh {
-        for x in 0..bw {
-            let (gx, gy) = (x0 + x as i32, y0 + y as i32);
-            let s = sel(gx, gy);
-            if s == 0 {
-                continue;
-            }
-            let old = src.get(gx, gy);
-            let v = blurred[y * bw + x];
-            let a = (v[3].clamp(0.0, 1.0) * ONE as f64 + 0.5) as u16;
-            let q = |c: f64| ((c.clamp(0.0, 1.0) * ONE as f64 + 0.5) as u16).min(a);
-            let n = [q(v[0]), q(v[1]), q(v[2]), a];
-            let p = if s >= ONE { n } else { mix(old, n, s) };
-            if p != old {
-                out.set(gx, gy, p);
-            }
-        }
-    }
+    out.tiles.extend(done);
     out.tiles.retain(|_, t| t.0.iter().any(|p| p[3] != 0));
     out
 }

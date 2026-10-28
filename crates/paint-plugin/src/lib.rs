@@ -96,7 +96,7 @@ pub fn parse(manifest: &str, source: &str) -> Res<Plugin> {
             params.push(parse_param(line).ok_or_else(|| format!("plugin.txt: не понят параметр «{line}»"))?);
         }
         let wasm = kv.str(&format!("command.{n}.wasm")).filter(|w| !w.is_empty()).map(|w| w.chars().take(64).collect::<String>());
-        if wasm.as_deref().is_some_and(|w| w.contains(['/', '\\']) || w.contains("..") || !w.ends_with(".wasm")) {
+        if wasm.as_deref().is_some_and(|w| w.contains(['/', '\\']) || w.contains("..") || !w.to_ascii_lowercase().ends_with(".wasm")) {
             return Err(format!("plugin.txt: command.{n}.wasm — имя файла .wasm в пакете, без папок").into());
         }
         let margin = kv.f32(&format!("command.{n}.margin")).unwrap_or(0.0).clamp(0.0, 64.0) as u32;
@@ -145,7 +145,7 @@ pub fn load(path: &Path) -> Res<Plugin> {
 pub fn from_files(files: Vec<(String, Vec<u8>)>) -> Res<Plugin> {
     let text = |name: &str| files.iter().find(|(n, _)| n == name).map(|(_, d)| String::from_utf8_lossy(d).into_owned());
     let mut p = parse(&text("plugin.txt").ok_or("в пакете нет plugin.txt")?, &text("main.lua").unwrap_or_default())?;
-    p.files = files.into_iter().filter(|(n, _)| n.ends_with(".wasm") && !n.contains('/')).take(16).collect();
+    p.files = files.into_iter().filter(|(n, _)| n.to_ascii_lowercase().ends_with(".wasm") && !n.contains('/')).take(16).collect();
     for c in &p.commands {
         if let Some(w) = &c.wasm {
             if !p.files.iter().any(|(n, _)| n == w) {
@@ -580,7 +580,7 @@ mod examples {
             let mut files = Vec::new();
             for f in std::fs::read_dir(&d).unwrap().flatten() {
                 let n = f.file_name().to_string_lossy().into_owned();
-                if n == "plugin.txt" || n == "main.lua" || n.ends_with(".wasm") {
+                if n == "plugin.txt" || n == "main.lua" || n.to_ascii_lowercase().ends_with(".wasm") {
                     files.push((n, std::fs::read(f.path()).unwrap()));
                 }
             }

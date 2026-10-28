@@ -49,6 +49,31 @@ impl<T: Copy + Default> TileMap<T> {
     pub fn set(&mut self, x: i32, y: i32, v: T) {
         self.tile_mut(key_of(x, y)).0[index_of(x, y)] = v;
     }
+
+    /// Прямоугольник `w`×`h` от (`x0`, `y0`) построчно; где плиток нет — `T::default()`. Копирует
+    /// строками плиток, а не поиском плитки на каждую точку.
+    pub fn read_rect(&self, x0: i32, y0: i32, w: usize, h: usize) -> Vec<T> {
+        let mut out = vec![T::default(); w * h];
+        if w == 0 || h == 0 {
+            return out;
+        }
+        let (x1, y1) = (x0 + w as i32, y0 + h as i32);
+        let (k0, k1) = (key_of(x0, y0), key_of(x1 - 1, y1 - 1));
+        for ky in k0.1..=k1.1 {
+            for kx in k0.0..=k1.0 {
+                let Some(t) = self.tiles.get(&(kx, ky)) else { continue };
+                let (tx, ty) = (kx * TILE, ky * TILE);
+                let (xs, xe) = (x0.max(tx), x1.min(tx + TILE));
+                for y in y0.max(ty)..y1.min(ty + TILE) {
+                    let row = ((y - ty) * TILE) as usize;
+                    let src = &t.0[row + (xs - tx) as usize..row + (xe - tx) as usize];
+                    let o = (y - y0) as usize * w + (xs - x0) as usize;
+                    out[o..o + src.len()].copy_from_slice(src);
+                }
+            }
+        }
+        out
+    }
 }
 
 pub type ColorMap = TileMap<Px>;

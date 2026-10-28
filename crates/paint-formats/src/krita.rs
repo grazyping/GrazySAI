@@ -62,7 +62,7 @@ pub fn load_bundle(path: &Path) -> Res<Vec<ImportedBrush>> {
     let dirs = resource_dirs();
     let mut out = Vec::new();
     for (name, data) in &files {
-        if !(name.starts_with("paintoppresets/") && name.ends_with(".kpp")) {
+        if !(name.starts_with("paintoppresets/") && name.to_ascii_lowercase().ends_with(".kpp")) {
             continue;
         }
         let Some(xml) = preset_xml(data) else { continue };
