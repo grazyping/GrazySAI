@@ -1701,7 +1701,7 @@ fn magic_wand_around_a_small_drawing_matches_a_plain_flood_fill() {
     for y in 100..180 {
         for x in 150..250 {
             s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-            if (s >> 61) % 3 == 0 {
+            if (s >> 61).is_multiple_of(3) {
                 px.set(x, y, from_rgba8([30, 30, 30, 255]));
             }
         }
