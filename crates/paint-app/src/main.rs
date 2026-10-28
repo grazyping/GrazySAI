@@ -1423,6 +1423,8 @@ struct PaintApp {
     disp_fallback: Option<(u32, DisplayMap)>,
     /// Экранные плитки, выброшенные ради памяти (далеко от вида): пересчитать, когда станут видны.
     disp_evicted: HashSet<(i32, i32)>,
+    /// Заголовок окна, отправленный системе последним.
+    last_title: String,
     queue: VecDeque<Key>,
     queued: HashSet<Key>,
     pen: pen::PenFeed,
@@ -1759,6 +1761,7 @@ impl PaintApp {
             disp_level: 0,
             disp_fallback: None,
             disp_evicted: HashSet::new(),
+            last_title: String::new(),
             queue: VecDeque::new(),
             queued: HashSet::new(),
             pen,
@@ -13521,7 +13524,12 @@ impl eframe::App for PaintApp {
             self.file_name(),
             if self.dirty { " (*)" } else { "" }
         );
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        // только при смене: каждая команда окну просит у egui новый кадр, и заголовок в каждом
+        // кадре гонял перерисовку без остановки (~130 кадров в секунду в простое)
+        if self.last_title != title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.last_title = title;
+        }
         egui::TopBottomPanel::top("menu").show(ctx, |ui| self.menu_bar(ui));
         egui::TopBottomPanel::bottom("status").show_animated(ctx, self.win.show[6], |ui| {
             ui.horizontal(|ui| {

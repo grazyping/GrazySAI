@@ -11,7 +11,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::SystemTime;
 
 use crate::i18n::{tr, trf};
@@ -64,7 +64,8 @@ pub struct FileViewer {
     scroll_tree: bool,
     all_files: bool,
     thumbs: HashMap<PathBuf, Thumb>,
-    queue: Arc<Mutex<VecDeque<(PathBuf, u64, u64)>>>,
+    /// Очередь миниатюр и сигнал «появилась работа или обозреватель закрыт».
+    queue: Arc<(Mutex<VecDeque<(PathBuf, u64, u64)>>, Condvar)>,
     rx: mpsc::Receiver<(PathBuf, Option<egui::ColorImage>)>,
     alive: Arc<AtomicBool>,
     name: String,
@@ -80,7 +81,11 @@ pub struct FileViewer {
 
 impl Drop for FileViewer {
     fn drop(&mut self) {
+        // под замком очереди: поток между проверкой и ожиданием держит его, сигнал не потеряется
+        let g = self.queue.0.lock().unwrap_or_else(|e| e.into_inner());
         self.alive.store(false, Ordering::Relaxed);
+        drop(g);
+        self.queue.1.notify_all();
     }
 }
 
@@ -114,7 +119,7 @@ fn load_thumb(path: &Path, mtime: u64, size: u64) -> Option<egui::ColorImage> {
 
 impl FileViewer {
     pub fn new(mode: Mode, dir: PathBuf, name: String, bookmarks: Vec<PathBuf>) -> Self {
-        let queue: Arc<Mutex<VecDeque<(PathBuf, u64, u64)>>> = Arc::default();
+        let queue: Arc<(Mutex<VecDeque<(PathBuf, u64, u64)>>, Condvar)> = Arc::default();
         let alive = Arc::new(AtomicBool::new(true));
         let (tx, rx) = mpsc::channel();
         // миниатюры считаются в фоне, в несколько потоков
@@ -122,17 +127,25 @@ impl FileViewer {
         for _ in 0..workers {
             let (q, a, tx) = (queue.clone(), alive.clone(), tx.clone());
             std::thread::spawn(move || {
-                while a.load(Ordering::Relaxed) {
-                    let job = q.lock().unwrap().pop_front();
-                    match job {
-                        Some((p, mtime, size)) => {
-                            // битый файл не должен останавливать поток: у него просто нет миниатюры
-                            let img = std::panic::catch_unwind(|| load_thumb(&p, mtime, size)).ok().flatten();
-                            if tx.send((p, img)).is_err() {
-                                break;
+                loop {
+                    // ждать работу, не опрашивая очередь
+                    let job = {
+                        let mut g = q.0.lock().unwrap_or_else(|e| e.into_inner());
+                        loop {
+                            if !a.load(Ordering::Relaxed) {
+                                return;
                             }
+                            if let Some(j) = g.pop_front() {
+                                break j;
+                            }
+                            g = q.1.wait(g).unwrap_or_else(|e| e.into_inner());
                         }
-                        None => std::thread::sleep(std::time::Duration::from_millis(30)),
+                    };
+                    let (p, mtime, size) = job;
+                    // битый файл не должен останавливать поток: у него просто нет миниатюры
+                    let img = std::panic::catch_unwind(|| load_thumb(&p, mtime, size)).ok().flatten();
+                    if tx.send((p, img)).is_err() {
+                        break;
                     }
                 }
             });
@@ -185,7 +198,7 @@ impl FileViewer {
 
     fn reload(&mut self) {
         self.items.clear();
-        self.queue.lock().unwrap().clear();
+        self.queue.0.lock().unwrap_or_else(|e| e.into_inner()).clear();
         let Ok(rd) = std::fs::read_dir(&self.dir) else {
             self.status = trf("Папка недоступна: {0}", &[&self.dir.display()]);
             return;
@@ -237,7 +250,8 @@ impl FileViewer {
             Some(_) => None,
             None => {
                 let mtime = it.modified.duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-                self.queue.lock().unwrap().push_back((it.path.clone(), mtime, it.size));
+                self.queue.0.lock().unwrap_or_else(|e| e.into_inner()).push_back((it.path.clone(), mtime, it.size));
+                self.queue.1.notify_one();
                 self.thumbs.insert(it.path.clone(), Thumb::Loading);
                 let _ = ctx;
                 None
