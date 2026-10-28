@@ -1529,3 +1529,6 @@ PNG-кадры… = Fotogramas PNG…
 сбой при разборе файла = no se pudo analizar el archivo
 файл не может заменить сам себя = un archivo no puede reemplazarse a sí mismo
 формат .{0} не читается = el formato .{0} no se puede leer
+
+# Большие холсты
+Холст {0}×{1} слишком велик для этого действия: нужно больше 2 ГБ памяти разом = El lienzo {0}×{1} es demasiado grande para esto: necesitaría más de 2 GB de memoria a la vez

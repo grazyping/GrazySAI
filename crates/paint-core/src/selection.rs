@@ -401,30 +401,46 @@ pub fn magic_wand(pixels: &ColorMap, width: u32, height: u32, x: i32, y: i32, to
     }
     out.write_rect(rx0, ry0, wu, hu, &fill);
     if outside_filled {
-        // вся пустота за рамкой: целые плитки, а у рамки — по точкам
-        let full_tile = Tile::filled(ONE as u16);
-        for ky in 0..(h + TILE - 1) / TILE {
-            for kx in 0..(w + TILE - 1) / TILE {
-                let (tx, ty) = (kx * TILE, ky * TILE);
-                let clipped = tx + TILE > w || ty + TILE > h;
-                let overlaps = tx < rx1 && ty < ry1 && tx + TILE > rx0 && ty + TILE > ry0;
-                if !overlaps && !clipped {
-                    out.tiles.insert((kx, ky), full_tile.clone());
-                    continue;
-                }
-                let t = out.tile_mut((kx, ky));
-                for yy in ty..(ty + TILE).min(h) {
-                    for xx in tx..(tx + TILE).min(w) {
-                        if !inside(xx, yy) {
-                            t.0[((yy - ty) * TILE + xx - tx) as usize] = ONE as u16;
-                        }
+        fill_outside(&mut out, w, h, (rx0, ry0, rx1, ry1));
+    }
+    out.tiles.retain(|_, t| t.0.iter().any(|&v| v != 0));
+    out
+}
+
+/// Залить всю пустоту холста `w`×`h` за рамкой `r` (x0, y0, x1, y1): целыми плитками, а у рамки и
+/// у края холста — по точкам.
+fn fill_outside(out: &mut MaskMap, w: i32, h: i32, r: (i32, i32, i32, i32)) {
+    let (rx0, ry0, rx1, ry1) = r;
+    let inside = |px: i32, py: i32| px >= rx0 && py >= ry0 && px < rx1 && py < ry1;
+    let full_tile = Tile::filled(ONE as u16);
+    for ky in 0..(h + TILE - 1) / TILE {
+        for kx in 0..(w + TILE - 1) / TILE {
+            let (tx, ty) = (kx * TILE, ky * TILE);
+            let clipped = tx + TILE > w || ty + TILE > h;
+            let overlaps = tx < rx1 && ty < ry1 && tx + TILE > rx0 && ty + TILE > ry0;
+            if !overlaps && !clipped {
+                out.tiles.insert((kx, ky), full_tile.clone());
+                continue;
+            }
+            let t = out.tile_mut((kx, ky));
+            for yy in ty..(ty + TILE).min(h) {
+                for xx in tx..(tx + TILE).min(w) {
+                    if !inside(xx, yy) {
+                        t.0[((yy - ty) * TILE + xx - tx) as usize] = ONE as u16;
                     }
                 }
             }
         }
     }
-    out.tiles.retain(|_, t| t.0.iter().any(|&v| v != 0));
-    out
+}
+
+/// Рамка плиток слоя (x0, y0, x1, y1), расширенная на `pad` и обрезанная холстом.
+fn tile_box(pixels: &ColorMap, w: i32, h: i32, pad: i32) -> Option<(i32, i32, i32, i32)> {
+    let b = pixels.tiles.keys().fold(None, |b: Option<(i32, i32, i32, i32)>, &(kx, ky)| {
+        let (x0, y0) = (kx * TILE, ky * TILE);
+        Some(b.map_or((x0, y0, x0 + TILE, y0 + TILE), |(a, c, d, e)| (a.min(x0), c.min(y0), d.max(x0 + TILE), e.max(y0 + TILE))))
+    })?;
+    Some(((b.0 - pad).max(0), (b.1 - pad).max(0), (b.2 + pad).min(w), (b.3 + pad).min(h)))
 }
 
 /// Допуск палочки и заливки, закрытие щелей (px) и запас под линию (px).
@@ -449,17 +465,46 @@ pub fn magic_wand_closing(pixels: &ColorMap, width: u32, height: u32, x: i32, y:
     if gap == 0 && expand == 0 && !omissions {
         return magic_wand(pixels, width, height, x, y, tolerance);
     }
-    let (w, h) = (width as i32, height as i32);
-    if x < 0 || y < 0 || x >= w || y >= h {
+    let (cw, ch) = (width as i32, height as i32);
+    if x < 0 || y < 0 || x >= cw || y >= ch {
         return MaskMap::new();
     }
+    // Холст до 2^29 точек считается целиком, как всегда. Больше (до 100000×100000) — в рамке
+    // плиток слоя с запасом больше всех шагов роста: за ней всё пусто, связано и не задето
+    // утолщённым контуром, так что там заливка либо везде, либо нигде.
+    let huge = u64::from(width) * u64::from(height) > crate::document::MAX_FLAT;
+    let margin = (gap + expand) as i32 + 4;
+    let (ox, oy, w, h) = if huge {
+        let Some((a, b, c, d)) = tile_box(pixels, cw, ch, margin) else { return magic_wand(pixels, width, height, x, y, tolerance) };
+        if u64::from((c - a) as u32) * u64::from((d - b) as u32) > crate::document::MAX_FLAT {
+            return MaskMap::new();
+        }
+        (a, b, c - a, d - b)
+    } else {
+        (0, 0, cw, ch)
+    };
+    let has_outside = huge && (ox > 0 || oy > 0 || ox + w < cw || oy + h < ch);
+    let seed = to_rgba8(pixels.get(x, y));
+    // семя в пустоте за рамкой — начинаем с точки запаса у края рамки (она той же пустоты)
+    let (x, y) = if x >= ox && y >= oy && x < ox + w && y < oy + h {
+        (x - ox, y - oy)
+    } else if !has_outside {
+        return MaskMap::new();
+    } else if ox > 0 {
+        (0, (y - oy).clamp(0, h - 1))
+    } else if oy > 0 {
+        ((x - ox).clamp(0, w - 1), 0)
+    } else if ox + w < cw {
+        (w - 1, (y - oy).clamp(0, h - 1))
+    } else {
+        ((x - ox).clamp(0, w - 1), h - 1)
+    };
     let n = (w * h) as usize;
     let idx = |x: i32, y: i32| (y * w + x) as usize;
-    let seed = to_rgba8(pixels.get(x, y));
     let mut fillable = vec![false; n];
     for yy in 0..h {
         for xx in 0..w {
-            let c = to_rgba8(pixels.get(xx, yy));
+            let c = to_rgba8(pixels.get(ox + xx, oy + yy));
             fillable[idx(xx, yy)] = (0..4).all(|i| (c[i] as i32 - seed[i] as i32).abs() <= tolerance as i32);
         }
     }
@@ -509,7 +554,7 @@ pub fn magic_wand_closing(pixels: &ColorMap, width: u32, height: u32, x: i32, y:
     }
     // 3½. мелкие пропуски у кончиков: полупрозрачное рядом с залитым, не дальше 2 px
     if omissions {
-        let light: Vec<bool> = (0..n).map(|i| to_rgba8(pixels.get(i as i32 % w, i as i32 / w))[3] <= 204).collect();
+        let light: Vec<bool> = (0..n).map(|i| to_rgba8(pixels.get(ox + i as i32 % w, oy + i as i32 / w))[3] <= 204).collect();
         grow(&mut region, 2, &|i| light[i]);
     }
     // 4. запас под линию
@@ -517,7 +562,14 @@ pub fn magic_wand_closing(pixels: &ColorMap, width: u32, height: u32, x: i32, y:
     let mut out = MaskMap::new();
     for (i, &r) in region.iter().enumerate() {
         if r {
-            out.set(i as i32 % w, i as i32 / w, ONE as u16);
+            out.set(ox + i as i32 % w, oy + i as i32 / w, ONE as u16);
+        }
+    }
+    // заливка дошла до края рамки, за которым пустота холста, — залита и вся она
+    if has_outside {
+        let edge = |xx: i32, yy: i32| region[idx(xx, yy)] && ((xx == 0 && ox > 0) || (yy == 0 && oy > 0) || (xx == w - 1 && ox + w < cw) || (yy == h - 1 && oy + h < ch));
+        if (0..w).any(|xx| edge(xx, 0) || edge(xx, h - 1)) || (0..h).any(|yy| edge(0, yy) || edge(w - 1, yy)) {
+            fill_outside(&mut out, cw, ch, (ox, oy, ox + w, oy + h));
         }
     }
     out

@@ -62,6 +62,10 @@ fn with_baked_styles(doc: &Document) -> Option<Document> {
 /// Записать рисунок по расширению: форматы со слоями — со слоями, остальные — сведённым.
 pub fn save(doc: &Document, path: &Path, psd: crate::psd::SaveOptions) -> Res<()> {
     let e = ext(path);
+    // всем форматам, кроме .sai2, нужна вся сведённая картинка разом
+    if e != "sai2" && !doc.fits_flat() {
+        return Err(format!("холст {}×{} слишком велик для .{e} — сохраните его в .sai2", doc.width, doc.height).into());
+    }
     let baked = if matches!(e.as_str(), "psd" | "psb" | "ora") { with_baked_styles(doc) } else { None };
     let doc = baked.as_ref().unwrap_or(doc);
     match e.as_str() {

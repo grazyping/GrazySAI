@@ -177,9 +177,10 @@ pub fn read_info(path: &Path) -> io::Result<Sai2Info> {
         let next = offsets.iter().copied().find(|&o| o > e.offset).unwrap_or(size);
         e.len = next - e.offset;
     }
-    // размер холста: испорченный заголовок не должен заставлять выделять гигабайты
+    // размер холста — до 100000×100000, как у SAI 2: слои хранятся разреженно, а целиком
+    // сведённую картинку читают только миниатюры (у больших холстов там предел, см. decode_intg)
     let (w, h) = (u32_at(&head, 0x14)? as u64, u32_at(&head, 0x18)? as u64);
-    if !(1..=100_000).contains(&w) || !(1..=100_000).contains(&h) || w * h > 1 << 29 {
+    if !(1..=100_000).contains(&w) || !(1..=100_000).contains(&h) {
         return Err(bad("неверный размер холста"));
     }
     let mut layers = Vec::new();

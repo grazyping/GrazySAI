@@ -1739,3 +1739,31 @@ fn magic_wand_around_a_small_drawing_matches_a_plain_flood_fill() {
         assert!(m.tiles.keys().all(|&(kx, ky)| kx >= 0 && ky >= 0 && kx * 64 < w as i32 && ky * 64 < h as i32));
     }
 }
+
+#[test]
+fn closing_fill_on_a_huge_canvas_matches_the_whole_canvas_result() {
+    // кольцо с щелью 4 px и линия, точки контура — в середине; холст 2000² считается целиком,
+    // 30000² (больше 2^29 точек) — в рамке рисунка
+    let mut px = paint_core::tile::ColorMap::new();
+    for y in 900..1100 {
+        for x in 900..1100 {
+            let ring = (x <= 903 || x >= 1096 || y <= 903 || y >= 1096) && !((1000..1004).contains(&y) && x <= 903);
+            if ring || (x == 1000 && y > 950 && y < 1050) {
+                px.set(x, y, from_rgba8([0, 0, 0, 255]));
+            }
+        }
+    }
+    let o = paint_core::selection::WandOptions { tolerance: 10, gap: 3, expand: 2, omissions: true };
+    for (sx, sy) in [(950, 950), (50, 50), (1500, 1500)] {
+        let small = paint_core::selection::magic_wand_closing(&px, 2000, 2000, sx, sy, o);
+        let big = paint_core::selection::magic_wand_closing(&px, 30000, 30000, sx, sy, o);
+        for y in (0..2000).step_by(3) {
+            for x in (0..2000).step_by(3) {
+                assert_eq!(small.get(x, y), big.get(x, y), "({x}, {y}), семя ({sx}, {sy})");
+            }
+        }
+        let leaks = small.get(0, 0) != 0;
+        assert_eq!(big.get(25000, 25000) != 0, leaks, "пустота вдали, семя ({sx}, {sy})");
+        assert_eq!(big.get(29999, 0) != 0, leaks);
+    }
+}

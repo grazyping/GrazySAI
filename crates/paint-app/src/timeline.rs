@@ -303,6 +303,9 @@ impl PaintApp {
 
     pub(crate) fn run_anim_export(&mut self, kind: u8, path: PathBuf) {
         use paint_formats::anim_export as ex;
+        if self.too_big_for_whole() {
+            return;
+        }
         let t = self.doc.timeline.clone();
         let (w, h) = (self.doc.width, self.doc.height);
         let range = t.start..=t.end.max(t.start);

@@ -1710,7 +1710,8 @@ impl Document {
         let cx = Rcx { frame: Some(frame), ..self.rcx() };
         let (w, h) = (self.width as i32, self.height as i32);
         let bg = self.background_f32();
-        let mut out = vec![0u8; (w * h * 4) as usize];
+        // размер — в usize: w·h·4 в i32 переполнялся уже на холсте 23170×23170
+        let mut out = vec![0u8; w as usize * h as usize * 4];
         for ty in 0..(h + TILE - 1) / TILE {
             for tx in 0..(w + TILE - 1) / TILE {
                 let mut buf = vec![bg; TILE_LEN];
@@ -1725,7 +1726,7 @@ impl Document {
                         if px >= w {
                             break;
                         }
-                        let o = ((py * w + px) * 4) as usize;
+                        let o = (py as usize * w as usize + px as usize) * 4;
                         out[o..o + 4].copy_from_slice(&to_rgba8(from_f32(buf[(y * TILE + x) as usize])));
                     }
                 }
@@ -1763,6 +1764,13 @@ impl Document {
         out
     }
 
+    /// Помещается ли сведение всего холста в память одним буфером (до 2^29 точек, 2 ГБ RGBA).
+    /// Больше — у холстов до 100000×100000: такие пишутся в `.sai2` полосами, а действия, которым
+    /// нужна вся картинка сразу (PSD, PNG, раскраска по контуру…), отказываются с сообщением.
+    pub fn fits_flat(&self) -> bool {
+        u64::from(self.width) * u64::from(self.height) <= MAX_FLAT
+    }
+
     /// Сводит все видимые слои в RGBA по 8 бит на канал (без предумножения).
     pub fn flatten(&self) -> Vec<u8> {
         self.flatten_on(self.background_f32())
@@ -1787,12 +1795,27 @@ impl Document {
         self.flatten_into(bg, |c| to_rgba8(from_f32(c)))
     }
 
+    /// Полоса строк `y0..y1` сведения (RGBA по 8 бит без предумножения): с фоном холста или без.
+    /// `y0` — кратно 64. Для больших холстов: сохранение пишет сведённую картинку полосами, а не
+    /// одним буфером (у 100000×100000 он был бы 40 ГБ).
+    pub fn flatten_rows(&self, y0: u32, y1: u32, with_background: bool) -> Vec<u8> {
+        let bg = if with_background { self.background_f32() } else { [0.0; 4] };
+        self.flatten_rows_into(bg, |c| to_rgba8(from_f32(c)), y0 as i32, y1.min(self.height) as i32)
+    }
+
     fn flatten_into<T: Copy + Default + Send>(&self, bg: [f32; 4], conv: impl Fn([f32; 4]) -> [T; 4] + Sync) -> Vec<T> {
-        let (w, h) = (self.width as i32, self.height as i32);
-        let mut out = vec![T::default(); (w * h * 4) as usize];
+        self.flatten_rows_into(bg, conv, 0, self.height as i32)
+    }
+
+    fn flatten_rows_into<T: Copy + Default + Send>(&self, bg: [f32; 4], conv: impl Fn([f32; 4]) -> [T; 4] + Sync, y0: i32, y1: i32) -> Vec<T> {
+        debug_assert!(y0 % TILE == 0);
+        let w = self.width as i32;
+        let h = (y1 - y0).max(0);
+        // размеры — в usize: w·h·4 в i32 переполнялся уже на холсте 23170×23170
+        let mut out = vec![T::default(); w as usize * h as usize * 4];
         let rows = (h + TILE - 1) / TILE;
         let cols = (w + TILE - 1) / TILE;
-        let row_bytes = (w * 4 * TILE) as usize;
+        let row_bytes = w as usize * 4 * TILE as usize;
         // полосы по высоте плитки — каждая в своём потоке
         let threads = crate::threads();
         let next = std::sync::atomic::AtomicI32::new(0);
@@ -1809,7 +1832,7 @@ impl Document {
                         let mut strip = strips[ty as usize].lock().unwrap();
                         for tx in 0..cols {
                             buf.fill(bg);
-                            render_group(&self.layers, (tx, ty), &mut buf, &self.rcx());
+                            render_group(&self.layers, (tx, y0 / TILE + ty), &mut buf, &self.rcx());
                             for y in 0..TILE {
                                 if ty * TILE + y >= h {
                                     break;
@@ -1820,7 +1843,7 @@ impl Document {
                                         break;
                                     }
                                     let c = conv(buf[(y * TILE + x) as usize]);
-                                    let o = ((y * w + px) * 4) as usize;
+                                    let o = (y as usize * w as usize + px as usize) * 4;
                                     strip[o..o + 4].copy_from_slice(&c);
                                 }
                             }
@@ -1835,6 +1858,9 @@ impl Document {
 }
 
 type Buf = Vec<[f32; 4]>;
+
+/// Наибольшая площадь холста, которую сводят одним буфером (см. `fits_flat`).
+pub const MAX_FLAT: u64 = 1 << 29;
 
 /// Как сводить: размер холста и цвет эффектов (для каймы и бумаги), кадр таймлайна (у папок
 /// анимации — только его cel) и Onion skin (только на экране).

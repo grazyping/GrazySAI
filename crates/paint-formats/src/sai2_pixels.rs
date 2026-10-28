@@ -253,6 +253,10 @@ pub fn decode_intg(data: &[u8], width: u32, height: u32) -> io::Result<Vec<u8>> 
 }
 
 fn decode_intg_with(data: &[u8], start: usize, w: usize, h: usize, planes: usize) -> io::Result<Vec<u8>> {
+    // целиком — не больше 2^29 точек (2 ГБ); у холста 100000×100000 это было бы 40 ГБ
+    if w * h > 1 << 29 {
+        return Err(bad("сведённое изображение слишком велико, чтобы прочитать его целиком"));
+    }
     let (bw, bh) = (w.div_ceil(256), h.div_ceil(256));
     // у каждого блока 256×256 в данных есть хотя бы метки плоскостей — иначе размер ложный
     if bw * bh * planes * 2 > data.len() {

@@ -2198,12 +2198,12 @@ app.open_canvas_dialog(d == "resolution")
                     let mut it = v.rsplitn(3, '|');
                     let h: u32 = it.next()?.parse().ok()?;
                     let w: u32 = it.next()?.parse().ok()?;
-                    Some((it.next()?.to_string(), w.clamp(1, 16000), h.clamp(1, 16000)))
+                    Some((it.next()?.to_string(), w.clamp(1, 100_000), h.clamp(1, 100_000)))
                 })
                 .collect();
         }
         if let (Some(w), Some(h)) = (s.f32("new_width"), s.f32("new_height")) {
-            self.new_size = [(w as u32).clamp(1, 16000), (h as u32).clamp(1, 16000)];
+            self.new_size = [(w as u32).clamp(1, 100_000), (h as u32).clamp(1, 100_000)];
         }
         if let (Some(c), Some(r)) = (s.f32("grid_cols"), s.f32("grid_rows")) {
             self.grid_div = [c.clamp(1.0, 32.0) as u8, r.clamp(1.0, 32.0) as u8];
@@ -3722,7 +3722,7 @@ app.open_canvas_dialog(d == "resolution")
                     }
                 });
             }
-            if self.watermark_preview.is_none() || changed {
+            if (self.watermark_preview.is_none() || changed) && self.doc.fits_flat() {
                 // предпросмотр: рисунок, уменьшенный до 360 px по большей стороне
                 let (w, h) = (self.doc.width, self.doc.height);
                 let k = (360.0 / w.max(h) as f32).min(1.0);
@@ -5232,6 +5232,7 @@ app.open_canvas_dialog(d == "resolution")
     fn export_to(&mut self, path: PathBuf, ext: &str) {
         let result: Result<(), Box<dyn std::error::Error>> = match ext {
             "psd" | "psb" | "ora" => paint_formats::convert::save(&self.doc, &path, paint_formats::psd::SaveOptions { big: false, deep: self.opts.psd16, exact: self.opts.psd_exact }),
+            _ if !self.doc.fits_flat() => Err(trf("Холст {0}×{1} слишком велик для этого действия: нужно больше 2 ГБ памяти разом", &[&self.doc.width, &self.doc.height]).into()),
             _ => {
                 let mut img = self.doc.flatten();
                 if self.watermark_on {
@@ -6069,7 +6070,20 @@ app.open_canvas_dialog(d == "resolution")
     /// Раскраска по контуру (`paint_core::colorize`): подсказки — цветные пятна текущего слоя,
     /// контур — сведение остальных видимых слоёв. Результат — новый слой «Умножение» под текущим
     /// (одна запись истории); слой подсказок не меняется.
+    /// Холст больше, чем сводится одним буфером (2^29 точек): действие, которому нужна вся
+    /// картинка сразу, вместо падения пишет об этом в строке состояния.
+    pub(crate) fn too_big_for_whole(&mut self) -> bool {
+        if self.doc.fits_flat() {
+            return false;
+        }
+        self.status = trf("Холст {0}×{1} слишком велик для этого действия: нужно больше 2 ГБ памяти разом", &[&self.doc.width, &self.doc.height]);
+        true
+    }
+
     fn colorize_by_lines(&mut self) {
+        if self.too_big_for_whole() {
+            return;
+        }
         let Some(hints) = self.doc.layer(&self.selected).filter(|l| l.children.is_none()) else { return };
         let (w, h) = (self.doc.width as usize, self.doc.height as usize);
         let mut hint_rgba = vec![0u8; w * h * 4];
@@ -11801,10 +11815,10 @@ impl PaintApp {
                     let before = d.size;
                     egui::Grid::new("canvasdlg").num_columns(2).show(ui, |ui| {
                         ui.label(tr("Ширина:"));
-                        ui.add(egui::DragValue::new(&mut d.size[0]).range(1..=16000).suffix(" px"));
+                        ui.add(egui::DragValue::new(&mut d.size[0]).range(1..=100_000).suffix(" px"));
                         ui.end_row();
                         ui.label(tr("Высота:"));
-                        ui.add(egui::DragValue::new(&mut d.size[1]).range(1..=16000).suffix(" px"));
+                        ui.add(egui::DragValue::new(&mut d.size[1]).range(1..=100_000).suffix(" px"));
                         ui.end_row();
                         ui.label("");
                         ui.checkbox(&mut d.keep_ratio, tr("Сохранять пропорции"));
@@ -11871,7 +11885,13 @@ impl PaintApp {
         if let Some((resample, [nw, nh], mode, anchor)) = apply {
             self.canvas_dialog = None;
             if (nw, nh) != (self.doc.width, self.doc.height) {
-                if resample {
+                // пересэмплирование идёт целым буфером старого и нового размера
+                let fits = u64::from(nw) * u64::from(nh) <= paint_core::document::MAX_FLAT;
+                if resample && (!fits || self.too_big_for_whole()) {
+                    if !fits {
+                        self.status = trf("Холст {0}×{1} слишком велик для этого действия: нужно больше 2 ГБ памяти разом", &[&nw, &nh]);
+                    }
+                } else if resample {
                     self.canvas_op(|d| d.resample_canvas(nw, nh, mode));
                 } else {
                     self.canvas_op(|d| d.resize_canvas(nw, nh, anchor));
@@ -11941,14 +11961,14 @@ impl PaintApp {
                         ui.label(tr("Ширина:"));
                         ui.add(
                             egui::DragValue::new(&mut self.new_size[0])
-                                .range(1..=16000)
+                                .range(1..=100_000)
                                 .suffix(" px"),
                         );
                         ui.end_row();
                         ui.label(tr("Высота:"));
                         ui.add(
                             egui::DragValue::new(&mut self.new_size[1])
-                                .range(1..=16000)
+                                .range(1..=100_000)
                                 .suffix(" px"),
                         );
                         ui.end_row();

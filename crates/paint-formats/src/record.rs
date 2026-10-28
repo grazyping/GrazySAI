@@ -686,6 +686,10 @@ fn encode(reader: &mut Reader, pick: &HashSet<usize>, hold_frames: u32, fps: u32
                 let mut doc = Document::new(cw, ch);
                 doc.background = (bg[3] == 255).then_some([bg[0], bg[1], bg[2]]);
                 doc.layers = build(&nodes, &mut state, &opts.exclude);
+                if !doc.fits_flat() {
+                    give_back(std::mem::take(&mut doc.layers), &mut state);
+                    return Err(format!("холст {cw}×{ch} слишком велик для видео процесса").into());
+                }
                 let full = doc.flatten();
                 give_back(std::mem::take(&mut doc.layers), &mut state);
                 let (fw, fh, mut img) = shrink(&full, cw, ch, opts.max_side.clamp(64, 8192));

@@ -47,7 +47,7 @@ pub fn resample_layers(layers: &mut [Layer], w: u32, h: u32, nw: u32, nh: u32, m
             continue;
         }
         let k = 1.0 / ONE as f32;
-        let mut buf = vec![[0f32; 4]; (w * h) as usize];
+        let mut buf = vec![[0f32; 4]; w as usize * h as usize];
         for (i, v) in buf.iter_mut().enumerate() {
             let p = l.pixels.get(i as i32 % w as i32, i as i32 / w as i32);
             *v = p.map(|c| c as f32 * k);
@@ -70,7 +70,7 @@ fn resample_mask(hide: &MaskMap, w: u32, h: u32, nw: u32, nh: u32, mode: Mode) -
     if hide.tiles.is_empty() {
         return out;
     }
-    let mut buf = vec![[0f32; 4]; (w * h) as usize];
+    let mut buf = vec![[0f32; 4]; w as usize * h as usize];
     for (i, v) in buf.iter_mut().enumerate() {
         v[3] = hide.get(i as i32 % w as i32, i as i32 / w as i32) as f32 / 16384.0;
     }

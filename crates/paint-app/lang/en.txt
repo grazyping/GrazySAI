@@ -1530,3 +1530,6 @@ PNG-кадры… = PNG frames…
 сбой при разборе файла = the file could not be parsed
 файл не может заменить сам себя = a file can't replace itself
 формат .{0} не читается = the .{0} format can't be read
+
+# Большие холсты
+Холст {0}×{1} слишком велик для этого действия: нужно больше 2 ГБ памяти разом = The {0}×{1} canvas is too large for this: it needs more than 2 GB of memory at once
