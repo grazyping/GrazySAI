@@ -1329,7 +1329,7 @@ struct PaintApp {
     dock_saved: String,
     /// Места плавающих окон стыковки: (номер поверхности, x, y, ширина, высота).
     dock_windows: Vec<(usize, [f32; 4])>,
-    /// Панели рисуются с подменённым состоянием: сохранение настроек — отложить.
+    /// Стыкуемые панели рисуются, а дерево вкладок вынуто: сохранение настроек — отложить.
     panels_busy: std::cell::Cell<bool>,
     save_later: std::cell::Cell<bool>,
     /// Окно «Марионетка» и булавки на холсте.
@@ -2335,8 +2335,7 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn save_settings(&self) {
-        // пока панели рисуются во вкладках или отделённых окнах, дерево вкладок вынуто, а
-        // `win.show` подменён — записать после, см. `finish_panels`
+        // пока стыкуемые панели рисуются, дерево вкладок вынуто — записать после, см. `finish_panels`
         if self.panels_busy.get() {
             self.save_later.set(true);
             return;
@@ -8273,12 +8272,11 @@ app.open_canvas_dialog(d == "resolution")
     /// Отделённые панели (Separate User Interface Panel в SAI) — каждая в своём окне системы;
     /// закрыть окно — панель возвращается на место.
     fn separate_panels(&mut self, ctx: &egui::Context) {
-        self.panels_busy.set(true);
         self.separate_panels_inner(ctx);
-        self.finish_panels();
     }
 
-    /// Конец показа панелей с подменённым состоянием: отложенное сохранение настроек.
+    /// Конец показа стыкуемых панелей (дерево вкладок на это время вынуто): отложенное
+    /// сохранение настроек.
     fn finish_panels(&mut self) {
         self.panels_busy.set(false);
         if self.save_later.take() {
@@ -8295,19 +8293,15 @@ app.open_canvas_dialog(d == "resolution")
             let title = format!("{} — GrazySAI", tr(SHOW_NAMES[i]));
             let id = egui::ViewportId::from_hash_of(("panel", i));
             let builder = egui::ViewportBuilder::default().with_title(title.clone()).with_inner_size(size).with_min_inner_size([120.0, 80.0]);
-            let full = self.win.show;
             let mut closed = false;
             ctx.show_viewport_immediate(id, builder, |ctx, class| {
                 // в окне — только эта панель
-                for (k, v) in self.win.show.iter_mut().take(4).enumerate() {
-                    *v = k == i;
-                }
                 let body = |app: &mut Self, ui: &mut egui::Ui| {
                     egui::ScrollArea::vertical().id_salt(("panel_scroll", i)).show(ui, |ui| {
                         if i >= 2 {
-                            app.left_panel(ui);
+                            app.left_panel(ui, i == 2, i == 3);
                         } else {
-                            app.right_panel(ui);
+                            app.right_panel(ui, i == 0, i == 1);
                         }
                     });
                 };
@@ -8320,7 +8314,6 @@ app.open_canvas_dialog(d == "resolution")
                     egui::CentralPanel::default().show(ctx, |ui| body(self, ui));
                     closed = ctx.input(|inp| inp.viewport().close_requested());
                 }
-                self.win.show = full;
             });
             if closed {
                 self.win.separate[i] = false;
@@ -8329,8 +8322,10 @@ app.open_canvas_dialog(d == "resolution")
         }
     }
 
-    fn left_panel(&mut self, ui: &mut egui::Ui) {
-        if self.win.show[2] {
+    /// Колонка цвета и инструментов: `color` и `tools` — какие её части рисовать (в отделённом
+    /// окне и во вкладке — одна).
+    fn left_panel(&mut self, ui: &mut egui::Ui, color: bool, tools: bool) {
+        if color {
         // Переключатели панели цвета, как у образца: круг, ползунки RGB, ползунки HSV — каждый
         // показывается или прячется отдельно.
         ui.horizontal(|ui| {
@@ -8472,7 +8467,7 @@ app.open_canvas_dialog(d == "resolution")
         }
         ui.add_space(4.0);
         }
-        if !self.win.show[3] {
+        if !tools {
             return;
         }
         // вкладки групп — над общими инструментами, как в SAI 2
@@ -9725,9 +9720,10 @@ app.open_canvas_dialog(d == "resolution")
         }
     }
 
-    fn right_panel(&mut self, ui: &mut egui::Ui) {
+    /// Колонка навигатора и слоёв: `nav` и `layers` — какие её части рисовать.
+    fn right_panel(&mut self, ui: &mut egui::Ui, nav: bool, layers: bool) {
         let mut changed = false;
-        let show_nav = self.win.show[0];
+        let show_nav = nav;
         if show_nav {
             self.navigator(ui);
         }
@@ -9785,7 +9781,7 @@ app.open_canvas_dialog(d == "resolution")
         });
         ui.add_space(3.0);
         }
-        if !self.win.show[1] {
+        if !layers {
             return;
         }
         if sai_ui::section(ui, "sec_effect", tr("Эффекты слоя")) {
@@ -13593,20 +13589,18 @@ impl eframe::App for PaintApp {
             for (v, sep) in sh.iter_mut().zip(self.win.separate) {
                 *v &= !sep;
             }
-            self.win.show = sh;
             // как в SAI: навигатор и слои — с краю окна, цвет и инструменты — ближе к холсту
             if docked {
                 // колонки — вкладками в общей области, см. dock_area ниже
             } else if sh[0] || sh[1] {
-                side(self.win.layers_right, "layers").exact_width(186.0).resizable(false).show(ctx, |ui| self.right_panel(ui));
+                side(self.win.layers_right, "layers").exact_width(186.0).resizable(false).show(ctx, |ui| self.right_panel(ui, sh[0], sh[1]));
             }
             if !docked && (sh[2] || sh[3]) {
                 side(self.win.tools_right, "tools").exact_width(236.0).resizable(false).show(ctx, |ui| {
                     // настройки кисти бывают выше окна: прокрутка, как у отделённой панели
-                    egui::ScrollArea::vertical().id_salt("tools_scroll").auto_shrink([false, true]).show(ui, |ui| self.left_panel(ui));
+                    egui::ScrollArea::vertical().id_salt("tools_scroll").auto_shrink([false, true]).show(ui, |ui| self.left_panel(ui, sh[2], sh[3]));
                 });
             }
-            self.win.show[..4].copy_from_slice(&full[..4]);
             if sh[4] {
                 egui::TopBottomPanel::top("quick").show(ctx, |ui| self.quick_bar(ui));
             }

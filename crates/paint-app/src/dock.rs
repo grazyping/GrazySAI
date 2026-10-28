@@ -120,19 +120,14 @@ impl TabViewer for Viewer<'_> {
             }
             return;
         };
-        // во вкладке — только эта панель (как у отделённой панели)
-        let full = self.app.win.show;
-        for (k, v) in self.app.win.show.iter_mut().take(4).enumerate() {
-            *v = k == i;
-        }
+        // во вкладке — только эта панель (как у отделённой панели);
         // виджеты SAI — постоянной ширины: в узкой вкладке прокрутка, а не наезд
         ui.set_min_width(if i >= 2 { 220.0 } else { 170.0 });
         if i >= 2 {
-            self.app.left_panel(ui);
+            self.app.left_panel(ui, i == 2, i == 3);
         } else {
-            self.app.right_panel(ui);
+            self.app.right_panel(ui, i == 0, i == 1);
         }
-        self.app.win.show = full;
     }
 
     fn closeable(&mut self, tab: &mut Tab) -> bool {
