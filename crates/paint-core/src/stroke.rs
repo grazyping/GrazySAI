@@ -311,7 +311,7 @@ use crate::mix::{Mixer, Sample};
 use crate::paper::PaperTexture;
 use std::sync::Arc;
 use crate::pixel::{Px, ONE};
-use crate::tile::{key_of, ColorMap, Key, MaskMap, Tile, TILE};
+use crate::tile::{index_of, key_of, ColorMap, Key, MaskMap, Tile, TILE};
 use std::collections::{HashMap, HashSet};
 
 /// Форма «пятно» и текстура кисти, как в SAI (docs/29-brush-form-texture.md). Обе текстуры
@@ -1265,11 +1265,10 @@ impl Stroke {
             let r = dab.outer().ceil() as i32 + 1;
             let n = (2 * r + 1) as usize;
             let (cx, cy) = (d.x.floor() as i32, d.y.floor() as i32);
-            let get = |p: &ColorMap, x: i32, y: i32| -> [f32; 4] { p.get(x, y).map(|v| v as f32) };
             // запас — заново, если кисть только началась или размер сменился
             let fresh = self.smudge.as_ref().is_none_or(|s| s.0 != r);
             if fresh {
-                let carry = (0..n * n).map(|j| get(pixels, cx + j as i32 % n as i32 - r, cy + j as i32 / n as i32 - r)).collect();
+                let carry = pixels.read_rect(cx - r, cy - r, n, n).into_iter().map(|p| p.map(|v| v as f32)).collect();
                 self.smudge = Some((r, carry, (d.x, d.y)));
                 continue;
             }
@@ -1279,7 +1278,13 @@ impl Stroke {
             // снимок области под отпечатком (с запасом на сдвиг)
             let pad = r + (mx.abs().max(my.abs()).ceil() as i32) + 2;
             let (sx0, sy0, sn) = (cx - pad, cy - pad, (2 * pad + 1) as usize);
-            let snap: Vec<[f32; 4]> = (0..sn * sn).map(|j| get(pixels, sx0 + (j % sn) as i32, sy0 + (j / sn) as i32)).collect();
+            // снимок и доля выделения — плотными буферами, прямоугольником плиток, а не поиском
+            // плитки на каждую точку; прежнее значение точки — из того же снимка (каждая точка
+            // отпечатка пишется один раз, до записи она равна снимку)
+            let raw = pixels.read_rect(sx0, sy0, sn, sn);
+            let snap: Vec<[f32; 4]> = raw.iter().map(|p| p.map(|v| v as f32)).collect();
+            let sel_rect: Option<Vec<u16>> = (!sel.mask.tiles.is_empty()).then(|| sel.mask.read_rect(sx0, sy0, sn, sn));
+            let mut writes: Vec<(i32, i32, Px)> = Vec::new();
             let sample = |x: f32, y: f32| -> [f32; 4] {
                 let (fx, fy) = (x - 0.5, y - 0.5);
                 let (x0, y0) = (fx.floor(), fy.floor());
@@ -1300,7 +1305,8 @@ impl Stroke {
                 if cov <= 0.0 {
                     continue;
                 }
-                let s = sel.amount(x, y) as f32 / one;
+                let si = (y - sy0) as usize * sn + (x - sx0) as usize;
+                let s = sel_rect.as_ref().map_or(one, |m| m[si] as f32) / one;
                 if s <= 0.0 {
                     continue;
                 }
@@ -1318,7 +1324,7 @@ impl Stroke {
                         px[c] += (brush[c] - px[c]) * mc;
                     }
                 }
-                let old = pixels.get(x, y);
+                let old = raw[si];
                 let mut out: Px = std::array::from_fn(|c| px[c].round().clamp(0.0, one) as u16);
                 out[3] = out[3].max(out[0]).max(out[1]).max(out[2]);
                 if preserve_opacity {
@@ -1333,10 +1339,19 @@ impl Stroke {
                 if out == old {
                     continue;
                 }
-                let key = key_of(x, y);
-                originals.entry(key).or_insert_with(|| pixels.tiles.get(&key).cloned());
-                pixels.set(x, y, out);
-                changed.insert(key);
+                writes.push((x, y, out));
+            }
+            // запись — после прохода (точки разные, порядок не важен); по плитке за раз
+            writes.sort_unstable_by_key(|&(x, y, _)| key_of(x, y));
+            for group in writes.chunk_by(|a, b| key_of(a.0, a.1) == key_of(b.0, b.1)) {
+                let key = key_of(group[0].0, group[0].1);
+                if changed.insert(key) {
+                    originals.entry(key).or_insert_with(|| pixels.tiles.get(&key).cloned());
+                }
+                let tile = pixels.tile_mut(key);
+                for &(x, y, out) in group {
+                    tile.0[index_of(x, y)] = out;
+                }
             }
         }
         let keys: Vec<Key> = changed.into_iter().collect();
