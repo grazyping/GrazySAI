@@ -490,6 +490,23 @@ fn dense(src: &ColorMap, w: u32, h: u32, pad: i32) -> Option<Dense> {
     Some((x0, y0, bw, bh, buf))
 }
 
+/// Плотный результат `w`×`h`: точка `i` (строками) — `f(i)`, строки по потокам.
+fn par_rows<T: Copy + Default + Send>(w: usize, h: usize, f: impl Fn(usize) -> T + Sync) -> Vec<T> {
+    let mut out = vec![T::default(); w * h];
+    let rows = h.div_ceil(crate::threads()).max(1);
+    std::thread::scope(|scope| {
+        for (n, chunk) in out.chunks_mut((rows * w).max(1)).enumerate() {
+            let f = &f;
+            scope.spawn(move || {
+                for (k, o) in chunk.iter_mut().enumerate() {
+                    *o = f(n * rows * w + k);
+                }
+            });
+        }
+    });
+    out
+}
+
 /// Записать плотный результат обратно с долей выделения — по плиткам, параллельно.
 fn write_back(src: &ColorMap, x0: i32, y0: i32, bw: usize, res: &[[f64; 4]], sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
     let mut out = src.clone();
@@ -541,13 +558,11 @@ fn write_back(src: &ColorMap, x0: i32, y0: i32, bw: usize, res: &[[f64; 4]], sel
 pub fn sharpen(src: &ColorMap, w: u32, h: u32, s: f64, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
     let Some((x0, y0, bw, bh, buf)) = dense(src, w, h, 1) else { return src.clone() };
     let at = |x: isize, y: isize| buf[y.clamp(0, bh as isize - 1) as usize * bw + x.clamp(0, bw as isize - 1) as usize];
-    let res: Vec<[f64; 4]> = (0..bw * bh)
-        .map(|i| {
+    let res: Vec<[f64; 4]> = par_rows(bw, bh, |i| {
             let (x, y) = ((i % bw) as isize, (i / bw) as isize);
             let (c, l, r, u, d) = (at(x, y), at(x - 1, y), at(x + 1, y), at(x, y - 1), at(x, y + 1));
             [0, 1, 2, 3].map(|k| c[k] * (1.0 + 4.0 * s) - s * (l[k] + r[k] + u[k] + d[k]))
-        })
-        .collect();
+        });
     write_back(src, x0, y0, bw, &res, sel)
 }
 
@@ -559,8 +574,7 @@ pub fn unsharp_mask(src: &ColorMap, w: u32, h: u32, radius: f64, amount: f64, th
     let Some((x0, y0, bw, bh, buf)) = dense(src, w, h, pad) else { return src.clone() };
     let k = 1.0 / ONE as f64;
     let t = threshold as f64 / 255.0;
-    let res: Vec<[f64; 4]> = (0..bw * bh)
-        .map(|i| {
+    let res: Vec<[f64; 4]> = par_rows(bw, bh, |i| {
             let (x, y) = (x0 + (i % bw) as i32, y0 + (i / bw) as i32);
             let o = buf[i];
             let b = blurred.get(x, y).map(|c| c as f64 * k);
@@ -570,8 +584,7 @@ pub fn unsharp_mask(src: &ColorMap, w: u32, h: u32, radius: f64, amount: f64, th
             } else {
                 [0, 1, 2, 3].map(|c| o[c] + amount * diff[c])
             }
-        })
-        .collect();
+        });
     let _ = bh;
     write_back(src, x0, y0, bw, &res, sel)
 }
@@ -1277,8 +1290,7 @@ pub fn box_blur(src: &ColorMap, w: u32, h: u32, r: i32, sel: &(dyn Fn(i32, i32) 
 pub fn smoothing(src: &ColorMap, w: u32, h: u32, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
     let Some((x0, y0, bw, bh, buf)) = dense(src, w, h, 1) else { return src.clone() };
     let at = |x: isize, y: isize| buf[y.clamp(0, bh as isize - 1) as usize * bw + x.clamp(0, bw as isize - 1) as usize];
-    let res: Vec<[f64; 4]> = (0..bw * bh)
-        .map(|i| {
+    let res: Vec<[f64; 4]> = par_rows(bw, bh, |i| {
             let (x, y) = ((i % bw) as isize, (i / bw) as isize);
             let c = at(x, y);
             let edge = [(-1, 0), (1, 0), (0, -1), (0, 1)].iter().any(|&(dx, dy)| {
@@ -1298,8 +1310,7 @@ pub fn smoothing(src: &ColorMap, w: u32, h: u32, sel: &(dyn Fn(i32, i32) -> u32 
                 }
             }
             acc.map(|v| v / 16.0)
-        })
-        .collect();
+        });
     write_back(src, x0, y0, bw, &res, sel)
 }
 
@@ -1311,13 +1322,14 @@ pub fn lens_blur(src: &ColorMap, w: u32, h: u32, radius: f64, sides: u32, highli
     let Some((x0, y0, bw, bh, buf)) = dense(src, w, h, r) else { return src.clone() };
     // блики: значения поднимаются в степень перед усреднением и возвращаются после
     let gamma = 1.0 + 2.0 * highlight.clamp(0.0, 1.0);
-    let lin: Vec<[f64; 4]> = buf.iter().map(|p| {
+    let lin: Vec<[f64; 4]> = par_rows(bw, bh, |i| {
+        let p = buf[i];
         if p[3] <= 0.0 {
             return [0.0; 4];
         }
         let f = |c: f64| (c / p[3]).clamp(0.0, 1.0).powf(gamma) * p[3];
         [f(p[0]), f(p[1]), f(p[2]), p[3]]
-    }).collect();
+    });
     // ширина фигуры в строке dy: круг или правильный многоугольник
     let half = |dy: i32| -> f64 {
         let y = dy as f64;
@@ -1339,16 +1351,25 @@ pub fn lens_blur(src: &ColorMap, w: u32, h: u32, radius: f64, sides: u32, highli
         best.max(0.0)
     };
     let spans: Vec<(i32, i32)> = (-r..=r).map(|dy| (dy, half(dy).floor() as i32)).filter(|s| s.1 >= 0 || s.0 == 0).collect();
-    // накопленные суммы по строкам
+    // накопленные суммы по строкам (строки — по потокам)
     let mut pre = vec![[0f64; 4]; (bw + 1) * bh];
-    for y in 0..bh {
-        for x in 0..bw {
-            let (a, p) = (pre[y * (bw + 1) + x], lin[y * bw + x]);
-            pre[y * (bw + 1) + x + 1] = [a[0] + p[0], a[1] + p[1], a[2] + p[2], a[3] + p[3]];
+    let rows = bh.div_ceil(crate::threads()).max(1);
+    std::thread::scope(|scope| {
+        for (n, chunk) in pre.chunks_mut(rows * (bw + 1)).enumerate() {
+            let lin = &lin;
+            scope.spawn(move || {
+                for (ry, row) in chunk.chunks_mut(bw + 1).enumerate() {
+                    let y = n * rows + ry;
+                    for x in 0..bw {
+                        let (a, p) = (row[x], lin[y * bw + x]);
+                        row[x + 1] = [a[0] + p[0], a[1] + p[1], a[2] + p[2], a[3] + p[3]];
+                    }
+                }
+            });
         }
-    }
-    let res: Vec<[f64; 4]> = (0..bw * bh)
-        .map(|i| {
+    });
+    let res: Vec<[f64; 4]> = par_rows(bw, bh, |i| {
+        {
             let (x, y) = ((i % bw) as i32, (i / bw) as i32);
             let (mut acc, mut n) = ([0f64; 4], 0f64);
             for &(dy, hw) in &spans {
@@ -1372,8 +1393,8 @@ pub fn lens_blur(src: &ColorMap, w: u32, h: u32, radius: f64, sides: u32, highli
             }
             let f = |c: f64| (c / p[3]).clamp(0.0, 1.0).powf(1.0 / gamma) * p[3];
             [f(p[0]), f(p[1]), f(p[2]), p[3]]
-        })
-        .collect();
+        }
+    });
     write_back(src, x0, y0, bw, &res, sel)
 }
 
@@ -1609,8 +1630,7 @@ pub fn artistic(src: &ColorMap, w: u32, h: u32, a: Artistic, sel: &(dyn Fn(i32, 
         .collect();
     let lum: Vec<f64> = smooth.iter().map(|q| luma([0, 1, 2].map(|i| q[i] + 1.0 - q[3]))).collect();
     let at = |x: isize, y: isize| lum[y.clamp(0, bh as isize - 1) as usize * bw + x.clamp(0, bw as isize - 1) as usize];
-    let res: Vec<[f64; 4]> = (0..bw * bh)
-        .map(|i| {
+    let res: Vec<[f64; 4]> = par_rows(bw, bh, |i| {
             let q = smooth[i];
             if q[3] <= 0.0 {
                 return q;
@@ -1632,8 +1652,7 @@ pub fn artistic(src: &ColorMap, w: u32, h: u32, a: Artistic, sel: &(dyn Fn(i32, 
                 c = c.map(|v| v * (1.0 - 0.85 * line));
             }
             [c[0] * q[3], c[1] * q[3], c[2] * q[3], q[3]]
-        })
-        .collect();
+        });
     write_back(src, x0, y0, bw, &res, sel)
 }
 
