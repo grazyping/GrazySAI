@@ -74,6 +74,28 @@ impl<T: Copy + Default> TileMap<T> {
         }
         out
     }
+
+    /// Записать прямоугольник `w`×`h` от (`x0`, `y0`) из построчного буфера (обратное к
+    /// `read_rect`); недостающие плитки создаются.
+    pub fn write_rect(&mut self, x0: i32, y0: i32, w: usize, h: usize, data: &[T]) {
+        if w == 0 || h == 0 {
+            return;
+        }
+        let (x1, y1) = (x0 + w as i32, y0 + h as i32);
+        let (k0, k1) = (key_of(x0, y0), key_of(x1 - 1, y1 - 1));
+        for ky in k0.1..=k1.1 {
+            for kx in k0.0..=k1.0 {
+                let t = self.tile_mut((kx, ky));
+                let (tx, ty) = (kx * TILE, ky * TILE);
+                let (xs, xe) = (x0.max(tx), x1.min(tx + TILE));
+                for y in y0.max(ty)..y1.min(ty + TILE) {
+                    let row = ((y - ty) * TILE) as usize;
+                    let o = (y - y0) as usize * w + (xs - x0) as usize;
+                    t.0[row + (xs - tx) as usize..row + (xe - tx) as usize].copy_from_slice(&data[o..o + (xe - xs) as usize]);
+                }
+            }
+        }
+    }
 }
 
 pub type ColorMap = TileMap<Px>;

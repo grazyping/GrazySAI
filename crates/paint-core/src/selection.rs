@@ -757,7 +757,7 @@ pub fn warp_pixels(src: &ColorMap, sel: &Selection, warp: Warp, mode: crate::res
 }
 
 /// Обратное отображение: точка результата → точка источника.
-pub(crate) type BackMap<'a> = dyn Fn(f64, f64) -> Option<(f64, f64)> + 'a;
+pub(crate) type BackMap<'a> = dyn Fn(f64, f64) -> Option<(f64, f64)> + Sync + 'a;
 
 /// Общая часть трансформаций: источник — прямоугольник `bounds` (с выделением — его часть),
 /// результат — в прямоугольнике `dest`; `layers` — обратные отображения по слоям наложения
@@ -773,19 +773,15 @@ pub(crate) fn warp_core(
     let whole = sel.mask.tiles.is_empty();
     let (sw, sh) = ((x1 - x0) as usize, (y1 - y0) as usize);
     let k = 1.0 / ONE as f32;
-    let mut part = vec![[0f32; 4]; sw * sh];
-    let mut mpart = vec![[0f32; 4]; sw * sh];
+    // источник и доля выделения — плотными буферами (строками плиток, а не поиском на точку)
+    let amounts: Vec<u16> = if whole { Vec::new() } else { sel.mask.read_rect(x0, y0, sw, sh) };
+    let f_at = |i: usize| if whole { 1.0 } else { amounts[i] as f32 / ONE as f32 };
+    let part: Vec<[f32; 4]> = src.read_rect(x0, y0, sw, sh).into_iter().enumerate().map(|(i, p)| {
+        let f = f_at(i);
+        p.map(|c| c as f32 * k * f)
+    }).collect();
+    let mpart: Vec<[f32; 4]> = if whole { Vec::new() } else { (0..sw * sh).map(|i| [f_at(i); 4]).collect() };
     let mut out = ColorMap::new();
-    for y in y0..y1 {
-        for x in x0..x1 {
-            let p = src.get(x, y);
-            let s = if whole { ONE } else { sel.amount(x, y) };
-            let i = (y - y0) as usize * sw + (x - x0) as usize;
-            let f = s as f32 / ONE as f32;
-            part[i] = p.map(|c| c as f32 * k * f);
-            mpart[i] = [f, f, f, f];
-        }
-    }
     if !whole {
         for (&(tx, ty), t) in &src.tiles {
             for (i, &p) in t.0.iter().enumerate() {
@@ -799,30 +795,31 @@ pub(crate) fn warp_core(
     }
     let (dw, dh) = ((dx1 - dx0) as usize, (dy1 - dy0) as usize);
     let mut mask = MaskMap::new();
+    // результат и маска — плотными буферами области результата, в плитки — в конце
+    let mut dout: Vec<[u16; 4]> = out.read_rect(dx0, dy0, dw, dh);
+    let mut dmask: Vec<u16> = if whole { Vec::new() } else { vec![0; dw * dh] };
     for inverse in layers {
         // обратное отображение в координаты буфера источника
         let back = |x: f64, y: f64| inverse(x, y).map(|(sx, sy)| (sx - x0 as f64, sy - y0 as f64));
         let moved = crate::resample::sample_map(&part, sw, sh, dx0, dy0, dw, dh, mode, back);
-        let mmask = crate::resample::sample_map(&mpart, sw, sh, dx0, dy0, dw, dh, mode, back);
-        for j in 0..dh {
-            for i in 0..dw {
-                let (x, y) = (dx0 + i as i32, dy0 + j as i32);
-                let p = moved[j * dw + i];
-                if p[3] > 0.0 {
-                    let mv = p.map(|c| (c.clamp(0.0, 1.0) * ONE as f32 + 0.5) as u32);
-                    let under = out.get(x, y);
-                    let inv_a = ONE - mv[3].min(ONE);
-                    let v = [0, 1, 2, 3].map(|c| (mv[c] + (under[c] as u32 * inv_a + ONE / 2) / ONE).min(ONE) as u16);
-                    out.set(x, y, v);
-                }
-                if !whole {
-                    let a = (mmask[j * dw + i][3].clamp(0.0, 1.0) * ONE as f32 + 0.5) as u16;
-                    if a > mask.get(x, y) {
-                        mask.set(x, y, a);
-                    }
-                }
+        // маска переноса нужна только при выделении (без него она не читается)
+        let mmask = if whole { Vec::new() } else { crate::resample::sample_map(&mpart, sw, sh, dx0, dy0, dw, dh, mode, back) };
+        for (i, p) in moved.iter().enumerate() {
+            if p[3] > 0.0 {
+                let mv = p.map(|c| (c.clamp(0.0, 1.0) * ONE as f32 + 0.5) as u32);
+                let under = dout[i];
+                let inv_a = ONE - mv[3].min(ONE);
+                dout[i] = [0, 1, 2, 3].map(|c| (mv[c] + (under[c] as u32 * inv_a + ONE / 2) / ONE).min(ONE) as u16);
+            }
+            if !whole {
+                let a = (mmask[i][3].clamp(0.0, 1.0) * ONE as f32 + 0.5) as u16;
+                dmask[i] = dmask[i].max(a);
             }
         }
+    }
+    out.write_rect(dx0, dy0, dw, dh, &dout);
+    if !whole {
+        mask.write_rect(dx0, dy0, dw, dh, &dmask);
     }
     out.tiles.retain(|_, t| t.0.iter().any(|p| p[3] != 0));
     mask.tiles.retain(|_, t| t.0.iter().any(|&v| v != 0));

@@ -154,7 +154,7 @@ pub fn resize(src: &[[f32; 4]], sw: usize, sh: usize, dw: usize, dh: usize, mode
 /// (по разности соседних точек). За краем источника — прозрачность, веса нормируются по всем
 /// отсчётам окна. Результат — `dw`×`dh` с левым верхним углом (`ox`, `oy`).
 #[allow(clippy::too_many_arguments, reason = "внутренняя функция горячего цикла: параметры раздельно")]
-pub fn sample_map(src: &[[f32; 4]], sw: usize, sh: usize, ox: i32, oy: i32, dw: usize, dh: usize, mode: Mode, map: impl Fn(f64, f64) -> Option<(f64, f64)>) -> Vec<[f32; 4]> {
+pub fn sample_map(src: &[[f32; 4]], sw: usize, sh: usize, ox: i32, oy: i32, dw: usize, dh: usize, mode: Mode, map: impl Fn(f64, f64) -> Option<(f64, f64)> + Sync) -> Vec<[f32; 4]> {
     let table = mode.table();
     let cross = matches!(mode, Mode::Bicubic | Mode::Lanczos2);
     let get = |x: isize, y: isize| -> [f32; 4] {
@@ -165,13 +165,38 @@ pub fn sample_map(src: &[[f32; 4]], sw: usize, sh: usize, ox: i32, oy: i32, dw: 
         }
     };
     let mut out = vec![[0f32; 4]; dw * dh];
-    for j in 0..dh {
-        for i in 0..dw {
-            let (cx, cy) = ((ox + i as i32) as f64 + 0.5, (oy + j as i32) as f64 + 0.5);
-            let Some((sx, sy)) = map(cx, cy) else { continue };
+    if dw == 0 {
+        return out;
+    }
+    // точки результата независимы — строками по потокам (результат тот же)
+    let rows = dh.div_ceil(crate::threads()).max(1);
+    std::thread::scope(|scope| {
+        for (n, chunk) in out.chunks_mut(rows * dw).enumerate() {
+            let (map, table, get) = (&map, &table, &get);
+            scope.spawn(move || {
+                for (jj, orow) in chunk.chunks_mut(dw).enumerate() {
+                    let j = n * rows + jj;
+                    for (i, o) in orow.iter_mut().enumerate() {
+                        sample_one(o, ox + i as i32, oy + j as i32, sw, sh, mode, cross, table, map, get);
+                    }
+                }
+            });
+        }
+    });
+    out
+}
+
+/// Одна точка `sample_map`.
+#[allow(clippy::too_many_arguments, reason = "внутренняя функция горячего цикла: параметры раздельно")]
+#[inline]
+fn sample_one(o: &mut [f32; 4], px: i32, py: i32, sw: usize, sh: usize, mode: Mode, cross: bool, table: &[f32], map: &impl Fn(f64, f64) -> Option<(f64, f64)>, get: &impl Fn(isize, isize) -> [f32; 4]) {
+    {
+        {
+            let (cx, cy) = (px as f64 + 0.5, py as f64 + 0.5);
+            let Some((sx, sy)) = map(cx, cy) else { return };
             if mode == Mode::Nearest {
-                out[j * dw + i] = get(sx.floor() as isize, sy.floor() as isize);
-                continue;
+                *o = get(sx.floor() as isize, sy.floor() as isize);
+                return;
             }
             // местный масштаб: насколько сдвигается точка источника при шаге в 1 px результата
             let k = match (map(cx + 1.0, cy), map(cx, cy + 1.0)) {
@@ -182,19 +207,19 @@ pub fn sample_map(src: &[[f32; 4]], sw: usize, sh: usize, ox: i32, oy: i32, dw: 
             let (x0, x1) = ((sx - 0.5 - reach).floor() as isize + 1, (sx - 0.5 + reach).ceil() as isize);
             let (y0, y1) = ((sy - 0.5 - reach).floor() as isize + 1, (sy - 0.5 + reach).ceil() as isize);
             if x1 < 0 || y1 < 0 || x0 >= sw as isize || y0 >= sh as isize {
-                continue;
+                return;
             }
             let mut acc = [0f64; 4];
             let mut total = 0f64;
             for y in y0..y1 {
                 let ty = (y as f64 + 0.5 - sy) / k;
-                let wy = lookup(&table, ty);
+                let wy = lookup(table, ty);
                 for x in x0..x1 {
                     let tx = (x as f64 + 0.5 - sx) / k;
                     if cross && tx.abs() >= 1.0 && ty.abs() >= 1.0 {
                         continue;
                     }
-                    let w = lookup(&table, tx) * wy;
+                    let w = lookup(table, tx) * wy;
                     if w == 0.0 {
                         continue;
                     }
@@ -208,11 +233,10 @@ pub fn sample_map(src: &[[f32; 4]], sw: usize, sh: usize, ox: i32, oy: i32, dw: 
             if total.abs() > 1e-9 {
                 let a = (acc[3] / total).clamp(0.0, 1.0);
                 let px = [0, 1, 2].map(|c| (acc[c] / total).clamp(0.0, a) as f32);
-                out[j * dw + i] = [px[0], px[1], px[2], a as f32];
+                *o = [px[0], px[1], px[2], a as f32];
             }
         }
     }
-    out
 }
 
 /// Выборка по аффинной матрице: `inv` переводит точку результата в точку источника,
