@@ -1691,3 +1691,51 @@ fn magic_wand_matches_a_plain_flood_fill() {
         }
     }
 }
+
+#[test]
+fn magic_wand_around_a_small_drawing_matches_a_plain_flood_fill() {
+    // рисунок в углу большого пустого холста: пустота снаружи рамки заливается целиком или нет
+    let (w, h) = (333u32, 257u32);
+    let mut px = paint_core::tile::ColorMap::new();
+    let mut s = 99u64;
+    for y in 100..180 {
+        for x in 150..250 {
+            s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            if (s >> 61) % 3 == 0 {
+                px.set(x, y, from_rgba8([30, 30, 30, 255]));
+            }
+        }
+    }
+    // замкнутое кольцо: внутри него пустота не связана с внешней
+    for y in 10..60 {
+        for x in 10..60 {
+            if x == 10 || y == 10 || x == 59 || y == 59 {
+                px.set(x, y, from_rgba8([0, 0, 200, 255]));
+            }
+        }
+    }
+    for (sx, sy) in [(300, 240), (160, 110), (30, 30), (10, 10), (200, 150), (0, 0)] {
+        let m = paint_core::selection::magic_wand(&px, w, h, sx, sy, 0);
+        let seed = px.get(sx, sy);
+        let mut seen = vec![false; (w * h) as usize];
+        let mut stack = vec![(sx, sy)];
+        while let Some((x, y)) = stack.pop() {
+            if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
+                continue;
+            }
+            let i = (y as u32 * w + x as u32) as usize;
+            if seen[i] || px.get(x, y) != seed {
+                continue;
+            }
+            seen[i] = true;
+            stack.extend([(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]);
+        }
+        for y in 0..h as i32 {
+            for x in 0..w as i32 {
+                assert_eq!(m.get(x, y) != 0, seen[(y as u32 * w + x as u32) as usize], "({x}, {y}), семя ({sx}, {sy})");
+            }
+        }
+        // за холстом ничего не залито
+        assert!(m.tiles.keys().all(|&(kx, ky)| kx >= 0 && ky >= 0 && kx * 64 < w as i32 && ky * 64 < h as i32));
+    }
+}

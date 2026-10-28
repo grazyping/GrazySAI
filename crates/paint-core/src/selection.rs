@@ -3,7 +3,7 @@
 //! Как в SAI 2: прямоугольник, лассо, волшебная палочка; новая область заменяет выделение,
 //! с Shift добавляется, с Alt вычитается, с Shift+Alt остаётся пересечение.
 
-use crate::pixel::{to_rgba8, Px, ONE};
+use crate::pixel::{to_rgba8, Px, CLEAR, ONE};
 use crate::tile::{ColorMap, Key, MaskMap, Tile, TILE};
 use crate::vector::{coverage, Pt};
 
@@ -297,25 +297,60 @@ pub fn magic_wand(pixels: &ColorMap, width: u32, height: u32, x: i32, y: i32, to
     let rgba = |p: Px| to_rgba8(p);
     let seed = rgba(pixels.get(x, y));
     let near = |c: [u8; 4]| (0..4).all(|i| (c[i] as i32 - seed[i] as i32).abs() <= tolerance as i32);
-    // плотные буферы холста и заливка строками: та же связная (по 4 соседям) область, что у обхода
-    // по точкам, но без поиска плитки и хеш-таблицы на каждую точку
-    let (wu, hu) = (w as usize, h as usize);
-    let ok: Vec<bool> = pixels.read_rect(0, 0, wu, hu).into_iter().map(|p| near(rgba(p))).collect();
+    // Плотные буферы и заливка строками — только в рамке плиток слоя с запасом в точку: за рамкой
+    // всё пусто и связано между собой, так что эта часть или залита вся (целыми плитками), или нет.
+    // Так холст 100000×100000 с небольшим рисунком не требует буфера на весь холст.
+    let full = |v: u16| v != 0;
+    let tile_box = pixels.tiles.keys().fold(None, |b: Option<(i32, i32, i32, i32)>, &(kx, ky)| {
+        let (x0, y0) = (kx * TILE, ky * TILE);
+        Some(b.map_or((x0, y0, x0 + TILE, y0 + TILE), |(a, c, d, e)| (a.min(x0), c.min(y0), d.max(x0 + TILE), e.max(y0 + TILE))))
+    });
+    let (rx0, ry0, rx1, ry1) = match tile_box {
+        Some((a, c, d, e)) => ((a - 1).max(0), (c - 1).max(0), (d + 1).min(w), (e + 1).min(h)),
+        None => (0, 0, 0, 0),
+    };
+    let inside = |px: i32, py: i32| px >= rx0 && py >= ry0 && px < rx1 && py < ry1;
+    // точка рамки, лежащая вне плиток (запас), — часть пустоты снаружи
+    let outer = |px: i32, py: i32| tile_box.is_none_or(|(a, c, d, e)| px < a || py < c || px >= d || py >= e);
+    let (wu, hu) = ((rx1 - rx0) as usize, (ry1 - ry0) as usize);
+    let ok: Vec<bool> = pixels.read_rect(rx0, ry0, wu, hu).into_iter().map(|p| near(rgba(p))).collect();
     let mut fill = vec![0u16; wu * hu];
-    let mut stack = vec![(x as usize, y as usize)];
+    let mut stack = Vec::new();
+    let empty_near = near(rgba(CLEAR));
+    let mut outside_filled = false;
+    if inside(x, y) {
+        stack.push(((x - rx0) as usize, (y - ry0) as usize));
+    } else {
+        // семя в пустоте снаружи: залита вся пустота и всё, что с ней сходится через запас рамки
+        outside_filled = true;
+    }
+    if outside_filled {
+        for yy in 0..hu {
+            for xx in 0..wu {
+                let (gx, gy) = (rx0 + xx as i32, ry0 + yy as i32);
+                if outer(gx, gy) && (xx == 0 || yy == 0 || xx + 1 == wu || yy + 1 == hu) {
+                    stack.push((xx, yy));
+                }
+            }
+        }
+    }
     while let Some((sx, sy)) = stack.pop() {
         let row = sy * wu;
-        if fill[row + sx] != 0 || !ok[row + sx] {
+        if full(fill[row + sx]) || !ok[row + sx] {
             continue;
         }
         let (mut l, mut r) = (sx, sx);
-        while l > 0 && fill[row + l - 1] == 0 && ok[row + l - 1] {
+        while l > 0 && !full(fill[row + l - 1]) && ok[row + l - 1] {
             l -= 1;
         }
-        while r + 1 < wu && fill[row + r + 1] == 0 && ok[row + r + 1] {
+        while r + 1 < wu && !full(fill[row + r + 1]) && ok[row + r + 1] {
             r += 1;
         }
         fill[row + l..=row + r].fill(ONE as u16);
+        if !outside_filled && empty_near && (l..=r).any(|xx| outer(rx0 + xx as i32, ry0 + sy as i32)) {
+            // дошли до пустоты снаружи рамки — она вся залита
+            outside_filled = true;
+        }
         for ny in [sy.wrapping_sub(1), sy + 1] {
             if ny >= hu {
                 continue;
@@ -323,7 +358,7 @@ pub fn magic_wand(pixels: &ColorMap, width: u32, height: u32, x: i32, y: i32, to
             let nrow = ny * wu;
             let mut xx = l;
             while xx <= r {
-                if fill[nrow + xx] == 0 && ok[nrow + xx] {
+                if !full(fill[nrow + xx]) && ok[nrow + xx] {
                     stack.push((xx, ny));
                     while xx <= r && ok[nrow + xx] {
                         xx += 1;
@@ -334,7 +369,60 @@ pub fn magic_wand(pixels: &ColorMap, width: u32, height: u32, x: i32, y: i32, to
             }
         }
     }
-    out.write_rect(0, 0, wu, hu, &fill);
+    // пустота снаружи залита, а внутри рамки до неё ещё не дошли (семя было снаружи) — от края
+    if outside_filled {
+        let mut again = Vec::new();
+        for yy in 0..hu {
+            for xx in 0..wu {
+                if outer(rx0 + xx as i32, ry0 + yy as i32) && ok[yy * wu + xx] && !full(fill[yy * wu + xx]) {
+                    again.push((xx, yy));
+                }
+            }
+        }
+        while let Some((sx, sy)) = again.pop() {
+            let i = sy * wu + sx;
+            if full(fill[i]) || !ok[i] {
+                continue;
+            }
+            fill[i] = ONE as u16;
+            if sx > 0 {
+                again.push((sx - 1, sy));
+            }
+            if sx + 1 < wu {
+                again.push((sx + 1, sy));
+            }
+            if sy > 0 {
+                again.push((sx, sy - 1));
+            }
+            if sy + 1 < hu {
+                again.push((sx, sy + 1));
+            }
+        }
+    }
+    out.write_rect(rx0, ry0, wu, hu, &fill);
+    if outside_filled {
+        // вся пустота за рамкой: целые плитки, а у рамки — по точкам
+        let full_tile = Tile::filled(ONE as u16);
+        for ky in 0..(h + TILE - 1) / TILE {
+            for kx in 0..(w + TILE - 1) / TILE {
+                let (tx, ty) = (kx * TILE, ky * TILE);
+                let clipped = tx + TILE > w || ty + TILE > h;
+                let overlaps = tx < rx1 && ty < ry1 && tx + TILE > rx0 && ty + TILE > ry0;
+                if !overlaps && !clipped {
+                    out.tiles.insert((kx, ky), full_tile.clone());
+                    continue;
+                }
+                let t = out.tile_mut((kx, ky));
+                for yy in ty..(ty + TILE).min(h) {
+                    for xx in tx..(tx + TILE).min(w) {
+                        if !inside(xx, yy) {
+                            t.0[((yy - ty) * TILE + xx - tx) as usize] = ONE as u16;
+                        }
+                    }
+                }
+            }
+        }
+    }
     out.tiles.retain(|_, t| t.0.iter().any(|&v| v != 0));
     out
 }
