@@ -9,6 +9,13 @@ use std::collections::HashMap;
 /// Памяти на разбор FBX, байт (на временную и на итоговую части).
 const MEMORY_LIMIT: usize = 4 << 30;
 
+/// Предел памяти разбора по размеру файла: массивы FBX бывают сжаты (deflate — до ~1032:1),
+/// но испорченный файл в 150 КБ не должен просить 2 ГБ одним массивом (найдено фаззером).
+fn allocator(data: &[u8]) -> ufbx::AllocatorOpts {
+    let limit = data.len().saturating_mul(1100).saturating_add(64 << 20).min(MEMORY_LIMIT);
+    ufbx::AllocatorOpts { memory_limit: limit, allocation_limit: 0, ..Default::default() }
+}
+
 fn mat4(m: &ufbx::Matrix) -> Mat4 {
     Mat4::from_cols_array(&[
         m.m00 as f32, m.m10 as f32, m.m20 as f32, 0.0,
@@ -29,8 +36,8 @@ pub fn texture_files(data: &[u8]) -> Vec<String> {
         ignore_animation: true,
         load_external_files: false,
         node_depth_limit: 512,
-        temp_allocator: ufbx::AllocatorOpts { memory_limit: MEMORY_LIMIT, ..Default::default() },
-        result_allocator: ufbx::AllocatorOpts { memory_limit: MEMORY_LIMIT, ..Default::default() },
+        temp_allocator: allocator(data),
+        result_allocator: allocator(data),
         ..Default::default()
     };
     let Ok(scene) = ufbx::load_memory(data, opts) else { return Vec::new() };
@@ -49,8 +56,8 @@ pub fn load(data: &[u8], files: &[(String, Vec<u8>)]) -> Res<Model> {
         load_external_files: false,
         // испорченный файл не должен развернуться в огромное дерево и съесть всю память
         node_depth_limit: 512,
-        temp_allocator: ufbx::AllocatorOpts { memory_limit: MEMORY_LIMIT, ..Default::default() },
-        result_allocator: ufbx::AllocatorOpts { memory_limit: MEMORY_LIMIT, ..Default::default() },
+        temp_allocator: allocator(data),
+        result_allocator: allocator(data),
         ..Default::default()
     };
     let scene = ufbx::load_memory(data, opts).map_err(|e| Error(format!("FBX: {}", &*e.description)))?;

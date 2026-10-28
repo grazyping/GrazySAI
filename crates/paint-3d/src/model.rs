@@ -291,6 +291,39 @@ fn load_gltf(data: &[u8], files: &[(String, Vec<u8>)]) -> Res<Model> {
             return err(format!("сжатие сеток {ext} не поддерживается — сохраните модель без сжатия (в Blender: экспорт glTF без Draco)"));
         }
     }
+    // Своя проверка документа: без неё испорченные номера (узла, сетки, материала, сустава) роняли
+    // библиотеку gltf при обходе (найдено фаззером). Её собственная проверка отвергает и
+    // обязательные расширения, которые она не знает, хотя квантование и т. п. мы читаем сами, —
+    // такие пропускаем.
+    {
+        use gltf::json::validation::{Error as Invalid, Validate};
+        let root = doc.as_json();
+        // проверка самой библиотеки берёт accessor у POSITION без проверки номера и падает —
+        // номера accessors у сеток проверяем сами до неё
+        let n_acc = root.accessors.len();
+        for (mi, m) in root.meshes.iter().enumerate() {
+            for p in &m.primitives {
+                let idx = p.attributes.values().chain(p.indices.iter()).chain(p.targets.iter().flatten().flat_map(|t| t.positions.iter().chain(&t.normals).chain(&t.tangents)));
+                if idx.map(|i| i.value()).any(|i| i >= n_acc) {
+                    return err(format!("glTF испорчен: у сетки {mi} нет такого accessor"));
+                }
+            }
+        }
+        let mut bad = None;
+        root.validate(root, gltf::json::Path::new, &mut |path, e| {
+            let p = path();
+            let s = p.as_str();
+            // нужное нам — номера и значения; необязательное для чтения (неизвестное обязательное
+            // расширение, рамка min/max у POSITION, которую не пишут некоторые программы) — пропускаем
+            let lenient = (e == Invalid::Unsupported && s.starts_with("extensionsRequired")) || (e == Invalid::Missing && (s.ends_with(".min") || s.ends_with(".max")));
+            if bad.is_none() && !lenient {
+                bad = Some(format!("{s}: {e}"));
+            }
+        });
+        if let Some(b) = bad {
+            return err(format!("glTF испорчен: {b}"));
+        }
+    }
     let mut bufs = Vec::new();
     for b in doc.buffers() {
         let d = match b.source() {
