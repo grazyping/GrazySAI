@@ -65,7 +65,7 @@ pub struct FileViewer {
     all_files: bool,
     thumbs: HashMap<PathBuf, Thumb>,
     /// Очередь миниатюр и сигнал «появилась работа или обозреватель закрыт».
-    queue: Arc<(Mutex<VecDeque<(PathBuf, u64, u64)>>, Condvar)>,
+    queue: Arc<ThumbQueue>,
     rx: mpsc::Receiver<(PathBuf, Option<egui::ColorImage>)>,
     alive: Arc<AtomicBool>,
     name: String,
@@ -78,6 +78,9 @@ pub struct FileViewer {
     /// Папка, в которую перейти в конце кадра (двойной щелчок приходит посреди отрисовки сетки).
     pending_dir: Option<PathBuf>,
 }
+
+/// Файлы, ждущие миниатюры (путь, время изменения, размер), и сигнал для потоков.
+type ThumbQueue = (Mutex<VecDeque<(PathBuf, u64, u64)>>, Condvar);
 
 impl Drop for FileViewer {
     fn drop(&mut self) {
@@ -119,7 +122,7 @@ fn load_thumb(path: &Path, mtime: u64, size: u64) -> Option<egui::ColorImage> {
 
 impl FileViewer {
     pub fn new(mode: Mode, dir: PathBuf, name: String, bookmarks: Vec<PathBuf>) -> Self {
-        let queue: Arc<(Mutex<VecDeque<(PathBuf, u64, u64)>>, Condvar)> = Arc::default();
+        let queue: Arc<ThumbQueue> = Arc::default();
         let alive = Arc::new(AtomicBool::new(true));
         let (tx, rx) = mpsc::channel();
         // миниатюры считаются в фоне, в несколько потоков
