@@ -1532,3 +1532,4 @@ PNG-кадры… = PNG-Einzelbilder…
 
 # Большие холсты
 Холст {0}×{1} слишком велик для этого действия: нужно больше 2 ГБ памяти разом = Die Leinwand {0}×{1} ist dafür zu groß: es wären mehr als 2 GB Speicher auf einmal nötig
+Холст {0}×{1} слишком велик для окна программы (больше 30000 точек по стороне); перевести его в другой формат можно программой GrazySAI-Convert = Die Leinwand {0}×{1} ist zu groß für das Programmfenster (mehr als 30000 Punkte pro Seite); GrazySAI-Convert kann sie in ein anderes Format umwandeln

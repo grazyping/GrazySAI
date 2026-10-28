@@ -1532,3 +1532,4 @@ PNG-кадры… = Images PNG…
 
 # Большие холсты
 Холст {0}×{1} слишком велик для этого действия: нужно больше 2 ГБ памяти разом = La toile {0}×{1} est trop grande pour cela : il faudrait plus de 2 Go de mémoire d’un coup
+Холст {0}×{1} слишком велик для окна программы (больше 30000 точек по стороне); перевести его в другой формат можно программой GrazySAI-Convert = La toile {0}×{1} est trop grande pour la fenêtre du programme (plus de 30000 points par côté) ; GrazySAI-Convert peut la convertir dans un autre format

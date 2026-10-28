@@ -50,6 +50,9 @@ const SIZE_RANGES: [(&str, f32, f32); 5] = [("×0.1", 0.1, 10.0), ("×1", 1.0, 1
 /// Плитка показа: 256×256 точек, то есть 4×4 плитки ядра. Одна текстура на плитку.
 const DT: i32 = 256;
 
+/// Наибольшая сторона холста в окне программы.
+const MAX_SIDE: u32 = 30_000;
+
 /// Режимы в том же порядке, что в списке образца.
 const MODES: [(BlendMode, &str); 28] = [
     (BlendMode::Normal, "Обычный"),
@@ -1265,8 +1268,15 @@ struct DisplayTile {
     options: Option<egui::TextureOptions>,
 }
 
+/// Экранные плитки одного уровня детализации.
+type DisplayMap = HashMap<(i32, i32), DisplayTile>;
+
 /// Кусочков TILE×TILE в стороне экранной плитки.
 const SUB: i32 = DT / TILE;
+
+/// Сколько экранных плиток держать (по 256 КБ в памяти и на видеокарте): больше — далёкие от
+/// вида выбрасываются.
+const DISPLAY_BUDGET: usize = 1536;
 
 struct PaintApp {
     doc: Document,
@@ -1405,7 +1415,14 @@ struct PaintApp {
     selected: Vec<usize>,
     live: Option<LiveStroke>,
     smoother: Stabilizer,
-    display: HashMap<(i32, i32), DisplayTile>,
+    display: DisplayMap,
+    /// Уровень детализации показа: экранная плитка DT×DT покрывает `DT << disp_level` точек
+    /// холста (при уменьшении меньше 50 % — уменьшенная копия, а не весь холст в полную величину).
+    disp_level: u32,
+    /// Плитки прежнего уровня: показываются растянутыми, пока видимое нового не готово.
+    disp_fallback: Option<(u32, DisplayMap)>,
+    /// Экранные плитки, выброшенные ради памяти (далеко от вида): пересчитать, когда станут видны.
+    disp_evicted: HashSet<(i32, i32)>,
     queue: VecDeque<Key>,
     queued: HashSet<Key>,
     pen: pen::PenFeed,
@@ -1739,6 +1756,9 @@ impl PaintApp {
             live: None,
             smoother: Stabilizer::new(3),
             display: HashMap::new(),
+            disp_level: 0,
+            disp_fallback: None,
+            disp_evicted: HashSet::new(),
             queue: VecDeque::new(),
             queued: HashSet::new(),
             pen,
@@ -2198,12 +2218,12 @@ app.open_canvas_dialog(d == "resolution")
                     let mut it = v.rsplitn(3, '|');
                     let h: u32 = it.next()?.parse().ok()?;
                     let w: u32 = it.next()?.parse().ok()?;
-                    Some((it.next()?.to_string(), w.clamp(1, 100_000), h.clamp(1, 100_000)))
+                    Some((it.next()?.to_string(), w.clamp(1, MAX_SIDE), h.clamp(1, MAX_SIDE)))
                 })
                 .collect();
         }
         if let (Some(w), Some(h)) = (s.f32("new_width"), s.f32("new_height")) {
-            self.new_size = [(w as u32).clamp(1, 100_000), (h as u32).clamp(1, 100_000)];
+            self.new_size = [(w as u32).clamp(1, MAX_SIDE), (h as u32).clamp(1, MAX_SIDE)];
         }
         if let (Some(c), Some(r)) = (s.f32("grid_cols"), s.f32("grid_rows")) {
             self.grid_div = [c.clamp(1.0, 32.0) as u8, r.clamp(1.0, 32.0) as u8];
@@ -4717,6 +4737,7 @@ app.open_canvas_dialog(d == "resolution")
             let started = Instant::now();
             let loaded = read_guarded(|| paint_formats::convert::load(&path).map(|(doc, _)| doc));
             match loaded {
+                Ok(doc) if !self.shows(doc.width, doc.height) => {}
                 Ok(doc) => {
                     self.prepare_tab();
                     self.stop_recording();
@@ -4743,6 +4764,7 @@ app.open_canvas_dialog(d == "resolution")
         }
         let started = Instant::now();
         match read_guarded(|| paint_formats::sai2_doc::load(&path).map_err(Into::into)) {
+            Ok(loaded) if !self.shows(loaded.document.width, loaded.document.height) => {}
             Ok(loaded) => {
                 self.prepare_tab();
                 // кривые слоёв контура и фигур теперь сохраняются как были
@@ -4985,7 +5007,20 @@ app.open_canvas_dialog(d == "resolution")
         self.recent.truncate(10);
     }
 
+    /// В окне — холсты до 30000×30000 (ядро и конвертер умеют до 100000×100000, как `.sai2`).
+    /// Больше — сообщение, `false`.
+    fn shows(&mut self, w: u32, h: u32) -> bool {
+        if w <= MAX_SIDE && h <= MAX_SIDE {
+            return true;
+        }
+        self.status = trf("Холст {0}×{1} слишком велик для окна программы (больше 30000 точек по стороне); перевести его в другой формат можно программой GrazySAI-Convert", &[&w, &h]);
+        false
+    }
+
     fn new_canvas(&mut self, w: u32, h: u32) {
+        if !self.shows(w, h) {
+            return;
+        }
         self.prepare_tab();
         self.new_canvas_in_place(w, h);
     }
@@ -5259,6 +5294,8 @@ app.open_canvas_dialog(d == "resolution")
         self.move_drag = None;
         self.thumbs.clear();
         self.display.clear();
+        self.disp_fallback = None;
+        self.disp_evicted.clear();
         self.queue.clear();
         self.queued.clear();
         let (tw, th) = (
@@ -5363,6 +5400,14 @@ app.open_canvas_dialog(d == "resolution")
                 if key.0 < 0 || key.1 < 0 || key.0 * TILE >= w || key.1 * TILE >= h {
                     continue;
                 }
+                // памяти под экранные плитки больше нормы — далёкое от вида не считать: его
+                // плитка выбрасывается и пересчитается, когда станет видна
+                if self.display.len() > DISPLAY_BUDGET && !self.near_view(key) {
+                    let dk = self.disp_key(key);
+                    self.display.remove(&dk);
+                    self.disp_evicted.insert(dk);
+                    continue;
+                }
                 batch.push(key);
             }
             if batch.is_empty() {
@@ -5386,19 +5431,43 @@ app.open_canvas_dialog(d == "resolution")
                     .collect();
                 handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
             });
+            let level = self.disp_level;
             for (key, rgba) in rendered {
-                let dkey = (key.0 * TILE / DT, key.1 * TILE / DT);
+                let dkey = self.disp_key(key);
+                self.disp_evicted.remove(&dkey);
                 let tile = self.display.entry(dkey).or_insert_with(|| DisplayTile {
                     pixels: vec![Color32::TRANSPARENT; (DT * DT) as usize],
                     texture: None,
                     dirty: 0,
                     options: None,
                 });
-                let (ox, oy) = (key.0 * TILE - dkey.0 * DT, key.1 * TILE - dkey.1 * DT);
-                for y in 0..TILE {
-                    let dst = ((oy + y) * DT + ox) as usize;
-                    let src = (y * TILE) as usize;
-                    tile.pixels[dst..dst + TILE as usize].copy_from_slice(&rgba[src..src + TILE as usize]);
+                // плитка холста ложится в экранную уменьшенной в 2^level раз (средним квадрата)
+                let span = DT << level;
+                let (ox, oy) = ((key.0 * TILE - dkey.0 * span) >> level, (key.1 * TILE - dkey.1 * span) >> level);
+                if level == 0 {
+                    for y in 0..TILE {
+                        let dst = ((oy + y) * DT + ox) as usize;
+                        let src = (y * TILE) as usize;
+                        tile.pixels[dst..dst + TILE as usize].copy_from_slice(&rgba[src..src + TILE as usize]);
+                    }
+                } else {
+                    let (k, cs) = (1i32 << level, TILE >> level);
+                    let n = (k * k) as u32;
+                    for y in 0..cs {
+                        for x in 0..cs {
+                            let mut acc = [0u32; 4];
+                            for yy in 0..k {
+                                for xx in 0..k {
+                                    let c = rgba[((y * k + yy) * TILE + x * k + xx) as usize];
+                                    acc[0] += c.r() as u32;
+                                    acc[1] += c.g() as u32;
+                                    acc[2] += c.b() as u32;
+                                    acc[3] += c.a() as u32;
+                                }
+                            }
+                            tile.pixels[((oy + y) * DT + ox + x) as usize] = Color32::from_rgba_premultiplied((acc[0] / n) as u8, (acc[1] / n) as u8, (acc[2] / n) as u8, (acc[3] / n) as u8);
+                        }
+                    }
                 }
                 tile.dirty |= 1 << ((oy / TILE) * SUB + ox / TILE);
                 self.nav_dirty.insert(key);
@@ -5407,6 +5476,37 @@ app.open_canvas_dialog(d == "resolution")
                 break;
             }
         }
+    }
+
+    /// Экранная плитка текущего уровня, в которую ложится плитка холста `key`.
+    fn disp_key(&self, key: Key) -> (i32, i32) {
+        let span = DT << self.disp_level;
+        ((key.0 * TILE).div_euclid(span), (key.1 * TILE).div_euclid(span))
+    }
+
+    /// Плитка холста — в виде или рядом (в пределах экранной плитки вокруг); без сведений о виде —
+    /// всё «рядом».
+    fn near_view(&self, key: Key) -> bool {
+        let m = SUB << self.disp_level;
+        self.view_tiles.is_none_or(|[x0, y0, x1, y1]| key.0 >= x0 - m && key.0 <= x1 + m && key.1 >= y0 - m && key.1 <= y1 + m)
+    }
+
+    /// Уровень детализации для показанного масштаба `shown` (1 — пиксель холста на пиксель
+    /// экрана): 0 — от 50 %, дальше по уровню на каждое уменьшение вдвое, до 64 раз. Запас в
+    /// 15 % у границ — чтобы уровень не скакал туда-сюда.
+    fn pick_level(&mut self, shown: f32) {
+        let l = (1.0 / shown.max(1e-6)).log2();
+        let up = ((l - 0.15).floor().max(0.0) as u32).min(6);
+        let down = ((l + 0.15).floor().max(0.0) as u32).min(6);
+        let next = if self.disp_level < up { up } else if self.disp_level > down { down } else { return };
+        // прежние плитки — растянутой заменой, пока новые не готовы
+        let old = std::mem::take(&mut self.display);
+        if self.disp_fallback.is_none() {
+            self.disp_fallback = Some((self.disp_level, old));
+        }
+        self.disp_level = next;
+        self.disp_evicted.clear();
+        self.refresh_all();
     }
 
     fn can_paint(&self) -> bool {
@@ -9582,10 +9682,11 @@ app.open_canvas_dialog(d == "resolution")
         }
         self.nav_dirty.clear();
         let display = &self.display;
+        let (level, span) = (self.disp_level, DT << self.disp_level);
         let px = |x: usize, y: usize| -> [u32; 4] {
-            let (dx, dy) = ((x as i32) / DT, (y as i32) / DT);
+            let (dx, dy) = ((x as i32) / span, (y as i32) / span);
             display.get(&(dx, dy)).map_or([0; 4], |t| {
-                let c = t.pixels[((y as i32 % DT) * DT + x as i32 % DT) as usize];
+                let c = t.pixels[((((y as i32) % span) >> level) * DT + (((x as i32) % span) >> level)) as usize];
                 [c.r() as u32, c.g() as u32, c.b() as u32, c.a() as u32]
             })
         };
@@ -10768,6 +10869,36 @@ app.open_canvas_dialog(d == "resolution")
             egui::TextureOptions::LINEAR
         };
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+        // уровень детализации — по главному виду (плавающий показывает те же плитки)
+        if self.drawing_view == 0 {
+            self.pick_level(shown);
+        }
+        // прежний уровень больше не нужен, когда видимое нового готово
+        if self.disp_fallback.is_some() && !self.visible_pending() {
+            self.disp_fallback = None;
+        }
+        // выброшенные ради памяти плитки снова в виду — пересчитать
+        if !self.disp_evicted.is_empty() {
+            if let Some([x0, y0, x1, y1]) = self.view_tiles {
+                let span = DT << self.disp_level;
+                let back: Vec<(i32, i32)> = self.disp_evicted.iter().copied().filter(|&(dx, dy)| (dx + 1) * span > x0 * TILE && dx * span <= (x1 + 1) * TILE && (dy + 1) * span > y0 * TILE && dy * span <= (y1 + 1) * TILE).collect();
+                for dk in back {
+                    self.disp_evicted.remove(&dk);
+                    let per = SUB << self.disp_level;
+                    let keys: Vec<Key> = (0..per).flat_map(|j| (0..per).map(move |i| (dk.0 * per + i, dk.1 * per + j))).collect();
+                    self.invalidate(keys);
+                }
+            }
+        }
+        // больше нормы экранных плиток — выбросить далёкие от вида
+        if self.display.len() > DISPLAY_BUDGET && self.view_tiles.is_some() {
+            let per = SUB << self.disp_level;
+            let far: Vec<(i32, i32)> = self.display.keys().copied().filter(|&(dx, dy)| !self.near_view((dx * per, dy * per)) && !self.near_view(((dx + 1) * per - 1, (dy + 1) * per - 1))).collect();
+            for dk in far {
+                self.display.remove(&dk);
+                self.disp_evicted.insert(dk);
+            }
+        }
         // бесшовный режим — холст и восемь его копий вокруг
         let copies: Vec<(f32, f32)> = if self.wrap_around {
             [-1.0, 0.0, 1.0].into_iter().flat_map(|kx| [-1.0, 0.0, 1.0].map(|ky| (kx * w, ky * h))).collect()
@@ -10781,14 +10912,38 @@ app.open_canvas_dialog(d == "resolution")
                 egui::Stroke::NONE,
             ));
         }
+        // прежний уровень — растянутой подложкой (текстуры уже загружены)
+        if let Some((fl, fb)) = &self.disp_fallback {
+            let span = (DT << fl) as f32;
+            for (&(dx, dy), tile) in fb {
+                let Some(t) = &tile.texture else { continue };
+                let (tx, ty) = (dx as f32 * span, dy as f32 * span);
+                let part = Vec2::new((w - tx).min(span), (h - ty).min(span));
+                let (u, v) = (part.x / span, part.y / span);
+                for &(ox, oy) in &copies {
+                    let quad = [(0.0, 0.0), (u, 0.0), (u, v), (0.0, v)].map(|(a, b): (f32, f32)| xf.to_screen(Vec2::new(tx + ox + a * span, ty + oy + b * span)));
+                    if !Rect::from_points(&quad).intersects(rect) {
+                        continue;
+                    }
+                    let mut mesh = egui::Mesh::with_texture(t.id());
+                    for (i, (a, b)) in [(0.0, 0.0), (u, 0.0), (u, v), (0.0, v)].into_iter().enumerate() {
+                        mesh.vertices.push(egui::epaint::Vertex { pos: quad[i], uv: Pos2::new(a, b), color: Color32::WHITE });
+                    }
+                    mesh.add_triangle(0, 1, 2);
+                    mesh.add_triangle(0, 2, 3);
+                    painter.add(egui::Shape::mesh(mesh));
+                }
+            }
+        }
+        let span = (DT << self.disp_level) as f32;
         for (&(dx, dy), tile) in self.display.iter_mut() {
-            let (tx, ty) = ((dx * DT) as f32, (dy * DT) as f32);
+            let (tx, ty) = (dx as f32 * span, dy as f32 * span);
             let shown_at: Vec<(f32, f32)> = copies
                 .iter()
                 .copied()
                 .filter(|&(ox, oy)| {
                     let quad = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
-                        .map(|(a, b): (f32, f32)| xf.to_screen(Vec2::new(tx + ox + a * DT as f32, ty + oy + b * DT as f32)));
+                        .map(|(a, b): (f32, f32)| xf.to_screen(Vec2::new(tx + ox + a * span, ty + oy + b * span)));
                     Rect::from_points(&quad).intersects(rect)
                 })
                 .collect();
@@ -10831,17 +10986,14 @@ app.open_canvas_dialog(d == "resolution")
             }
             if let Some(t) = &tile.texture {
                 // Край холста внутри плитки: показываем только часть до границы.
-                let part = Vec2::new(
-                    (w - (dx * DT) as f32).min(DT as f32),
-                    (h - (dy * DT) as f32).min(DT as f32),
-                );
-                let (u, v) = (part.x / DT as f32, part.y / DT as f32);
+                let part = Vec2::new((w - tx).min(span), (h - ty).min(span));
+                let (u, v) = (part.x / span, part.y / span);
                 for &(x0, y0) in &shown_at {
                     let (x0, y0) = (tx + x0, ty + y0);
                     let mut mesh = egui::Mesh::with_texture(t.id());
                     for (a, b) in [(0.0, 0.0), (u, 0.0), (u, v), (0.0, v)] {
                         mesh.vertices.push(egui::epaint::Vertex {
-                            pos: xf.to_screen(Vec2::new(x0 + a * DT as f32, y0 + b * DT as f32)),
+                            pos: xf.to_screen(Vec2::new(x0 + a * span, y0 + b * span)),
                             uv: Pos2::new(uv.min.x + a, uv.min.y + b),
                             color: Color32::WHITE,
                         });
@@ -11815,10 +11967,10 @@ impl PaintApp {
                     let before = d.size;
                     egui::Grid::new("canvasdlg").num_columns(2).show(ui, |ui| {
                         ui.label(tr("Ширина:"));
-                        ui.add(egui::DragValue::new(&mut d.size[0]).range(1..=100_000).suffix(" px"));
+                        ui.add(egui::DragValue::new(&mut d.size[0]).range(1..=MAX_SIDE).suffix(" px"));
                         ui.end_row();
                         ui.label(tr("Высота:"));
-                        ui.add(egui::DragValue::new(&mut d.size[1]).range(1..=100_000).suffix(" px"));
+                        ui.add(egui::DragValue::new(&mut d.size[1]).range(1..=MAX_SIDE).suffix(" px"));
                         ui.end_row();
                         ui.label("");
                         ui.checkbox(&mut d.keep_ratio, tr("Сохранять пропорции"));
@@ -11884,7 +12036,7 @@ impl PaintApp {
         }
         if let Some((resample, [nw, nh], mode, anchor)) = apply {
             self.canvas_dialog = None;
-            if (nw, nh) != (self.doc.width, self.doc.height) {
+            if (nw, nh) != (self.doc.width, self.doc.height) && self.shows(nw, nh) {
                 // пересэмплирование идёт целым буфером старого и нового размера
                 let fits = u64::from(nw) * u64::from(nh) <= paint_core::document::MAX_FLAT;
                 if resample && (!fits || self.too_big_for_whole()) {
@@ -11961,14 +12113,14 @@ impl PaintApp {
                         ui.label(tr("Ширина:"));
                         ui.add(
                             egui::DragValue::new(&mut self.new_size[0])
-                                .range(1..=100_000)
+                                .range(1..=MAX_SIDE)
                                 .suffix(" px"),
                         );
                         ui.end_row();
                         ui.label(tr("Высота:"));
                         ui.add(
                             egui::DragValue::new(&mut self.new_size[1])
-                                .range(1..=100_000)
+                                .range(1..=MAX_SIDE)
                                 .suffix(" px"),
                         );
                         ui.end_row();

@@ -472,11 +472,11 @@ pub fn magic_wand_closing(pixels: &ColorMap, width: u32, height: u32, x: i32, y:
     // Холст до 2^29 точек считается целиком, как всегда. Больше (до 100000×100000) — в рамке
     // плиток слоя с запасом больше всех шагов роста: за ней всё пусто, связано и не задето
     // утолщённым контуром, так что там заливка либо везде, либо нигде.
-    let huge = u64::from(width) * u64::from(height) > crate::document::MAX_FLAT;
+    let huge = u64::from(width) * u64::from(height) > crate::document::DENSE_LIMIT;
     let margin = (gap + expand) as i32 + 4;
     let (ox, oy, w, h) = if huge {
         let Some((a, b, c, d)) = tile_box(pixels, cw, ch, margin) else { return magic_wand(pixels, width, height, x, y, tolerance) };
-        if u64::from((c - a) as u32) * u64::from((d - b) as u32) > crate::document::MAX_FLAT {
+        if u64::from((c - a) as u32) * u64::from((d - b) as u32) > crate::document::DENSE_LIMIT {
             return MaskMap::new();
         }
         (a, b, c - a, d - b)

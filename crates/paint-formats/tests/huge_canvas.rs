@@ -6,7 +6,12 @@ use paint_core::document::{Document, LiveStroke};
 use paint_core::stroke::{InputPoint, Stroke};
 use std::time::Instant;
 
-const SIDE: u32 = 100_000;
+const SIDE_MAX: u32 = 100_000;
+
+/// Сторона холста: 100000 или `HUGE_SIDE`.
+fn side() -> u32 {
+    std::env::var("HUGE_SIDE").ok().and_then(|v| v.parse().ok()).unwrap_or(SIDE_MAX)
+}
 
 fn rss_mb() -> u64 {
     let s = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
@@ -19,11 +24,11 @@ fn report(name: &str, t: Instant) {
 
 /// Холст с мазком и замкнутым кольцом у дальнего угла (95000, 95000).
 fn drawing() -> Document {
-    let mut doc = Document::new(SIDE, SIDE);
+    let mut doc = Document::new(side(), side());
     let mut live = LiveStroke::new(vec![0], Stroke::new(BrushParams { size: 60.0, ..Default::default() }), [20, 20, 20]);
     for i in 0..=400 {
         let a = i as f32 / 400.0 * std::f32::consts::TAU;
-        live.stroke.add_point(InputPoint { x: 95_000.0 + a.cos() * 900.0, y: 95_000.0 + a.sin() * 900.0, pressure: 1.0 });
+        live.stroke.add_point(InputPoint { x: (side() - 5_000) as f32 + a.cos() * 900.0, y: (side() - 5_000) as f32 + a.sin() * 900.0, pressure: 1.0 });
         if i % 8 == 0 {
             doc.live_update(&mut live);
         }
@@ -36,15 +41,16 @@ fn drawing() -> Document {
 #[ignore = "проверка большого холста, только по запросу"]
 fn huge_1_create_draw_show_undo() {
     let t = Instant::now();
-    let doc = Document::new(SIDE, SIDE);
+    let doc = Document::new(side(), side());
     report("новый холст", t);
     drop(doc);
     let t = Instant::now();
     let mut doc = drawing();
     report("мазок 60 px у дальнего угла", t);
     let t = Instant::now();
-    let tile = doc.render_tile((95_000 / 64, 95_000 / 64 + 14));
-    assert!(tile.iter().any(|&v| v != 0) || true);
+    // плитка на мазке (кольцо радиусом 900 вокруг (95000, 95000)): не пустая
+    let tile = doc.render_tile(((side() as i32 - 4_100) / 64, (side() as i32 - 5_000) / 64));
+    assert!(tile.as_chunks::<4>().0.iter().any(|p| p[3] != 0));
     report("показ плитки", t);
     let t = Instant::now();
     assert!(doc.undo().is_some());
@@ -57,7 +63,7 @@ fn huge_1_create_draw_show_undo() {
 fn huge_2_wand_fill_inside_ring() {
     let mut doc = drawing();
     let t = Instant::now();
-    let m = paint_core::selection::magic_wand(&doc.layers[0].pixels, SIDE, SIDE, 95_000, 95_000, 10);
+    let m = paint_core::selection::magic_wand(&doc.layers[0].pixels, side(), side(), side() as i32 - 5_000, side() as i32 - 5_000, 10);
     report("палочка внутри кольца", t);
     let t = Instant::now();
     doc.fill(&[0], &m, [200, 40, 40]);
@@ -70,10 +76,10 @@ fn huge_3_filters_and_transform() {
     let doc = drawing();
     let all = |_: i32, _: i32| 32768u32;
     let t = Instant::now();
-    let _ = paint_core::filters::gaussian_blur(&doc.layers[0].pixels, SIDE, SIDE, 20.0, &all);
+    let _ = paint_core::filters::gaussian_blur(&doc.layers[0].pixels, side(), side(), 20.0, &all);
     report("размытие по Гауссу r=20", t);
     let t = Instant::now();
-    let _ = paint_core::filters::median(&doc.layers[0].pixels, SIDE, SIDE, 2, &all);
+    let _ = paint_core::filters::median(&doc.layers[0].pixels, side(), side(), 2, &all);
     report("медиана r=2", t);
     let t = Instant::now();
     let sel = paint_core::selection::Selection::default();
@@ -97,7 +103,7 @@ fn huge_4_save_and_open_sai2() {
     let back = paint_formats::sai2_doc::load(&p);
     report("открытие .sai2", t);
     let back = back.unwrap().document;
-    assert_eq!((back.width, back.height), (SIDE, SIDE));
+    assert_eq!((back.width, back.height), (side(), side()));
     // HUGE_KEEP=путь — оставить файл (для проверки программы на нём)
     if let Some(keep) = std::env::var_os("HUGE_KEEP") {
         std::fs::copy(&p, keep).unwrap();
