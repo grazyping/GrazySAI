@@ -1615,6 +1615,8 @@ struct PaintApp {
     /// найдена копия прошлого запуска (путь копии и исходного файла).
     recovery_at: Instant,
     recovery_busy: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Поток, пишущий копию для восстановления (при выходе — дождаться его).
+    recovery_job: Option<std::thread::JoinHandle<()>>,
     recovery_dirty: bool,
     recovery_found: Option<(PathBuf, String)>,
     /// Поворот вида (радианы) и зеркало вида по горизонтали — только показ, рисунок не меняется.
@@ -1884,6 +1886,7 @@ impl PaintApp {
             key_capture: None,
             recovery_at: Instant::now(),
             recovery_busy: Default::default(),
+            recovery_job: None,
             recovery_dirty: false,
             recovery_found: None,
             view_angle: 0.0,
@@ -2326,7 +2329,7 @@ app.open_canvas_dialog(d == "resolution")
         let doc = self.doc.snapshot();
         let original = self.file.as_ref().map(|f| f.display().to_string()).unwrap_or_default();
         let busy = self.recovery_busy.clone();
-        std::thread::spawn(move || {
+        self.recovery_job = Some(std::thread::spawn(move || {
             if let Some(d) = file.parent() {
                 let _ = std::fs::create_dir_all(d);
             }
@@ -2334,7 +2337,7 @@ app.open_canvas_dialog(d == "resolution")
                 let _ = std::fs::write(&info, original);
             }
             busy.store(false, Ordering::SeqCst);
-        });
+        }));
     }
 
     fn save_settings(&self) {
@@ -12929,8 +12932,9 @@ impl eframe::App for PaintApp {
         // нормальный выход: копия для восстановления не нужна (если её не предлагали восстановить)
         if self.recovery_found.is_none() {
             if let Some((file, info)) = recovery_files() {
-                while self.recovery_busy.load(std::sync::atomic::Ordering::SeqCst) {
-                    std::thread::sleep(Duration::from_millis(50));
+                // копия пишется в фоне — дождаться потока, а не опрашивать флаг
+                if let Some(job) = self.recovery_job.take() {
+                    let _ = job.join();
                 }
                 let _ = std::fs::remove_file(file);
                 let _ = std::fs::remove_file(info);
