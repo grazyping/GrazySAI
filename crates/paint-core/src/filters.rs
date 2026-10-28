@@ -293,46 +293,7 @@ pub fn gaussian_blur(src: &ColorMap, w: u32, h: u32, radius: f64, sel: &(dyn Fn(
         out
     };
     let blurred = transpose(&pass(&transpose(&pass(&buf, bw, bh), bw, bh), bh, bw), bh, bw);
-    // обратно в плитки — по плиткам параллельно
-    let (k0, k1) = (crate::tile::key_of(x0, y0), crate::tile::key_of(x1 - 1, y1 - 1));
-    let keys: Vec<(i32, i32)> = (k0.1..=k1.1).flat_map(|ky| (k0.0..=k1.0).map(move |kx| (kx, ky))).collect();
-    let done: Vec<((i32, i32), Tile<Px>)> = std::thread::scope(|scope| {
-        let parts: Vec<_> = keys
-            .chunks(keys.len().div_ceil(threads).max(1))
-            .map(|part| {
-                let blurred = &blurred;
-                scope.spawn(move || {
-                    let mut v = Vec::with_capacity(part.len());
-                    for &(kx, ky) in part {
-                        let mut t = src.tiles.get(&(kx, ky)).cloned().unwrap_or_else(|| Tile::filled(CLEAR));
-                        let (tx, ty) = (kx * TILE, ky * TILE);
-                        for gy in y0.max(ty)..y1.min(ty + TILE) {
-                            for gx in x0.max(tx)..x1.min(tx + TILE) {
-                                let s = sel(gx, gy);
-                                if s == 0 {
-                                    continue;
-                                }
-                                let i = ((gy - ty) * TILE + gx - tx) as usize;
-                                let old = t.0[i];
-                                let v = blurred[(gy - y0) as usize * bw + (gx - x0) as usize];
-                                let a = (v[3].clamp(0.0, 1.0) * ONE as f64 + 0.5) as u16;
-                                let q = |c: f64| ((c.clamp(0.0, 1.0) * ONE as f64 + 0.5) as u16).min(a);
-                                let n = [q(v[0]), q(v[1]), q(v[2]), a];
-                                t.0[i] = if s >= ONE { n } else { mix(old, n, s) };
-                            }
-                        }
-                        v.push(((kx, ky), t));
-                    }
-                    v
-                })
-            })
-            .collect();
-        parts.into_iter().flat_map(|p| p.join().unwrap()).collect()
-    });
-    let mut out = src.clone();
-    out.tiles.extend(done);
-    out.tiles.retain(|_, t| t.0.iter().any(|p| p[3] != 0));
-    out
+    write_back(src, x0, y0, bw, &blurred, sel)
 }
 
 #[cfg(test)]
@@ -525,28 +486,52 @@ fn dense(src: &ColorMap, w: u32, h: u32, pad: i32) -> Option<Dense> {
     }
     let (bw, bh) = ((x1 - x0) as usize, (y1 - y0) as usize);
     let k = 1.0 / ONE as f64;
-    let buf = (0..bw * bh).map(|i| src.get(x0 + (i % bw) as i32, y0 + (i / bw) as i32).map(|c| c as f64 * k)).collect();
+    let buf = src.read_rect(x0, y0, bw, bh).into_iter().map(|p| p.map(|c| c as f64 * k)).collect();
     Some((x0, y0, bw, bh, buf))
 }
 
-/// Записать плотный результат обратно с долей выделения.
+/// Записать плотный результат обратно с долей выделения — по плиткам, параллельно.
 fn write_back(src: &ColorMap, x0: i32, y0: i32, bw: usize, res: &[[f64; 4]], sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
     let mut out = src.clone();
-    for (i, v) in res.iter().enumerate() {
-        let (x, y) = (x0 + (i % bw) as i32, y0 + (i / bw) as i32);
-        let s = sel(x, y);
-        if s == 0 {
-            continue;
-        }
-        let a = (v[3].clamp(0.0, 1.0) * ONE as f64 + 0.5) as u16;
-        let q = |c: f64| ((c.clamp(0.0, 1.0) * ONE as f64 + 0.5) as u16).min(a);
-        let n = [q(v[0]), q(v[1]), q(v[2]), a];
-        let old = src.get(x, y);
-        let p = if s >= ONE { n } else { mix(old, n, s) };
-        if p != old {
-            out.set(x, y, p);
-        }
+    if bw == 0 || res.is_empty() {
+        return out;
     }
+    let (x1, y1) = (x0 + bw as i32, y0 + (res.len() / bw) as i32);
+    let (k0, k1) = (crate::tile::key_of(x0, y0), crate::tile::key_of(x1 - 1, y1 - 1));
+    let keys: Vec<(i32, i32)> = (k0.1..=k1.1).flat_map(|ky| (k0.0..=k1.0).map(move |kx| (kx, ky))).collect();
+    let threads = crate::threads();
+    let done: Vec<((i32, i32), Tile<Px>)> = std::thread::scope(|scope| {
+        let parts: Vec<_> = keys
+            .chunks(keys.len().div_ceil(threads).max(1))
+            .map(|part| {
+                scope.spawn(move || {
+                    let mut v = Vec::with_capacity(part.len());
+                    for &(kx, ky) in part {
+                        let mut t = src.tiles.get(&(kx, ky)).cloned().unwrap_or_else(|| Tile::filled(CLEAR));
+                        let (tx, ty) = (kx * TILE, ky * TILE);
+                        for gy in y0.max(ty)..y1.min(ty + TILE) {
+                            for gx in x0.max(tx)..x1.min(tx + TILE) {
+                                let s = sel(gx, gy);
+                                if s == 0 {
+                                    continue;
+                                }
+                                let i = ((gy - ty) * TILE + gx - tx) as usize;
+                                let v = res[(gy - y0) as usize * bw + (gx - x0) as usize];
+                                let a = (v[3].clamp(0.0, 1.0) * ONE as f64 + 0.5) as u16;
+                                let q = |c: f64| ((c.clamp(0.0, 1.0) * ONE as f64 + 0.5) as u16).min(a);
+                                let n = [q(v[0]), q(v[1]), q(v[2]), a];
+                                t.0[i] = if s >= ONE { n } else { mix(t.0[i], n, s) };
+                            }
+                        }
+                        v.push(((kx, ky), t));
+                    }
+                    v
+                })
+            })
+            .collect();
+        parts.into_iter().flat_map(|p| p.join().unwrap()).collect()
+    });
+    out.tiles.extend(done);
     out.tiles.retain(|_, t| t.0.iter().any(|p| p[3] != 0));
     out
 }
@@ -931,20 +916,30 @@ pub fn median(src: &ColorMap, w: u32, h: u32, radius: u32, sel: &(dyn Fn(i32, i3
     let r = radius.clamp(1, 5) as i32;
     let Some(b) = canvas_bounds(src, w, h, r) else { return src.clone() };
     let k = 1.0 / ONE as f64;
+    // соседи всех точек рамки — в рамке, расширенной ещё на r (за содержимым всё равно пусто):
+    // плотный буфер вместо поиска плитки на каждого соседа
+    let (rx0, ry0) = ((b.0 - r).max(0), (b.1 - r).max(0));
+    let (rx1, ry1) = ((b.2 + r).min(w as i32), (b.3 + r).min(h as i32));
+    let rw = (rx1 - rx0) as usize;
+    let px = src.read_rect(rx0, ry0, rw, (ry1 - ry0) as usize);
     per_pixel(src, b, sel, &|x, y| {
-        let mut ch: [Vec<u16>; 4] = Default::default();
+        // окно до 11×11 — на стеке; медиана по `select_nth` та же, что по сортировке
+        let mut ch = [[0u16; 121]; 4];
+        let mut n = 0;
         for yy in (y - r).max(0)..=(y + r).min(h as i32 - 1) {
+            let row = (yy - ry0) as usize * rw;
             for xx in (x - r).max(0)..=(x + r).min(w as i32 - 1) {
-                let p = src.get(xx, yy);
+                let p = px[row + (xx - rx0) as usize];
                 for c in 0..4 {
-                    ch[c].push(p[c]);
+                    ch[c][n] = p[c];
                 }
+                n += 1;
             }
         }
         let mut out = [0f64; 4];
         for c in 0..4 {
-            let v = &mut ch[c];
-            let mid = v.len() / 2;
+            let v = &mut ch[c][..n];
+            let mid = n / 2;
             out[c] = *v.select_nth_unstable(mid).1 as f64 * k;
         }
         // предумножение: цвет не ярче альфы
