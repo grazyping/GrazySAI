@@ -72,6 +72,11 @@ pub fn code() -> &'static str {
     LANGS[current()].0
 }
 
+/// Тесты, которые переключают язык (он общий на программу), идут по очереди под этим замком:
+/// иначе один тест сбивает язык другому.
+#[cfg(test)]
+pub(crate) static TEST_LANG: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub fn set(code: &str) {
     if let Some(i) = LANGS.iter().position(|(c, _, _)| *c == code) {
         CURRENT.store(i, Ordering::Relaxed);
@@ -285,6 +290,7 @@ mod tests {
 
     #[test]
     fn indent_and_substitution() {
+        let _lang = TEST_LANG.lock().unwrap_or_else(|e| e.into_inner());
         set("en");
         assert_eq!(tr("Кисть"), "Brush");
         assert_eq!(tr("   Ширина"), "   Width");

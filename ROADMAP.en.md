@@ -314,7 +314,7 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 - [x] System “Open”, “Save As” and “Export” windows (File Explorer on Windows, the desktop dialog on Linux), Ctrl+O
 - [x] Shortcut keys in menus and tooltips can be hidden (“Window → Show shortcut keys”)
 
-### 1.4 — from Clip Studio Paint and After Effects (current version 1.4.0; research — `docs/44-plan-1.4.en.md`)
+### 1.4 — from Clip Studio Paint and After Effects (current version 1.4.2; research — `docs/44-plan-1.4.en.md`)
 
 - [x] Auto Actions: record steps and replay them with one button, action sets (1.4.0)
 - [x] Layer styles (stroke, shadow, glow, colour overlay) and correction layers: gradient map, levels, hue/saturation, brightness/contrast, invert, posterize, threshold (1.4.0)
@@ -338,6 +338,7 @@ From the tester's feedback:
 - [x] Puppet as in Clip Studio: the whole mesh (one pin moves it, a second one rotates and stretches it), puppet keys on the timeline, copying and dragging frames (1.4.1)
 - [x] Dockable panels as in Clip Studio: panels, canvas and timeline are tabs, tear off into floating windows, drop spot highlighted, layout kept in settings and workspaces (1.4.1)
 - [x] GrazySAI Convert, a format converter: pictures (SAI 2, PSD, PSB, OpenRaster, images) and 3D models (glTF, VRM, OBJ, FBX, PMX, COLLADA → GLB, OBJ) in batches (1.4.1)
+- [x] Faster filters, rotation and transform, magic wand, smudge (2–10×); canvases up to 30000×30000 in the window (big ones shown as reduced copies), up to 100000×100000 in `.sai2` and the converter; the program no longer loads the CPU while idle (1.4.2)
 
 ## Ahead
 

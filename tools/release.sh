@@ -14,17 +14,17 @@ cargo build -q --release -p paint-app -p paint-studio -p paint-convert --target 
 cd dist/release
 for os in linux windows; do
   d=GrazySAI-$V-$os-x86_64; rm -rf $d; mkdir $d
-  cp ../../LICENSE ../../README.md ../../README.ru.md ../../ROADMAP.md ../../ROADMAP.en.md $d/
-  cp ../../docs/manual.md $d/РУКОВОДСТВО.md; cp ../../docs/manual.en.md $d/MANUAL.md
+  cp $ROOT/LICENSE $ROOT/README.md $ROOT/README.ru.md $ROOT/ROADMAP.md $ROOT/ROADMAP.en.md $d/
+  cp $ROOT/docs/manual.md $d/РУКОВОДСТВО.md; cp $ROOT/docs/manual.en.md $d/MANUAL.md
   # инструкции для авторов кистей и плагинов — рядом с руководством (ссылки в нём на соседние файлы)
-  cp ../../docs/35-gsbrush-format.md ../../docs/36-plugins.md ../../docs/36-plugins.en.md ../../docs/37-brushes-guide.md ../../docs/37-brushes-guide.en.md $d/
+  cp $ROOT/docs/35-gsbrush-format.md $ROOT/docs/36-plugins.md $ROOT/docs/36-plugins.en.md $ROOT/docs/37-brushes-guide.md $ROOT/docs/37-brushes-guide.en.md $d/
   sed -i 's#(docs/manual.en.md)#(MANUAL.md)#' $d/README.md
   sed -i 's#(docs/manual.md)#(РУКОВОДСТВО.md)#' $d/README.ru.md
   sed -i 's#(manual.en.md)#(MANUAL.md)#; s#(\.\./ROADMAP.md)#(ROADMAP.md)#' $d/РУКОВОДСТВО.md
   sed -i 's#(manual.md)#(РУКОВОДСТВО.md)#; s#(\.\./ROADMAP.en.md)#(ROADMAP.en.md)#' $d/MANUAL.md
 done
-cp ../../target/release/GrazySAI ../../target/release/GrazySAI-Studio ../../target/release/GrazySAI-Convert GrazySAI-$V-linux-x86_64/
-cp ../../target/x86_64-pc-windows-gnullvm/release/GrazySAI.exe ../../target/x86_64-pc-windows-gnullvm/release/GrazySAI-Studio.exe ../../target/x86_64-pc-windows-gnullvm/release/GrazySAI-Convert.exe GrazySAI-$V-windows-x86_64/
+cp $ROOT/target/release/GrazySAI $ROOT/target/release/GrazySAI-Studio $ROOT/target/release/GrazySAI-Convert GrazySAI-$V-linux-x86_64/
+cp $ROOT/target/x86_64-pc-windows-gnullvm/release/GrazySAI.exe $ROOT/target/x86_64-pc-windows-gnullvm/release/GrazySAI-Studio.exe $ROOT/target/x86_64-pc-windows-gnullvm/release/GrazySAI-Convert.exe GrazySAI-$V-windows-x86_64/
 rm -f GrazySAI-$V-*.tar.gz GrazySAI-$V-*.zip
 tar czf GrazySAI-$V-linux-x86_64.tar.gz GrazySAI-$V-linux-x86_64
 python3 -I "$ROOT/tools/mkzip.py" GrazySAI-$V-windows-x86_64.zip GrazySAI-$V-windows-x86_64
@@ -45,13 +45,13 @@ if [ -z "$NO_EXTRA" ]; then
   for os in freebsd windows7; do
     d=GrazySAI-$V-$os-x86_64; rm -rf $d; cp -r GrazySAI-$V-linux-x86_64 $d; rm -f $d/GrazySAI $d/GrazySAI-Studio $d/GrazySAI-Convert
   done
-  cp ../freebsd/GrazySAI GrazySAI-$V-freebsd-x86_64/
-  cp ../win7/GrazySAI.exe ../win7/gspathcch.dll GrazySAI-$V-windows7-x86_64/
+  cp $ROOT/dist/freebsd/GrazySAI GrazySAI-$V-freebsd-x86_64/
+  cp $ROOT/dist/win7/GrazySAI.exe $ROOT/dist/win7/gspathcch.dll GrazySAI-$V-windows7-x86_64/
   rm -f GrazySAI-$V-freebsd-*.tar.gz GrazySAI-$V-windows7-*.zip
   tar czf GrazySAI-$V-freebsd-x86_64.tar.gz GrazySAI-$V-freebsd-x86_64
   # пакет FreeBSD — в виртуальной машине FreeBSD, если она есть
   if [ -x "${FREEBSD_VM:-$HOME/.local/share/vms/freebsd}/ssh.sh" ]; then
-    (cd "$ROOT" && tools/freebsd/mkpkg.sh "$V" >/dev/null) && cp ../freebsd/grazysai-$V.pkg .
+    (cd "$ROOT" && tools/freebsd/mkpkg.sh "$V" >/dev/null) && cp $ROOT/dist/freebsd/grazysai-$V.pkg .
   fi
   python3 -I "$ROOT/tools/mkzip.py" GrazySAI-$V-windows7-x86_64.zip GrazySAI-$V-windows7-x86_64
 fi

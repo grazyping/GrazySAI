@@ -334,6 +334,7 @@ mod hint_tests {
     /// остаётся непустая подпись.
     #[test]
     fn hints_strip_on_every_language() {
+        let _lang = crate::i18n::TEST_LANG.lock().unwrap_or_else(|e| e.into_inner());
         let src = include_str!("main.rs");
         let keys: Vec<&str> = src.split("keys::hint(tr(\"").skip(1).filter_map(|r| r.split("\")").next()).collect();
         assert!(keys.len() >= 25, "мало подписей: {}", keys.len());

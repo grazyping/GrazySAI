@@ -599,6 +599,8 @@ The **canvas** is the working area of a picture. The **view** is how you see it:
 
 ### Canvas size and background
 
+The largest canvas in the program window is 30000×30000 points. Larger `.sai2` files (up to 100000×100000, as in SAI 2) can be converted by GrazySAI Convert. When zoomed out, big canvases are shown as reduced copies, which takes little memory.
+
 - The “Canvas” menu:
   - change resolution (the image is resampled);
   - change canvas size (the image is not scaled, 3×3 anchor);
