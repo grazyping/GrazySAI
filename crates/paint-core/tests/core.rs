@@ -1651,3 +1651,43 @@ fn animation_cels_per_frame() {
     let (dst, _) = doc.move_layer_to(&[0], &[2], 0).unwrap();
     assert_eq!(doc.layer(&dst).unwrap().name, "1-3");
 }
+
+#[test]
+fn magic_wand_matches_a_plain_flood_fill() {
+    // шум из трёх цветов: заливка строками должна найти ту же область, что обход по точкам
+    let (w, h) = (150u32, 110u32);
+    let mut px = paint_core::tile::ColorMap::new();
+    let mut s = 12345u64;
+    let mut kind = vec![0u8; (w * h) as usize];
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
+            s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let k = (s >> 60) as u8 % 3;
+            kind[(y as u32 * w + x as u32) as usize] = k;
+            px.set(x, y, from_rgba8([[10, 10, 10, 255], [200, 30, 30, 255], [12, 12, 12, 255]][k as usize]));
+        }
+    }
+    for (sx, sy, tol) in [(5, 5, 0u8), (70, 40, 5), (149, 109, 3)] {
+        let m = paint_core::selection::magic_wand(&px, w, h, sx, sy, tol);
+        let near = |a: u8, b: u8| a == b || (tol >= 2 && a != 1 && b != 1);
+        let seed = kind[(sy as u32 * w + sx as u32) as usize];
+        let mut seen = vec![false; kind.len()];
+        let mut stack = vec![(sx, sy)];
+        while let Some((x, y)) = stack.pop() {
+            if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
+                continue;
+            }
+            let i = (y as u32 * w + x as u32) as usize;
+            if seen[i] || !near(kind[i], seed) {
+                continue;
+            }
+            seen[i] = true;
+            stack.extend([(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]);
+        }
+        for y in 0..h as i32 {
+            for x in 0..w as i32 {
+                assert_eq!(m.get(x, y) != 0, seen[(y as u32 * w + x as u32) as usize], "({x}, {y}), семя ({sx}, {sy})");
+            }
+        }
+    }
+}

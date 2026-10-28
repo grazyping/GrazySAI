@@ -4,9 +4,8 @@
 //! с Shift добавляется, с Alt вычитается, с Shift+Alt остаётся пересечение.
 
 use crate::pixel::{to_rgba8, Px, ONE};
-use crate::tile::{index_of, key_of, ColorMap, Key, MaskMap, Tile, TILE};
+use crate::tile::{ColorMap, Key, MaskMap, Tile, TILE};
 use crate::vector::{coverage, Pt};
-use std::collections::HashMap;
 
 /// Как новая область соединяется с прежним выделением.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -298,26 +297,45 @@ pub fn magic_wand(pixels: &ColorMap, width: u32, height: u32, x: i32, y: i32, to
     let rgba = |p: Px| to_rgba8(p);
     let seed = rgba(pixels.get(x, y));
     let near = |c: [u8; 4]| (0..4).all(|i| (c[i] as i32 - seed[i] as i32).abs() <= tolerance as i32);
-    let mut seen: HashMap<Key, Vec<bool>> = HashMap::new();
-    let mut stack = vec![(x, y)];
-    while let Some((px, py)) = stack.pop() {
-        let key = key_of(px, py);
-        let flags = seen.entry(key).or_insert_with(|| vec![false; (TILE * TILE) as usize]);
-        let i = index_of(px, py);
-        if flags[i] {
+    // плотные буферы холста и заливка строками: та же связная (по 4 соседям) область, что у обхода
+    // по точкам, но без поиска плитки и хеш-таблицы на каждую точку
+    let (wu, hu) = (w as usize, h as usize);
+    let ok: Vec<bool> = pixels.read_rect(0, 0, wu, hu).into_iter().map(|p| near(rgba(p))).collect();
+    let mut fill = vec![0u16; wu * hu];
+    let mut stack = vec![(x as usize, y as usize)];
+    while let Some((sx, sy)) = stack.pop() {
+        let row = sy * wu;
+        if fill[row + sx] != 0 || !ok[row + sx] {
             continue;
         }
-        flags[i] = true;
-        if !near(rgba(pixels.get(px, py))) {
-            continue;
+        let (mut l, mut r) = (sx, sx);
+        while l > 0 && fill[row + l - 1] == 0 && ok[row + l - 1] {
+            l -= 1;
         }
-        out.set(px, py, ONE as u16);
-        for (nx, ny) in [(px + 1, py), (px - 1, py), (px, py + 1), (px, py - 1)] {
-            if nx >= 0 && ny >= 0 && nx < w && ny < h {
-                stack.push((nx, ny));
+        while r + 1 < wu && fill[row + r + 1] == 0 && ok[row + r + 1] {
+            r += 1;
+        }
+        fill[row + l..=row + r].fill(ONE as u16);
+        for ny in [sy.wrapping_sub(1), sy + 1] {
+            if ny >= hu {
+                continue;
+            }
+            let nrow = ny * wu;
+            let mut xx = l;
+            while xx <= r {
+                if fill[nrow + xx] == 0 && ok[nrow + xx] {
+                    stack.push((xx, ny));
+                    while xx <= r && ok[nrow + xx] {
+                        xx += 1;
+                    }
+                } else {
+                    xx += 1;
+                }
             }
         }
     }
+    out.write_rect(0, 0, wu, hu, &fill);
+    out.tiles.retain(|_, t| t.0.iter().any(|&v| v != 0));
     out
 }
 
