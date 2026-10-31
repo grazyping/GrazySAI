@@ -209,7 +209,14 @@ Like Krita's preset docker, Clip Studio's material palette and Photoshop's brush
 - [x] 3D: camera from the perspective ruler (1.3.0)
 - [x] 3D: turning the model into lines — outline and creases as a new linework layer (1.3.0)
 
-#### Leftovers of new SAI 2 features
+#### Graphics card (Vulkan, DirectX 12 through wgpu)
+
+- [x] Window drawing through wgpu, a switch in the settings, OpenGL by default, fallback when a start fails; checked on Linux (software Vulkan) and Windows (Vulkan, DirectX 12) *(coming in the next version)*
+- [ ] Heavy filters on the graphics card: preview; the final result is computed by the CPU to stay exact
+- [ ] Layer compositing for display on the graphics card
+- [ ] 3D layer on the graphics card
+
+### Leftovers of new SAI 2 features
 
 - [x] Layer ARGB colour picker for the Pixel Art Pen: a transparent pixel makes the pen erase (1.3.0)
 - [x] SAI 2 scatter shapes (`.ini` and `.bmp` from `settings/scatter`) go into the library as Scatter brushes (1.3.0)

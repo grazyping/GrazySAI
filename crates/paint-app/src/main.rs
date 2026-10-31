@@ -638,11 +638,13 @@ struct Options {
     /// Windows: брать перо через WinTab, если драйвер его даёт (иначе — Windows Ink). Пока
     /// выключено по умолчанию: на настоящем планшете ещё не проверено.
     wintab: bool,
+    /// Отрисовка окна через wgpu (Vulkan, DirectX 12), а не OpenGL; действует после перезапуска.
+    renderer_wgpu: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false, psd16: false, psd_exact: false, min_pressure: 0.0, wintab: false, btn_middle: 1, btn_right: 0 }
+        Self { dbl_props: true, swap_zoom: false, size_relative: false, spring_tools: false, spring_color: false, spring_funcs: false, spring_ms: 250, duplex_revert: false, move_guard_ms: 300, history_mb: 1024, recovery_min: 3, pressure_curve: paint_core::curve::PressureCurve::default(), popup_palette: false, psd16: false, psd_exact: false, min_pressure: 0.0, wintab: false, renderer_wgpu: false, btn_middle: 1, btn_right: 0 }
     }
 }
 
@@ -2184,6 +2186,7 @@ app.open_canvas_dialog(d == "resolution")
         if let Some(v) = s.f32("opt.btn_right") {
             o.btn_right = (v as u8).min(4);
         }
+        o.renderer_wgpu = s.str("renderer") == Some("wgpu");
         if let Some(v) = s.bool("opt.wintab") {
             o.wintab = v;
         }
@@ -2411,6 +2414,7 @@ app.open_canvas_dialog(d == "resolution")
         s.set("opt.pressure_curve", format!("{x1:.3},{y1:.3},{x2:.3},{y2:.3}"));
         s.set("opt.min_pressure", o.min_pressure);
         s.set("opt.wintab", o.wintab as u8);
+        s.set("renderer", if o.renderer_wgpu { "wgpu" } else { "glow" });
         s.set("opt.btn_middle", o.btn_middle);
         s.set("opt.btn_right", o.btn_right);
         s.set("layers_right", w.layers_right as u8);
@@ -12606,6 +12610,7 @@ impl PaintApp {
                 }
             }).response.on_hover_text(tr("Слабее — перо не рисует (защита от случайных касаний); нажим отсчитывается от этого порога"));
             ui.checkbox(&mut o.wintab, tr("Windows: перо через WinTab (нужен перезапуск)")).on_hover_text(tr("WinTab даёт нажим, наклон и поворот пера, если драйвер планшета его поддерживает; выключено или без WinTab — Windows Ink"));
+            ui.checkbox(&mut o.renderer_wgpu, tr("Отрисовка через Vulkan / DirectX 12 (нужен перезапуск)")).on_hover_text(tr("Окно программы рисует wgpu вместо OpenGL; если не запустится — программа вернётся к OpenGL. Если видеодрайвер сбоит в OpenGL, попробуйте этот способ"));
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ok = ui.button("OK").clicked();
@@ -13012,6 +13017,15 @@ impl eframe::App for PaintApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // первые кадры нарисованы — запуск через wgpu удался (метка из main)
+        {
+            static FRAMES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            if FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 10 {
+                if let Some(d) = settings::dir() {
+                    let _ = std::fs::remove_file(d.join("wgpu-starting"));
+                }
+            }
+        }
         menu_icons::set_font(ctx);
         // тема сменилась мимо флажка (рабочее пространство) — переоформить
         if ctx.style().visuals.dark_mode != sai_ui::is_dark() {
@@ -13757,6 +13771,48 @@ fn main() -> eframe::Result {
         .or_else(|| settings::Settings::load().str("lang").map(str::to_string))
         .unwrap_or_else(|| i18n::system().to_string());
     i18n::set(&lang);
+    // отрисовка: OpenGL (по умолчанию) или wgpu — Vulkan, DirectX 12, Metal; выбор в настройках,
+    // `PAINT_RENDERER=wgpu|glow` — для проверок. wgpu не поднялся — запуск заново через OpenGL.
+    use settings::SettingsFile;
+    let forced = std::env::var("PAINT_RENDERER").ok();
+    let wanted = forced.clone().or_else(|| settings::Settings::load().str("renderer").map(str::to_string));
+    // Метка на время первых кадров: если wgpu уронит программу при запуске, следующий запуск
+    // увидит метку и вернётся к OpenGL — иначе галочку было бы негде снять.
+    let marker = settings::dir().filter(|_| forced.is_none()).map(|d| d.join("wgpu-starting"));
+    let back_to_opengl = || {
+        let mut s = settings::Settings::load();
+        s.set("renderer", "glow");
+        s.save();
+    };
+    if wanted.as_deref() == Some("wgpu") {
+        if marker.as_ref().is_some_and(|m| m.exists()) {
+            eprintln!("прошлый запуск через wgpu не удался, отрисовка через OpenGL");
+            if let Some(m) = &marker {
+                let _ = std::fs::remove_file(m);
+            }
+            back_to_opengl();
+        } else {
+            if let Some(m) = &marker {
+                let _ = std::fs::write(m, b"");
+            }
+            match run_with(eframe::Renderer::Wgpu, path.clone()) {
+                Err(e) => {
+                    eprintln!("wgpu не запустился ({e}), отрисовка через OpenGL");
+                    if let Some(m) = &marker {
+                        let _ = std::fs::remove_file(m);
+                    }
+                    if forced.is_none() {
+                        back_to_opengl();
+                    }
+                }
+                ok => return ok,
+            }
+        }
+    }
+    run_with(eframe::Renderer::Glow, path)
+}
+
+fn run_with(renderer: eframe::Renderer, path: Option<PathBuf>) -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1360.0, 900.0])
@@ -13765,6 +13821,7 @@ fn main() -> eframe::Result {
         persist_window: settings::dir().is_some(),
         // без настроек — файл во временной папке, чтобы прогоны проверок не трогали папку eframe
         persistence_path: Some(settings::dir().unwrap_or_else(std::env::temp_dir).join(if settings::dir().is_some() { "window.ron" } else { "grazysai-test-window.ron" })),
+        renderer,
         ..Default::default()
     };
     eframe::run_native(

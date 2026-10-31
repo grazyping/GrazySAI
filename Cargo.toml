@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/paint-core", "crates/paint-cli", "crates/paint-formats", "crates/paint-brush", "crates/paint-studio", "crates/paint-plugin", "crates/paint-3d", "crates/pen-test", "crates/paint-app", "crates/virtual-tablet", "crates/paint-convert"]
+exclude = ["vendor/egui-wgpu"]
 
 [workspace.package]
 edition = "2021"
@@ -17,3 +18,7 @@ allow_attributes_without_reason = "warn" # у каждого #[allow] — reason
 redundant_clone = "warn"                 # лишнее копирование
 dbg_macro = "warn"
 todo = "warn"
+
+# Своя копия egui-wgpu 0.29.1 с одной правкой (vendor/egui-wgpu/PATCHED.md)
+[patch.crates-io]
+egui-wgpu = { path = "vendor/egui-wgpu" }

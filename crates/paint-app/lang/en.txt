@@ -1534,3 +1534,5 @@ PNG-кадры… = PNG frames…
 # Большие холсты
 Холст {0}×{1} слишком велик для этого действия: нужно больше 2 ГБ памяти разом = The {0}×{1} canvas is too large for this: it needs more than 2 GB of memory at once
 Холст {0}×{1} слишком велик для окна программы (больше 30000 точек по стороне); перевести его в другой формат можно программой GrazySAI-Convert = The {0}×{1} canvas is too large for the program window (more than 30000 points per side); GrazySAI-Convert can convert it to another format
+Отрисовка через Vulkan / DirectX 12 (нужен перезапуск) = Draw with Vulkan / DirectX 12 (restart needed)
+Окно программы рисует wgpu вместо OpenGL; если не запустится — программа вернётся к OpenGL. Если видеодрайвер сбоит в OpenGL, попробуйте этот способ = The window is drawn by wgpu instead of OpenGL; if it fails to start, the program returns to OpenGL. Try this if your video driver misbehaves with OpenGL
