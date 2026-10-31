@@ -17,6 +17,7 @@ eframe = { version = "0.29", default-features = false, features = ["glow", "wgpu
 rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
 arboard = { version = "3.6.1", default-features = false, features = ["image-data", "wayland-data-control"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
+pollster = "0.3"
 paint-brush = { path = "../paint-brush" }
 paint-plugin = { path = "../paint-plugin" }
 egui-phosphor = "0.7.3"

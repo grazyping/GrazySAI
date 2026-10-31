@@ -2343,6 +2343,7 @@ dependencies = [
  "paint-core",
  "paint-formats",
  "paint-plugin",
+ "pollster 0.3.0",
  "raw-window-handle",
  "rfd",
  "rusqlite",

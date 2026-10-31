@@ -242,22 +242,27 @@ fn transpose<T: Copy + Default + Send + Sync>(src: &[T], w: usize, h: usize) -> 
 /// Размытие по Гауссу с σ = `radius` (как в SAI; сверено по сечению линии при радиусах 1, 3 и
 /// 9,9). Считается по предумноженным значениям, за краем — прозрачность; результат смешивается
 /// с исходным по доле выделения. `w`, `h` — размер холста.
-pub fn gaussian_blur(src: &ColorMap, w: u32, h: u32, radius: f64, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+/// Ядро размытия по Гауссу (сумма 1) и его радиус в точках.
+pub fn gaussian_kernel(radius: f64) -> (Vec<f64>, i32) {
     let sigma = radius.max(0.1);
     let r = (sigma * 3.0).ceil() as i32;
-    let kernel: Vec<f64> = {
-        let k: Vec<f64> = (-r..=r).map(|x| (-(x * x) as f64 / (2.0 * sigma * sigma)).exp()).collect();
-        let s: f64 = k.iter().sum();
-        k.into_iter().map(|v| v / s).collect()
-    };
-    // считаем только рамку содержимого с запасом r (за ней результат пуст)
-    let Some((cx0, cy0, cx1, cy1)) = crate::selection::content_bounds(src) else { return src.clone() };
+    let k: Vec<f64> = (-r..=r).map(|x| (-(x * x) as f64 / (2.0 * sigma * sigma)).exp()).collect();
+    let s: f64 = k.iter().sum();
+    (k.into_iter().map(|v| v / s).collect(), r)
+}
+
+/// Что считать при размытии с радиусом ядра `r`: рамка содержимого с запасом (за ней результат
+/// пуст) — x, y, ширина, высота; `None` — считать нечего.
+pub fn gaussian_area(src: &ColorMap, w: u32, h: u32, r: i32) -> Option<(i32, i32, usize, usize)> {
+    let (cx0, cy0, cx1, cy1) = crate::selection::content_bounds(src)?;
     let (x0, y0) = ((cx0 - r).max(0), (cy0 - r).max(0));
     let (x1, y1) = ((cx1 + r).min(w as i32), (cy1 + r).min(h as i32));
-    if x1 <= x0 || y1 <= y0 {
-        return src.clone();
-    }
-    let (bw, bh) = ((x1 - x0) as usize, (y1 - y0) as usize);
+    (x1 > x0 && y1 > y0).then_some((x0, y0, (x1 - x0) as usize, (y1 - y0) as usize))
+}
+
+pub fn gaussian_blur(src: &ColorMap, w: u32, h: u32, radius: f64, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let (kernel, r) = gaussian_kernel(radius);
+    let Some((x0, y0, bw, bh)) = gaussian_area(src, w, h, r) else { return src.clone() };
     let kf = 1.0 / ONE as f64;
     let buf: Vec<[f64; 4]> = src.read_rect(x0, y0, bw, bh).into_iter().map(|p| p.map(|c| c as f64 * kf)).collect();
     let threads = crate::threads();
@@ -508,7 +513,7 @@ fn par_rows<T: Copy + Default + Send>(w: usize, h: usize, f: impl Fn(usize) -> T
 }
 
 /// Записать плотный результат обратно с долей выделения — по плиткам, параллельно.
-fn write_back(src: &ColorMap, x0: i32, y0: i32, bw: usize, res: &[[f64; 4]], sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+pub fn write_back(src: &ColorMap, x0: i32, y0: i32, bw: usize, res: &[[f64; 4]], sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
     let mut out = src.clone();
     if bw == 0 || res.is_empty() {
         return out;

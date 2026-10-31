@@ -22,6 +22,7 @@ mod plugins;
 mod recording;
 mod scene3d;
 mod actions;
+mod gpu_filter;
 mod puppet_ui;
 mod timeline;
 mod dock;
@@ -594,7 +595,10 @@ impl Drop for FrameTimer {
 /// Предпросмотр фильтра, который считается в фоне: номер настроек и ответ потока.
 struct FilterJob {
     gen: u64,
-    rx: std::sync::mpsc::Receiver<paint_core::tile::ColorMap>,
+    /// Пиксели и точны ли они: предпросмотр с видеокарты — нет, для файла считает процессор.
+    rx: std::sync::mpsc::Receiver<(paint_core::tile::ColorMap, bool)>,
+    /// Точный пересчёт уже показанного предпросмотра: новые настройки его не ждут.
+    refine: bool,
 }
 
 /// «Помощь → Настройки…», как Options в SAI 2017, плюс память истории и копия для восстановления.
@@ -6827,6 +6831,9 @@ app.open_canvas_dialog(d == "resolution")
     /// Пересчитать предпросмотр (или вернуть исходное, если предпросмотр выключен). Счёт идёт в
     /// фоновом потоке — окно не замирает; пока он идёт, новые настройки ждут (берутся последние).
     fn update_filter(&mut self, ctx: &egui::Context) {
+        if self.filter_job.as_ref().is_some_and(|j| j.refine) {
+            self.filter_job = None;
+        }
         if self.filter_job.is_some() {
             return;
         }
@@ -6843,16 +6850,24 @@ app.open_canvas_dialog(d == "resolution")
         let (job, w, h, color, ctx) = (f.clone(), self.doc.width, self.doc.height, self.color(), ctx.clone());
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(filter_result(&job, w, h, color));
+            // размытие по Гауссу — на видеокарте, если окно рисует wgpu
+            let gpu = (job.kind == FilterKind::GaussianBlur).then(gpu_filter::current).flatten().and_then(|g| {
+                let sel = &*job.sel;
+                g.gaussian(&job.original, w, h, job.radius, &|x: i32, y: i32| sel.amount(x, y))
+            });
+            let _ = tx.send(match gpu {
+                Some(p) => (p, false),
+                None => (filter_result(&job, w, h, color), true),
+            });
             ctx.request_repaint();
         });
-        self.filter_job = Some(FilterJob { gen: self.filter_gen, rx });
+        self.filter_job = Some(FilterJob { gen: self.filter_gen, rx, refine: false });
     }
 
     /// Готов ли фоновый предпросмотр: показать его, если настройки с тех пор не менялись.
-    fn poll_filter(&mut self) {
+    fn poll_filter(&mut self, ctx: &egui::Context) {
         let Some(job) = &self.filter_job else { return };
-        let pixels = match job.rx.try_recv() {
+        let (pixels, exact) = match job.rx.try_recv() {
             Ok(p) => p,
             Err(std::sync::mpsc::TryRecvError::Empty) => return,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -6864,10 +6879,22 @@ app.open_canvas_dialog(d == "resolution")
         self.filter_job = None;
         let Some(f) = self.filter.as_ref() else { return };
         if f.preview {
+            let f_dirty = f.dirty;
             let path = f.path.clone();
             let keys = self.doc.set_layer_pixels(&path, pixels);
             self.invalidate(keys);
-            self.filter_shown = Some(gen);
+            // показанное с видеокарты «OK» не примет: точный расчёт — следом, в фоне
+            self.filter_shown = exact.then_some(gen);
+            if !exact && !f_dirty {
+                let (job, w, h, color, ctx) = (self.filter.clone(), self.doc.width, self.doc.height, self.color(), ctx.clone());
+                let Some(job) = job else { return };
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let _ = tx.send((filter_result(&job, w, h, color), true));
+                    ctx.request_repaint();
+                });
+                self.filter_job = Some(FilterJob { gen, rx, refine: true });
+            }
         }
     }
 
@@ -6887,7 +6914,10 @@ app.open_canvas_dialog(d == "resolution")
         } else {
             let pixels = match job {
                 // фоновый счёт последних настроек — дождаться его
-                Some(j) if apply && current && j.gen == self.filter_gen => j.rx.recv().unwrap_or_else(|_| filter_result(&f, self.doc.width, self.doc.height, self.color())),
+                Some(j) if apply && current && j.gen == self.filter_gen => match j.rx.recv() {
+                    Ok((p, true)) => p,
+                    _ => filter_result(&f, self.doc.width, self.doc.height, self.color()),
+                },
                 _ if apply => filter_result(&f, self.doc.width, self.doc.height, self.color()),
                 _ => (*f.original).clone(),
             };
@@ -11954,7 +11984,7 @@ impl PaintApp {
                 self.open_filter(kind);
             }
         } else {
-            self.poll_filter();
+            self.poll_filter(ctx);
             if self.filter.as_ref().is_some_and(|f| f.dirty) {
                 self.update_filter(ctx);
             }
@@ -13016,7 +13046,10 @@ impl eframe::App for PaintApp {
         }
     }
 
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        if let Some(rs) = frame.wgpu_render_state() {
+            gpu_filter::set_current(&rs.device, &rs.queue);
+        }
         // первые кадры нарисованы — запуск через wgpu удался (метка из main)
         {
             static FRAMES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
