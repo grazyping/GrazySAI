@@ -22,6 +22,7 @@ mod plugins;
 mod recording;
 mod scene3d;
 mod actions;
+mod gpu_composite;
 mod gpu_filter;
 mod puppet_ui;
 mod timeline;
@@ -1448,6 +1449,7 @@ struct PaintApp {
     last_title: String,
     queue: VecDeque<Key>,
     queued: HashSet<Key>,
+    gpu_race: gpu_composite::Race,
     pen: pen::PenFeed,
     /// Сила последнего касания пера (Windows Ink); `None` — в этом сеансе пера ещё не было.
     touch_force: Option<f32>,
@@ -1795,6 +1797,7 @@ impl PaintApp {
             last_title: String::new(),
             queue: VecDeque::new(),
             queued: HashSet::new(),
+            gpu_race: Default::default(),
             pen,
             touch_force: None,
             touch_down: false,
@@ -5439,7 +5442,9 @@ app.open_canvas_dialog(d == "resolution")
         loop {
             // пачка плиток — по нескольку на поток; свежие правки стоят в начале очереди
             let mut batch = Vec::new();
-            while batch.len() < threads * 4 {
+            let use_gpu = self.gpu_race.wanted(self.queue.len());
+            let want = if use_gpu { gpu_composite::BATCH } else if self.queue.len() >= gpu_composite::MIN_QUEUE { (threads * 4).max(256) } else { threads * 4 };
+            while batch.len() < want {
                 let Some(key) = self.queue.pop_front() else { break };
                 self.queued.remove(&key);
                 if key.0 < 0 || key.1 < 0 || key.0 * TILE >= w || key.1 * TILE >= h {
@@ -5463,7 +5468,16 @@ app.open_canvas_dialog(d == "resolution")
             }
             let doc = &self.doc;
             let chunk = batch.len().div_ceil(threads);
-            let rendered: Vec<(Key, Vec<Color32>)> = std::thread::scope(|scope| {
+            let from_gpu = if use_gpu { self.gpu_race.render(doc, &batch) } else { None };
+            let t_batch = Instant::now();
+            let rendered: Vec<(Key, Vec<Color32>)> = if let Some(tiles) = from_gpu {
+                let to_color = |p: &[u8]| p.as_chunks::<4>().0.iter().map(|p| Color32::from_rgba_unmultiplied(p[0], p[1], p[2], p[3])).collect::<Vec<_>>();
+                std::thread::scope(|scope| {
+                    let handles: Vec<_> = tiles.chunks(chunk).map(|part| scope.spawn(move || part.iter().map(|(k, p)| (*k, to_color(p))).collect::<Vec<_>>())).collect();
+                    handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+                })
+            } else {
+                std::thread::scope(|scope| {
                 let handles: Vec<_> = batch
                     .chunks(chunk)
                     .map(|keys| {
@@ -5475,7 +5489,11 @@ app.open_canvas_dialog(d == "resolution")
                     })
                     .collect();
                 handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
-            });
+                })
+            };
+            if batch.len() >= 256 && !use_gpu && doc.gpu_stack().is_some_and(|(_, st)| st.len() >= 6) && gpu_filter::current().is_some() {
+                self.gpu_race.note_cpu(t_batch.elapsed().as_secs_f64() / batch.len() as f64);
+            }
             let level = self.disp_level;
             for (key, rgba) in rendered {
                 let dkey = self.disp_key(key);

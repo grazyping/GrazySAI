@@ -1746,6 +1746,41 @@ impl Document {
         }
     }
 
+    /// Для сведения на видеокарте: фон и слои снизу вверх со своими номером режима
+    /// (`BlendMode::ALL`) и непрозрачностью. `None` — есть то, что умеет только процессор: годятся
+    /// лишь обычные слои, как в быстрой ветке `render_group`, и сквозные папки без ослабления.
+    pub fn gpu_stack(&self) -> Option<([f32; 4], Vec<(&Layer, u32, f32)>)> {
+        fn add<'a>(layers: &'a [Layer], out: &mut Vec<(&'a Layer, u32, f32)>) -> Option<()> {
+            for l in layers {
+                if l.clipping {
+                    return None;
+                }
+                if !l.visible || l.opacity <= 0.0 {
+                    continue;
+                }
+                if l.mask.is_some() || l.effect.is_some() || l.paper.is_some() || l.styles.is_some() || l.adjust.is_some() || l.anim.is_some() {
+                    return None;
+                }
+                if let Some(ch) = &l.children {
+                    if !l.pass_through || l.opacity < 1.0 {
+                        return None;
+                    }
+                    add(ch, out)?;
+                    continue;
+                }
+                let mode = crate::blend::BlendMode::ALL.iter().position(|m| *m == l.mode)? as u32;
+                out.push((l, mode, l.opacity));
+            }
+            Some(())
+        }
+        if self.background.is_none() || self.rcx_display().onion.is_some() {
+            return None;
+        }
+        let mut out = Vec::new();
+        add(&self.layers, &mut out)?;
+        Some((self.background_f32(), out))
+    }
+
     /// Сведённая плитка для показа: RGBA по 8 бит, 64×64.
     pub fn render_tile(&self, key: Key) -> Vec<u8> {
         let cx = self.rcx_display();

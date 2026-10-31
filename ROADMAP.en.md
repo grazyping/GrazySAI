@@ -214,7 +214,7 @@ Like Krita's preset docker, Clip Studio's material palette and Photoshop's brush
 - [x] Window drawing through wgpu, a switch in the settings, OpenGL by default, fallback when a start fails; checked on Linux (software Vulkan) and Windows (Vulkan, DirectX 12) (1.4.3)
 - [x] Gaussian blur and unsharp mask preview on the graphics card; the final result is computed by the CPU to stay exact (4K on integrated AMD: 0.3 s instead of 0.55–1.2 s) (1.4.3)
 - [ ] Other filters on the graphics card: lens, median, rotation (0.6–1 s at 4K) — less gain: long kernels or sorting, and moving the pixels costs 0.25 s
-- [ ] Layer compositing for display on the graphics card — postponed after measuring: 4K with 20 full layers takes 113 ms on the CPU and painting recomputes only changed tiles; rewriting all modes, paper, effects and styles is expensive, and all layers would have to stay in video memory
+- [x] Layer compositing for display on the graphics card: all 28 modes, plain layers and pass-through folders; mask, clipping, effect, paper and style stay on the CPU. It switches on by itself only where it is faster here: on a Ryzen 5700G with its integrated graphics the CPU wins (4K, 20 layers: 84 ms vs 120 ms); not tested on a discrete card
 - [ ] 3D layer on the graphics card — postponed after measuring: 1M triangles take 170–200 ms, nearly all of it vertex preparation rather than drawing; only very heavy scenes would gain when turning the camera
 
 ### Leftovers of new SAI 2 features

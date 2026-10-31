@@ -62,8 +62,8 @@ const BAND: u32 = 128;
 /// Видеокарта отрисовки окна.
 #[derive(Clone)]
 pub struct Gpu {
-    device: Arc<wgpu::Device>,
-    queue: Arc<wgpu::Queue>,
+    pub device: Arc<wgpu::Device>,
+    pub queue: Arc<wgpu::Queue>,
     pipelines: Arc<OnceLock<[wgpu::ComputePipeline; 3]>>,
 }
 
