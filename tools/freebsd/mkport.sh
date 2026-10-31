@@ -8,6 +8,7 @@ V=${1:?нужна версия}
 cd "$(dirname "$0")/../.."
 OUT=dist/freebsd-port/grazysai
 mkdir -p "$OUT"
+cargo fetch -q
 export V OUT
 python3 -I - <<'PY'
 import glob, hashlib, os, re, subprocess, urllib.request
