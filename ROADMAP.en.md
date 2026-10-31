@@ -211,8 +211,8 @@ Like Krita's preset docker, Clip Studio's material palette and Photoshop's brush
 
 #### Graphics card (Vulkan, DirectX 12 through wgpu)
 
-- [x] Window drawing through wgpu, a switch in the settings, OpenGL by default, fallback when a start fails; checked on Linux (software Vulkan) and Windows (Vulkan, DirectX 12) *(coming in the next version)*
-- [x] Gaussian blur and unsharp mask preview on the graphics card; the final result is computed by the CPU to stay exact (4K on integrated AMD: 0.3 s instead of 0.55–1.2 s) *(coming in the next version)*
+- [x] Window drawing through wgpu, a switch in the settings, OpenGL by default, fallback when a start fails; checked on Linux (software Vulkan) and Windows (Vulkan, DirectX 12) (1.4.3)
+- [x] Gaussian blur and unsharp mask preview on the graphics card; the final result is computed by the CPU to stay exact (4K on integrated AMD: 0.3 s instead of 0.55–1.2 s) (1.4.3)
 - [ ] Other filters on the graphics card: lens, median, rotation (0.6–1 s at 4K) — less gain: long kernels or sorting, and moving the pixels costs 0.25 s
 - [ ] Layer compositing for display on the graphics card — postponed after measuring: 4K with 20 full layers takes 113 ms on the CPU and painting recomputes only changed tiles; rewriting all modes, paper, effects and styles is expensive, and all layers would have to stay in video memory
 - [ ] 3D layer on the graphics card — postponed after measuring: 1M triangles take 170–200 ms, nearly all of it vertex preparation rather than drawing; only very heavy scenes would gain when turning the camera
@@ -322,7 +322,7 @@ Anyone may write them, so plugin code runs in a sandbox. Details and measurement
 - [x] System “Open”, “Save As” and “Export” windows (File Explorer on Windows, the desktop dialog on Linux), Ctrl+O
 - [x] Shortcut keys in menus and tooltips can be hidden (“Window → Show shortcut keys”)
 
-### 1.4 — from Clip Studio Paint and After Effects (current version 1.4.2; research — `docs/44-plan-1.4.en.md`)
+### 1.4 — from Clip Studio Paint and After Effects (current version 1.4.3; research — `docs/44-plan-1.4.en.md`)
 
 - [x] Auto Actions: record steps and replay them with one button, action sets (1.4.0)
 - [x] Layer styles (stroke, shadow, glow, colour overlay) and correction layers: gradient map, levels, hue/saturation, brightness/contrast, invert, posterize, threshold (1.4.0)
@@ -366,4 +366,4 @@ Not in 1.4.0.
 
 - [ ] Tablet drivers, in full: download drivers of the main models (Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs) for Windows and Linux, see what they install and how they name the pen axes; adjust the pen reading; check WinTab with real drivers on the test PC
 - [ ] Pen directly on Wayland, without XWayland — waits for the window library: winit 0.31 (still beta) has the Wayland pen, but egui/eframe, even the newest, is on winit 0.30
-- [ ] FreeBSD: a port in the ports tree
+- [ ] FreeBSD: a port in the ports tree — `tools/freebsd/mkport.sh` prepares the files; what is left is to build the port on FreeBSD and submit it to their Bugzilla

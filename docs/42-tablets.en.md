@@ -37,6 +37,8 @@ Tilt and rotation feed the brush dynamics: inputs “Pen tilt”, “Tilt direct
 Windows tip: if there is no pressure, toggle “Windows Ink” in the driver and restart the driver
 and GrazySAI; WinTab can be turned off in GrazySAI's settings.
 
+Wacom: the X11 driver `xf86-input-wacom` 1.2.3 (checked in its source) labels the axes the same way — “Abs Pressure”, “Abs Tilt X/Y”, and the Art Pen rotation and wheel “Abs Rotation Z” and “Abs Wheel”, which GrazySAI also reads. The Windows drivers of Wacom, Huion and Gaomon come only from model-selection pages with no direct links, so they are not analysed.
+
 ## What the drivers install (checked on the drivers themselves, October 2026)
 
 Official Linux drivers were downloaded and taken apart: XP-Pen 4.0.15, Huion 15.0.0.162, UGEE
