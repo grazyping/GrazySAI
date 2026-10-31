@@ -1749,7 +1749,7 @@ impl Document {
     /// Для сведения на видеокарте: фон и слои снизу вверх со своими номером режима
     /// (`BlendMode::ALL`) и непрозрачностью. `None` — есть то, что умеет только процессор: годятся
     /// лишь обычные слои, как в быстрой ветке `render_group`, и сквозные папки без ослабления.
-    pub fn gpu_stack(&self) -> Option<([f32; 4], Vec<(&Layer, u32, f32)>)> {
+    pub fn gpu_stack(&self) -> Option<([f32; 4], GpuStack<'_>)> {
         fn add<'a>(layers: &'a [Layer], out: &mut Vec<(&'a Layer, u32, f32)>) -> Option<()> {
             for l in layers {
                 if l.clipping {
@@ -2219,6 +2219,9 @@ fn render_group(layers: &[Layer], key: Key, backdrop: &mut [[f32; 4]], cx: &Rcx)
         }
     }
 }
+
+/// Слои для сведения на видеокарте: слой, номер режима, непрозрачность.
+pub type GpuStack<'a> = Vec<(&'a Layer, u32, f32)>;
 
 /// Пиксель после наложения краски `rgb` с долей `m` (0..=ONE): «поверх»; при сохранении
 /// непрозрачности — только цвет, альфа прежняя.
