@@ -225,9 +225,84 @@ pub fn set_size(shapes: &mut [Shape], si: usize, value: f32) {
 
 /// Задать цвет объекта (инструмент «Color»).
 pub fn set_color(shapes: &mut [Shape], si: usize, rgb: [u8; 3]) {
-    if let Some(Style::Linework { color, .. }) = shapes.get_mut(si).map(|s| &mut s.style) {
+    if let Some(Style::Linework { color, .. } | Style::Fill { color }) = shapes.get_mut(si).map(|s| &mut s.style) {
         *color = scol(rgb);
     }
+}
+
+/// Узлы пути по точкам щелчков (инструменты «Line» и «Curve» в SAI): `smooth` — плавная кривая
+/// через точки, иначе ломаная с острыми узлами. Нажим — полный на всём пути.
+pub fn plot_nodes(pts: &[[f64; 2]], smooth: bool, closed: bool) -> Vec<PathNode> {
+    let pointed = vec![!smooth; pts.len()];
+    paint_core::vectorize::normal_handles(pts, &pointed, closed)
+        .into_iter()
+        .zip(pts)
+        .map(|((handle_in, handle_out), &point)| PathNode { node: paint_core::vector::Node { point, handle_in, handle_out }, pointed: !smooth, weight: 1.0, pressure: Vec::new() })
+        .collect()
+}
+
+/// Добавить на слой фигур замкнутую фигуру по точкам щелчков (инструмент «Curve» в SAI).
+pub fn append_plot(raw: &[u8], pts: &[[f64; 2]], smooth: bool, rgb: [u8; 3]) -> io::Result<Vec<u8>> {
+    let mut shapes = sai2_vector::parse(raw, false)?;
+    let next_shape = shapes.iter().map(|s| s.id).max().unwrap_or(0) + 1;
+    let next_path = shapes.iter().flat_map(|s| &s.paths).map(|p| p.id).max().unwrap_or(0) + 1;
+    let mut next_cp = shapes.iter().flat_map(|s| &s.paths).flat_map(|p| &p.points).map(|c| c.id).max().unwrap_or(0) + 1;
+    for s in shapes.iter_mut() {
+        if s.next == 0 {
+            s.next = next_shape;
+        }
+        for p in s.paths.iter_mut() {
+            if p.next_in_layer == 0 {
+                p.next_in_layer = next_path;
+            }
+        }
+    }
+    let n = pts.len().max(1) as f64;
+    let off = [pts.iter().map(|p| p[0]).sum::<f64>() / n, pts.iter().map(|p| p[1]).sum::<f64>() / n];
+    let rel = |q: [f64; 2]| [q[0] - off[0], q[1] - off[1]];
+    let points = plot_nodes(pts, smooth, true)
+        .iter()
+        .map(|c| {
+            let id = next_cp;
+            next_cp += 1;
+            ControlPoint { id, point: rel(c.node.point), handle_in: rel(c.node.handle_in), handle_out: rel(c.node.handle_out), weight: 0.0, second: 0.0, pointed: c.pointed, rest: [0; 3], pressure: Vec::new() }
+        })
+        .collect();
+    shapes.push(Shape {
+        id: next_shape,
+        next: 0,
+        style: Style::Fill { color: scol(rgb) },
+        paths: vec![Path { id: next_path, next_in_layer: 0, offset: off, curve: CurveType::Normal, closed: true, rest: [0; 2], points }],
+    });
+    Ok(sai2_vector::write(&shapes, false))
+}
+
+/// Верхняя фигура, внутри которой лежит точка (правило чёт-нечет по ломаной из кривых).
+pub fn hit_fill(shapes: &[Shape], x: f64, y: f64) -> Option<usize> {
+    shapes.iter().enumerate().rev().find_map(|(si, s)| {
+        let inside = s.paths.iter().any(|p| {
+            let n = p.points.len();
+            let mut line = Vec::with_capacity(n * 16);
+            for i in 0..n {
+                let (a, b) = (&p.points[i], &p.points[(i + 1) % n]);
+                for k in 0..16 {
+                    let t = k as f64 / 16.0;
+                    let u = 1.0 - t;
+                    let at = |j: usize| u * u * u * a.point[j] + 3.0 * u * u * t * a.handle_out[j] + 3.0 * u * t * t * b.handle_in[j] + t * t * t * b.point[j];
+                    line.push([at(0) + p.offset[0], at(1) + p.offset[1]]);
+                }
+            }
+            let mut odd = false;
+            for i in 0..line.len() {
+                let (a, b) = (line[i], line[(i + 1) % line.len()]);
+                if (a[1] > y) != (b[1] > y) && x < a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]) {
+                    odd = !odd;
+                }
+            }
+            odd
+        });
+        inside.then_some(si)
+    })
 }
 
 /// Задать нажим узла 0..1 (инструмент «Pressure»).
@@ -394,5 +469,33 @@ mod tests {
         assert_eq!(again, shapes);
         let px = render_shapes(&shapes);
         assert!(paint_core::pixel::to_rgba8(px.get(69, 49))[3] > 0, "сдвинутый узел нарисован");
+    }
+
+    #[test]
+    fn plot_line_curve_and_shape() {
+        let pts = [[20.0, 20.0], [80.0, 20.0], [80.0, 80.0]];
+        let st = LineStyle { rgb: [0, 0, 0], size: 4.0, density: 1.0, hardness: 4 };
+                let line = plot_nodes(&pts, false, false);
+        assert!(line.iter().all(|n| n.pointed && n.node.handle_in == n.node.point && n.node.handle_out == n.node.point));
+        let curve = plot_nodes(&pts, true, false);
+        assert!(curve[1].node.handle_out != curve[1].node.point);
+        let alpha = |m: &paint_core::tile::ColorMap, x: i32, y: i32| paint_core::pixel::to_rgba8(m.get(x, y))[3];
+        for (nodes, straight) in [(line, true), (curve, false)] {
+            let raw = append(&empty().raw, &nodes, false, &st).unwrap();
+            let shapes = sai2_vector::parse(&raw, true).unwrap();
+            assert_eq!(shapes[0].paths[0].points.len(), 3);
+            let px = render_shapes(&shapes);
+            assert!(alpha(&px, 80, 20) > 0, "через среднюю точку идут обе");
+            assert_eq!(alpha(&px, 50, 20) > 0, straight, "прямой отрезок только у ломаной");
+        }
+        // фигура залита, цвет меняется, узел двигается
+        let raw = append_plot(&empty_shapes().raw, &pts, false, [255, 0, 0]).unwrap();
+        let mut shapes = sai2_vector::parse(&raw, false).unwrap();
+        assert_eq!(hit_fill(&shapes, 70.0, 30.0), Some(0));
+        assert_eq!(hit_fill(&shapes, 30.0, 70.0), None);
+        assert!(alpha(&render_layer_shapes(&shapes, false), 70, 30) > 0);
+        set_color(&mut shapes, 0, [0, 0, 255]);
+        let Style::Fill { color } = shapes[0].style else { panic!() };
+        assert_eq!(color, scol([0, 0, 255]));
     }
 }

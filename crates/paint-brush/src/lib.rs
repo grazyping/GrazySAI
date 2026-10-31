@@ -99,6 +99,9 @@ pub struct Brush {
     /// Пипетка «Layer ARGB» у пиксельного пера (SAI 2020+): цвет и прозрачность точки текущего
     /// слоя; прозрачная точка — перо стирает.
     pub argb_pick: bool,
+    /// Инструмент слоя контура, который включает эта кисть (перенесённая из SAI 2):
+    /// 0 — никакой, 1 — перо, 2 — линия, 3 — кривая.
+    pub line_tool: u8,
 }
 
 /// Вид инструмента сетки — как в меню SAI 2017 по правому щелчку на пустой ячейке.
@@ -302,7 +305,7 @@ impl ToolKind {
                 BrushParams { size_by_pressure: false, density_by_pressure: true, sharpness: 0.5, mix: Some(MixParams { blur: true, blur_only: true, ..MixParams::new(0.0, 0.0, 0.5) }), ..b(50.0, 0.0, 1.0) },
             ),
         };
-        Brush { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), dynamics: Vec::new(), dyn_plugin: None, anti_hook: 0.0, argb_pick: false }
+        Brush { kind: self, name, icon, params, enabled: true, grain: GrainSettings::default(), custom: None, extra: String::new(), dynamics: Vec::new(), dyn_plugin: None, anti_hook: 0.0, argb_pick: false, line_tool: 0 }
     }
 }
 
@@ -379,6 +382,9 @@ pub fn read(b: &mut Brush, s: &Kv, prefix: &str) {
     }
     s.read_f32(&k("anti_hook"), &mut b.anti_hook);
     s.read_bool(&k("argb_pick"), &mut b.argb_pick);
+    let mut line_tool = b.line_tool as f32;
+    s.read_f32(&k("line_tool"), &mut line_tool);
+    b.line_tool = line_tool as u8;
     b.anti_hook = b.anti_hook.clamp(0.0, 100.0);
     let p = &mut b.params;
     s.read_f32(&k("size"), &mut p.size);
@@ -463,6 +469,7 @@ pub fn write(b: &Brush, s: &mut Kv, prefix: &str) {
     }
     s.set(&k("anti_hook"), b.anti_hook);
     s.set(&k("argb_pick"), b.argb_pick as u8);
+    s.set(&k("line_tool"), b.line_tool);
     let p = &b.params;
     s.set(&k("size"), p.size);
     s.set(&k("min_size"), p.min_size);

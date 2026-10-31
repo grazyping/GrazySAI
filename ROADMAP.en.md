@@ -359,7 +359,7 @@ Not in 1.4.0.
 
 ### Leftovers of new SAI 2 features
 
-- [ ] SAI 2 custom tools for linework and shape layers
+- [x] SAI 2 custom tools for linework and shape layers: line and curve by clicks; on shape layers curve, color, edit; pen, line and curve import as brushes
 - [ ] Binary linework tools — if compatible storage is found
 
 ### Left for the next version

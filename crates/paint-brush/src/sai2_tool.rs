@@ -8,6 +8,8 @@
 //! - `_0.saitset` — порядок групп; `N.saitlnk` — ссылка на инструмент другой группы.
 //!
 //! Перевод в инструмент GrazySAI: от наших умолчаний вида меняется то, что есть в файле.
+//! Перо, линия и кривая контура становятся кистью с `line_tool`; ластик, толщина, цвет, правка,
+//! нажим и кривая фигур — без настроек, которые стоило бы переносить: у нас это кнопки панели.
 
 use crate::{Brush, ToolKind, TexChoice};
 use paint_core::brush::HARDNESS_STEPS;
@@ -77,7 +79,7 @@ pub fn parse_group(text: &str) -> Option<(String, Vec<(usize, u32)>)> {
 /// Вид инструмента GrazySAI по `tidstr`.
 pub fn kind_of(tid: &str) -> Option<ToolKind> {
     Some(match tid {
-        "pencil" => ToolKind::Pencil,
+        "pencil" | "inkpen" | "inkline" | "inkcurv" => ToolKind::Pencil,
         "airbrush" => ToolKind::AirBrush,
         "brush" => ToolKind::Brush,
         "water" => ToolKind::Water,
@@ -100,10 +102,21 @@ pub fn kind_of(tid: &str) -> Option<ToolKind> {
     })
 }
 
+/// Инструмент контура или фигур, который у нас — кнопка панели (настроек для переноса нет).
+pub fn is_panel_tool(tid: &str) -> bool {
+    matches!(tid, "inkers" | "inkchg" | "inkprs" | "pathedit" | "shapecol" | "pathplot")
+}
+
 /// Инструмент GrazySAI из инструмента SAI 2. `Err` — вид, которого у нас нет (по `tidstr`).
 pub fn to_brush(t: &Sai2Tool) -> Result<Brush, String> {
     let kind = kind_of(&t.tid).ok_or_else(|| t.tid.clone())?;
     let mut b = kind.new_brush();
+    b.line_tool = match t.tid.as_str() {
+        "inkpen" => 1,
+        "inkline" => 2,
+        "inkcurv" => 3,
+        _ => 0,
+    };
     let int = |k: &str| t.values.get(k).and_then(|v| v.trim().parse::<i64>().ok());
     let pct = |k: &str| int(k).map(|v| (v as f32 / 100.0).clamp(0.0, 1.0));
     let flag = |k: &str| int(k).map(|v| v != 0);
@@ -372,6 +385,17 @@ pub fn preset_group(g: usize) -> Vec<(usize, Brush)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn linework_tools() {
+        let t = parse("tidstr=S:inkcurv\nxidstr=S:\nname=U:Curve\n.\nwavno=I:2\ncursize=I:35\ncurdens=I:80\n.\n--EOF--\n").unwrap();
+        let b = to_brush(&t).unwrap();
+        assert_eq!((b.kind, b.line_tool), (ToolKind::Pencil, 3));
+        assert_eq!((b.params.size, b.params.density, b.params.hardness), (3.5, 0.8, HARDNESS_STEPS[2]));
+        assert_eq!(to_brush(&parse("tidstr=S:pencil\n").unwrap()).unwrap().line_tool, 0);
+        assert!(is_panel_tool("pathedit") && !is_panel_tool("binkpen"));
+        assert!(to_brush(&parse("tidstr=S:binkpen\n").unwrap()).is_err());
+    }
+
     use super::*;
 
     #[test]
@@ -388,7 +412,7 @@ mod tests {
         assert_eq!(b.grain.bristle.as_deref(), Some("Bristle"));
         assert!((b.grain.randomize - 0.2).abs() < 1e-6);
         assert_eq!(b.custom.as_deref(), Some("Oil"));
-        assert!(to_brush(&Sai2Tool { tid: "inkpen".into(), ..Default::default() }).is_err());
+        assert!(to_brush(&Sai2Tool { tid: "binkpen".into(), ..Default::default() }).is_err());
         assert!(parse("что-то").is_none());
     }
 

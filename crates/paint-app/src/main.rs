@@ -257,6 +257,21 @@ enum LineTool {
     Color,
     Edit,
     Pressure,
+    /// Ломаная по щелчкам.
+    Line,
+    /// Плавная кривая по щелчкам.
+    Curve,
+}
+
+/// Что делает инструмент слоя фигур.
+#[derive(Clone, Copy, PartialEq)]
+enum ShapeTool {
+    /// Протяжка — фигура из шаблона.
+    Template,
+    /// Щелчки — замкнутая фигура по точкам.
+    Curve,
+    Color,
+    Edit,
 }
 
 /// Идёт правка кривых слоя контура: рабочая копия кривых, исходные кривые и пиксели (для
@@ -1590,6 +1605,14 @@ struct PaintApp {
     /// Вид фигуры и фигура, которую сейчас тянут (углы рамки на холсте).
     shape_kind: paint_formats::linework::ShapeKind,
     shape_drag: Option<(Vec2, Vec2)>,
+    shape_tool: ShapeTool,
+    /// Захваченный узел фигуры и рабочая копия кривых.
+    shape_node: Option<((usize, usize, usize), Vec<paint_formats::sai2_vector::Shape>)>,
+    shape_moved: bool,
+    /// Точки «Линии» и «Кривой» по щелчкам и слой, на котором их ставят.
+    line_plot: Option<(Vec<usize>, Vec<[f64; 2]>)>,
+    /// Какой кисти уже применён её `line_tool`.
+    line_tool_brush: usize,
     /// Диалог «Изменить разрешение» / «Изменить размер»: новые размеры, сохранять пропорции,
     /// способ пересэмплирования, привязка.
     canvas_dialog: Option<CanvasDialog>,
@@ -1874,6 +1897,11 @@ impl PaintApp {
             line_edit: None,
             shape_kind: paint_formats::linework::ShapeKind::Rectangle,
             shape_drag: None,
+            shape_tool: ShapeTool::Template,
+            shape_node: None,
+            shape_moved: false,
+            line_plot: None,
+            line_tool_brush: usize::MAX,
             canvas_dialog: None,
             filter: None,
             filter_last: None,
@@ -2006,6 +2034,8 @@ app.open_canvas_dialog(d == "resolution")
             Ok("color") => LineTool::Color,
             Ok("edit") => LineTool::Edit,
             Ok("pressure") => LineTool::Pressure,
+            Ok("line") => LineTool::Line,
+            Ok("curve") => LineTool::Curve,
             _ => LineTool::Pen,
         };
         // PAINT_LINEWORK=1 — начать на новом слое контура; =shapes — на новом слое фигур (=rect|ellipse|triangle)
@@ -2776,11 +2806,11 @@ app.open_canvas_dialog(d == "resolution")
     /// Кривые текущего слоя контура (разобранные, с кэшем по отпечатку данных).
     fn line_shapes(&mut self) -> Option<(u64, &[paint_formats::sai2_vector::Shape])> {
         let layer = self.doc.layer(&self.selected)?;
-        let v = layer.vector.as_ref().filter(|v| &v.kind == b"liwk")?;
+        let v = layer.vector.as_ref()?;
         let h = raw_hash(&v.raw);
         let fresh = self.line_view.as_ref().is_some_and(|(p, k, _)| *p == self.selected && *k == h);
         if !fresh {
-            let shapes = paint_formats::sai2_vector::parse(&v.raw, true).ok()?;
+            let shapes = paint_formats::sai2_vector::parse(&v.raw, &v.kind == b"liwk").ok()?;
             self.line_view = Some((self.selected.clone(), h, shapes));
         }
         self.line_view.as_ref().map(|(_, h, s)| (*h, s.as_slice()))
@@ -2790,8 +2820,9 @@ app.open_canvas_dialog(d == "resolution")
     /// — жёлтыми ромбами), выделенные узлы — крупными кружками. Видны с «Правкой» и «Нажимом»
     /// или когда на слое выделены узлы.
     fn draw_line_nodes(&mut self, painter: &egui::Painter, xf: ViewXf) {
-        let editing = matches!(self.line_tool, LineTool::Edit | LineTool::Pressure);
-        let live = self.line_edit.as_ref().filter(|e| e.path == self.selected).map(|e| e.shapes.clone());
+        let shap = self.doc.layer(&self.selected).and_then(|l| l.vector.as_ref()).is_some_and(|v| &v.kind == b"shap");
+        let editing = if shap { self.shape_tool == ShapeTool::Edit } else { matches!(self.line_tool, LineTool::Edit | LineTool::Pressure) };
+        let live = self.line_edit.as_ref().filter(|e| e.path == self.selected).map(|e| e.shapes.clone()).or_else(|| self.shape_node.as_ref().map(|(_, sh)| sh.clone()));
         let (hash, shapes) = match live {
             Some(sh) => (None, sh),
             None => match self.line_shapes() {
@@ -4311,7 +4342,8 @@ app.open_canvas_dialog(d == "resolution")
                                 let name = if t.name.is_empty() { tr(b.kind.label()).to_string() } else { t.name.clone() };
                                 out.push((b, name));
                             }
-                            Err(_) => skipped.push("инструменты слоя контура и фигур"),
+                            Err(_) if paint_brush::sai2_tool::is_panel_tool(&t.tid) => {}
+                            Err(_) => skipped.push("бинарные инструменты контура"),
                         }
                     }
                     skipped.dedup();
@@ -5612,6 +5644,14 @@ app.open_canvas_dialog(d == "resolution")
         let shap = self.doc.layer(&self.selected).is_some_and(|l| {
             l.visible && !l.lock_paint && !l.lock_all && l.vector.as_ref().is_some_and(|v| &v.kind == b"shap")
         });
+        if shap && self.filter.is_none() && self.shape_tool == ShapeTool::Curve {
+            self.plot_point(p);
+            return;
+        }
+        if shap && self.filter.is_none() && matches!(self.shape_tool, ShapeTool::Color | ShapeTool::Edit) {
+            self.begin_shape_edit(p);
+            return;
+        }
         if shap && self.filter.is_none() {
             // слой фигур: протяжка задаёт рамку фигуры
             self.shape_drag = Some((Vec2::new(p.x, p.y), Vec2::new(p.x, p.y)));
@@ -5621,6 +5661,11 @@ app.open_canvas_dialog(d == "resolution")
             l.visible && !l.lock_paint && !l.lock_all && l.vector.as_ref().is_some_and(|v| &v.kind == b"liwk")
         });
         let tool = if eraser_end { LineTool::Eraser } else { self.line_tool };
+        if liwk && matches!(tool, LineTool::Line | LineTool::Curve) && self.filter.is_none() {
+            let p = self.snap_to_ruler(p, true);
+            self.plot_point(p);
+            return;
+        }
         if liwk && tool != LineTool::Pen && self.filter.is_none() {
             let layer = self.doc.layer(&self.selected).unwrap();
             let raw = &layer.vector.as_ref().unwrap().raw;
@@ -5820,6 +5865,11 @@ app.open_canvas_dialog(d == "resolution")
     }
 
     fn continue_stroke(&mut self, p: InputPoint) {
+        if let Some((n, shapes)) = self.shape_node.as_mut() {
+            paint_formats::linework::move_node(shapes, *n, p.x as f64, p.y as f64);
+            self.shape_moved = true;
+            return;
+        }
         if let Some((_, b)) = self.shape_drag.as_mut() {
             *b = Vec2::new(p.x, p.y);
             return;
@@ -6003,6 +6053,12 @@ app.open_canvas_dialog(d == "resolution")
         // перо поднято — остаток очереди дорисовать
         self.drain_points(None);
         self.report_frames();
+        if let Some((_, shapes)) = self.shape_node.take() {
+            if std::mem::take(&mut self.shape_moved) {
+                self.store_shapes(shapes);
+            }
+            return;
+        }
         if let Some((a, b)) = self.shape_drag.take() {
             self.commit_shape(a, b);
             return;
@@ -6133,7 +6189,7 @@ app.open_canvas_dialog(d == "resolution")
                     now = true;
                 }
             }
-            LineTool::Pen => {}
+            LineTool::Pen | LineTool::Line | LineTool::Curve => {}
         }
         e.changed |= now;
         // слой перерисуется раз за кадр (`render_line_edit`), а не на каждое движение пера
@@ -6247,12 +6303,91 @@ app.open_canvas_dialog(d == "resolution")
         self.after_structure(keys);
     }
 
+    /// Правка фигур: «Цвет» — щелчок внутри фигуры, «Узлы» — как на слое контура.
+    fn begin_shape_edit(&mut self, p: InputPoint) {
+        let Some(layer) = self.doc.layer(&self.selected) else { return };
+        let Some(v) = &layer.vector else { return };
+        let shapes = match paint_formats::sai2_vector::parse(&v.raw, false) {
+            Ok(s) => s,
+            Err(e) => {
+                self.status = trf("Кривые слоя не прочитаны: {0}", &[&e]);
+                return;
+            }
+        };
+        use paint_formats::linework as lw;
+        let (x, y) = (p.x as f64, p.y as f64);
+        if self.shape_tool == ShapeTool::Color {
+            let Some(si) = lw::hit_fill(&shapes, x, y) else { return };
+            let c = self.color();
+            let mut shapes = shapes;
+            lw::set_color(&mut shapes, si, [c.r(), c.g(), c.b()]);
+            self.store_shapes(shapes);
+            return;
+        }
+        let reach = 6.0 / self.zoom as f64;
+        self.shape_node = lw::hit_node(&shapes, x, y, reach).map(|n| (n, shapes));
+    }
+
+    /// Кривые слоя фигур после правки — одной записью истории.
+    fn store_shapes(&mut self, shapes: Vec<paint_formats::sai2_vector::Shape>) {
+        let raw = paint_formats::sai2_vector::write(&shapes, false);
+        let pixels = paint_formats::linework::render_layer_shapes(&shapes, false);
+        let path = self.selected.clone();
+        let keys = self.doc.set_vector_layer(&path, paint_core::layer::VectorData { kind: *b"shap", raw }, pixels);
+        self.invalidate(keys);
+        self.thumbs.clear();
+        self.dirty = true;
+    }
+
+    /// Точка «Линии» или «Кривой»: повторный щелчок на том же месте (двойной) новой не ставит.
+    fn plot_point(&mut self, p: InputPoint) {
+        let at = [p.x as f64, p.y as f64];
+        let near = 2.0 / self.zoom as f64;
+        match self.line_plot.as_mut().filter(|(path, _)| *path == self.selected) {
+            Some((_, pts)) => {
+                if pts.last().is_none_or(|l| (l[0] - at[0]).hypot(l[1] - at[1]) > near) {
+                    pts.push(at);
+                }
+            }
+            None => self.line_plot = Some((self.selected.clone(), vec![at])),
+        }
+    }
+
+    /// Закончить «Линию» или «Кривую» (двойной щелчок, Enter).
+    fn finish_plot(&mut self) {
+        let Some((path, pts)) = self.line_plot.take() else { return };
+        let Some(v) = self.doc.layer(&path).and_then(|l| l.vector.as_ref()) else { return };
+        let shap = &v.kind == b"shap";
+        if pts.len() < if shap { 3 } else { 2 } {
+            self.status = String::from(tr("Нужно больше точек"));
+            return;
+        }
+        if shap {
+            let c = self.color();
+            match paint_formats::linework::append_plot(&v.raw, &pts, true, [c.r(), c.g(), c.b()]).and_then(|raw| Ok((paint_formats::sai2_vector::parse(&raw, false)?, raw))) {
+                Ok((shapes, _)) => self.store_shapes(shapes),
+                Err(e) => self.status = trf("Не удалось добавить кривую: {0}", &[&e]),
+            }
+            return;
+        }
+        let nodes = paint_formats::linework::plot_nodes(&pts, self.line_tool == LineTool::Curve, false);
+        self.commit_nodes(&nodes, false);
+    }
+
     /// Штрих пера на слое контура → кривая, добавленная к кривым слоя (одна запись истории).
     fn commit_line(&mut self, pts: &[paint_core::vectorize::StrokePoint]) {
-        let Some((nodes, closed)) = paint_core::vectorize::vectorize(pts, 1.0) else {
+        // нажим — как настроено у кисти: мин. размер или постоянная толщина
+        let b = &self.brushes[self.brush].params;
+        let (by_pressure, min) = (b.size_by_pressure, b.min_size as f64);
+        let pts: Vec<_> = pts.iter().map(|q| paint_core::vectorize::StrokePoint { at: q.at, pressure: if by_pressure { min + (1.0 - min) * q.pressure } else { 1.0 } }).collect();
+        let Some((nodes, closed)) = paint_core::vectorize::vectorize(&pts, 1.0) else {
             self.status = String::from(tr("Штрих слишком короткий для кривой"));
             return;
         };
+        self.commit_nodes(&nodes, closed);
+    }
+
+    fn commit_nodes(&mut self, nodes: &[paint_core::vectorize::PathNode], closed: bool) {
         let path = self.selected.clone();
         let Some(layer) = self.doc.layer(&path) else { return };
         let Some(v) = &layer.vector else { return };
@@ -6260,7 +6395,7 @@ app.open_canvas_dialog(d == "resolution")
         let c = self.color();
         let step = paint_core::brush::HARDNESS_STEPS.iter().position(|h| (h - b.hardness).abs() < 0.01).unwrap_or(4) as u32;
         let st = paint_formats::linework::LineStyle { rgb: [c.r(), c.g(), c.b()], size: b.size, density: b.density, hardness: step };
-        let raw = match paint_formats::linework::append(&v.raw, &nodes, closed, &st) {
+        let raw = match paint_formats::linework::append(&v.raw, nodes, closed, &st) {
             Ok(r) => r,
             Err(e) => {
                 self.status = trf("Не удалось добавить кривую: {0}", &[&e]);
@@ -6283,6 +6418,13 @@ app.open_canvas_dialog(d == "resolution")
 
     fn undo(&mut self) {
         self.s3d_finish();
+        if let Some((_, pts)) = self.line_plot.as_mut() {
+            pts.pop();
+            if pts.is_empty() {
+                self.line_plot = None;
+            }
+            return;
+        }
         if self.gradient.is_some() {
             self.finish_gradient(false);
             return;
@@ -8807,10 +8949,23 @@ app.open_canvas_dialog(d == "resolution")
         if self.doc.layer(&self.selected).is_some_and(|l| l.vector.as_ref().is_some_and(|v| &v.kind == b"shap")) {
             use paint_formats::linework::ShapeKind;
             ui.label(tr("Фигура (протяните на холсте):"));
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 for (k, name) in [(ShapeKind::Rectangle, tr("Прямоугольник")), (ShapeKind::Ellipse, tr("Эллипс")), (ShapeKind::Triangle, tr("Треугольник"))] {
-                    if ui.selectable_label(self.shape_kind == k, name).clicked() {
+                    if ui.selectable_label(self.shape_tool == ShapeTool::Template && self.shape_kind == k, name).clicked() {
                         self.shape_kind = k;
+                        self.shape_tool = ShapeTool::Template;
+                        self.tool = Tool::Brush;
+                    }
+                }
+            });
+            ui.horizontal_wrapped(|ui| {
+                for (t, name, tip) in [
+                    (ShapeTool::Curve, tr("Кривая"), tr("Щелчками поставить точки; двойной щелчок или Enter — закончить, Esc — отменить, Ctrl+Z — убрать точку")),
+                    (ShapeTool::Color, tr("Цвет"), tr("Щелчок по фигуре — перекрасить в основной цвет")),
+                    (ShapeTool::Edit, tr("Узлы"), tr("Двигать узлы")),
+                ] {
+                    if ui.selectable_label(self.shape_tool == t, name).on_hover_text(tip).clicked() {
+                        self.shape_tool = t;
                         self.tool = Tool::Brush;
                     }
                 }
@@ -8822,6 +8977,8 @@ app.open_canvas_dialog(d == "resolution")
             ui.horizontal_wrapped(|ui| {
                 for (t, name, tip) in [
                     (LineTool::Pen, tr("Перо"), tr("Рисовать кривые")),
+                    (LineTool::Line, tr("Линия"), tr("Щелчками поставить точки; двойной щелчок или Enter — закончить, Esc — отменить, Ctrl+Z — убрать точку")),
+                    (LineTool::Curve, tr("Кривая"), tr("Щелчками поставить точки; двойной щелчок или Enter — закончить, Esc — отменить, Ctrl+Z — убрать точку")),
                     (LineTool::Eraser, tr("Ластик"), &keys::hint(tr("Удалить путь, которого коснулись (E)"))),
                     (LineTool::Weight, tr("Толщина"), tr("Задать путям размер кисти")),
                     (LineTool::Color, tr("Цвет"), tr("Перекрасить пути в основной цвет")),
@@ -10853,6 +11010,8 @@ app.open_canvas_dialog(d == "resolution")
             if pressed && response.hovered() && self.below_min {
                 // слабее «минимального нажима» — ждать, пока нажмут сильнее
                 self.pending_start = Some(eraser_end);
+            } else if self.line_plot.is_some() && response.double_clicked() {
+                self.finish_plot();
             } else if pressed && response.hovered() {
                 if let Some(pos) = pointer {
                     self.raw_last = Some((pos, pressure));
@@ -10862,7 +11021,7 @@ app.open_canvas_dialog(d == "resolution")
                 self.pending_start = None;
                 self.raw_last = Some((pos, pressure));
                 self.begin_stroke(point(pos, self.zoom, self.offset), er);
-            } else if self.live.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some() || self.line_stroke.is_some() || self.line_edit.is_some() || self.shape_drag.is_some() {
+            } else if self.live.is_some() || self.sel_stroke.is_some() || self.mask_stroke.is_some() || self.line_stroke.is_some() || self.line_edit.is_some() || self.shape_drag.is_some() || self.shape_node.is_some() {
                 // Сглаживание SAI — среднее последних N точек пера, а планшет шлёт их с постоянной
                 // частотой. Windows склеивает движения, пока кадр занят (тяжёлые кисти), — точек
                 // меньше, и то же N сглаживает сильнее. Поэтому точки кадра дополняются до 240 в
@@ -11152,6 +11311,25 @@ app.open_canvas_dialog(d == "resolution")
                 painter.add(egui::Shape::line(line, egui::Stroke::new(width, Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 160))));
             }
         }
+        // Точки «Линии» и «Кривой»; последний отрезок идёт за указателем.
+        if let Some((path, pts)) = self.line_plot.as_ref().filter(|(path, _)| *path == self.selected) {
+            let mut all = pts.clone();
+            if let Some(h) = painter.ctx().pointer_hover_pos() {
+                let q = to_canvas(h, self.zoom, self.offset);
+                all.push([q.x as f64, q.y as f64]);
+            }
+            let shap = self.doc.layer(path).and_then(|l| l.vector.as_ref()).is_some_and(|v| &v.kind == b"shap");
+            let smooth = shap || self.line_tool == LineTool::Curve;
+            let nodes: Vec<_> = paint_formats::linework::plot_nodes(&all, smooth, shap).iter().map(|n| n.node).collect();
+            let stroke = egui::Stroke::new(1.0_f32, Color32::from_rgb(220, 110, 210));
+            let s = |q: [f64; 2]| to_screen(q[0] as f32, q[1] as f32);
+            for seg in paint_core::vector::segments(&nodes, shap) {
+                painter.add(egui::epaint::CubicBezierShape::from_points_stroke(seg.map(s), false, Color32::TRANSPARENT, stroke));
+            }
+            for q in pts {
+                painter.circle_filled(s(*q), 3.0, Color32::from_rgb(40, 200, 60));
+            }
+        }
         // Фигура, которую тянут на слое фигур.
         if let Some((a, b)) = self.shape_drag {
             use paint_formats::linework::ShapeKind;
@@ -11332,6 +11510,20 @@ impl PaintApp {
             self.finish_gradient(true);
         }
         self.update_gradient();
+        // брошенные точки «Линии» и «Кривой»: сменили слой или инструмент
+        let plotting = self.tool == Tool::Brush && self.doc.layer(&self.selected).and_then(|l| l.vector.as_ref()).is_some_and(|v| if &v.kind == b"shap" { self.shape_tool == ShapeTool::Curve } else { matches!(self.line_tool, LineTool::Line | LineTool::Curve) });
+        if self.line_plot.as_ref().is_some_and(|(path, _)| !plotting || *path != self.selected) {
+            self.line_plot = None;
+        }
+        if self.line_tool_brush != self.brush {
+            self.line_tool_brush = self.brush;
+            match self.brushes.get(self.brush).map_or(0, |b| b.line_tool) {
+                1 => self.line_tool = LineTool::Pen,
+                2 => self.line_tool = LineTool::Line,
+                3 => self.line_tool = LineTool::Curve,
+                _ => {}
+            }
+        }
         let fill_poly = self.tool == Tool::Brush && self.kind() == ToolKind::LassoFill && self.lassofill.shape != 0;
         if self.sel_poly.as_ref().is_some_and(|d| !(if d.fill { fill_poly } else { self.tool == Tool::Lasso && self.lasso_polygon })) {
             self.sel_poly = None;
@@ -13439,6 +13631,13 @@ impl eframe::App for PaintApp {
                     self.finish_gradient(false);
                 }
             }
+            if self.line_plot.is_some() {
+                if key_enter {
+                    self.finish_plot();
+                } else if key_esc {
+                    self.line_plot = None;
+                }
+            }
             if self.sel_poly.is_some() {
                 if key_enter {
                     self.close_polygon();
@@ -13914,7 +14113,7 @@ fn tr_skipped(s: &str) -> &str {
         "отражение кончика" => tr("отражение кончика"),
         "разброс непрозрачности" => tr("разброс непрозрачности"),
         "шум" => tr("шум"),
-        "инструменты слоя контура и фигур" => tr("инструменты слоя контура и фигур"),
+        "бинарные инструменты контура" => tr("бинарные инструменты контура"),
         _ => s,
     }
 }

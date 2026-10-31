@@ -503,6 +503,8 @@ picture without the style, the file's flattened image includes them.
   - when the pen lifts, the stroke becomes a path with control points and pressure, as in SAI.
 - **Linework tools** (in the panel when a linework layer is selected):
   - Pen (N);
+  - Line and Curve — clicks place points and the path runs straight or smoothly through them:
+    double-click or Enter finishes, Esc cancels, Ctrl+Z removes the last point;
   - Eraser (E) — deletes a whole path;
   - Weight — sets the brush size;
   - Color — recolors with the main color;
@@ -512,7 +514,8 @@ picture without the style, the file's flattened image includes them.
     “Selection → Select CPs in Selection / Select Strokes with Selection” take the points (or whole
     paths) under the selection outline and drop the outline; “Deselect All CPs” clears them;
   - Pressure (P) — drag a control point up or down.
-- **Shape layer**: pick a rectangle, ellipse or triangle in the panel and drag on the canvas.
+- **Shape layer**: “Curve” makes a shape from clicked points, like the linework line and curve;
+  “Color” recolors the clicked shape with the main color; “Edit” drags nodes. Or pick a rectangle, ellipse or triangle in the panel and drag on the canvas.
 - **Raster tools**: brushes, fill and filters do not edit these layers. “Layer → Rasterize
   Layer” makes the layer normal.
 - **Saving**: curves are saved to `.sai2` as curves.
@@ -794,7 +797,7 @@ custool”: `nrm` for normal layers, `ink` for linework, `shp` for shapes. A `.s
 the kind (pencil, brush, water, marker, scatter, etc.), size, minimum size, density, hardness step,
 pressure, “Ver.1” pressure and density amplification, blending, dilution, persistence, blur
 threshold, form (blot, bristle) and texture — by name from the SAI 2 folder (`brushfom`,
-`brushtex`). Linework and shape tools are not converted yet. SAI 2 scatter shapes
+`brushtex`). The linework pen, line and curve become a brush with the same settings and switch on their tool on a linework layer; eraser, weight, color, edit, pressure and the shape curve are panel buttons here. Binary linework tools are not converted. SAI 2 scatter shapes
 (`settings\scatter\name.ini` and `name.bmp`) become Scatter brushes with that shape and settings.
 
 Photoshop `.abr` brushes (version 6 and later) come with their settings: size, spacing, round brush
