@@ -423,7 +423,7 @@ impl Race {
             let (_, stack) = doc.gpu_stack()?;
             let tiles: usize = stack.iter().map(|(l, _, _)| l.pixels.tiles.len()).sum();
             let pages = (tiles as u32 * 3 / 2 / PER_PAGE + 1).min(16);
-            self.composer = Composer::new(gpu.device.clone(), gpu.queue.clone(), pages);
+            self.composer = Composer::new(gpu.device, gpu.queue, pages);
             if self.composer.is_none() {
                 self.off = true;
                 return None;
