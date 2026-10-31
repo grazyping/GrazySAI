@@ -22,6 +22,7 @@ mod plugins;
 mod recording;
 mod scene3d;
 mod actions;
+mod gpu_3d;
 mod gpu_composite;
 mod gpu_filter;
 mod puppet_ui;
@@ -2054,6 +2055,10 @@ app.open_canvas_dialog(d == "resolution")
             }
             Ok(_) => app.add_linework_layer(),
             Err(_) => {}
+        }
+        // PAINT_MODEL=<файл> — новый слой 3D при запуске (для проверок)
+        if let Some(m) = std::env::var_os("PAINT_MODEL") {
+            app.s3d_new_layer(std::path::Path::new(&m));
         }
         // PAINT_FILTER=hs|bc|gauss — открыть фильтр при запуске (для проверок)
         match std::env::var("PAINT_FILTER").as_deref() {

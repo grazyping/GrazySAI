@@ -104,6 +104,89 @@ pub(crate) fn geometry(scene: &Scene, models: &[Arc<Model>]) -> Geo {
     g
 }
 
+/// Сцена в мире для видеокарты: вершины (x, y, z, нормаль, u, v) и куски по материалам.
+#[derive(Default)]
+pub struct GpuMesh {
+    pub vertices: Vec<[f32; 8]>,
+    pub indices: Vec<u32>,
+    pub draws: Vec<GpuDraw>,
+    /// Границы вершин (для дальней плоскости).
+    pub min: [f32; 3],
+    pub max: [f32; 3],
+}
+
+/// Кусок треугольников одного материала.
+pub struct GpuDraw {
+    pub first: u32,
+    pub count: u32,
+    pub color: [f32; 4],
+    /// Номер модели и картинки в ней.
+    pub tex: Option<(usize, usize)>,
+    pub cutoff: Option<f32>,
+    pub double: bool,
+}
+
+/// Поза, скелет и морфы посчитаны, камера ещё нет: пока вращают камеру, это не меняется.
+pub fn gpu_mesh(scene: &Scene, models: &[Arc<Model>]) -> GpuMesh {
+    let g = geometry(scene, models);
+    let mut m = GpuMesh { vertices: Vec::with_capacity(g.pos.len()), indices: Vec::with_capacity(g.tris.len() * 3), ..Default::default() };
+    for i in 0..g.pos.len() {
+        let (p, n, uv) = (g.pos[i], g.nrm[i], g.uv[i]);
+        m.vertices.push([p.x, p.y, p.z, n.x, n.y, n.z, uv.x, uv.y]);
+    }
+    let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+    for p in &g.pos {
+        lo = lo.min(*p);
+        hi = hi.max(*p);
+    }
+    (m.min, m.max) = (lo.to_array(), hi.to_array());
+    let mut ti = 0;
+    while ti < g.tris.len() {
+        let mid = g.mat_of[ti];
+        let first = m.indices.len() as u32;
+        while ti < g.tris.len() && g.mat_of[ti] == mid {
+            let t = g.tris[ti];
+            ti += 1;
+            let [a, b, c] = t.map(|i| i as usize);
+            let face = (g.pos[b] - g.pos[a]).cross(g.pos[c] - g.pos[a]);
+            if face.length_squared() == 0.0 || !face.is_finite() {
+                continue;
+            }
+            if g.has_nrm[a] && g.has_nrm[b] && g.has_nrm[c] {
+                m.indices.extend_from_slice(&t);
+            } else {
+                // своих нормалей нет — нормаль грани: вершины не общие
+                let f = face.normalize();
+                for i in [a, b, c] {
+                    let (p, uv) = (g.pos[i], g.uv[i]);
+                    m.indices.push(m.vertices.len() as u32);
+                    m.vertices.push([p.x, p.y, p.z, f.x, f.y, f.z, uv.x, uv.y]);
+                }
+            }
+        }
+        let mat = &g.mats[mid as usize];
+        m.draws.push(GpuDraw { first, count: m.indices.len() as u32 - first, color: mat.color, tex: mat.tex.map(|t| (mat.model, t)), cutoff: mat.cutoff, double: mat.double });
+    }
+    m
+}
+
+/// Камера для видеокарты: мир → экран и направление света, как в `render`.
+pub fn gpu_camera(scene: &Scene, mesh: &GpuMesh, w: u32, h: u32) -> (Mat4, Vec3) {
+    let cam = &scene.camera;
+    let view = cam.view();
+    let mut far = 0f32;
+    for k in 0..8 {
+        let pick = |i: usize| if k >> i & 1 == 0 { mesh.min[i] } else { mesh.max[i] };
+        far = far.max(-(view.transform_point3(Vec3::new(pick(0), pick(1), pick(2)))).z);
+    }
+    let far = far.max(1e-3) * 1.05 + 1e-3;
+    let near = (far * 1e-4).max(1e-5);
+    let proj = glam::camera::rh::proj::directx::perspective(cam.fov.clamp(1.0, 150.0).to_radians(), w.max(1) as f32 / h.max(1) as f32, near, far);
+    let (ly, lp) = (scene.light[0].to_radians(), scene.light[1].to_radians());
+    let light = view.inverse().transform_vector3(Vec3::new(lp.cos() * ly.sin(), lp.sin(), lp.cos() * ly.cos())).normalize_or(Vec3::Y);
+    (proj * view, light)
+}
+
 /// Вершина треугольника на экране: x, y (px), z (0..1), 1/w и деленные на w: u, v, свет.
 #[derive(Clone, Copy, Default)]
 struct SV {

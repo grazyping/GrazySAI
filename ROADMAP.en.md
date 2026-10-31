@@ -215,7 +215,7 @@ Like Krita's preset docker, Clip Studio's material palette and Photoshop's brush
 - [x] Gaussian blur and unsharp mask preview on the graphics card; the final result is computed by the CPU to stay exact (4K on integrated AMD: 0.3 s instead of 0.55–1.2 s) (1.4.3)
 - [ ] Other filters on the graphics card: lens, median, rotation (0.6–1 s at 4K) — less gain: long kernels or sorting, and moving the pixels costs 0.25 s
 - [x] Layer compositing for display on the graphics card: all 28 modes, plain layers and pass-through folders; mask, clipping, effect, paper and style stay on the CPU. It switches on by itself only where it is faster here: on a Ryzen 5700G with its integrated graphics the CPU wins (4K, 20 layers: 84 ms vs 120 ms); not tested on a discrete card
-- [ ] 3D layer on the graphics card — postponed after measuring: 1M triangles take 170–200 ms, nearly all of it vertex preparation rather than drawing; only very heavy scenes would gain when turning the camera
+- [x] 3D layer on the graphics card: preview while a scene is being moved, for scenes from 100,000 triangles, without outline; the final result is computed by the CPU (1M triangles, 4K: 22–24 ms vs 120–160 ms)
 
 ### Leftovers of new SAI 2 features
 
@@ -364,6 +364,6 @@ Not in 1.4.0.
 
 ### Left for the next version
 
-- [ ] Tablet drivers, in full: download drivers of the main models (Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs) for Windows and Linux, see what they install and how they name the pen axes; adjust the pen reading; check WinTab with real drivers on the test PC
+- [x] Tablet drivers: dropped — Linux and Windows of Wacom, Gaomon, XP-Pen analysed, the others have no direct links; a real tablet on Windows waits for feedback
 - [ ] Pen directly on Wayland, without XWayland — waits for the window library: winit 0.31 (still beta) has the Wayland pen, but egui/eframe, even the newest, is on winit 0.30
 - [x] FreeBSD: a port in the ports tree — dropped: anyone who wants it can build from source; a ready archive and `.pkg` exist, `tools/freebsd/mkport.sh` makes the port files

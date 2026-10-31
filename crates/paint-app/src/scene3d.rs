@@ -180,6 +180,7 @@ impl PaintApp {
 
     /// Закончить правку: если что-то менялось — дорисовать начисто и записать одним шагом.
     pub(crate) fn s3d_finish(&mut self) {
+        crate::gpu_3d::release();
         let Some(mut e) = self.s3d.take() else { return };
         e.job = None;
         if e.gen == 0 && e.changed_at.is_none() {
@@ -260,6 +261,10 @@ impl PaintApp {
                 std::thread::spawn(move || {
                     let t = Instant::now();
                     let r = std::panic::catch_unwind(|| {
+                        // тяжёлую сцену, пока её двигают, рисует видеокарта; итог — всегда процессор
+                        if let Some(img) = (!full).then(|| crate::gpu_3d::render(&scene, &models, w, h)).flatten() {
+                            return paint_3d::to_colormap(&img, w, h);
+                        }
                         let img = paint_3d::render::render(&scene, &models, rw, rh, if full { 2 } else { 1 });
                         let img = if half { paint_3d::render::upscale(&img, rw, rh, w, h) } else { img };
                         paint_3d::to_colormap(&img, w, h)

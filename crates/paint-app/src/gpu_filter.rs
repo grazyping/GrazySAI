@@ -64,7 +64,7 @@ const BAND: u32 = 128;
 pub struct Gpu {
     pub device: Arc<wgpu::Device>,
     pub queue: Arc<wgpu::Queue>,
-    pipelines: Arc<OnceLock<[wgpu::ComputePipeline; 3]>>,
+    pub pipelines: Arc<OnceLock<[wgpu::ComputePipeline; 3]>>,
 }
 
 /// Устройство, которое задаёт окно при отрисовке через wgpu.

@@ -308,6 +308,11 @@ impl Composer {
         if entries.is_empty() {
             entries.push([0; 4]);
         }
+        if entries.len() as u64 * 16 > self.device.limits().max_storage_buffer_binding_size as u64 {
+            let _ = pollster::block_on(self.device.pop_error_scope());
+            let _ = pollster::block_on(self.device.pop_error_scope());
+            return None;
+        }
         let mut params = Vec::with_capacity(48);
         for v in bg {
             params.extend_from_slice(&v.to_le_bytes());
