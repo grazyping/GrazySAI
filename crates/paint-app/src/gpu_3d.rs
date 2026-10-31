@@ -184,6 +184,7 @@ impl Scene3dGpu {
             }
             // SAFETY: f32 и u32 без промежутков
             let vb: &[u8] = unsafe { std::slice::from_raw_parts(mesh.vertices.as_ptr() as *const u8, mesh.vertices.len() * 32) };
+            // SAFETY: то же
             let ib: &[u8] = unsafe { std::slice::from_raw_parts(mesh.indices.as_ptr() as *const u8, mesh.indices.len() * 4) };
             let vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("gpu_3d"), contents: vb, usage: wgpu::BufferUsages::VERTEX });
             let ibuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("gpu_3d"), contents: ib, usage: wgpu::BufferUsages::INDEX });
