@@ -4,7 +4,7 @@
 
 **A free painting program for drawing and animation, with a feel and a brush engine modelled
 on PaintTool SAI 2.** It runs on Windows and Linux (and FreeBSD), works with graphics tablets and opens
-`.sai2` files. Version 1.4.4.
+`.sai2` files. Version 1.4.5.
 
 ![GrazySAI: the painting window with the navigator, color wheel, layers and tools](docs/screenshot.png)
 

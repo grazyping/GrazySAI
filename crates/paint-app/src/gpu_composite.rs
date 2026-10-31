@@ -438,7 +438,9 @@ impl Race {
         if self.decided || forced {
             let r = c.render(doc, keys);
             if r.is_none() {
+                // не влезло или сбой — не занимать память заново на каждой пачке
                 self.composer = None;
+                self.off = !forced;
             }
             return r;
         }

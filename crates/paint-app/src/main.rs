@@ -6379,7 +6379,8 @@ app.open_canvas_dialog(d == "resolution")
     /// Закончить «Линию» или «Кривую» (двойной щелчок, Enter).
     fn finish_plot(&mut self) {
         let Some((path, pts)) = self.line_plot.take() else { return };
-        let Some(v) = self.doc.layer(&path).and_then(|l| l.vector.as_ref()) else { return };
+        // слой могли запереть или скрыть, пока ставили точки
+        let Some(v) = self.doc.layer(&path).filter(|l| l.visible && !l.lock_paint && !l.lock_all).and_then(|l| l.vector.as_ref()) else { return };
         let shap = &v.kind == b"shap";
         if pts.len() < if shap { 3 } else { 2 } {
             self.status = String::from(tr("Нужно больше точек"));
