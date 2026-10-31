@@ -6850,10 +6850,18 @@ app.open_canvas_dialog(d == "resolution")
         let (job, w, h, color, ctx) = (f.clone(), self.doc.width, self.doc.height, self.color(), ctx.clone());
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            // размытие по Гауссу — на видеокарте, если окно рисует wgpu
-            let gpu = (job.kind == FilterKind::GaussianBlur).then(gpu_filter::current).flatten().and_then(|g| {
+            // размытие по Гауссу и нерезкая маска — на видеокарте, если окно рисует wgpu
+            let gpu = gpu_filter::current().and_then(|g| {
                 let sel = &*job.sel;
-                g.gaussian(&job.original, w, h, job.radius, &|x: i32, y: i32| sel.amount(x, y))
+                let amount = |x: i32, y: i32| sel.amount(x, y);
+                match job.kind {
+                    FilterKind::GaussianBlur => g.gaussian(&job.original, w, h, job.radius, &amount),
+                    FilterKind::Unsharp => {
+                        let blurred = g.gaussian(&job.original, w, h, job.radius, &|_: i32, _: i32| paint_core::pixel::ONE)?;
+                        Some(paint_core::filters::unsharp_from(&job.original, w, h, job.radius, &blurred, job.amount, job.threshold, &amount))
+                    }
+                    _ => None,
+                }
             });
             let _ = tx.send(match gpu {
                 Some(p) => (p, false),

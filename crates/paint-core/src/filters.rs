@@ -574,8 +574,14 @@ pub fn sharpen(src: &ColorMap, w: u32, h: u32, s: f64, sel: &(dyn Fn(i32, i32) -
 /// «Нерезкая маска» (Unsharp mask): к точке прибавляется `сила·(точка − размытая)` там, где
 /// разница больше порога (0–255); размытие — Гаусс с σ = радиус.
 pub fn unsharp_mask(src: &ColorMap, w: u32, h: u32, radius: f64, amount: f64, threshold: u8, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
-    let pad = (radius.max(0.1) * 3.0).ceil() as i32;
     let blurred = gaussian_blur(src, w, h, radius, &|_, _| ONE);
+    unsharp_from(src, w, h, radius, &blurred, amount, threshold, sel)
+}
+
+/// Нерезкая маска по уже размытой копии (её может посчитать и видеокарта).
+#[allow(clippy::too_many_arguments, reason = "настройки фильтра раздельно, как в unsharp_mask")]
+pub fn unsharp_from(src: &ColorMap, w: u32, h: u32, radius: f64, blurred: &ColorMap, amount: f64, threshold: u8, sel: &(dyn Fn(i32, i32) -> u32 + Sync)) -> ColorMap {
+    let pad = (radius.max(0.1) * 3.0).ceil() as i32;
     let Some((x0, y0, bw, bh, buf)) = dense(src, w, h, pad) else { return src.clone() };
     let k = 1.0 / ONE as f64;
     let t = threshold as f64 / 255.0;
