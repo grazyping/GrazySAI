@@ -87,6 +87,31 @@ pub fn tilt_of(tx: f32, ty: f32) -> (f32, f32) {
     ((tx.hypot(ty) / 60.0).clamp(0.0, 1.0), ty.atan2(tx))
 }
 
+/// Диапазоны наклона WinTab из `DVC_ORIENTATION`: максимум азимута, высоты и поворота. Драйвер без
+/// наклона отдаёт нули — наклона и поворота нет.
+#[cfg(any(windows, test))]
+#[derive(Clone, Copy, Default)]
+pub struct OrientRange {
+    pub azimuth: i32,
+    pub altitude: i32,
+    pub twist: i32,
+}
+
+/// Пакет WinTab → (наклон 0..1, направление в радианах, поворот 0..1). Единицы задаёт драйвер, поэтому
+/// всё считается от его максимумов: высота на максимуме — перо прямо, азимут — от «вверх» по часовой.
+#[cfg(any(windows, test))]
+pub fn wintab_orientation([az, alt, twist]: [i32; 3], r: OrientRange) -> (f32, f32, f32) {
+    let tilt = if r.altitude <= 0 || alt == 0 {
+        0.0
+    } else {
+        let lean = 90.0 * (1.0 - (alt.abs() as f32 / r.altitude as f32).min(1.0));
+        (lean / 60.0).min(1.0)
+    };
+    let heading = if r.azimuth > 0 { (az as f32 / r.azimuth as f32 * 360.0 - 90.0).to_radians() } else { 0.0 };
+    let rot = if r.twist > 0 { (twist as f32 / r.twist as f32).rem_euclid(1.0) } else { 0.0 };
+    (tilt, heading, rot)
+}
+
 #[cfg(windows)]
 mod wintab {
     //! WinTab: контекст на окно программы, пакеты забираются раз в 3 мс (`WTPacketsGet`).
@@ -106,6 +131,10 @@ mod wintab {
     const WTI_DEVICES: u32 = 100;
     const DVC_NAME: u32 = 1;
     const DVC_NPRESSURE: u32 = 15;
+    const DVC_ORIENTATION: u32 = 17;
+    /// Обратный конец пера (`pkStatus`).
+    const TPS_INVERT: u32 = 0x10;
+    const PK_STATUS: u32 = 0x0002;
     const PK_TIME: u32 = 0x0004;
     const PK_CURSOR: u32 = 0x0020;
     const PK_BUTTONS: u32 = 0x0040;
@@ -113,7 +142,7 @@ mod wintab {
     const PK_Y: u32 = 0x0100;
     const PK_NORMAL_PRESSURE: u32 = 0x0400;
     const PK_ORIENTATION: u32 = 0x1000;
-    const PACKET_DATA: u32 = PK_TIME | PK_CURSOR | PK_BUTTONS | PK_X | PK_Y | PK_NORMAL_PRESSURE | PK_ORIENTATION;
+    const PACKET_DATA: u32 = PK_STATUS | PK_TIME | PK_CURSOR | PK_BUTTONS | PK_X | PK_Y | PK_NORMAL_PRESSURE | PK_ORIENTATION;
 
     #[repr(C)]
     #[derive(Clone, Copy)]
@@ -144,6 +173,7 @@ mod wintab {
     #[repr(C)]
     #[derive(Clone, Copy, Default)]
     struct Packet {
+        status: u32,
         time: u32,
         cursor: u32,
         buttons: u32,
@@ -215,23 +245,24 @@ mod wintab {
             }
             queue(wt, 128);
             note(trf("перо: WinTab, {0}", &[&dev]));
-            let max = axis.max.max(1) as f32;
+            let (min, max) = (axis.min as f32, (axis.max.max(axis.min + 1)) as f32);
+            // азимут, высота, поворот; драйверы называют разные единицы, у кого-то наклона нет
+            let mut orient = [Axis::default(); 3];
+            info(WTI_DEVICES, DVC_ORIENTATION, orient.as_mut_ptr() as *mut c_void);
+            let range = super::OrientRange { azimuth: orient[0].max, altitude: orient[1].max, twist: orient[2].max };
             let mut buf = [Packet::default(); 128];
             loop {
                 let n = packets(wt, buf.len() as i32, buf.as_mut_ptr() as *mut c_void);
                 if n > 0 {
                     let p = buf[(n as usize - 1).min(buf.len() - 1)];
-                    let [az, alt, twist] = p.orientation;
-                    // высота 900 — прямо; наклон — от вертикали; азимут от «вверх» по часовой
-                    let lean = (90.0 - alt.abs() as f32 / 10.0).clamp(0.0, 90.0);
-                    let heading = (az as f32 / 10.0 - 90.0).to_radians();
+                    let (tilt, heading, rotation) = super::wintab_orientation(p.orientation, range);
                     if let Ok(mut s) = feed.lock() {
-                        s.pressure = (p.pressure as f32 / max).clamp(0.0, 1.0);
+                        s.pressure = ((p.pressure as f32 - min) / (max - min)).clamp(0.0, 1.0);
                         // у большинства драйверов курсор №2 (и 5, 8…) — обратный конец пера
-                        s.eraser = p.cursor % 3 == 2;
-                        s.tilt = if alt == 0 { 0.0 } else { (lean / 60.0).min(1.0) };
+                        s.eraser = p.status & TPS_INVERT != 0 || p.cursor % 3 == 2;
+                        s.tilt = tilt;
                         s.tilt_heading = heading;
-                        s.rotation = (twist as f32 / 3600.0).rem_euclid(1.0);
+                        s.rotation = rotation;
                         s.api = "WinTab";
                         s.at = Some(Instant::now());
                         if s.device != dev {
@@ -387,5 +418,24 @@ fn run(feed: &PenFeed, ctx: &eframe::egui::Context) -> Result<(), Box<dyn std::e
             }
         }
         ctx.request_repaint();
+    }
+}
+
+#[cfg(test)]
+mod wintab_tests {
+    use super::{wintab_orientation, OrientRange};
+
+    #[test]
+    fn orientation_uses_the_driver_ranges() {
+        // Wacom: десятые градуса
+        let wacom = OrientRange { azimuth: 3600, altitude: 900, twist: 3600 };
+        let (t, h, r) = wintab_orientation([900, 300, 900], wacom);
+        assert!((t - 1.0).abs() < 1e-5 && h.abs() < 1e-5 && (r - 0.25).abs() < 1e-5);
+        assert_eq!(wintab_orientation([0, 900, 0], wacom).0, 0.0);
+        // те же углы в других единицах дают то же самое
+        let other = OrientRange { azimuth: 360, altitude: 90, twist: 360 };
+        assert_eq!(wintab_orientation([90, 30, 90], other), (t, h, r));
+        // драйвер без наклона
+        assert_eq!(wintab_orientation([5, 5, 5], OrientRange::default()), (0.0, 0.0, 0.0));
     }
 }
