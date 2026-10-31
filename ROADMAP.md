@@ -367,4 +367,4 @@ Clip Studio Paint и идеи из Krita.
 
 - [ ] Драйверы планшетов, полностью: скачать драйверы основных моделей (Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs) для Windows и Linux, разобрать, что они ставят и как называют оси пера; подогнать чтение пера; проверить WinTab с настоящими драйверами на тестовом ПК (Linux — все, кроме Gaomon; Windows — Wacom, Gaomon, XP-Pen разобраны; Huion, UGEE, Xencelabs без прямых ссылок; настоящий планшет под Windows не проверялся)
 - [ ] Перо прямо в Wayland, без XWayland — ждёт оконной библиотеки: перо в Wayland есть в winit 0.31 (пока бета), а egui/eframe даже в новейшей версии на winit 0.30
-- [ ] FreeBSD: порт в дереве портов — файлы готовит `tools/freebsd/mkport.sh`; осталось собрать порт на FreeBSD и подать в их Bugzilla
+- [x] FreeBSD: порт в дереве портов — снято: кто захочет, соберёт из исходников; есть готовый архив и пакет `.pkg`, файлы порта делает `tools/freebsd/mkport.sh`

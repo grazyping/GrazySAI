@@ -366,4 +366,4 @@ Not in 1.4.0.
 
 - [ ] Tablet drivers, in full: download drivers of the main models (Wacom, XP-Pen, Huion, Gaomon, Veikk, UGEE, Xencelabs) for Windows and Linux, see what they install and how they name the pen axes; adjust the pen reading; check WinTab with real drivers on the test PC
 - [ ] Pen directly on Wayland, without XWayland — waits for the window library: winit 0.31 (still beta) has the Wayland pen, but egui/eframe, even the newest, is on winit 0.30
-- [ ] FreeBSD: a port in the ports tree — `tools/freebsd/mkport.sh` prepares the files; what is left is to build the port on FreeBSD and submit it to their Bugzilla
+- [x] FreeBSD: a port in the ports tree — dropped: anyone who wants it can build from source; a ready archive and `.pkg` exist, `tools/freebsd/mkport.sh` makes the port files
